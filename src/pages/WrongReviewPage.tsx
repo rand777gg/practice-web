@@ -4,6 +4,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Trash2, Pencil, Check, X } from 'lucide-react'
 import type { UserAnswer, Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 
@@ -15,6 +17,8 @@ export function Component() {
   const [mode, setMode] = useState<FilterMode>('all')
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [editingNote, setEditingNote] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
 
   const fetchAnswers = useCallback(async () => {
     if (!user) return
@@ -38,6 +42,27 @@ export function Component() {
   useEffect(() => {
     fetchAnswers()
   }, [fetchAnswers])
+
+  const handleDelete = async (id: string) => {
+    await supabase.from('user_answers').delete().eq('id', id)
+    setAnswers((prev) => prev.filter((a) => a.id !== id))
+  }
+
+  const startEdit = (id: string, note: string) => {
+    setEditingNote(id)
+    setEditText(note)
+  }
+
+  const cancelEdit = () => {
+    setEditingNote(null)
+    setEditText('')
+  }
+
+  const saveNote = async (id: string) => {
+    await supabase.from('user_answers').update({ note: editText || null }).eq('id', id)
+    setAnswers((prev) => prev.map((a) => (a.id === id ? { ...a, note: editText || null } : a)))
+    setEditingNote(null)
+  }
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -67,12 +92,52 @@ export function Component() {
       ) : (
         <div className="space-y-4">
           {answers.map((ans) => (
-            <QuestionCard
-              key={ans.id}
-              question={ans.questions}
-              selectedAnswer={ans.selected_answer}
-              showResult
-            />
+            <div key={ans.id} className="space-y-2">
+              <QuestionCard
+                question={ans.questions}
+                selectedAnswer={ans.selected_answer}
+                showResult
+                note={editingNote === ans.id ? editText : ans.note}
+              />
+              <div className="flex items-center gap-1 justify-end">
+                {editingNote === ans.id ? (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => saveNote(ans.id)} className="text-xs h-7">
+                      <Check className="h-3 w-3" />
+                      {t('plan.save')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={cancelEdit} className="text-xs h-7">
+                      <X className="h-3 w-3" />
+                      {t('plan.cancel')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => startEdit(ans.id, ans.note ?? '')} className="text-xs h-7">
+                      <Pencil className="h-3 w-3" />
+                      {t('practice.note')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(ans.id)}
+                      className="text-xs h-7 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      {t('review.remove')}
+                    </Button>
+                  </>
+                )}
+              </div>
+              {editingNote === ans.id && (
+                <Textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  placeholder={t('practice.notePlaceholder')}
+                  rows={3}
+                />
+              )}
+            </div>
           ))}
         </div>
       )}

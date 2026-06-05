@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.user_answers (
   is_correct      BOOLEAN NOT NULL,
   mode            TEXT NOT NULL CHECK (mode IN ('practice', 'exam')),
   exam_session_id UUID REFERENCES public.exam_sessions(id) ON DELETE CASCADE,
+  note            TEXT,
   answered_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

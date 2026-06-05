@@ -43,6 +43,7 @@ export interface UserAnswer {
   is_correct: boolean
   mode: AnswerMode
   exam_session_id: string | null
+  note: string | null
   answered_at: string
 }
 

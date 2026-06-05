@@ -47,6 +47,8 @@ export const zh = {
     attempts: '做过',
     wrong: '错',
     skip: '跳过',
+    note: '笔记',
+    notePlaceholder: '记录你的解题思路或备忘...',
   },
   exam: {
     title: '考试模式',
@@ -84,6 +86,7 @@ export const zh = {
     all: '全部',
     practice: '练习',
     exam: '考试',
+    remove: '移除',
   },
   questions: {
     title: '题目管理',
@@ -220,6 +223,8 @@ export const en = {
     attempts: 'Attempts',
     wrong: 'Wrong',
     skip: 'Skip',
+    note: 'Note',
+    notePlaceholder: 'Write your thoughts or notes...',
   },
   exam: {
     title: 'Exam Mode',
@@ -257,6 +262,7 @@ export const en = {
     all: 'All',
     practice: 'Practice',
     exam: 'Exam',
+    remove: 'Remove',
   },
   questions: {
     title: 'Questions',

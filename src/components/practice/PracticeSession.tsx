@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
+import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -28,7 +29,9 @@ export function PracticeSession() {
   const [noQuestions, setNoQuestions] = useState(false)
   const [attemptCount, setAttemptCount] = useState(0)
   const [wrongCount, setWrongCount] = useState(0)
-  const { saveAnswer } = useUserAnswers()
+  const [answerId, setAnswerId] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const { saveAnswer, updateNote } = useUserAnswers()
   const user = useAuthStore((s) => s.user)
 
   const [subjects, setSubjects] = useState<string[]>([])
@@ -77,6 +80,7 @@ export function PracticeSession() {
     setIsLoading(true)
     setSelectedAnswer(null)
     setIsSubmitted(false)
+    setAnswerId(null)
 
     let query = supabase.from('questions').select('*', { count: 'exact' })
     if (selectedSubject) query = query.eq('subject', selectedSubject)
@@ -97,13 +101,18 @@ export function PracticeSession() {
     if (user) {
       const { data: statsData } = await supabase
         .from('user_answers')
-        .select('is_correct')
+        .select('is_correct, note')
         .eq('user_id', user.id)
         .eq('question_id', picked.id)
+        .order('answered_at', { ascending: false })
+
       const total = statsData?.length ?? 0
       const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
       setAttemptCount(total)
       setWrongCount(wrong)
+
+      const latestNote = statsData?.find((a) => a.note)?.note ?? ''
+      setNote(latestNote)
     }
 
     setIsLoading(false)
@@ -123,9 +132,17 @@ export function PracticeSession() {
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
     const isCorrect = selectedAnswer === question.correct_answer
-    await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
+    const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
+    setAnswerId(id)
     bumpRefresh()
     setIsSubmitted(true)
+  }
+
+  const handleNoteChange = async (value: string) => {
+    setNote(value)
+    if (answerId) {
+      await updateNote(answerId, value)
+    }
   }
 
   const handleNext = () => {
@@ -212,8 +229,20 @@ export function PracticeSession() {
               showEditLink={isAdmin}
               attemptCount={attemptCount}
               wrongCount={wrongCount}
+              note={note}
             />
           </div>
+          {isSubmitted && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
+              <Textarea
+                placeholder={t('practice.notePlaceholder')}
+                value={note}
+                onChange={(e) => handleNoteChange(e.target.value)}
+                rows={3}
+              />
+            </div>
+          )}
           <div className="flex gap-2 justify-end">
             {!isSubmitted ? (
               <>

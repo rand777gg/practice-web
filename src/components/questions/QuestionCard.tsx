@@ -15,9 +15,10 @@ interface Props {
   showEditLink?: boolean
   attemptCount?: number
   wrongCount?: number
+  note?: string | null
 }
 
-export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount }: Props) {
+export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note }: Props) {
   const { t } = useT()
 
   return (
@@ -89,6 +90,12 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
         <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
           <span className="font-medium">{t('questions.analysis')}: </span>
           {question.analysis}
+        </div>
+      )}
+      {showResult && note && (
+        <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
+          <span className="font-medium">{t('practice.note')}: </span>
+          {note}
         </div>
       )}
       {showResult && showEditLink && (
