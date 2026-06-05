@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.questions (
   options         JSONB NOT NULL,
   correct_answer  INTEGER NOT NULL,
   category        TEXT,
+  subject         TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by      UUID REFERENCES public.profiles(id) ON DELETE SET NULL
 );
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS public.user_answers (
 
 -- INDEXES
 CREATE INDEX IF NOT EXISTS idx_questions_category ON public.questions(category);
+CREATE INDEX IF NOT EXISTS idx_questions_subject ON public.questions(subject);
 CREATE INDEX IF NOT EXISTS idx_user_answers_user_id ON public.user_answers(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_answers_question_id ON public.user_answers(question_id);
 CREATE INDEX IF NOT EXISTS idx_user_answers_exam_session ON public.user_answers(exam_session_id);
