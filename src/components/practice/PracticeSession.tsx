@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useRefreshStore } from '@/stores/refresh-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
@@ -117,10 +118,13 @@ export function PracticeSession() {
     setSelectedAnswer(index)
   }
 
+  const bumpRefresh = useRefreshStore((s) => s.bump)
+
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
     const isCorrect = selectedAnswer === question.correct_answer
     await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
+    bumpRefresh()
     setIsSubmitted(true)
   }
 

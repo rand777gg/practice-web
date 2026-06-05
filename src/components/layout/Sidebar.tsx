@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/i18n/use-t'
 
@@ -76,6 +77,25 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
   )
 }
 
+function SidebarFooter() {
+  const { user, profile } = useAuthStore()
+  const { t } = useT()
+  if (!user) return null
+  return (
+    <div className="p-3 border-t border-sidebar-border space-y-1">
+      <p className="text-xs text-sidebar-foreground/70 truncate">{user.email}</p>
+      {profile && (
+        <Badge
+          variant={profile.role === 'admin' ? 'default' : 'secondary'}
+          className="text-[10px] h-5"
+        >
+          {profile.role === 'admin' ? t('users.admin') : t('users.user')}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
 export function Sidebar({ className, overlay, isOpen, onClose }: Props) {
   const { t } = useT()
 
@@ -98,6 +118,7 @@ export function Sidebar({ className, overlay, isOpen, onClose }: Props) {
         )}
       </div>
       <SidebarNav onClose={onClose} />
+      <SidebarFooter />
     </aside>
   )
 

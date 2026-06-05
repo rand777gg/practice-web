@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS public.profiles (
   id         UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   role       TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+  deadline   DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

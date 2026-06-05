@@ -5,6 +5,7 @@ export type ExamStatus = 'in_progress' | 'completed'
 export interface Profile {
   id: string
   role: UserRole
+  deadline: string | null
   created_at: string
 }
 

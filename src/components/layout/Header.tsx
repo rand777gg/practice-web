@@ -2,13 +2,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
+import { PlanProgress } from './PlanProgress'
 import { Check, ChevronDown, LogOut, Menu, Moon, Sun } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
@@ -33,15 +33,7 @@ export function Header({ onMenuClick }: Props) {
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <span className="text-sm text-muted-foreground truncate">{user?.email}</span>
-        {profile && (
-          <Badge
-            variant={profile.role === 'admin' ? 'default' : 'secondary'}
-            className="hidden sm:inline-flex shrink-0"
-          >
-            {profile.role === 'admin' ? t('users.admin') : t('users.user')}
-          </Badge>
-        )}
+        <PlanProgress />
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Button
