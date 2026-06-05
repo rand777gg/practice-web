@@ -1,5 +1,5 @@
 import { useAuthStore } from '@/stores/auth-store'
-import { useLangStore, type Lang } from '@/stores/lang-store'
+import { useLangStore } from '@/stores/lang-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
