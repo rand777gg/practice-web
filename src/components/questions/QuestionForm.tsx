@@ -21,6 +21,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [correctAnswer, setCorrectAnswer] = useState(initialData?.correct_answer ?? 0)
   const [category, setCategory] = useState(initialData?.category ?? '')
   const [subject, setSubject] = useState(initialData?.subject ?? '')
+  const [analysis, setAnalysis] = useState(initialData?.analysis ?? '')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -63,6 +64,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         correct_answer: correctAnswer,
         category: category.trim() || null,
         subject: subject.trim() || null,
+        analysis: analysis.trim() || null,
       })
     } catch {
       setError(t('questions.saveFailed'))
@@ -106,6 +108,17 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
             placeholder={t('questions.categoryPlaceholder')}
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="analysis">{t('questions.analysis')}</Label>
+        <Textarea
+          id="analysis"
+          value={analysis}
+          onChange={(e) => setAnalysis(e.target.value)}
+          placeholder={t('questions.analysisPlaceholder')}
+          rows={3}
+        />
       </div>
 
       <div className="space-y-3">

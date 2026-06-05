@@ -71,6 +71,12 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
           )
         })}
       </div>
+      {showResult && question.analysis && (
+        <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
+          <span className="font-medium">{t('questions.analysis')}: </span>
+          {question.analysis}
+        </div>
+      )}
     </div>
   )
 }

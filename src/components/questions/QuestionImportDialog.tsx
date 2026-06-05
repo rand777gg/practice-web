@@ -53,6 +53,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
           correct_answer: Number(item.correct_answer ?? 0),
           category: item.category ? String(item.category) : undefined,
           subject: item.subject ? String(item.subject) : undefined,
+          analysis: item.analysis ? String(item.analysis) : undefined,
         }))
       } else {
         const lines = text.split('\n').filter((l) => l.trim())
@@ -83,6 +84,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             correct_answer: Number(obj.correct_answer ?? 0),
             category: obj.category || undefined,
             subject: obj.subject || undefined,
+            analysis: obj.analysis || undefined,
           }
         })
 
@@ -110,6 +112,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         correct_answer: q.correct_answer,
         category: q.category ?? null,
         subject: q.subject ?? null,
+        analysis: q.analysis ?? null,
       })),
     )
 
