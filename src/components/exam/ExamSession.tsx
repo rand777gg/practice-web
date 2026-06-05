@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ChevronLeft, ChevronRight, Play } from 'lucide-react'
+import { useSwipe } from '@/hooks/use-swipe'
 import {
   EXAM_DEFAULT_COUNT,
   EXAM_MIN_COUNT,
@@ -130,6 +131,11 @@ export function ExamSession() {
   const handleTimerExpire = () => {
     handleSubmitExam()
   }
+
+  const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
+    onSwipeLeft: nextQuestion,
+    onSwipeRight: previousQuestion,
+  })
 
   if (checkingSession) {
     return (
@@ -252,11 +258,19 @@ export function ExamSession() {
       </div>
 
       {currentQuestion && (
-        <QuestionCard
-          question={currentQuestion}
-          selectedAnswer={answers.get(currentQuestion.id) ?? null}
-          onSelect={(index) => answerQuestion(currentQuestion.id, index)}
-        />
+        <div
+          className="touch-pan-y select-none"
+          style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <QuestionCard
+            question={currentQuestion}
+            selectedAnswer={answers.get(currentQuestion.id) ?? null}
+            onSelect={(index) => answerQuestion(currentQuestion.id, index)}
+          />
+        </div>
       )}
 
       <div className="flex items-center justify-between gap-2">

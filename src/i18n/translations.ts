@@ -44,6 +44,9 @@ export const zh = {
     tryAgain: '再试一次',
     correct: '正确',
     yourAnswer: '你的答案',
+    attempts: '做过',
+    wrong: '错',
+    skip: '跳过',
   },
   exam: {
     title: '考试模式',
@@ -200,6 +203,9 @@ export const en = {
     tryAgain: 'Try Again',
     correct: 'Correct',
     yourAnswer: 'Your answer',
+    attempts: 'Attempts',
+    wrong: 'Wrong',
+    skip: 'Skip',
   },
   exam: {
     title: 'Exam Mode',

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
+import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,7 +25,10 @@ export function PracticeSession() {
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [noQuestions, setNoQuestions] = useState(false)
+  const [attemptCount, setAttemptCount] = useState(0)
+  const [wrongCount, setWrongCount] = useState(0)
   const { saveAnswer } = useUserAnswers()
+  const user = useAuthStore((s) => s.user)
 
   const [subjects, setSubjects] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
@@ -86,9 +90,23 @@ export function PracticeSession() {
     }
 
     const randomIndex = Math.floor(Math.random() * data.length)
-    setQuestion(data[randomIndex] as unknown as Question)
+    const picked = data[randomIndex] as unknown as Question
+    setQuestion(picked)
+
+    if (user) {
+      const { data: statsData } = await supabase
+        .from('user_answers')
+        .select('is_correct')
+        .eq('user_id', user.id)
+        .eq('question_id', picked.id)
+      const total = statsData?.length ?? 0
+      const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
+      setAttemptCount(total)
+      setWrongCount(wrong)
+    }
+
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory])
+  }, [selectedSubject, selectedCategory, user])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -109,6 +127,10 @@ export function PracticeSession() {
   const handleNext = () => {
     fetchRandomQuestion()
   }
+
+  const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
+    onSwipeLeft: handleNext,
+  })
 
   return (
     <div className="space-y-4">
@@ -170,19 +192,36 @@ export function PracticeSession() {
         </div>
       ) : !question ? null : (
         <>
-          <QuestionCard
-            question={question}
-            selectedAnswer={selectedAnswer}
-            showResult={isSubmitted}
-            onSelect={handleSelect}
-            disabled={isSubmitted}
-            showEditLink={isAdmin}
-          />
+          <div
+            className="touch-pan-y select-none"
+            style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            <QuestionCard
+              question={question}
+              selectedAnswer={selectedAnswer}
+              showResult={isSubmitted}
+              onSelect={handleSelect}
+              disabled={isSubmitted}
+              showEditLink={isAdmin}
+              attemptCount={attemptCount}
+              wrongCount={wrongCount}
+            />
+          </div>
           <div className="flex gap-2 justify-end">
             {!isSubmitted ? (
-              <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
-                {t('practice.submitAnswer')}
-              </Button>
+              <>
+                {attemptCount > 0 && (
+                  <Button variant="outline" onClick={handleNext}>
+                    {t('practice.skip')}
+                  </Button>
+                )}
+                <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
+                  {t('practice.submitAnswer')}
+                </Button>
+              </>
             ) : (
               <Button onClick={handleNext}>
                 <Shuffle className="h-4 w-4" />

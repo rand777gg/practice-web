@@ -13,9 +13,11 @@ interface Props {
   onSelect?: (index: number) => void
   disabled?: boolean
   showEditLink?: boolean
+  attemptCount?: number
+  wrongCount?: number
 }
 
-export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink }: Props) {
+export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount }: Props) {
   const { t } = useT()
 
   return (
@@ -30,6 +32,14 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
         {question.category && (
           <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
             {question.category}
+          </span>
+        )}
+        {attemptCount != null && (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <span>{t('practice.attempts')}: {attemptCount}</span>
+            {wrongCount != null && wrongCount > 0 && (
+              <span className="text-red-500">({t('practice.wrong')}: {wrongCount})</span>
+            )}
           </span>
         )}
       </div>
