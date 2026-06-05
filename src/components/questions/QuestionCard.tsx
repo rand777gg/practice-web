@@ -2,9 +2,21 @@ import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { Pencil } from 'lucide-react'
+
+const POINT_COLORS = [
+  'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
+  'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+  'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
+  'bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300',
+  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300',
+  'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
+  'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300',
+]
 
 interface Props {
   question: Question
@@ -35,6 +47,11 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
             {question.category}
           </span>
         )}
+        {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
+          <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>
+            {kp.trim()}
+          </Badge>
+        ))}
         {attemptCount != null && (
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <span>{t('practice.attempts')}: {attemptCount}</span>

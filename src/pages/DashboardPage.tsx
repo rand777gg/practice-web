@@ -110,11 +110,11 @@ export function Component() {
         barData.push({ date: key, correct: entry?.correct ?? 0, wrong: entry?.wrong ?? 0 })
       }
 
-      // Sunburst data
-      const sunburstData = (answers ?? []).map((a) => {
-        const q = qMap.get(a.question_id)
-        return { subject: q?.subject || '', category: q?.category || '' }
-      })
+      // Sunburst data from all questions (not just answered)
+      const sunburstData = (questions ?? []).map((q) => ({
+        subject: q.subject || '',
+        category: q.category || '',
+      }))
 
       // Daily goal
       const deadline = profile?.deadline
@@ -167,7 +167,7 @@ export function Component() {
     <div className="space-y-6 max-w-5xl">
       <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
 
-      {!chartData || chartData.totalAnswered === 0 ? (
+      {!chartData || (chartData.totalAnswered === 0 && chartData.sunburstData.length === 0) ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('dashboard.noData')}</p>
           <Button asChild size="sm">

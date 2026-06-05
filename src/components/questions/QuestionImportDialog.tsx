@@ -54,6 +54,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
           category: item.category ? String(item.category) : undefined,
           subject: item.subject ? String(item.subject) : undefined,
           analysis: item.analysis ? String(item.analysis) : undefined,
+          key_points: item.key_points ? String(item.key_points) : undefined,
         }))
       } else {
         const lines = text.split('\n').filter((l) => l.trim())
@@ -85,6 +86,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             category: obj.category || undefined,
             subject: obj.subject || undefined,
             analysis: obj.analysis || undefined,
+            key_points: obj.key_points || undefined,
           }
         })
 
@@ -113,6 +115,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         category: q.category ?? null,
         subject: q.subject ?? null,
         analysis: q.analysis ?? null,
+        key_points: q.key_points ?? null,
       })),
     )
 

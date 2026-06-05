@@ -17,6 +17,7 @@ export interface Question {
   category: string | null
   subject: string | null
   analysis: string | null
+  key_points: string | null
   created_at: string
   created_by: string | null
 }
@@ -54,4 +55,5 @@ export interface ImportedQuestion {
   category?: string
   subject?: string
   analysis?: string
+  key_points?: string
 }

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.questions (
   category        TEXT,
   subject         TEXT,
   analysis        TEXT,
+  key_points      TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by      UUID REFERENCES public.profiles(id) ON DELETE SET NULL
 );

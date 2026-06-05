@@ -22,6 +22,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [category, setCategory] = useState(initialData?.category ?? '')
   const [subject, setSubject] = useState(initialData?.subject ?? '')
   const [analysis, setAnalysis] = useState(initialData?.analysis ?? '')
+  const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -65,6 +66,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         category: category.trim() || null,
         subject: subject.trim() || null,
         analysis: analysis.trim() || null,
+        key_points: keyPoints.trim() || null,
       })
     } catch {
       setError(t('questions.saveFailed'))
@@ -118,6 +120,16 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
           onChange={(e) => setAnalysis(e.target.value)}
           placeholder={t('questions.analysisPlaceholder')}
           rows={3}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="keyPoints">{t('questions.keyPoints')}</Label>
+        <Input
+          id="keyPoints"
+          value={keyPoints}
+          onChange={(e) => setKeyPoints(e.target.value)}
+          placeholder={t('questions.keyPointsPlaceholder')}
         />
       </div>
 
