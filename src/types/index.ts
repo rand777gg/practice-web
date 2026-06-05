@@ -29,6 +29,7 @@ export interface ExamSession {
   score: number | null
   question_ids: string[]
   current_index: number
+  duration_ms: number
   started_at: string
   completed_at: string | null
 }

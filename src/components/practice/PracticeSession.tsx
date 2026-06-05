@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,8 @@ import { useT } from '@/i18n/use-t'
 
 export function PracticeSession() {
   const { t } = useT()
+  const { profile } = useAuthStore()
+  const isAdmin = profile?.role === 'admin'
   const [question, setQuestion] = useState<Question | null>(null)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -173,6 +176,7 @@ export function PracticeSession() {
             showResult={isSubmitted}
             onSelect={handleSelect}
             disabled={isSubmitted}
+            showEditLink={isAdmin}
           />
           <div className="flex gap-2 justify-end">
             {!isSubmitted ? (

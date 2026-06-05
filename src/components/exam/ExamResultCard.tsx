@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -15,6 +16,8 @@ interface Props {
 
 export function ExamResultCard({ sessionId }: Props) {
   const { t } = useT()
+  const { profile } = useAuthStore()
+  const isAdmin = profile?.role === 'admin'
   const [session, setSession] = useState<ExamSession | null>(null)
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -85,6 +88,7 @@ export function ExamResultCard({ sessionId }: Props) {
             question={ans.questions}
             selectedAnswer={ans.selected_answer}
             showResult
+            showEditLink={isAdmin}
           />
         ))}
       </div>

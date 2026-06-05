@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import type { ExamSession, Question } from '@/types'
-import { EXAM_QUESTION_COUNT } from '@/lib/constants'
 
 interface ExamState {
   session: ExamSession | null
@@ -12,11 +11,12 @@ interface ExamState {
   isSubmitting: boolean
   error: string | null
 
-  startExam: (userId: string) => Promise<void>
+  startExam: (userId: string, questionCount: number, durationMs: number) => Promise<void>
   resumeExam: (sessionId: string) => Promise<void>
   answerQuestion: (questionId: string, answer: number) => void
   nextQuestion: () => void
   previousQuestion: () => void
+  jumpTo: (index: number) => void
   submitExam: () => Promise<void>
   reset: () => void
 }
@@ -30,7 +30,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
   isSubmitting: false,
   error: null,
 
-  startExam: async (userId) => {
+  startExam: async (userId, questionCount, durationMs) => {
     set({ isLoading: true, error: null })
 
     const { data: allQuestions, error: fetchError } = await supabase
@@ -47,9 +47,9 @@ export const useExamStore = create<ExamState>((set, get) => ({
       return
     }
 
-    const questionCount = Math.min(EXAM_QUESTION_COUNT, allQuestions.length)
+    const count = Math.min(questionCount, allQuestions.length)
     const shuffled = [...allQuestions].sort(() => Math.random() - 0.5)
-    const selected = shuffled.slice(0, questionCount)
+    const selected = shuffled.slice(0, count)
     const questionIds: string[] = selected.map((q: { id: string }) => q.id)
 
     const { data: questions, error: qError } = await supabase
@@ -74,7 +74,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
       .from('exam_sessions')
       .insert({
         user_id: userId,
-        total_questions: questionCount,
+        total_questions: count,
+        duration_ms: durationMs,
         question_ids: questionIds,
         current_index: 0,
         status: 'in_progress',
@@ -166,16 +167,34 @@ export const useExamStore = create<ExamState>((set, get) => ({
   },
 
   nextQuestion: () => {
-    const { currentIndex, questions } = get()
+    const { currentIndex, questions, session } = get()
     if (currentIndex < questions.length - 1) {
-      set({ currentIndex: currentIndex + 1 })
+      const newIndex = currentIndex + 1
+      set({ currentIndex: newIndex })
+      if (session) {
+        supabase.from('exam_sessions').update({ current_index: newIndex }).eq('id', session.id).then()
+      }
     }
   },
 
   previousQuestion: () => {
-    const { currentIndex } = get()
+    const { currentIndex, session } = get()
     if (currentIndex > 0) {
-      set({ currentIndex: currentIndex - 1 })
+      const newIndex = currentIndex - 1
+      set({ currentIndex: newIndex })
+      if (session) {
+        supabase.from('exam_sessions').update({ current_index: newIndex }).eq('id', session.id).then()
+      }
+    }
+  },
+
+  jumpTo: (index) => {
+    const { questions, session } = get()
+    if (index >= 0 && index < questions.length) {
+      set({ currentIndex: index })
+      if (session) {
+        supabase.from('exam_sessions').update({ current_index: index }).eq('id', session.id).then()
+      }
     }
   },
 

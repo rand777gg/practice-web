@@ -1,14 +1,36 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
 import { ExamProgress } from './ExamProgress'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { ChevronLeft, ChevronRight, Play } from 'lucide-react'
+import {
+  EXAM_DEFAULT_COUNT,
+  EXAM_MIN_COUNT,
+  EXAM_MAX_COUNT,
+  EXAM_DEFAULT_DURATION_MIN,
+  EXAM_MIN_DURATION_MIN,
+  EXAM_MAX_DURATION_MIN,
+} from '@/lib/constants'
+import type { ExamSession as ExamSessionType } from '@/types'
 import { useT } from '@/i18n/use-t'
 
 export function ExamSession() {
@@ -27,6 +49,7 @@ export function ExamSession() {
     answerQuestion,
     nextQuestion,
     previousQuestion,
+    jumpTo,
     submitExam,
   } = useExamStore()
 
@@ -34,6 +57,12 @@ export function ExamSession() {
   const [searchParams] = useSearchParams()
   const [hasStarted, setHasStarted] = useState(false)
   const [showStart, setShowStart] = useState(true)
+  const [questionCount, setQuestionCount] = useState(EXAM_DEFAULT_COUNT)
+  const [durationMin, setDurationMin] = useState(EXAM_DEFAULT_DURATION_MIN)
+
+  const [pendingSession, setPendingSession] = useState<ExamSessionType | null>(null)
+  const [showResumeDialog, setShowResumeDialog] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(false)
 
   useEffect(() => {
     const sessionId = searchParams.get('sessionId')
@@ -42,14 +71,53 @@ export function ExamSession() {
         setShowStart(false)
         setHasStarted(true)
       })
+      return
     }
+
+    if (!user) return
+    const urlHasSession = searchParams.has('sessionId')
+    if (urlHasSession) return
+    setCheckingSession(true)
+    supabase
+      .from('exam_sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'in_progress')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setPendingSession(data as unknown as ExamSessionType)
+          setShowResumeDialog(true)
+        }
+        setCheckingSession(false)
+      })
   }, [searchParams, user, resumeExam])
 
   const handleStart = async () => {
     if (!user) return
-    await startExam(user.id)
+    const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
+    const mins = Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, durationMin || EXAM_DEFAULT_DURATION_MIN))
+    await startExam(user.id, count, mins * 60 * 1000)
     setShowStart(false)
     setHasStarted(true)
+  }
+
+  const handleResume = async () => {
+    if (!pendingSession) return
+    setShowResumeDialog(false)
+    await resumeExam(pendingSession.id)
+    setShowStart(false)
+    setHasStarted(true)
+  }
+
+  const handleDiscard = async () => {
+    if (pendingSession) {
+      await supabase.from('exam_sessions').delete().eq('id', pendingSession.id)
+    }
+    setShowResumeDialog(false)
+    setPendingSession(null)
   }
 
   const handleSubmitExam = async () => {
@@ -63,28 +131,83 @@ export function ExamSession() {
     handleSubmitExam()
   }
 
+  if (checkingSession) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
+    )
+  }
+
   if (showStart) {
     return (
-      <Card>
-        <CardContent className="py-6 lg:py-8 space-y-4">
-          <div className="space-y-2">
+      <>
+        <Card className="max-w-md">
+          <CardContent className="py-6 lg:py-8 space-y-4">
             <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
-            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-              <li>{t('exam.rule1')}</li>
-              <li>{t('exam.rule2')}</li>
-              <li>{t('exam.rule3')}</li>
-              <li>{t('exam.rule4')}</li>
-            </ul>
-          </div>
-          <Button onClick={handleStart} disabled={isLoading} size="lg">
-            {isLoading ? <Spinner /> : <Play className="h-4 w-4" />}
-            {t('exam.startExam')}
-          </Button>
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
-        </CardContent>
-      </Card>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="questionCount">{t('exam.questionCount')}</Label>
+                <Input
+                  id="questionCount"
+                  type="number"
+                  min={EXAM_MIN_COUNT}
+                  max={EXAM_MAX_COUNT}
+                  value={questionCount}
+                  onChange={(e) => setQuestionCount(Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">{EXAM_MIN_COUNT}-{EXAM_MAX_COUNT}</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="duration">{t('exam.duration')}</Label>
+                <Input
+                  id="duration"
+                  type="number"
+                  min={EXAM_MIN_DURATION_MIN}
+                  max={EXAM_MAX_DURATION_MIN}
+                  value={durationMin}
+                  onChange={(e) => setDurationMin(Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">{EXAM_MIN_DURATION_MIN}-{EXAM_MAX_DURATION_MIN} {t('exam.minutes')}</p>
+              </div>
+            </div>
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <p>{t('exam.rule3')}</p>
+              <p>{t('exam.rule4')}</p>
+            </div>
+            <Button onClick={handleStart} disabled={isLoading} size="lg" className="w-full">
+              {isLoading ? <Spinner /> : <Play className="h-4 w-4" />}
+              {t('exam.startExam')}
+            </Button>
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <AlertDialog open={showResumeDialog} onOpenChange={setShowResumeDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('exam.resumeTitle')}</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <p>{t('exam.resumeDesc')}</p>
+                {pendingSession && (
+                  <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+                    <p>{t('exam.resumeTotal')}: {pendingSession.question_ids.length} {t('questions.total')}</p>
+                    <p>{t('exam.resumeProgress')}: {pendingSession.current_index + 1} / {pendingSession.question_ids.length}</p>
+                    <p>{t('exam.resumeStarted')}: {new Date(pendingSession.started_at).toLocaleString()}</p>
+                    <p>{t('exam.resumeTime')}: {Math.ceil(Math.max(0, pendingSession.duration_ms - (Date.now() - new Date(pendingSession.started_at).getTime())) / 60000)} {t('exam.minutes')}</p>
+                  </div>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleDiscard}>{t('exam.resumeDiscard')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleResume}>{t('exam.resumeContinue')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
     )
   }
 
@@ -114,12 +237,17 @@ export function ExamSession() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <ExamTimer startedAt={session.started_at} onExpire={handleTimerExpire} />
+        <ExamTimer
+          startedAt={session.started_at}
+          durationMs={session.duration_ms}
+          onExpire={handleTimerExpire}
+        />
         <ExamProgress
           current={currentIndex}
           total={questions.length}
           answers={answers}
           questionIds={questions.map((q) => q.id)}
+          onJumpTo={jumpTo}
         />
       </div>
 

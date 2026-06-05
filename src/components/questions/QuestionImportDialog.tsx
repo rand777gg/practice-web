@@ -171,7 +171,12 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
               {parsed.slice(0, 10).map((q, i) => (
                 <div key={i} className="text-sm border rounded p-2">
                   <p className="font-medium break-all">{q.question_text}</p>
-                  <p className="text-muted-foreground">{q.options.length} {t('questions.options')}</p>
+                  <p className="text-muted-foreground">
+                    {q.options.length} {t('questions.options')}
+                    {q.analysis && (
+                      <> &middot; {t('questions.analysis')}: {q.analysis.slice(0, 30)}{q.analysis.length > 30 ? '...' : ''}</>
+                    )}
+                  </p>
                 </div>
               ))}
               {parsed.length > 10 && (

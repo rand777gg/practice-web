@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.exam_sessions (
   score             INTEGER,
   question_ids      JSONB NOT NULL,
   current_index     INTEGER NOT NULL DEFAULT 0,
+  duration_ms       INTEGER NOT NULL DEFAULT 3600000,
   started_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at      TIMESTAMPTZ
 );

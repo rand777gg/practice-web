@@ -1,7 +1,10 @@
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS } from '@/lib/constants'
+import { Button } from '@/components/ui/button'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { Pencil } from 'lucide-react'
 
 interface Props {
   question: Question
@@ -9,9 +12,10 @@ interface Props {
   showResult?: boolean
   onSelect?: (index: number) => void
   disabled?: boolean
+  showEditLink?: boolean
 }
 
-export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled }: Props) {
+export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink }: Props) {
   const { t } = useT()
 
   return (
@@ -75,6 +79,16 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
         <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
           <span className="font-medium">{t('questions.analysis')}: </span>
           {question.analysis}
+        </div>
+      )}
+      {showResult && showEditLink && (
+        <div className="flex justify-end">
+          <Button variant="ghost" size="sm" asChild>
+            <Link to={`/admin/questions/${question.id}/edit`}>
+              <Pencil className="h-3 w-3" />
+              {t('questions.reportError')}
+            </Link>
+          </Button>
         </div>
       )}
     </div>
