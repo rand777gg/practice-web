@@ -2,7 +2,7 @@
 
 # Practice Web — 刷题网站
 
-A single-choice question practice website built with React + Supabase. Supports practice mode (with subject/category filter), configurable exam mode, wrong answer review, question error reporting, and question management (CRUD + CSV/JSON import with subject and analysis fields). Interface available in Chinese and English. PWA-enabled for offline use.
+A single-choice question practice website built with React + Supabase. Supports practice mode (with subject/category filter), configurable exam mode, wrong answer review, question error reporting, and question management (CRUD + CSV/JSON import with subject and analysis fields). Interface available in Chinese and English. PWA-enabled for offline use. Mobile swipe gestures for question navigation.
 
 ## Tech Stack
 
@@ -27,7 +27,7 @@ A single-choice question practice website built with React + Supabase. Supports 
 | **Error Reporting** | Users can report errors on questions |
 | **User Roles** | Admin (CRUD questions, manage users) and User (practice only) |
 | **First-user Auto-admin** | First registered user automatically becomes admin via DB trigger |
-| **Mobile Responsive** | Collapsible sidebar drawer on mobile, responsive tables and forms |
+| **Mobile Responsive** | Collapsible sidebar drawer, responsive tables and forms, left/right swipe to switch questions in practice and exam mode |
 | **PWA** | Service worker with offline caching, installable on mobile and desktop |
 | **Dark Mode** | System-preference detection, localStorage persistence, smooth 0.25s transitions, toggle in header and login page |
 | **I18n** | Chinese/English Radix Dropdown Menu switcher in header |
@@ -97,7 +97,7 @@ practice-web/
     ├── types/                    # TypeScript types (Question, ExamSession, etc.)
     ├── lib/                      # supabase client, cn util, constants
     ├── stores/                   # Zustand stores (auth, exam, lang, theme)
-    ├── hooks/                    # useQuestions, useTimer, useUserAnswers
+    ├── hooks/                    # useQuestions, useTimer, useUserAnswers, useSwipe
     ├── i18n/                     # translations (zh/en) + useT hook
     ├── router/                   # Route definitions (lazy loaded)
     ├── components/

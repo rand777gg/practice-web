@@ -2,7 +2,7 @@
 
 # Practice Web — 刷题网站
 
-基于 React + Supabase 的单选题刷题网站。支持练习模式（学科/分类筛选）、可配置考试模式、错题回顾、题目纠错，以及题目管理（增删改查 + CSV/JSON 导入，含学科和解析字段）。界面支持中英文切换。支持 PWA 离线缓存。
+基于 React + Supabase 的单选题刷题网站。支持练习模式（学科/分类筛选）、可配置考试模式、错题回顾、题目纠错，以及题目管理（增删改查 + CSV/JSON 导入，含学科和解析字段）。界面支持中英文切换。支持 PWA 离线缓存。移动端支持左右滑动切换题目。
 
 ## 技术栈
 
@@ -27,7 +27,7 @@
 | **题目纠错** | 用户可对题目进行纠错反馈 |
 | **用户角色** | 管理员（管理题目和用户）和普通用户（仅练习） |
 | **首用户自动管理员** | 第一位注册用户通过数据库触发器自动成为管理员 |
-| **移动端适配** | 移动端可折叠侧边栏，表格和表单自适应 |
+| **移动端适配** | 可折叠侧边栏、表格和表单自适应、练习和考试模式左右滑动切换题目 |
 | **PWA** | Service Worker 离线缓存，可在手机和桌面端安装 |
 | **深色模式** | 跟随系统偏好、localStorage 持久化、0.25s 平滑过渡动画，顶栏和登录页均有切换按钮 |
 | **国际化** | 顶栏 Radix Dropdown Menu 中英文切换 |
@@ -97,7 +97,7 @@ practice-web/
     ├── types/                    # TypeScript 类型定义
     ├── lib/                      # supabase 客户端、工具函数、常量
     ├── stores/                   # Zustand 状态（auth、exam、lang、theme）
-    ├── hooks/                    # 自定义 Hook（useQuestions、useTimer 等）
+    ├── hooks/                    # 自定义 Hook（useQuestions、useTimer、useSwipe 等）
     ├── i18n/                     # 翻译文件（中/英）+ useT Hook
     ├── router/                   # 路由定义（懒加载）
     ├── components/
