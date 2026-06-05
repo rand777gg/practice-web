@@ -2,7 +2,7 @@
 
 # Practice Web — 刷题网站
 
-A single-choice question practice website built with React + Supabase. Supports practice mode, exam mode (timed 50 questions), wrong answer review, and question management (CRUD + CSV/JSON import). Interface available in Chinese and English.
+A single-choice question practice website built with React + Supabase. Supports practice mode (with subject/category filter), configurable exam mode, wrong answer review, question error reporting, and question management (CRUD + CSV/JSON import with subject and analysis fields). Interface available in Chinese and English. PWA-enabled for offline use.
 
 ## Tech Stack
 
@@ -18,13 +18,17 @@ A single-choice question practice website built with React + Supabase. Supports 
 | Feature | Description |
 |---|---|
 | **Practice Mode** | Random single-choice questions with instant correct/wrong feedback |
-| **Exam Mode** | 50 random questions, 60-minute timer, resume on refresh, auto-submit on timeout, score report |
+| **Exam Mode** | Configurable question count (5–200) and duration (5–300 min), question navigator, resume detection, auto-submit on timeout, score report |
 | **Wrong Answer Review** | Filter by practice/exam mode, review with correct answer highlighted |
 | **Question Management** | Create, edit, delete questions with dynamic option count (2+ options) |
 | **Bulk Import** | CSV or JSON file import |
+| **Subject & Analysis** | Questions support subject tag (e.g., Logic, Math) and analysis field for answer explanations |
+| **Subject Filter** | Practice mode themed dropdown to filter questions by subject or category |
+| **Error Reporting** | Users can report errors on questions |
 | **User Roles** | Admin (CRUD questions, manage users) and User (practice only) |
 | **First-user Auto-admin** | First registered user automatically becomes admin via DB trigger |
 | **Mobile Responsive** | Collapsible sidebar drawer on mobile, responsive tables and forms |
+| **PWA** | Service worker with offline caching, installable on mobile and desktop |
 | **Dark Mode** | System-preference detection, localStorage persistence, smooth 0.25s transitions, toggle in header and login page |
 | **I18n** | Chinese/English Radix Dropdown Menu switcher in header |
 
