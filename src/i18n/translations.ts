@@ -23,6 +23,9 @@ export const zh = {
     noAccount: '还没有账号？',
     hasAccount: '已有账号？',
     logout: '退出',
+    checkEmail: '注册成功！请查收 Supabase Auth 发送的验证邮件，点击邮件中的链接完成注册。',
+    alreadyRegistered: '该邮箱已注册，请直接登录或检查邮箱中的验证邮件。',
+    confirmComplete: '邮箱验证成功，注册完成！',
   },
   dashboard: {
     title: '仪表盘',
@@ -162,6 +165,9 @@ export const en = {
     noAccount: "Don't have an account?",
     hasAccount: 'Already have an account?',
     logout: 'Logout',
+    checkEmail: 'Registration successful! Please check your email from Supabase Auth and click the confirmation link to complete registration.',
+    alreadyRegistered: 'This email is already registered. Please log in or check your email for the confirmation link.',
+    confirmComplete: 'Email verified successfully — registration complete!',
   },
   dashboard: {
     title: 'Dashboard',

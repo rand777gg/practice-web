@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,24 +12,52 @@ export function RegisterForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const navigate = useNavigate()
-  const refreshProfile = useAuthStore((s) => s.refreshProfile)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setIsSubmitting(true)
 
-    const { error: authError } = await supabase.auth.signUp({ email, password })
+    const { data, error: authError } = await supabase.auth.signUp({ email, password })
     if (authError) {
-      setError(authError.message)
+      if (authError.message?.includes('already registered') || authError.status === 422) {
+        setError(t('auth.alreadyRegistered'))
+      } else {
+        setError(authError.message)
+      }
       setIsSubmitting(false)
-    } else {
-      await new Promise((r) => setTimeout(r, 500))
-      await refreshProfile()
-      navigate('/')
+      return
     }
+
+    if (data.user?.identities?.length === 0) {
+      setError(t('auth.alreadyRegistered'))
+      setIsSubmitting(false)
+      return
+    }
+
+    setSuccess(t('auth.checkEmail'))
+    setIsSubmitting(false)
+  }
+
+  if (success) {
+    return (
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>{t('auth.register')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-md bg-green-50 dark:bg-green-950 p-4 text-sm text-green-700 dark:text-green-300">
+            {success}
+          </div>
+          <Button asChild className="w-full" variant="outline">
+            <Link to="/login">{t('auth.login')}</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
