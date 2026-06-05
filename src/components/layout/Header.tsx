@@ -18,7 +18,7 @@ interface Props {
 
 export function Header({ onMenuClick }: Props) {
   const { t } = useT()
-  const { user, profile, signOut } = useAuthStore()
+  const { signOut } = useAuthStore()
   const { lang, setLang } = useLangStore()
   const { theme, toggle } = useThemeStore()
 
