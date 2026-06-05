@@ -11,7 +11,7 @@ interface ExamState {
   isSubmitting: boolean
   error: string | null
 
-  startExam: (userId: string, questionCount: number, durationMs: number) => Promise<void>
+  startExam: (userId: string, questionCount: number, durationMs: number, subject?: string, category?: string) => Promise<void>
   resumeExam: (sessionId: string) => Promise<void>
   answerQuestion: (questionId: string, answer: number) => void
   nextQuestion: () => void
@@ -30,12 +30,14 @@ export const useExamStore = create<ExamState>((set, get) => ({
   isSubmitting: false,
   error: null,
 
-  startExam: async (userId, questionCount, durationMs) => {
+  startExam: async (userId, questionCount, durationMs, subject, category) => {
     set({ isLoading: true, error: null })
 
-    const { data: allQuestions, error: fetchError } = await supabase
-      .from('questions')
-      .select('id')
+    let query = supabase.from('questions').select('id')
+    if (subject) query = query.eq('subject', subject)
+    if (category) query = query.eq('category', category)
+
+    const { data: allQuestions, error: fetchError } = await query
 
     if (fetchError) {
       set({ isLoading: false, error: fetchError.message })

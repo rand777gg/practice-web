@@ -21,7 +21,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { ChevronLeft, ChevronRight, Play } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Play } from 'lucide-react'
 import { useSwipe } from '@/hooks/use-swipe'
 import {
   EXAM_DEFAULT_COUNT,
@@ -65,6 +71,48 @@ export function ExamSession() {
   const [showResumeDialog, setShowResumeDialog] = useState(false)
   const [checkingSession, setCheckingSession] = useState(false)
 
+  const [subjects, setSubjects] = useState<string[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [filteredCategories, setFilteredCategories] = useState<string[]>([])
+  const [selectedSubject, setSelectedSubject] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
+
+  useEffect(() => {
+    async function loadFilters() {
+      const { data } = await supabase.from('questions').select('subject, category')
+      const subs = new Set<string>()
+      const cats = new Set<string>()
+      for (const row of data ?? []) {
+        if (row.subject) subs.add(row.subject)
+        if (row.category) cats.add(row.category)
+      }
+      setSubjects([...subs].sort())
+      setCategories([...cats].sort())
+      setFilteredCategories([...cats].sort())
+    }
+    loadFilters()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedSubject) {
+      setFilteredCategories(categories)
+    } else {
+      async function loadCats() {
+        const { data } = await supabase
+          .from('questions')
+          .select('category')
+          .eq('subject', selectedSubject)
+        const cats = new Set<string>()
+        for (const row of data ?? []) {
+          if (row.category) cats.add(row.category)
+        }
+        setFilteredCategories([...cats].sort())
+      }
+      loadCats()
+    }
+    setSelectedCategory('')
+  }, [selectedSubject, categories])
+
   useEffect(() => {
     const sessionId = searchParams.get('sessionId')
     if (sessionId && user) {
@@ -86,7 +134,7 @@ export function ExamSession() {
       .eq('status', 'in_progress')
       .order('started_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
       .then(({ data }) => {
         if (data) {
           setPendingSession(data as unknown as ExamSessionType)
@@ -100,7 +148,7 @@ export function ExamSession() {
     if (!user) return
     const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
     const mins = Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, durationMin || EXAM_DEFAULT_DURATION_MIN))
-    await startExam(user.id, count, mins * 60 * 1000)
+    await startExam(user.id, count, mins * 60 * 1000, selectedSubject || undefined, selectedCategory || undefined)
     setShowStart(false)
     setHasStarted(true)
   }
@@ -151,6 +199,48 @@ export function ExamSession() {
         <Card className="max-w-md">
           <CardContent className="py-6 lg:py-8 space-y-4">
             <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
+            <div className="flex flex-wrap gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs">
+                    {selectedSubject || t('questions.subject')}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  <DropdownMenuItem onClick={() => setSelectedSubject('')}>
+                    <span className="text-muted-foreground">{t('questions.subject')}</span>
+                    {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                  {subjects.map((s) => (
+                    <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                      {s}
+                      {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs">
+                    {selectedCategory || t('questions.category')}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  <DropdownMenuItem onClick={() => setSelectedCategory('')}>
+                    <span className="text-muted-foreground">{t('questions.category')}</span>
+                    {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                  {filteredCategories.map((c) => (
+                    <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                      {c}
+                      {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="questionCount">{t('exam.questionCount')}</Label>
