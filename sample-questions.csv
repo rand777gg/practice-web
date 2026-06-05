@@ -1,0 +1,19 @@
+question_text,option_a,option_b,option_c,option_d,correct_answer,category
+React 是由哪个公司开发的？,Google,Facebook,Microsoft,Amazon,1,React
+React 中用于管理组件状态的是？,props,state,ref,context,1,React
+JSX 是什么的语法糖？,JavaScript 函数调用,HTML,XML,CSS,0,React
+React 中哪个 Hook 用于处理副作用？,useState,useEffect,useContext,useReducer,1,React
+哪个命令用于创建 React 项目？,npm init react,npx create-react-app,npm install react,react new,1,React
+TypeScript 中定义接口使用什么关键字？,type,interface,class,struct,1,TypeScript
+以下哪个是 JavaScript 的原始类型？,Object,Array,string,null,2,JavaScript
+Promise 的三个状态不包括？,pending,fulfilled,rejected,completed,3,JavaScript
+数组方法中哪个会返回新数组？,push,map,splice,sort,1,JavaScript
+JSON.stringify 的作用是？,解析 JSON,将对象转为 JSON 字符串,验证 JSON 格式,美化 JSON 输出,1,JavaScript
+以下哪个是 CSS 预处理器？,Tailwind,Bootstrap,Sass,jQuery,2,CSS
+Flexbox 中用于水平居中的属性组合是？,justify-content: center; align-items: center,display: flex; margin: auto,text-align: center; vertical-align: middle,position: center,0,CSS
+z-index 只对什么定位的元素生效？,static,relative,absolute,fixed,1,CSS
+Git 中用于创建新分支的命令是？,git branch new,git checkout -b,git create branch,git new branch,1,Git
+以下哪个不是 HTTP 请求方法？,GET,POST,SEND,DELETE,2,HTTP
+在 Node.js 中，__dirname 表示？,当前文件路径,项目根目录,当前文件所在目录,用户主目录,2,Node.js
+useCallback 主要用于？,缓存计算结果,缓存函数引用,缓存 DOM 节点,缓存异步请求,1,React
+Vite 的构建基于？,Webpack,Rollup,esbuild,Parcel,1,Vite
