@@ -7,7 +7,7 @@
 ## 技术栈
 
 - **前端**：React 19、TypeScript、Vite
-- **UI**：Tailwind CSS 4、shadcn/ui、Lucide 图标
+- **UI**：Tailwind CSS 4、shadcn/ui、Radix UI（Dropdown Menu、Dialog 等）、Lucide 图标
 - **状态管理**：Zustand
 - **路由**：React Router v7（懒加载）
 - **后端**：Supabase（认证、数据库、RLS）
@@ -25,7 +25,8 @@
 | **用户角色** | 管理员（管理题目和用户）和普通用户（仅练习） |
 | **首用户自动管理员** | 第一位注册用户通过数据库触发器自动成为管理员 |
 | **移动端适配** | 移动端可折叠侧边栏，表格和表单自适应 |
-| **国际化** | 右上角中英文切换下拉框 |
+| **深色模式** | 跟随系统偏好、localStorage 持久化、0.25s 平滑过渡动画，顶栏和登录页均有切换按钮 |
+| **国际化** | 顶栏 Radix Dropdown Menu 中英文切换 |
 
 ## 快速开始
 
@@ -91,7 +92,7 @@ practice-web/
     ├── index.css                 # Tailwind + CSS 自定义属性
     ├── types/                    # TypeScript 类型定义
     ├── lib/                      # supabase 客户端、工具函数、常量
-    ├── stores/                   # Zustand 状态（auth、exam、lang）
+    ├── stores/                   # Zustand 状态（auth、exam、lang、theme）
     ├── hooks/                    # 自定义 Hook（useQuestions、useTimer 等）
     ├── i18n/                     # 翻译文件（中/英）+ useT Hook
     ├── router/                   # 路由定义（懒加载）

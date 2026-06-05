@@ -7,7 +7,7 @@ A single-choice question practice website built with React + Supabase. Supports 
 ## Tech Stack
 
 - **Frontend**: React 19, TypeScript, Vite
-- **UI**: Tailwind CSS 4, shadcn/ui, Lucide icons
+- **UI**: Tailwind CSS 4, shadcn/ui, Radix UI (Dropdown Menu, Dialog, etc.), Lucide icons
 - **State**: Zustand
 - **Routing**: React Router v7 (lazy loading)
 - **Backend**: Supabase (Auth, Database, RLS)
@@ -25,7 +25,8 @@ A single-choice question practice website built with React + Supabase. Supports 
 | **User Roles** | Admin (CRUD questions, manage users) and User (practice only) |
 | **First-user Auto-admin** | First registered user automatically becomes admin via DB trigger |
 | **Mobile Responsive** | Collapsible sidebar drawer on mobile, responsive tables and forms |
-| **I18n** | Chinese/English language switcher in header |
+| **Dark Mode** | System-preference detection, localStorage persistence, smooth 0.25s transitions, toggle in header and login page |
+| **I18n** | Chinese/English Radix Dropdown Menu switcher in header |
 
 ## Getting Started
 
@@ -91,7 +92,7 @@ practice-web/
     ├── index.css                 # Tailwind + CSS custom properties
     ├── types/                    # TypeScript types (Question, ExamSession, etc.)
     ├── lib/                      # supabase client, cn util, constants
-    ├── stores/                   # Zustand stores (auth, exam, lang)
+    ├── stores/                   # Zustand stores (auth, exam, lang, theme)
     ├── hooks/                    # useQuestions, useTimer, useUserAnswers
     ├── i18n/                     # translations (zh/en) + useT hook
     ├── router/                   # Route definitions (lazy loaded)
