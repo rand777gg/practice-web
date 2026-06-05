@@ -23,6 +23,7 @@ export function QuestionList({ questions, onDelete }: Props) {
         <TableHeader>
           <TableRow>
             <TableHead>{t('questions.question')}</TableHead>
+            <TableHead className="hidden sm:table-cell">{t('questions.subject')}</TableHead>
             <TableHead className="hidden sm:table-cell">{t('questions.category')}</TableHead>
             <TableHead className="hidden sm:table-cell">{t('questions.options')}</TableHead>
             <TableHead className="w-20">{t('questions.actions')}</TableHead>
@@ -32,6 +33,7 @@ export function QuestionList({ questions, onDelete }: Props) {
           {questions.map((q) => (
             <TableRow key={q.id}>
               <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
+              <TableCell className="hidden sm:table-cell">{q.subject ?? '-'}</TableCell>
               <TableCell className="hidden sm:table-cell">{q.category ?? '-'}</TableCell>
               <TableCell className="text-muted-foreground hidden sm:table-cell">
                 {q.options.length} {t('questions.options')}

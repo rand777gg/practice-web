@@ -17,11 +17,18 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
   return (
     <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
       <h3 className="font-medium text-base lg:text-lg">{question.question_text}</h3>
-      {question.category && (
-        <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-          {question.category}
-        </span>
-      )}
+      <div className="flex flex-wrap gap-1.5">
+        {question.subject && (
+          <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+            {question.subject}
+          </span>
+        )}
+        {question.category && (
+          <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+            {question.category}
+          </span>
+        )}
+      </div>
       <div className="space-y-2">
         {question.options.map((option, index) => {
           const isSelected = selectedAnswer === index

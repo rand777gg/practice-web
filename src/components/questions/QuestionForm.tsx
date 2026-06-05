@@ -20,6 +20,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [options, setOptions] = useState<string[]>(initialData?.options ?? ['', ''])
   const [correctAnswer, setCorrectAnswer] = useState(initialData?.correct_answer ?? 0)
   const [category, setCategory] = useState(initialData?.category ?? '')
+  const [subject, setSubject] = useState(initialData?.subject ?? '')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -61,6 +62,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         options: options.map((o) => o.trim()),
         correct_answer: correctAnswer,
         category: category.trim() || null,
+        subject: subject.trim() || null,
       })
     } catch {
       setError(t('questions.saveFailed'))
@@ -85,14 +87,25 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
-        <Input
-          id="category"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          placeholder={t('questions.categoryPlaceholder')}
-        />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="subject">{t('questions.subject')}</Label>
+          <Input
+            id="subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder={t('questions.subjectPlaceholder')}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
+          <Input
+            id="category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder={t('questions.categoryPlaceholder')}
+          />
+        </div>
       </div>
 
       <div className="space-y-3">

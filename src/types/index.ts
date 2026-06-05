@@ -14,6 +14,7 @@ export interface Question {
   options: string[]
   correct_answer: number
   category: string | null
+  subject: string | null
   created_at: string
   created_by: string | null
 }
@@ -47,4 +48,5 @@ export interface ImportedQuestion {
   options: string[]
   correct_answer: number
   category?: string
+  subject?: string
 }
