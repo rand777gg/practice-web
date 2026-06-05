@@ -1,3 +1,5 @@
+[中文](README.zh.md) | English
+
 # Practice Web — 刷题网站
 
 A single-choice question practice website built with React + Supabase. Supports practice mode, exam mode (timed 50 questions), wrong answer review, and question management (CRUD + CSV/JSON import). Interface available in Chinese and English.
@@ -35,7 +37,7 @@ A single-choice question practice website built with React + Supabase. Supports 
 ### 1. Clone and install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/rand777gg/react-practice-web.git
 cd practice-web
 npm install
 ```
