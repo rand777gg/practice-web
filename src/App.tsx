@@ -3,6 +3,7 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from '@/router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useThemeStore } from '@/stores/theme-store'
 import type { Profile } from '@/types'
 import { LoadingScreen } from '@/components/layout/LoadingScreen'
 
@@ -38,6 +39,21 @@ async function upsertProfile(userId: string): Promise<Profile | null> {
   } catch {
     return null
   }
+}
+
+function ThemeInitializer({ children }: { children: ReactNode }) {
+  const { theme } = useThemeStore()
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+    } else {
+      root.classList.remove('dark')
+    }
+  }, [theme])
+
+  return <>{children}</>
 }
 
 function AuthInitializer({ children }: { children: ReactNode }) {
@@ -110,8 +126,10 @@ function AuthInitializer({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <AuthInitializer>
-      <RouterProvider router={router} />
-    </AuthInitializer>
+    <ThemeInitializer>
+      <AuthInitializer>
+        <RouterProvider router={router} />
+      </AuthInitializer>
+    </ThemeInitializer>
   )
 }

@@ -103,6 +103,9 @@
   * {
     @apply border-border;
   }
+  *, *::before, *::after {
+    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  }
   body {
     @apply bg-background text-foreground;
     margin: 0;
