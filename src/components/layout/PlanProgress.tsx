@@ -89,6 +89,9 @@ export function PlanProgress() {
           {done ? t('plan.allDone') : `${t('plan.dailyGoal')} ${todayCount}/${dailyGoal}`}
         </span>
         <Progress value={progress} className="w-16 sm:w-20 shrink-0" />
+        <span className="sm:hidden shrink-0 text-muted-foreground">
+          {done ? '✓' : `${todayCount}/${dailyGoal}`}
+        </span>
       </button>
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>

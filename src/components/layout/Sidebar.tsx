@@ -8,12 +8,10 @@ import {
   FileQuestion,
   Users,
   GraduationCap,
-  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { useT } from '@/i18n/use-t'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -102,20 +100,15 @@ export function Sidebar({ className, overlay, isOpen, onClose }: Props) {
   const sidebarContent = (
     <aside
       className={cn(
-        'w-64 shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col h-full',
+        'w-64 shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col h-screen sticky top-0',
         className,
       )}
     >
-      <div className="flex items-center justify-between h-14 px-4 border-b border-sidebar-border">
+      <div className="flex items-center h-14 px-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
           <GraduationCap className="h-6 w-6 text-sidebar-primary" />
           <span className="font-semibold text-sidebar-foreground">{t('app.shortTitle')}</span>
         </div>
-        {overlay && (
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        )}
       </div>
       <SidebarNav onClose={onClose} />
       <SidebarFooter />
