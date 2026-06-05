@@ -130,7 +130,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('questions.importTitle')}</DialogTitle>
           <DialogDescription>{t('questions.importDesc')}</DialogDescription>
@@ -164,7 +164,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             <div className="max-h-48 overflow-y-auto space-y-2">
               {parsed.slice(0, 10).map((q, i) => (
                 <div key={i} className="text-sm border rounded p-2">
-                  <p className="font-medium truncate">{q.question_text}</p>
+                  <p className="font-medium break-all">{q.question_text}</p>
                   <p className="text-muted-foreground">{q.options.length} {t('questions.options')}</p>
                 </div>
               ))}
