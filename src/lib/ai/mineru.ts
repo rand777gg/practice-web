@@ -12,13 +12,13 @@ export class MinerUClient {
     onProgress?.('正在上传文档...')
     const filePath = `mineru-temp/${Date.now()}-${file.name}`
     const { error: uploadErr } = await supabase.storage
-      .from('public')
+      .from('files')
       .upload(filePath, file, { upsert: true })
 
     if (uploadErr) throw new Error(`Supabase upload failed: ${uploadErr.message}`)
 
     // 2. Get public URL
-    const { data: urlData } = supabase.storage.from('public').getPublicUrl(filePath)
+    const { data: urlData } = supabase.storage.from('files').getPublicUrl(filePath)
     const publicUrl = urlData.publicUrl
 
     // 3. Submit URL to MinerU via proxy
@@ -59,13 +59,13 @@ export class MinerUClient {
         const markdown = await mdRes.text()
 
         // Clean up temp file
-        supabase.storage.from('public').remove([filePath]).catch(() => {})
+        supabase.storage.from('files').remove([filePath]).catch(() => {})
 
         return { markdown, fileName: file.name }
       }
 
       if (state === 'failed') {
-        supabase.storage.from('public').remove([filePath]).catch(() => {})
+        supabase.storage.from('files').remove([filePath]).catch(() => {})
         throw new Error(`MinerU parsing failed: ${data.data.err_msg || 'unknown'}`)
       }
 
@@ -74,7 +74,7 @@ export class MinerUClient {
       }
     }
 
-    supabase.storage.from('public').remove([filePath]).catch(() => {})
+    supabase.storage.from('files').remove([filePath]).catch(() => {})
     throw new Error('MinerU parsing timed out')
   }
 }
