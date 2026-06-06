@@ -86,10 +86,12 @@ export class MinerUClient {
 
   // ---- Precise (v4 API) ----
   private async submitPrecise(url: string, fileName: string): Promise<string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...AUTH_HEADER }
+    if (this.token) headers['X-MinerU-Token'] = this.token
     const res = await fetch(`${PROXY_BASE}/v4/extract/task`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
-      body: JSON.stringify({ url, file_name: fileName, model_version: 'vlm', language: 'ch', token: this.token }),
+      headers,
+      body: JSON.stringify({ url, file_name: fileName, model_version: 'vlm', language: 'ch' }),
     })
     const data = await res.json() as { code: number; msg: string; data: { task_id: string } }
     if (data.code !== 0) throw new Error(`MinerU init failed: ${data.msg}`)

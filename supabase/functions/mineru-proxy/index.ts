@@ -49,29 +49,12 @@ Deno.serve(async (req: Request) => {
       const v4Path = pathname.split('/v4')[1] || ''
       const targetUrl = `${V4_BASE}${v4Path}`
 
-      let bodyText = ''
-      if (req.method === 'POST') {
-        bodyText = await req.text()
-      }
-
-      // Extract mineru token from request body and use it for v4 auth
-      let v4Token = ''
-      if (bodyText) {
-        try { const b = JSON.parse(bodyText); v4Token = b.token || '' } catch { /* */ }
-        // Remove token from body before forwarding (strip it, MinerU reads from header)
-        const clean = JSON.parse(bodyText)
-        delete clean.token
-        bodyText = JSON.stringify(clean)
-      }
-
       const fetchHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (v4Token) fetchHeaders['Authorization'] = `Bearer ${v4Token}`
+      const mineruToken = req.headers.get('X-MinerU-Token')
+      if (mineruToken) fetchHeaders['Authorization'] = `Bearer ${mineruToken}`
 
-      const fetchOpts: RequestInit = {
-        method: req.method,
-        headers: fetchHeaders,
-      }
-      if (req.method === 'POST') fetchOpts.body = bodyText
+      const fetchOpts: RequestInit = { method: req.method, headers: fetchHeaders }
+      if (req.method === 'POST') fetchOpts.body = await req.text()
 
       const res = await fetch(targetUrl, fetchOpts)
       const data = await res.text()

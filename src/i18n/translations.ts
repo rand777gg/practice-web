@@ -111,6 +111,7 @@ export const zh = {
     remove: '移除',
   },
   questions: {
+    questionType: '题目类型',
     title: '题目管理',
     total: '道题目',
     import: '导入',
@@ -385,6 +386,7 @@ export const en = {
     remove: 'Remove',
   },
   questions: {
+    questionType: 'Question Type',
     title: 'Questions',
     total: 'total questions',
     import: 'Import',

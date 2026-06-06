@@ -25,7 +25,7 @@ export function QuestionList({ questions, onDelete }: Props) {
             <TableHead>{t('questions.question')}</TableHead>
             <TableHead className="hidden sm:table-cell">{t('questions.subject')}</TableHead>
             <TableHead className="hidden sm:table-cell">{t('questions.category')}</TableHead>
-            <TableHead className="hidden sm:table-cell">{t('questions.options')}</TableHead>
+            <TableHead className="hidden sm:table-cell">{t('questions.questionType')}</TableHead>
             <TableHead className="w-20">{t('questions.actions')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -35,8 +35,10 @@ export function QuestionList({ questions, onDelete }: Props) {
               <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
               <TableCell className="hidden sm:table-cell">{q.subject ?? '-'}</TableCell>
               <TableCell className="hidden sm:table-cell">{q.category ?? '-'}</TableCell>
-              <TableCell className="text-muted-foreground hidden sm:table-cell">
-                {q.options.length} {t('questions.options')}
+              <TableCell className="hidden sm:table-cell">
+                <span className="text-xs rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">
+                  {t(`questionTypes.${q.question_type}` as any) || q.question_type}
+                </span>
               </TableCell>
               <TableCell>
                 <div className="flex gap-1">

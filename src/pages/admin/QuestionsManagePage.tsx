@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
+import type { QuestionType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -28,6 +29,7 @@ export function Component() {
   const [filteredCategories, setFilteredCategories] = useState<string[]>([])
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
   useEffect(() => {
     async function loadFilters() {
@@ -69,6 +71,7 @@ export function Component() {
     if (!q.question_text.toLowerCase().includes(search.toLowerCase())) return false
     if (selectedSubject && q.subject !== selectedSubject) return false
     if (selectedCategory && q.category !== selectedCategory) return false
+    if (selectedType && q.question_type !== selectedType) return false
     return true
   })
 
@@ -136,6 +139,26 @@ export function Component() {
               <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
                 {c}
                 {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {selectedType ? t(`questionTypes.${selectedType}` as any) : t('questions.questionType')}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSelectedType('')}>
+              <span className="text-muted-foreground">{t('questions.questionType')}</span>
+              {!selectedType && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {(['single_choice', 'multi_select', 'true_false', 'fill_blank', 'short_answer', 'analysis'] as QuestionType[]).map((qt) => (
+              <DropdownMenuItem key={qt} onClick={() => setSelectedType(qt)}>
+                {t(`questionTypes.${qt}` as any)}
+                {selectedType === qt && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
