@@ -76,7 +76,7 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
               optionClass = 'border-red-500 bg-red-50 dark:bg-red-950'
             }
           } else if (isSelected) {
-            optionClass = 'border-primary bg-primary/10'
+            optionClass = 'border-primary ring-2 ring-primary/30'
           }
 
           return (

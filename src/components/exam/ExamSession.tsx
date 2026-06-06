@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
 import { ExamProgress } from './ExamProgress'
+import { ExamResultDialog } from './ExamResultDialog'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,10 +61,10 @@ export function ExamSession() {
     submitExam,
   } = useExamStore()
 
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [hasStarted, setHasStarted] = useState(false)
   const [showStart, setShowStart] = useState(true)
+  const [resultDialogOpen, setResultDialogOpen] = useState(false)
   const [questionCount, setQuestionCount] = useState(EXAM_DEFAULT_COUNT)
   const [durationMin, setDurationMin] = useState(EXAM_DEFAULT_DURATION_MIN)
 
@@ -170,14 +171,21 @@ export function ExamSession() {
   }
 
   const handleSubmitExam = async () => {
+    const s = useExamStore.getState().session
+    if (!s || s.status === 'completed' || isSubmitting) return
     await submitExam()
-    if (session) {
-      navigate(`/exam/result/${session.id}`)
-    }
+    setResultDialogOpen(true)
   }
 
   const handleTimerExpire = () => {
     handleSubmitExam()
+  }
+
+  const handleCloseResult = () => {
+    setResultDialogOpen(false)
+    useExamStore.getState().reset()
+    setShowStart(true)
+    setHasStarted(false)
   }
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
@@ -323,9 +331,14 @@ export function ExamSession() {
     return <p className="text-muted-foreground">{t('exam.noExam')}</p>
   }
 
-  if (session.status === 'completed') {
-    navigate(`/exam/result/${session.id}`)
-    return null
+  if (session.status === 'completed' || resultDialogOpen) {
+    return (
+      <ExamResultDialog
+        sessionId={session.id}
+        open={resultDialogOpen || session.status === 'completed'}
+        onClose={handleCloseResult}
+      />
+    )
   }
 
   const currentQuestion = questions[currentIndex]

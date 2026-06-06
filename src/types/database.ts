@@ -25,6 +25,11 @@ export interface Database {
         Insert: Omit<UserAnswer, 'id' | 'answered_at'>
         Update: Record<string, never>
       }
+      favorites: {
+        Row: { id: string; user_id: string; question_id: string; created_at: string }
+        Insert: { user_id: string; question_id: string }
+        Update: Record<string, never>
+      }
     }
   }
 }

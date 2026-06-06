@@ -5,15 +5,17 @@ import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Trash2, Pencil, Check, X } from 'lucide-react'
+import { Trash2, Pencil, Check, X, Star } from 'lucide-react'
 import type { UserAnswer, Question } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { useFavorites } from '@/hooks/use-favorites'
 
 type FilterMode = 'all' | 'practice' | 'exam'
 
 export function Component() {
   const { t } = useT()
   const { user } = useAuthStore()
+  const { isFavorite, toggleFavorite } = useFavorites()
   const [mode, setMode] = useState<FilterMode>('all')
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -102,6 +104,14 @@ export function Component() {
               <div className="flex items-center gap-1 justify-end">
                 {editingNote === ans.id ? (
                   <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleFavorite(ans.questions.id)}
+                      className="text-xs h-7"
+                    >
+                      <Star className={isFavorite(ans.questions.id) ? 'h-3 w-3 fill-yellow-500 text-yellow-500' : 'h-3 w-3'} />
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => saveNote(ans.id)} className="text-xs h-7">
                       <Check className="h-3 w-3" />
                       {t('plan.save')}
@@ -113,6 +123,15 @@ export function Component() {
                   </>
                 ) : (
                   <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleFavorite(ans.questions.id)}
+                      className="text-xs h-7"
+                    >
+                      <Star className={isFavorite(ans.questions.id) ? 'h-3 w-3 fill-yellow-500 text-yellow-500' : 'h-3 w-3'} />
+                      {isFavorite(ans.questions.id) ? t('favorites.remove') : t('favorites.add')}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => startEdit(ans.id, ans.note ?? '')} className="text-xs h-7">
                       <Pencil className="h-3 w-3" />
                       {t('practice.note')}

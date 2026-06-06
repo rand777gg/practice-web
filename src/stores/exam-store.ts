@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
+import { useRefreshStore } from './refresh-store'
 import type { ExamSession, Question } from '@/types'
 
 interface ExamState {
@@ -207,26 +208,40 @@ export const useExamStore = create<ExamState>((set, get) => ({
     set({ isSubmitting: true, error: null })
 
     let correctCount = 0
-    const answerRecords = questions.map((q) => {
-      const selected = answers.get(q.id) ?? -1
+    const answerRecords: {
+      user_id: string
+      question_id: string
+      selected_answer: number
+      is_correct: boolean
+      mode: string
+      exam_session_id: string
+    }[] = []
+
+    for (const q of questions) {
+      const selected = answers.get(q.id)
+      if (selected == null) continue // skip unanswered
       const isCorrect = selected === q.correct_answer
       if (isCorrect) correctCount++
-      return {
+      answerRecords.push({
         user_id: session.user_id,
         question_id: q.id,
         selected_answer: selected,
         is_correct: isCorrect,
         mode: 'exam',
         exam_session_id: session.id,
-      }
-    })
+      })
+    }
 
+    const now = new Date()
+    const actualDuration = now.getTime() - new Date(session.started_at).getTime()
     const score = Math.round((correctCount / questions.length) * 100)
 
-    const { error: aError } = await supabase.from('user_answers').insert(answerRecords)
-    if (aError) {
-      set({ isSubmitting: false, error: aError.message })
-      return
+    if (answerRecords.length > 0) {
+      const { error: aError } = await supabase.from('user_answers').insert(answerRecords)
+      if (aError) {
+        set({ isSubmitting: false, error: aError.message })
+        return
+      }
     }
 
     const { error: uError } = await supabase
@@ -235,8 +250,9 @@ export const useExamStore = create<ExamState>((set, get) => ({
         status: 'completed',
         correct_count: correctCount,
         score,
+        duration_ms: actualDuration,
         current_index: get().currentIndex,
-        completed_at: new Date().toISOString(),
+        completed_at: now.toISOString(),
       })
       .eq('id', session.id)
 
@@ -246,9 +262,10 @@ export const useExamStore = create<ExamState>((set, get) => ({
     }
 
     set({
-      session: { ...session, status: 'completed', correct_count: correctCount, score },
+      session: { ...session, status: 'completed', correct_count: correctCount, score, duration_ms: actualDuration },
       isSubmitting: false,
     })
+    useRefreshStore.getState().bump()
   },
 
   reset: () => {

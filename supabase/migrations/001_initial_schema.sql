@@ -142,3 +142,21 @@ CREATE POLICY exam_sessions_own ON public.exam_sessions FOR ALL
 DROP POLICY IF EXISTS user_answers_own ON public.user_answers;
 CREATE POLICY user_answers_own ON public.user_answers FOR ALL
   USING (user_id = auth.uid() OR public.is_admin());
+
+-- Favorites
+CREATE TABLE IF NOT EXISTS public.favorites (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorites_user ON public.favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_question ON public.favorites(question_id);
+
+ALTER TABLE public.favorites ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS favorites_own ON public.favorites;
+CREATE POLICY favorites_own ON public.favorites FOR ALL
+  USING (user_id = auth.uid() OR public.is_admin());
