@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
-import { Pencil, Star } from 'lucide-react'
+import { Pencil, Star, Sparkles } from 'lucide-react'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const POINT_COLORS = [
   'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
@@ -45,9 +46,25 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
           </span>
         )}
         {question.category && (
-          <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-            {question.category}
-          </span>
+          question.category === 'AI生成' ? (
+            <HoverCard openDelay={200} closeDelay={100}>
+              <HoverCardTrigger asChild>
+                <span className="ai-badge ai-badge-dark">
+                  <span className="gemini-star">
+                    <Sparkles className="w-full h-full" />
+                  </span>
+                  <span className="badge-text">{question.category}</span>
+                </span>
+              </HoverCardTrigger>
+              <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+                <p>{t('ai.disclaimer')}</p>
+              </HoverCardContent>
+            </HoverCard>
+          ) : (
+            <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+              {question.category}
+            </span>
+          )
         )}
         {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
           <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>

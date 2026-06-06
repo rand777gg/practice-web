@@ -190,6 +190,9 @@ export const zh = {
     add: '收藏',
     remove: '取消收藏',
   },
+  ai: {
+    disclaimer: '内容由 AI 生成，请仔细甄别',
+  },
   common: {
     loading: '加载中...',
     error: '加载失败',
@@ -389,6 +392,9 @@ export const en = {
     empty: "No favorites yet. Star questions in practice mode!",
     add: 'Favorite',
     remove: 'Unfavorite',
+  },
+  ai: {
+    disclaimer: 'AI-generated content. Please verify.',
   },
   common: {
     loading: 'Loading...',

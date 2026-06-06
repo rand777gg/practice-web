@@ -112,3 +112,97 @@
     margin: 0;
   }
 }
+
+/* AI Generated Badge Animations */
+@keyframes colorWheel {
+  0% {
+    border-color: rgb(43, 209, 255);
+  }
+  25% {
+    border-color: rgb(139, 92, 246);
+  }
+  50% {
+    border-color: rgb(236, 72, 153);
+  }
+  75% {
+    border-color: rgb(249, 115, 22);
+  }
+  100% {
+    border-color: rgb(43, 209, 255);
+  }
+}
+
+@keyframes geminiBorderGlow {
+  0% {
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+  }
+  25% {
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(236, 72, 153, 0.4);
+  }
+  75% {
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+  }
+}
+
+@keyframes textSlideIn {
+  0%, 80% {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes iconSlideIn {
+  0%, 60% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.ai-badge {
+  @apply relative inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
+  border: 1.5px solid;
+  animation: colorWheel 1.5s linear 1, geminiBorderGlow 1.5s ease-in-out 1;
+  color: rgb(80, 17, 169);
+  transition: animation-play-state 0.2s;
+}
+
+.ai-badge:hover {
+  animation: colorWheel 1.5s linear infinite, geminiBorderGlow 1.5s ease-in-out infinite;
+}
+
+.ai-badge .gemini-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  animation: iconSlideIn 1.5s ease 1;
+}
+
+.ai-badge .badge-text {
+  animation: textSlideIn 1.5s ease 1;
+}
+
+.ai-badge:hover .badge-text {
+  animation: textSlideIn 3s ease 1, none;
+}
+
+.ai-badge-dark {
+  @apply dark:text-blue-300;
+}

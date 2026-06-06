@@ -117,7 +117,7 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
 
   return (
     <div className="-mx-4 lg:mx-0 overflow-x-auto">
-      <ReactECharts option={option} style={{ height: 175, minWidth: 750 }} /> 
+      <ReactECharts option={option} style={{ height: 175, minWidth: 750 }} />
     </div>
   )
 }
