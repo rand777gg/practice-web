@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -6,11 +6,18 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Pencil, Clock, RotateCcw, Star } from 'lucide-react'
 import { LoadingTips } from '@/components/layout/LoadingTips'
-import { DailyGoalHeatmap } from '@/components/charts/DailyGoalHeatmap'
-import { StackedBarChart as StackedBar } from '@/components/charts/StackedBarChart'
-import { SubjectCategorySunburst } from '@/components/charts/SubjectCategorySunburst'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { useT } from '@/i18n/use-t'
+
+const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
+const StackedBar = lazy(() => import('@/components/charts/StackedBarChart').then(m => ({ default: m.StackedBarChart })))
+const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
+
+const ChartFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+  </div>
+)
 
 interface ChartData {
   totalAnswered: number
@@ -176,7 +183,9 @@ export function Component() {
                 <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyBreakdown')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <StackedBar data={chartData.barData} />
+                <Suspense fallback={<ChartFallback />}>
+                  <StackedBar data={chartData.barData} />
+                </Suspense>
               </CardContent>
             </Card>
 
@@ -186,7 +195,9 @@ export function Component() {
               </CardHeader>
               <CardContent>
                 {chartData.sunburstData.length > 0 ? (
-                  <SubjectCategorySunburst data={chartData.sunburstData} />
+                  <Suspense fallback={<ChartFallback />}>
+                    <SubjectCategorySunburst data={chartData.sunburstData} />
+                  </Suspense>
                 ) : (
                   <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
                 )}
@@ -198,7 +209,9 @@ export function Component() {
                 <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
+                <Suspense fallback={<ChartFallback />}>
+                  <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
+                </Suspense>
               </CardContent>
             </Card>
           </div>
