@@ -1,9 +1,12 @@
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { OPTION_LABELS } from '@/lib/constants'
+import { OPTION_LABELS, QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { Question } from '@/types'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import type { Question, CorrectAnswer } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
@@ -21,9 +24,9 @@ const POINT_COLORS = [
 
 interface Props {
   question: Question
-  selectedAnswer?: number | null
+  selectedAnswer?: CorrectAnswer | null
   showResult?: boolean
-  onSelect?: (index: number) => void
+  onSelect?: (answer: CorrectAnswer) => void
   disabled?: boolean
   showEditLink?: boolean
   attemptCount?: number
@@ -35,11 +38,26 @@ interface Props {
 
 export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite }: Props) {
   const { t } = useT()
+  const type = question.question_type
+  const isSingle = type === 'single_choice'
+  const isMulti = type === 'multi_select'
+  const isTrueFalse = type === 'true_false'
+  const isFillBlank = type === 'fill_blank'
+  const isShort = type === 'short_answer'
+  const isAnalysis = type === 'analysis'
+  const isTextInput = isFillBlank || isShort || isAnalysis
+  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type)
+  const typeLabel = QUESTION_TYPE_LABELS[type]
 
   return (
     <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
-      <h3 className="font-medium text-base lg:text-lg">{question.question_text}</h3>
+      <div className="flex items-center gap-2">
+        <h3 className="font-medium text-base lg:text-lg">{question.question_text}</h3>
+      </div>
       <div className="flex flex-wrap gap-1.5">
+        {type !== 'single_choice' && (
+          <Badge variant="outline" className="text-[10px]">{typeLabel}</Badge>
+        )}
         {question.subject && (
           <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
             {question.subject}
@@ -50,9 +68,7 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
             <HoverCard openDelay={200} closeDelay={100}>
               <HoverCardTrigger asChild>
                 <span className="ai-badge ai-badge-dark">
-                  <span className="gemini-star">
-                    <Sparkles className="w-full h-full" />
-                  </span>
+                  <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
                   <span className="badge-text">{question.category}</span>
                 </span>
               </HoverCardTrigger>
@@ -67,102 +83,164 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
           )
         )}
         {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
-          <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>
-            {kp.trim()}
-          </Badge>
+          <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
         ))}
         {attemptCount != null && (
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <span>{t('practice.attempts')}: {attemptCount}</span>
-            {wrongCount != null && wrongCount > 0 && (
-              <span className="text-red-500">({t('practice.wrong')}: {wrongCount})</span>
-            )}
+            {wrongCount != null && wrongCount > 0 && <span className="text-red-500">({t('practice.wrong')}: {wrongCount})</span>}
           </span>
         )}
       </div>
-      <div className="space-y-2">
-        {question.options.map((option, index) => {
-          const isSelected = selectedAnswer === index
-          const isCorrect = index === question.correct_answer
-          let optionClass = 'border-input hover:bg-accent'
 
-          if (showResult) {
-            if (isCorrect) {
-              optionClass = 'border-green-500 bg-green-50 dark:bg-green-950'
-            } else if (isSelected && !isCorrect) {
-              optionClass = 'border-red-500 bg-red-50 dark:bg-red-950'
+      {/* Choice options (single / multi) */}
+      {(isSingle || isMulti) && (
+        <div className="space-y-2">
+          {question.options.map((option, index) => {
+            const isSelected = isSingle
+              ? selectedAnswer === index
+              : Array.isArray(selectedAnswer) && selectedAnswer.includes(index)
+            const isCorrectOption = isSingle
+              ? index === question.correct_answer
+              : Array.isArray(question.correct_answer) && question.correct_answer.includes(index)
+            let optionClass = 'border-input hover:bg-accent'
+
+            if (showResult) {
+              if (isCorrectOption) optionClass = 'border-green-500 bg-green-50 dark:bg-green-950'
+              else if (isSelected && !isCorrectOption) optionClass = 'border-red-500 bg-red-50 dark:bg-red-950'
+            } else if (isSelected) {
+              optionClass = 'border-primary ring-2 ring-primary/30'
             }
-          } else if (isSelected) {
-            optionClass = 'border-primary ring-2 ring-primary/30'
-          }
 
-          return (
-            <button
-              key={index}
-              type="button"
-              disabled={disabled}
-              className={cn(
-                'w-full flex items-center gap-2 lg:gap-3 rounded-lg border px-3 lg:px-4 py-2.5 lg:py-3 text-left text-sm transition-colors',
-                optionClass,
-                disabled && 'cursor-default',
-              )}
-              onClick={() => onSelect?.(index)}
-            >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
-                {OPTION_LABELS[index]}
-              </span>
-              <span className="flex-1">{option}</span>
-              {showResult && isCorrect && (
-                <span className="shrink-0 text-green-600 text-xs font-medium">{t('practice.correct')}</span>
-              )}
-              {showResult && isSelected && !isCorrect && (
-                <span className="shrink-0 text-red-600 text-xs font-medium">{t('practice.yourAnswer')}</span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-      {showResult && question.analysis && (
-        <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-          <span className="font-medium">{t('questions.analysis')}: </span>
-          {question.analysis}
+            return (
+              <button
+                key={index}
+                type="button"
+                disabled={disabled}
+                className={cn(
+                  'w-full flex items-center gap-2 lg:gap-3 rounded-lg border px-3 lg:px-4 py-2.5 lg:py-3 text-left text-sm transition-colors',
+                  optionClass, disabled && 'cursor-default',
+                )}
+                onClick={() => {
+                  if (isMulti) {
+                    const arr = Array.isArray(selectedAnswer) ? [...selectedAnswer] : []
+                    const idx = arr.indexOf(index)
+                    if (idx >= 0) arr.splice(idx, 1)
+                    else arr.push(index)
+                    onSelect?.(arr)
+                  } else {
+                    onSelect?.(index)
+                  }
+                }}
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
+                  {OPTION_LABELS[index]}
+                </span>
+                <span className="flex-1">{option}</span>
+                {showResult && isCorrectOption && <span className="shrink-0 text-green-600 text-xs font-medium">{t('practice.correct')}</span>}
+                {showResult && isSelected && !isCorrectOption && <span className="shrink-0 text-red-600 text-xs font-medium">{t('practice.yourAnswer')}</span>}
+              </button>
+            )
+          })}
         </div>
       )}
-      {showResult && note && (
-        <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-          <span className="font-medium">{t('practice.note')}: </span>
-          {note}
+
+      {/* True/False buttons */}
+      {isTrueFalse && (
+        <div className="flex gap-2">
+          {['正确', '错误'].map((label, ti) => {
+            const isSelected = selectedAnswer === (ti === 0)
+            const isCorrectOption = question.correct_answer === (ti === 0)
+            let cls = 'border-input hover:bg-accent'
+            if (showResult) {
+              if (isCorrectOption) cls = 'border-green-500 bg-green-50 dark:bg-green-950'
+              else if (isSelected && !isCorrectOption) cls = 'border-red-500 bg-red-50 dark:bg-red-950'
+            } else if (isSelected) cls = 'border-primary ring-2 ring-primary/30'
+            return (
+              <button
+                key={label}
+                type="button"
+                disabled={disabled}
+                className={cn('flex-1 h-12 rounded-lg border text-sm font-medium transition-colors', cls)}
+                onClick={() => onSelect?.(ti === 0)}
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
       )}
+
+      {/* Text input (fill blank / short answer / analysis) */}
+      {isTextInput && (
+        <div>
+          {isAnalysis ? (
+            <Textarea
+              value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+              onChange={(e) => onSelect?.(e.target.value)}
+              disabled={disabled || showResult}
+              placeholder="输入你的答案..."
+              rows={4}
+            />
+          ) : (
+            <Input
+              value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+              onChange={(e) => onSelect?.(e.target.value)}
+              disabled={disabled || showResult}
+              placeholder={isFillBlank ? '输入填空答案' : '输入简答答案'}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Result display */}
+      {showResult && (
+        <>
+          {isTextInput && selectedAnswer != null && (
+            <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
+              <p><span className="font-medium">{t('practice.yourAnswer')}: </span>{String(selectedAnswer)}</p>
+              {!isAnalysis && !correct && (
+                <p className="mt-1">
+                  <span className="font-medium">{t('practice.correct')}: </span>
+                  {Array.isArray(question.correct_answer) ? question.correct_answer.join(' / ') : String(question.correct_answer)}
+                </p>
+              )}
+              {isAnalysis && <p className="text-xs text-muted-foreground mt-1">分析题需人工批改</p>}
+            </div>
+          )}
+          {question.answer_explanation && (
+            <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
+              <span className="font-medium">解析: </span>{question.answer_explanation}
+            </div>
+          )}
+          {question.analysis && (
+            <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
+              <span className="font-medium">{t('questions.analysis')}: </span>{question.analysis}
+            </div>
+          )}
+          {note && (
+            <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
+              <span className="font-medium">{t('practice.note')}: </span>{note}
+            </div>
+          )}
+        </>
+      )}
+
       {(onToggleFavorite || (showResult && showEditLink)) && (
         <div className="flex items-center justify-between">
-          <div>
-            {onToggleFavorite && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onToggleFavorite}
-                className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}
-              >
-                {isFavorited ? (
-                  <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                ) : (
-                  <Star className="h-3 w-3" />
-                )}
-                {isFavorited ? t('favorites.remove') : t('favorites.add')}
-              </Button>
-            )}
-          </div>
-          <div>
-            {showResult && showEditLink && (
-              <Button variant="ghost" size="sm" asChild>
-                <Link to={`/admin/questions/${question.id}/edit`}>
-                  <Pencil className="h-3 w-3" />
-                  {t('questions.reportError')}
-                </Link>
-              </Button>
-            )}
-          </div>
+          {onToggleFavorite && (
+            <Button variant="outline" size="sm" onClick={onToggleFavorite} className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}>
+              {isFavorited ? <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" /> : <Star className="h-3 w-3" />}
+              {isFavorited ? t('favorites.remove') : t('favorites.add')}
+            </Button>
+          )}
+          {showResult && showEditLink && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to={`/admin/questions/${question.id}/edit`}>
+                <Pencil className="h-3 w-3" />{t('questions.reportError')}
+              </Link>
+            </Button>
+          )}
         </div>
       )}
     </div>

@@ -16,7 +16,8 @@ import {
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
-import type { Question } from '@/types'
+import { isAnswerCorrect } from '@/lib/answer-utils'
+import type { Question, CorrectAnswer } from '@/types'
 import { useT } from '@/i18n/use-t'
 
 export function PracticeSession() {
@@ -24,7 +25,7 @@ export function PracticeSession() {
   const { profile } = useAuthStore()
   const isAdmin = profile?.role === 'admin'
   const [question, setQuestion] = useState<Question | null>(null)
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
+  const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [noQuestions, setNoQuestions] = useState(false)
@@ -127,16 +128,16 @@ export function PracticeSession() {
     fetchRandomQuestion()
   }, [fetchRandomQuestion])
 
-  const handleSelect = (index: number) => {
+  const handleSelect = (answer: CorrectAnswer) => {
     if (isSubmitted) return
-    setSelectedAnswer(index)
+    setSelectedAnswer(answer)
   }
 
   const bumpRefresh = useRefreshStore((s) => s.bump)
 
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
-    const isCorrect = selectedAnswer === question.correct_answer
+    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type)
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()

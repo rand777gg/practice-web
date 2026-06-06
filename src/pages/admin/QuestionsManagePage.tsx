@@ -13,7 +13,7 @@ import {
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown } from 'lucide-react'
+import { Upload, Plus, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
@@ -80,6 +80,12 @@ export function Component() {
           <p className="text-sm text-muted-foreground">{count} {t('questions.total')}</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/admin/ai-import">
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline ml-1">AI 导入</span>
+            </Link>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline ml-1">{t('questions.import')}</span>

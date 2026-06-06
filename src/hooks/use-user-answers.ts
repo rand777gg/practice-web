@@ -6,7 +6,7 @@ export function useUserAnswers() {
   const user = useAuthStore((s) => s.user)
 
   const saveAnswer = useCallback(
-    async (questionId: string, selectedAnswer: number, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string) => {
+    async (questionId: string, selectedAnswer: unknown, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string) => {
       if (!user) return null
       const { data, error } = await supabase.from('user_answers').insert({
         user_id: user.id,

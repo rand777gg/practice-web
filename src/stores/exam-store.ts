@@ -1,20 +1,21 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { useRefreshStore } from './refresh-store'
-import type { ExamSession, Question } from '@/types'
+import { isAnswerCorrect } from '@/lib/answer-utils'
+import type { ExamSession, Question, CorrectAnswer } from '@/types'
 
 interface ExamState {
   session: ExamSession | null
   questions: Question[]
   currentIndex: number
-  answers: Map<string, number>
+  answers: Map<string, CorrectAnswer>
   isLoading: boolean
   isSubmitting: boolean
   error: string | null
 
   startExam: (userId: string, questionCount: number, durationMs: number, subject?: string, category?: string) => Promise<void>
   resumeExam: (sessionId: string) => Promise<void>
-  answerQuestion: (questionId: string, answer: number) => void
+  answerQuestion: (questionId: string, answer: CorrectAnswer) => void
   nextQuestion: () => void
   previousQuestion: () => void
   jumpTo: (index: number) => void
@@ -146,9 +147,9 @@ export const useExamStore = create<ExamState>((set, get) => ({
       .select('*')
       .eq('exam_session_id', sessionId)
 
-    const answersMap = new Map<string, number>()
+    const answersMap = new Map<string, CorrectAnswer>()
     if (existingAnswers) {
-      for (const ans of existingAnswers as { question_id: string; selected_answer: number }[]) {
+      for (const ans of existingAnswers as { question_id: string; selected_answer: CorrectAnswer }[]) {
         answersMap.set(ans.question_id, ans.selected_answer)
       }
     }
@@ -211,7 +212,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     const answerRecords: {
       user_id: string
       question_id: string
-      selected_answer: number
+      selected_answer: unknown
       is_correct: boolean
       mode: string
       exam_session_id: string
@@ -219,8 +220,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     for (const q of questions) {
       const selected = answers.get(q.id)
-      if (selected == null) continue // skip unanswered
-      const isCorrect = selected === q.correct_answer
+      if (selected == null) continue
+      const isCorrect = isAnswerCorrect(selected, q.correct_answer, q.question_type)
       if (isCorrect) correctCount++
       answerRecords.push({
         user_id: session.user_id,
