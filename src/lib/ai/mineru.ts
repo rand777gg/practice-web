@@ -19,7 +19,7 @@ export class MinerUClient {
   }
 
   async uploadAndParse(file: File, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
-    const { mode, token } = this
+    const { mode } = this
 
     // 1. Upload to Supabase Storage
     onProgress?.('正在上传文档...')
