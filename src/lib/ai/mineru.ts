@@ -2,7 +2,9 @@ import type { DocumentParseResult } from './types'
 
 // Route through Supabase Edge Function proxy to avoid CORS
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 const PROXY_BASE = `${SUPABASE_URL}/functions/v1/mineru-proxy`
+const AUTH_HEADER = { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
 
 export class MinerUClient {
   async uploadAndParse(file: File, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
@@ -11,7 +13,7 @@ export class MinerUClient {
     // 1. Get signed upload URL via proxy
     const initRes = await fetch(`${PROXY_BASE}/parse/file`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
       body: JSON.stringify({ file_name: file.name, language: 'ch' }),
     })
 
@@ -42,7 +44,9 @@ export class MinerUClient {
     for (let i = 0; i < 150; i++) {
       await new Promise(r => setTimeout(r, 2000))
 
-      const res = await fetch(`${PROXY_BASE}/parse/${task_id}`)
+      const res = await fetch(`${PROXY_BASE}/parse/${task_id}`, {
+        headers: { ...AUTH_HEADER },
+      })
       const data = await res.json() as {
         code: number; data: { state: string; markdown_url?: string; err_msg?: string }
       }
