@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { QuestionCard } from '@/components/questions/QuestionCard'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Trash2, Pencil, Check, X, Star } from 'lucide-react'
@@ -21,6 +21,7 @@ export function Component() {
   const [isLoading, setIsLoading] = useState(true)
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
+  const [editIsPublic, setEditIsPublic] = useState(false)
 
   const fetchAnswers = useCallback(async () => {
     if (!user) return
@@ -50,9 +51,10 @@ export function Component() {
     setAnswers((prev) => prev.filter((a) => a.id !== id))
   }
 
-  const startEdit = (id: string, note: string) => {
+  const startEdit = (id: string, note: string, isPublic: boolean) => {
     setEditingNote(id)
     setEditText(note)
+    setEditIsPublic(isPublic)
   }
 
   const cancelEdit = () => {
@@ -61,8 +63,8 @@ export function Component() {
   }
 
   const saveNote = async (id: string) => {
-    await supabase.from('user_answers').update({ note: editText || null }).eq('id', id)
-    setAnswers((prev) => prev.map((a) => (a.id === id ? { ...a, note: editText || null } : a)))
+    await supabase.from('user_answers').update({ note: editText || null, is_public: editIsPublic }).eq('id', id)
+    setAnswers((prev) => prev.map((a) => (a.id === id ? { ...a, note: editText || null, is_public: editIsPublic } : a)))
     setEditingNote(null)
   }
 
@@ -86,9 +88,7 @@ export function Component() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Spinner />
-        </div>
+        <LoadingTips className="py-12" compact />
       ) : answers.length === 0 ? (
         <p className="text-muted-foreground text-center py-12">{t('review.noWrong')}</p>
       ) : (
@@ -132,7 +132,7 @@ export function Component() {
                       <Star className={isFavorite(ans.questions.id) ? 'h-3 w-3 fill-yellow-500 text-yellow-500' : 'h-3 w-3'} />
                       {isFavorite(ans.questions.id) ? t('favorites.remove') : t('favorites.add')}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => startEdit(ans.id, ans.note ?? '')} className="text-xs h-7">
+                    <Button variant="ghost" size="sm" onClick={() => startEdit(ans.id, ans.note ?? '', ans.is_public)} className="text-xs h-7">
                       <Pencil className="h-3 w-3" />
                       {t('practice.note')}
                     </Button>
@@ -149,12 +149,23 @@ export function Component() {
                 )}
               </div>
               {editingNote === ans.id && (
-                <Textarea
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  placeholder={t('practice.notePlaceholder')}
-                  rows={3}
-                />
+                <div className="space-y-2">
+                  <Textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    placeholder={t('practice.notePlaceholder')}
+                    rows={3}
+                  />
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editIsPublic}
+                      onChange={(e) => setEditIsPublic(e.target.checked)}
+                      className="rounded"
+                    />
+                    {t('notes.makePublic')}
+                  </label>
+                </div>
               )}
             </div>
           ))}

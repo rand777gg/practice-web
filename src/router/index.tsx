@@ -43,6 +43,10 @@ export const router = createBrowserRouter([
             lazy: () => import('@/pages/WrongReviewPage'),
           },
           {
+            path: 'notes',
+            lazy: () => import('@/pages/PublicNotesPage'),
+          },
+          {
             path: 'admin',
             element: <ProtectedRoute requiredRole="admin" />,
             children: [

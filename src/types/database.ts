@@ -7,8 +7,8 @@ export interface Database {
     Tables: {
       profiles: {
         Row: Profile
-        Insert: { id: string; role?: 'admin' | 'user' }
-        Update: { role?: 'admin' | 'user' }
+        Insert: { id: string; role?: 'admin' | 'user'; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null }
+        Update: { role?: 'admin' | 'user'; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null }
       }
       questions: {
         Row: Question
@@ -23,7 +23,7 @@ export interface Database {
       user_answers: {
         Row: UserAnswer
         Insert: Omit<UserAnswer, 'id' | 'answered_at'>
-        Update: Record<string, never>
+        Update: { note?: string | null; is_public?: boolean }
       }
       favorites: {
         Row: { id: string; user_id: string; question_id: string; created_at: string }

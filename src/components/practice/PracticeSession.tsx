@@ -13,7 +13,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import type { Question } from '@/types'
@@ -32,6 +32,7 @@ export function PracticeSession() {
   const [wrongCount, setWrongCount] = useState(0)
   const [answerId, setAnswerId] = useState<string | null>(null)
   const [note, setNote] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
 
@@ -103,7 +104,7 @@ export function PracticeSession() {
     if (currentUser) {
       const { data: statsData } = await supabase
         .from('user_answers')
-        .select('is_correct, note')
+        .select('is_correct, note, is_public')
         .eq('user_id', currentUser.id)
         .eq('question_id', picked.id)
         .order('answered_at', { ascending: false })
@@ -114,7 +115,9 @@ export function PracticeSession() {
       setWrongCount(wrong)
 
       const latestNote = statsData?.find((a) => a.note)?.note ?? ''
+      const latestIsPublic = statsData?.find((a) => a.note)?.is_public ?? false
       setNote(latestNote)
+      setIsPublic(latestIsPublic)
     }
 
     setIsLoading(false)
@@ -140,10 +143,17 @@ export function PracticeSession() {
     setIsSubmitted(true)
   }
 
-  const handleNoteChange = async (value: string) => {
+  const handleNoteChange = async (value: string, pub?: boolean) => {
     setNote(value)
     if (answerId) {
-      await updateNote(answerId, value)
+      await updateNote(answerId, value, pub !== undefined ? pub : isPublic)
+    }
+  }
+
+  const handlePublicToggle = async (pub: boolean) => {
+    setIsPublic(pub)
+    if (answerId) {
+      await updateNote(answerId, note, pub)
     }
   }
 
@@ -202,9 +212,7 @@ export function PracticeSession() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Spinner />
-        </div>
+        <LoadingTips className="py-12" compact />
       ) : noQuestions ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('practice.noQuestions')}</p>
@@ -245,6 +253,15 @@ export function PracticeSession() {
                 onChange={(e) => handleNoteChange(e.target.value)}
                 rows={3}
               />
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => handlePublicToggle(e.target.checked)}
+                  className="rounded"
+                />
+                {t('notes.makePublic')}
+              </label>
             </div>
           )}
           <div className="flex gap-2 justify-end">

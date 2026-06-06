@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useFavorites } from '@/hooks/use-favorites'
 import { QuestionCard } from '@/components/questions/QuestionCard'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 
@@ -32,9 +32,7 @@ export function Component() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-12">
-        <Spinner />
-      </div>
+      <LoadingTips className="py-12" compact />
     )
   }
 

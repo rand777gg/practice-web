@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Profile } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -36,9 +36,7 @@ export function Component() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-12">
-        <Spinner />
-      </div>
+      <LoadingTips className="py-12" compact />
     )
   }
 

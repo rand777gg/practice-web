@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuestions } from '@/hooks/use-questions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
 import { Upload, Plus } from 'lucide-react'
@@ -47,9 +47,7 @@ export function Component() {
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Spinner />
-        </div>
+        <LoadingTips className="py-12" compact />
       ) : (
         <QuestionList questions={filtered} onDelete={deleteQuestion} />
       )}

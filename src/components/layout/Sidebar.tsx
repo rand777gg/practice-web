@@ -9,6 +9,7 @@ import {
   Users,
   GraduationCap,
   Star,
+  BookOpen,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -73,6 +74,10 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
             {wrongCount}
           </Badge>
         )}
+      </NavLink>
+      <NavLink to="/notes" className={linkClass} onClick={handleClick}>
+        <BookOpen className="h-4 w-4" />
+        {t('nav.publicNotes')}
       </NavLink>
 
       {isAdmin && (

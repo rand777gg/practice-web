@@ -23,10 +23,12 @@ export function useUserAnswers() {
   )
 
   const updateNote = useCallback(
-    async (answerId: string, note: string) => {
+    async (answerId: string, note: string, isPublic?: boolean) => {
+      const payload: { note: string | null; is_public?: boolean } = { note: note || null }
+      if (isPublic !== undefined) payload.is_public = isPublic
       const { error } = await supabase
         .from('user_answers')
-        .update({ note: note || null })
+        .update(payload)
         .eq('id', answerId)
       if (error) throw error
     },

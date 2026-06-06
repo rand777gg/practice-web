@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -194,90 +194,94 @@ export function ExamSession() {
   })
 
   if (checkingSession) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner />
-      </div>
-    )
+    return <LoadingTips className="py-12" compact />
   }
 
   if (showStart) {
     return (
       <>
-        <Card className="max-w-md">
-          <CardContent className="py-6 lg:py-8 space-y-4">
+        <Card className="max-w-2xl">
+          <CardContent className="py-6 lg:py-8 space-y-5">
             <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
-            <div className="flex flex-wrap gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1 text-xs">
-                    {selectedSubject || t('questions.subject')}
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                  <DropdownMenuItem onClick={() => setSelectedSubject('')}>
-                    <span className="text-muted-foreground">{t('questions.subject')}</span>
-                    {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
-                  </DropdownMenuItem>
-                  {subjects.map((s) => (
-                    <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
-                      {s}
-                      {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1 text-xs">
-                    {selectedCategory || t('questions.category')}
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                  <DropdownMenuItem onClick={() => setSelectedCategory('')}>
-                    <span className="text-muted-foreground">{t('questions.category')}</span>
-                    {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
-                  </DropdownMenuItem>
-                  {filteredCategories.map((c) => (
-                    <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                      {c}
-                      {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="questionCount">{t('exam.questionCount')}</Label>
-                <Input
-                  id="questionCount"
-                  type="number"
-                  min={EXAM_MIN_COUNT}
-                  max={EXAM_MAX_COUNT}
-                  value={questionCount}
-                  onChange={(e) => setQuestionCount(Number(e.target.value))}
-                />
-                <p className="text-xs text-muted-foreground">{EXAM_MIN_COUNT}-{EXAM_MAX_COUNT}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {/* Left: filters + rules */}
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground font-medium">{t('plan.selectSubjects')}</p>
+                <div className="flex flex-wrap gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs">
+                        {selectedSubject || t('questions.subject')}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                      <DropdownMenuItem onClick={() => setSelectedSubject('')}>
+                        <span className="text-muted-foreground">{t('questions.subject')}</span>
+                        {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                      {subjects.map((s) => (
+                        <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                          {s}
+                          {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs">
+                        {selectedCategory || t('questions.category')}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                      <DropdownMenuItem onClick={() => setSelectedCategory('')}>
+                        <span className="text-muted-foreground">{t('questions.category')}</span>
+                        {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                      {filteredCategories.map((c) => (
+                        <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                          {c}
+                          {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  <p>{t('exam.rule3')}</p>
+                  <p>{t('exam.rule4')}</p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="duration">{t('exam.duration')}</Label>
-                <Input
-                  id="duration"
-                  type="number"
-                  min={EXAM_MIN_DURATION_MIN}
-                  max={EXAM_MAX_DURATION_MIN}
-                  value={durationMin}
-                  onChange={(e) => setDurationMin(Number(e.target.value))}
-                />
-                <p className="text-xs text-muted-foreground">{EXAM_MIN_DURATION_MIN}-{EXAM_MAX_DURATION_MIN} {t('exam.minutes')}</p>
+
+              {/* Right: count + duration */}
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="questionCount">{t('exam.questionCount')}</Label>
+                  <Input
+                    id="questionCount"
+                    type="number"
+                    min={EXAM_MIN_COUNT}
+                    max={EXAM_MAX_COUNT}
+                    value={questionCount}
+                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                  />
+                  <p className="text-xs text-muted-foreground">{EXAM_MIN_COUNT}-{EXAM_MAX_COUNT}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duration">{t('exam.duration')}</Label>
+                  <Input
+                    id="duration"
+                    type="number"
+                    min={EXAM_MIN_DURATION_MIN}
+                    max={EXAM_MAX_DURATION_MIN}
+                    value={durationMin}
+                    onChange={(e) => setDurationMin(Number(e.target.value))}
+                  />
+                  <p className="text-xs text-muted-foreground">{EXAM_MIN_DURATION_MIN}-{EXAM_MAX_DURATION_MIN} {t('exam.minutes')}</p>
+                </div>
               </div>
-            </div>
-            <div className="space-y-1 text-sm text-muted-foreground">
-              <p>{t('exam.rule3')}</p>
-              <p>{t('exam.rule4')}</p>
             </div>
             <Button onClick={handleStart} disabled={isLoading} size="lg" className="w-full">
               {isLoading ? <Spinner /> : <Play className="h-4 w-4" />}
@@ -316,11 +320,7 @@ export function ExamSession() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner />
-      </div>
-    )
+    return <LoadingTips className="py-12" compact />
   }
 
   if (error && !hasStarted) {

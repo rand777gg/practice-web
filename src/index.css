@@ -177,7 +177,7 @@
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
   border: 1.5px solid;
   animation: colorWheel 1.5s linear 1, geminiBorderGlow 1.5s ease-in-out 1;
-  color: rgb(80, 17, 169);
+  color: rgb(73, 20, 148);
   transition: animation-play-state 0.2s;
 }
 

@@ -1,18 +1,29 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
-import { Calendar } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Calendar, Check, ChevronDown, HelpCircle, Plus, Sparkles, X } from 'lucide-react'
 import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import type { DailyTarget } from '@/types'
+import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -30,16 +41,121 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const { t } = useT()
   const { user, profile, refreshProfile } = useAuthStore()
   const theme = useThemeStore((s) => s.theme)
+
+  const savedSubjects = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
+  const savedTargets = normalizeDailyTargets(profile?.daily_targets ? JSON.parse(profile.daily_targets) : null)
+
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(savedSubjects)
   const [deadline, setDeadline] = useState(profile?.deadline ?? '')
+  const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>(savedTargets)
   const [saving, setSaving] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [allSubjects, setAllSubjects] = useState<string[]>([])
+  const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
+  const [doneCount, setDoneCount] = useState(0)
+
+  useEffect(() => {
+    if (!open) return
+    async function load() {
+      const { data: qs } = await supabase.from('questions').select('subject')
+      const counts = new Map<string, number>()
+      for (const q of (qs ?? [])) {
+        const s = q.subject || 'Other'
+        counts.set(s, (counts.get(s) ?? 0) + 1)
+      }
+      setAllSubjects([...counts.keys()].sort())
+      setSubjectCounts(counts)
+
+      if (user) {
+        const subjectList = selectedSubjects.length > 0 ? selectedSubjects : [...counts.keys()]
+        const { data: done } = await supabase
+          .from('user_answers')
+          .select('question_id')
+          .eq('user_id', user.id)
+        const doneIds = new Set((done ?? []).map((a) => a.question_id))
+
+        const { data: selectedQs } = await supabase
+          .from('questions')
+          .select('id')
+          .in('subject', subjectList)
+
+        let doneInSubjects = 0
+        for (const q of (selectedQs ?? [])) {
+          if (doneIds.has(q.id)) doneInSubjects++
+        }
+        setDoneCount(doneInSubjects)
+      }
+    }
+    load()
+  }, [open, user, selectedSubjects])
+
+  useEffect(() => {
+    const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
+    const t = normalizeDailyTargets(profile?.daily_targets ? JSON.parse(profile.daily_targets) : null)
+    setSelectedSubjects(s)
+    setDailyTargets(t)
+    setDeadline(profile?.deadline ?? '')
+  }, [profile])
+
+  const totalSelected = selectedSubjects.reduce((sum, s) => sum + (subjectCounts.get(s) ?? 0), 0)
+  const remaining = Math.max(totalSelected - doneCount, 0)
+
+  let dailyGoal = 0
+  if (deadline) {
+    const deadlineDate = new Date(deadline + 'T23:59:59')
+    const daysLeft = Math.max(Math.ceil((deadlineDate.getTime() - Date.now()) / 86400000), 1)
+    dailyGoal = Math.ceil(remaining / daysLeft)
+  }
+
+  const toggleSubject = (s: string) => {
+    setSelectedSubjects((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+    )
+  }
+
+  const addDailyTarget = () => {
+    if (allSubjects.length === 0) return
+    const used = new Set(dailyTargets.flatMap((t) => t.subjects.map(s => s.subject)))
+    const next = allSubjects.find((s) => !used.has(s))
+    if (!next) return
+    setDailyTargets((prev) => [...prev, { subjects: [{ subject: next, count: 5 }], deadline: null }])
+  }
+
+  const updateDailyDeadline = (i: number, deadline: string) => {
+    setDailyTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, deadline } : t))
+  }
+
+  const updateSubjectCount = (i: number, si: number, count: number) => {
+    setDailyTargets((prev) => prev.map((t, idx) => {
+      if (idx !== i) return t
+      return { ...t, subjects: t.subjects.map((s, sIdx) => sIdx === si ? { ...s, count } : s) }
+    }))
+  }
+
+  const toggleTargetSubject = (i: number, subj: string) => {
+    setDailyTargets((prev) => prev.map((t, idx) => {
+      if (idx !== i) return t
+      const exists = t.subjects.some(s => s.subject === subj)
+      if (exists) {
+        return { ...t, subjects: t.subjects.filter(s => s.subject !== subj) }
+      }
+      return { ...t, subjects: [...t.subjects, { subject: subj, count: 5 }] }
+    }))
+  }
+
+  const removeDailyTarget = (i: number) => {
+    setDailyTargets((prev) => prev.filter((_, idx) => idx !== i))
+  }
 
   const handleSave = async () => {
     if (!user) return
     setSaving(true)
     await supabase
       .from('profiles')
-      .update({ deadline: deadline || null })
+      .update({
+        deadline: deadline || null,
+        plan_subjects: selectedSubjects.length > 0 ? JSON.stringify(selectedSubjects) : null,
+        daily_targets: dailyTargets.length > 0 ? JSON.stringify(dailyTargets) : null,
+      })
       .eq('id', user.id)
     await refreshProfile()
     setSaving(false)
@@ -48,35 +164,246 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader className="sm:text-center">
           <DialogTitle>{t('plan.title')}</DialogTitle>
-          <DialogDescription>{t('plan.desc')}</DialogDescription>
         </DialogHeader>
-        <button
-          type="button"
-          onClick={() => inputRef.current?.showPicker()}
-          className="relative flex items-center justify-between w-full h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-h-[65vh] overflow-y-auto pr-1">
+          {/* 左侧：Long-term plan */}
+          <div className="border rounded-lg p-5 mt-2">
+            <div className="text-base font-semibold mb-4 text-blue-600 dark:text-blue-400">
+              {t('plan.longTerm')}
+              <HoverCard openDelay={500}>
+                <HoverCardTrigger asChild>
+                  <span className="inline-flex items-center ml-1 cursor-help">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                </HoverCardTrigger>
+                <HoverCardContent className="text-sm w-64">
+                  {t('plan.desc')}
+                </HoverCardContent>
+              </HoverCard>
+            </div>
+
+            <div className="space-y-3">
+              {/* Subject selection */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                    <span className={selectedSubjects.length === 0 ? 'text-muted-foreground' : ''}>
+                      {selectedSubjects.length === 0
+                        ? t('plan.selectHint')
+                        : selectedSubjects.map((s) => `${s} (${subjectCounts.get(s) ?? 0})`).join(', ')}
+                    </span>
+                    <ChevronDown className="h-4 w-4 ml-2 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-60 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                  <DropdownMenuItem
+                    onSelect={(e) => { e.preventDefault(); setSelectedSubjects([]) }}
+                    className="text-muted-foreground text-sm"
+                  >
+                    {t('plan.selectHint')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {allSubjects.map((s) => {
+                    const checked = selectedSubjects.includes(s)
+                    return (
+                      <DropdownMenuItem
+                        key={s}
+                        onSelect={(e) => { e.preventDefault(); toggleSubject(s) }}
+                        className="text-sm"
+                      >
+                        <Check className={cn('h-4 w-4', !checked && 'opacity-0')} />
+                        <span>{s}</span>
+                        <span className="ml-auto text-muted-foreground">{subjectCounts.get(s) ?? 0}</span>
+                      </DropdownMenuItem>
+                    )
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Deadline */}
+              <button
+                type="button"
+                onClick={() => {
+                  const btn = document.querySelector('.plan-date-input') as HTMLInputElement
+                  btn?.showPicker()
+                }}
+                className="relative flex items-center justify-between w-full h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
+              >
+                <span className={deadline ? '' : 'text-muted-foreground'}>
+                  {deadline ? formatDate(deadline) : t('plan.pickDate')}
+                </span>
+                <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                <input
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  min={new Date().toISOString().slice(0, 10)}
+                  className="plan-date-input absolute inset-0 opacity-0 cursor-pointer"
+                  style={{ colorScheme: theme }}
+                />
+              </button>
+
+              {selectedSubjects.length > 0 && deadline && (
+                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2.5 text-xs space-y-0.5">
+                  <p>
+                    <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">{dailyGoal} {t('plan.perDay')}</span>
+                  </p>
+                  <p className="text-muted-foreground">
+                    {t('plan.remaining')}: {remaining} / {totalSelected}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 右侧：Daily targets */}
+          <div className="border rounded-lg p-5 mt-2">
+            <div className="text-base font-semibold mb-4 text-pink-600 dark:text-pink-400">
+              {t('plan.dailyTarget')}
+              <HoverCard openDelay={500}>
+                <HoverCardTrigger asChild>
+                  <span className="inline-flex items-center ml-1 cursor-help">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                </HoverCardTrigger>
+                <HoverCardContent className="text-sm w-64">
+                  {t('plan.dailyTargetDesc')}
+                </HoverCardContent>
+              </HoverCard>
+            </div>
+
+            <div className="space-y-5">
+            {dailyTargets.map((target, i) => {
+              const usedByOthers = new Set(
+                dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
+              )
+              const targetSubjectNames = target.subjects.map(s => s.subject)
+              const availableSubjects = allSubjects.filter(s => !usedByOthers.has(s) || targetSubjectNames.includes(s))
+              return (
+                <div key={i} className="space-y-3">
+                  {/* Subject multi-select — full width with counts */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                        <span className={target.subjects.length === 0 ? 'text-muted-foreground' : ''}>
+                          {target.subjects.length === 0
+                            ? t('plan.selectHint')
+                            : target.subjects.map(s => `${s.subject} (${subjectCounts.get(s.subject) ?? 0})`).join(', ')}
+                        </span>
+                        <ChevronDown className="h-4 w-4 ml-2 shrink-0" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-60 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                      {availableSubjects.map((s) => {
+                        const checked = targetSubjectNames.includes(s)
+                        return (
+                          <DropdownMenuItem
+                            key={s}
+                            onSelect={(e) => { e.preventDefault(); toggleTargetSubject(i, s) }}
+                            className="text-sm"
+                          >
+                            <Check className={cn('h-4 w-4', !checked && 'opacity-0')} />
+                            <span>{s}</span>
+                            <span className="ml-auto text-muted-foreground">{subjectCounts.get(s) ?? 0}</span>
+                          </DropdownMenuItem>
+                        )
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {/* Deadline — full width, below subject dropdown */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const btn = document.querySelector(`.target-date-input-${i}`) as HTMLInputElement
+                        btn?.showPicker()
+                      }}
+                      className="relative flex items-center justify-between flex-1 h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
+                    >
+                      <span className={target.deadline ? '' : 'text-muted-foreground'}>
+                        {target.deadline
+                          ? new Date(target.deadline).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : t('plan.deadline')}
+                      </span>
+                      <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <input
+                        type="datetime-local"
+                        value={target.deadline ?? ''}
+                        onChange={(e) => updateDailyDeadline(i, e.target.value)}
+                        className={`target-date-input-${i} absolute inset-0 opacity-0 cursor-pointer`}
+                        style={{ colorScheme: theme }}
+                      />
+                    </button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeDailyTarget(i)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {/* Per-subject count inputs */}
+                  {target.subjects.map((subj, si) => (
+                    <div key={subj.subject} className="flex items-center justify-between gap-2 pl-1">
+                      <span className="text-sm text-muted-foreground">{subj.subject}</span>
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min={1}
+                          value={subj.count}
+                          onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
+                          className="h-10 w-16 text-sm text-center shrink-0"
+                        />
+                        <span className="text-sm text-muted-foreground">{t('plan.questions')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+            </div>
+
+            {(() => {
+              const usedAll = new Set(dailyTargets.flatMap((t) => t.subjects.map(s => s.subject)))
+              if (usedAll.size >= allSubjects.length) return null
+              return (
+                <Button
+                  variant="outline"
+                  onClick={addDailyTarget}
+                  className="text-sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('plan.addSubject')}
+                </Button>
+              )
+            })()}
+          </div>
+        </div>
+
+        {/* AI recommendation card */}
+        <div
+          className="mt-6 rounded-lg p-5 text-center"
+          style={{
+            border: '1.5px solid',
+            animation: 'colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite',
+            background: 'linear-gradient(135deg, rgba(59,130,246,0.04), rgba(139,92,246,0.04))',
+          }}
         >
-          <span className={deadline ? '' : 'text-muted-foreground'}>
-            {deadline ? formatDate(deadline) : t('plan.pickDate')}
-          </span>
-          <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-          <input
-            ref={inputRef}
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            min={new Date().toISOString().slice(0, 10)}
-            className="absolute inset-0 opacity-0 cursor-pointer"
-            style={{ colorScheme: theme }}
-          />
-        </button>
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Sparkles className="h-4 w-4" />
+            <span>基于艾宾浩斯机器学习算法的推荐学习计划</span>
+          </div>
+          <p className="text-xs text-muted-foreground/60 mt-1">即将推出</p>
+        </div>
+
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
+            <Button variant="outline">{t('plan.cancel')}</Button>
           </DialogClose>
-          <Button size="sm" onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving}>
             {saving ? t('questions.saving') : t('plan.save')}
           </Button>
         </DialogFooter>

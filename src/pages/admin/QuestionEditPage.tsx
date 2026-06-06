@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
 import { QuestionForm } from '@/components/questions/QuestionForm'
-import { Spinner } from '@/components/ui/spinner'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 
@@ -30,9 +30,7 @@ export function Component() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-12">
-        <Spinner />
-      </div>
+      <LoadingTips className="py-12" compact />
     )
   }
 

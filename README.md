@@ -2,7 +2,7 @@
 
 # Practice Web — 刷题网站
 
-A single-choice question practice website built with React + Supabase. Supports practice mode (with subject/category filter and notes), configurable exam mode, wrong answer review with note editing, ECharts-powered dashboard with analytics, daily study plan with progress tracking, question error reporting, and question management (CRUD + CSV/JSON import). Interface available in Chinese and English. PWA-enabled for offline use.
+A single-choice question practice website built with React + Supabase. Supports practice mode (with subject/category filter, public/private notes, and swipe navigation), configurable exam mode with auto-submit and resume, wrong answer review with favorites and note editing, ECharts-powered dashboard with analytics, dual study plan system (long-term auto-calc + custom daily targets), question error reporting, and question management (CRUD + CSV/JSON import). Interface available in Chinese and English. PWA-enabled for offline use.
 
 ## Tech Stack
 
@@ -18,10 +18,10 @@ A single-choice question practice website built with React + Supabase. Supports 
 | Feature | Description |
 |---|---|
 | **Dashboard Analytics** | ECharts-powered charts: calendar heatmap, stacked bar chart (Mon–Sun), Sankey diagram (subject→category), metrics card with trend arrows |
-| **Study Plan** | Set a deadline (DDL), auto-calculated daily goal with real-time progress bar in header |
-| **Practice Mode** | Random single-choice questions with subject/category filter, attempt/wrong tracking, skip button, persistent notes |
-| **Exam Mode** | Configurable question count (5–200) and duration (5–300 min), subject/category filter, question navigator, resume detection, auto-submit on timeout, score report |
-| **Wrong Answer Review** | Filter by practice/exam mode, note editing, remove wrong answers, answer highlighted |
+| **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets (per-subject count + optional deadline). Real-time dual progress bars in header. Click dashboard cards to edit directly. |
+| **Practice Mode** | Random single-choice questions with subject/category linked filter, attempt/wrong tracking, skip button, persistent notes with public/private toggle, left-swipe to next question |
+| **Exam Mode** | Configurable question count (5–200) and duration (5–300 min), subject/category filter, grid question navigator, resume detection dialog, auto-submit on timeout, score report with per-question review |
+| **Wrong Answer Review** | Filter by practice/exam mode, inline note editing with public/private toggle, favorites star button, remove wrong answers, answer highlighted |
 | **Question Management** | Create, edit, delete questions with dynamic option count (2+ options) |
 | **Bulk Import** | CSV or JSON file import |
 | **Subject & Analysis** | Questions support subject tag (e.g., Logic, Math) and analysis field for answer explanations |
@@ -31,7 +31,11 @@ A single-choice question practice website built with React + Supabase. Supports 
 | **Mobile Responsive** | Collapsible sidebar drawer, responsive tables and forms, left/right swipe to switch questions in practice and exam mode |
 | **PWA** | Service worker with offline caching, installable on mobile and desktop |
 | **Dark Mode** | System-preference detection, localStorage persistence, smooth 0.25s transitions, toggle in header and login page |
+| **Public Notes** | Mark notes as public to share with other users; shown with author email in question detail |
+| **Favorites** | Star questions in practice or wrong review; syncs to Supabase, accessible from sidebar |
 | **I18n** | Chinese/English dropdown switcher in header |
+| **Loading Tips** | Rotating "Did you know?" tips cycling every 5s during loading states, with fade transitions. Edit in `src/i18n/translations.ts` |
+| **GitHub Release Badge** | Sidebar fetches latest GitHub release version and displays it as a badge |
 
 ## Getting Started
 
@@ -97,14 +101,14 @@ practice-web/
     ├── index.css                 # Tailwind + CSS custom properties
     ├── types/                    # TypeScript types (Question, ExamSession, etc.)
     ├── lib/                      # supabase client, cn util, constants
-    ├── stores/                   # Zustand stores (auth, exam, lang, theme)
-    ├── hooks/                    # useQuestions, useTimer, useUserAnswers, useSwipe
+    ├── stores/                   # Zustand stores (auth, exam, lang, theme, refresh)
+    ├── hooks/                    # useQuestions, useTimer, useUserAnswers, useFavorites, useSwipe
     ├── i18n/                     # translations (zh/en) + useT hook
     ├── router/                   # Route definitions (lazy loaded)
     ├── components/
     │   ├── ui/                   # shadcn primitives (button, card, dialog, etc.)
     │   ├── auth/                 # LoginForm, RegisterForm, ProtectedRoute
-    │   ├── layout/               # AppLayout, Sidebar, Header, LoadingScreen
+    │   ├── layout/               # AppLayout, Sidebar, Header, PlanDialog, PlanProgress, DashboardPlanCards, LoadingScreen, LoadingTips
     │   ├── questions/            # QuestionCard, QuestionForm, QuestionList, ImportDialog
     │   ├── practice/             # PracticeSession
     │   ├── exam/                 # ExamSession, ExamTimer, ExamProgress, ExamResultCard
@@ -122,6 +126,7 @@ practice-web/
 | `/practice` | Practice Mode | Authenticated |
 | `/exam` | Exam Mode | Authenticated |
 | `/exam/result/:sessionId` | Exam Results | Authenticated |
+| `/favorites` | Favorites | Authenticated |
 | `/review` | Wrong Answer Review | Authenticated |
 | `/admin/questions` | Question Management | Admin |
 | `/admin/questions/new` | Create Question | Admin |
