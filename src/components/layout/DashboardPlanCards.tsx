@@ -160,7 +160,7 @@ export function DashboardPlanCards() {
 
   return (
     <>
-      <div className="flex gap-4">
+      <div className="flex flex-col sm:flex-row gap-4">
         {deadline && (
           <Card className="flex-1 min-w-0 border-0 shadow-none cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => setDialogOpen(true)}>
             <CardHeader className="pb-1">

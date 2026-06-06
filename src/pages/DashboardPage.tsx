@@ -177,7 +177,7 @@ export function Component() {
         </div>
       ) : (
         <Tabs defaultValue="today" className="w-full">
-          <TabsList>
+          <TabsList className="justify-center">
             <TabsTrigger value="today" className="gap-1.5">
               <Target className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{t('dashboard.tabToday')}</span>

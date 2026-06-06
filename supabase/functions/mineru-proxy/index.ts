@@ -1,14 +1,10 @@
-// MinerU proxy — relays browser requests to avoid CORS issues
-// Supports both lightweight (agent v1) and precise (v4) APIs
-
-const AGENT_BASE = 'https://mineru.net/api/v1/agent'
-const V4_BASE = 'https://mineru.net/api/v4'
+const MINERU_BASE = 'https://mineru.net/api/v1/agent'
 
 Deno.serve(async (req: Request) => {
   const corsHeaders: Record<string, string> = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-MinerU-Token',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   }
 
   if (req.method === 'OPTIONS') {
@@ -28,53 +24,21 @@ Deno.serve(async (req: Request) => {
         })
       }
       const res = await fetch(targetUrl)
-      // For zip files, return as binary; for markdown, return as JSON { text }
-      const ct = res.headers.get('Content-Type') || ''
-      if (ct.includes('zip') || ct.includes('octet-stream')) {
-        const blob = await res.arrayBuffer()
-        return new Response(blob, {
-          status: res.status,
-          headers: { ...corsHeaders, 'Content-Type': 'application/zip' },
-        })
-      }
       const text = await res.text()
       return new Response(JSON.stringify({ text }), {
-        status: res.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: res.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // v4 precise API — proxy to mineru.net/api/v4/...
-    if (pathname.includes('/v4/')) {
-      const v4Path = pathname.split('/v4')[1] || ''
-      const targetUrl = `${V4_BASE}${v4Path}`
-
-      const fetchHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-      const mineruToken = req.headers.get('X-MinerU-Token')
-      if (mineruToken) fetchHeaders['Authorization'] = `Bearer ${mineruToken}`
-
-      const fetchOpts: RequestInit = { method: req.method, headers: fetchHeaders }
-      if (req.method === 'POST') fetchOpts.body = await req.text()
-
-      const res = await fetch(targetUrl, fetchOpts)
-      const data = await res.text()
-      return new Response(data, {
-        status: res.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Agent lightweight API — forward to mineru.net/api/v1/agent
+    // Forward to MinerU agent API
     const afterFn = pathname.split('/mineru-proxy')[1] || ''
-    const targetUrl = `${AGENT_BASE}${afterFn}`
+    const targetUrl = `${MINERU_BASE}${afterFn}`
 
     const fetchOpts: RequestInit = {
       method: req.method,
       headers: { 'Content-Type': 'application/json' },
     }
-    if (req.method === 'POST') {
-      fetchOpts.body = await req.text()
-    }
+    if (req.method === 'POST') fetchOpts.body = await req.text()
     const res = await fetch(targetUrl, fetchOpts)
     const data = await res.text()
     return new Response(data, {

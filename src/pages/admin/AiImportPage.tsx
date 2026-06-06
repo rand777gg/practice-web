@@ -3,14 +3,11 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
-import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig, hasMineruToken, getMineruToken } from '@/lib/ai'
-import type { MinerUMode } from '@/lib/ai/mineru'
+import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig } from '@/lib/ai'
 import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
 
@@ -26,13 +23,10 @@ export function Component() {
   const [parseMsg, setParseMsg] = useState('')
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
-  const [mineruMode, setMineruMode] = useState<MinerUMode>('lightweight')
-  const [mineruToken, setMineruToken] = useState(getMineruToken)
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
 
   const aiConfigured = hasAiConfig()
-  const mineruTokenConfigured = hasMineruToken()
 
   useEffect(() => {
     async function loadMeta() {
@@ -53,15 +47,11 @@ export function Component() {
 
   const startParse = async () => {
     if (!file) return
-    if (mineruMode === 'precise' && !mineruToken.trim()) {
-      setError('精准解析需要 MinerU Token')
-      return
-    }
     setStep('parsing')
     setError('')
 
     try {
-      const mineru = new MinerUClient(mineruMode, mineruToken || undefined)
+      const mineru = new MinerUClient()
       const { markdown } = await mineru.uploadAndParse(file, (msg) => setParseMsg(msg))
 
       setParseMsg('AI 正在提取题目...')
@@ -155,15 +145,6 @@ export function Component() {
         <h1 className="text-xl font-bold">AI 导入题目</h1>
       </div>
 
-      <div className="flex gap-4 text-xs text-muted-foreground">
-        <span className={aiConfigured ? 'text-green-500' : 'text-orange-500'}>
-          DeepSeek API {aiConfigured ? '✓ 已配置' : '✗ 未配置'}
-        </span>
-        <span className={mineruTokenConfigured ? 'text-green-500' : ''}>
-          MinerU Token {mineruTokenConfigured ? '✓ 已配置' : '○ 可选'}
-        </span>
-      </div>
-
       {!aiConfigured && (
         <Card className="border-orange-500/50 bg-orange-50/30 dark:bg-orange-950/10">
           <CardContent className="py-3 text-sm text-orange-600 dark:text-orange-400 flex items-center gap-2">
@@ -178,36 +159,6 @@ export function Component() {
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <>
-              <div className="flex items-center gap-3 mb-4">
-                <Label className="text-sm shrink-0">解析模式</Label>
-                <div className="flex rounded-md border overflow-hidden">
-                  <button
-                    type="button"
-                    className={`px-3 py-1.5 text-xs transition-colors ${mineruMode === 'lightweight' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-                    onClick={() => setMineruMode('lightweight')}
-                  >轻量解析</button>
-                  <button
-                    type="button"
-                    className={`px-3 py-1.5 text-xs transition-colors ${mineruMode === 'precise' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-                    onClick={() => setMineruMode('precise')}
-                  >精准解析</button>
-                </div>
-              </div>
-              {mineruMode === 'precise' && !mineruTokenConfigured && (
-                <div className="mb-4">
-                  <Label htmlFor="mineru-token" className="text-xs">MinerU Token</Label>
-                  <Input
-                    id="mineru-token"
-                    value={mineruToken}
-                    onChange={(e) => setMineruToken(e.target.value)}
-                    placeholder="在 MinerU API 管理页面创建"
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
-              )}
-              {mineruMode === 'precise' && mineruTokenConfigured && (
-                <p className="text-xs text-green-500 mb-4">MinerU Token 已通过环境变量配置 ✓</p>
-              )}
               <AiImportUpload onFile={handleFile} disabled={!aiConfigured} />
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}
               <Button onClick={startParse} disabled={!file || !aiConfigured} className="w-full mt-4">
