@@ -217,9 +217,6 @@ export const zh = {
     add: '收藏',
     remove: '取消收藏',
   },
-  ai: {
-    disclaimer: '内容由 AI 生成，请仔细甄别',
-  },
   ai_import: {
     title: 'AI 导入题目',
     uploadHint: '拖拽文档到此处，或点击选择文件',
@@ -276,6 +273,7 @@ export const zh = {
     disabledProviders: '未启用',
     providerId: 'Provider ID',
     models: '可用模型',
+    disclaimer: '内容由 AI 生成，请仔细甄别',
   },
   common: {
     loading: '加载中...',
@@ -504,9 +502,6 @@ export const en = {
     add: 'Favorite',
     remove: 'Unfavorite',
   },
-  ai: {
-    disclaimer: 'AI-generated content. Please verify.',
-  },
   ai_import: {
     title: 'AI Import',
     uploadHint: 'Drag document here or click to select',
@@ -554,6 +549,7 @@ export const en = {
     'Tip: This app works offline! Install it as a PWA for on-the-go practice.',
   ],
   ai: {
+    disclaimer: 'AI-generated content. Please verify.',
     title: 'AI Model Management',
     description: 'Enable and configure AI providers, select models to use.',
     official: 'Official',
