@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { useThemeStore } from '@/stores/theme-store'
+import { useT } from '@/i18n/use-t'
 
 interface Props {
   data: { subject: string; category: string }[]
@@ -9,15 +10,21 @@ interface Props {
 const COLORS = ['#91cc75', '#5470c6', '#fac858', '#ee6666', '#73c0de', '#fc8452', '#9a60b4', '#ea7ccc', '#3ba272']
 
 function buildChartData(entries: [string, number][], isDark: boolean) {
+  const textColor = isDark ? '#d1d5db' : '#374151'
   return {
     tooltip: { trigger: 'item' as const },
     series: [{
       type: 'pie',
-      radius: ['50%', '70%'],
-      center: ['50%', '50%'],
+      radius: ['45%', '75%'],
+      center: ['50%', '55%'],
       itemStyle: { borderRadius: 6, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 2 },
-      label: { show: false },
-      emphasis: { label: { show: true, fontSize: 12, fontWeight: 'bold' } },
+      label: {
+        show: true,
+        position: 'outside' as const,
+        formatter: '{b}\n{d}%',
+        fontSize: 11,
+        color: textColor,
+      },
       data: entries.map(([name, value]) => ({ name, value })),
     }],
     color: COLORS,
@@ -25,6 +32,7 @@ function buildChartData(entries: [string, number][], isDark: boolean) {
 }
 
 export function SubjectDonutCharts({ data }: Props) {
+  const { t } = useT()
   const theme = useThemeStore((s) => s.theme)
   const isDark = theme === 'dark'
 
@@ -46,12 +54,12 @@ export function SubjectDonutCharts({ data }: Props) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div>
-        <p className="text-xs text-muted-foreground text-center mb-1">学科</p>
-        <ReactECharts option={subjectOption} style={{ height: 200 }} />
+        <p className="text-xs text-muted-foreground text-center mb-1">{t('questions.subject')}</p>
+        <ReactECharts option={subjectOption} style={{ height: 280 }} />
       </div>
       <div>
-        <p className="text-xs text-muted-foreground text-center mb-1">分类</p>
-        <ReactECharts option={categoryOption} style={{ height: 200 }} />
+        <p className="text-xs text-muted-foreground text-center mb-1">{t('questions.category')}</p>
+        <ReactECharts option={categoryOption} style={{ height: 280 }} />
       </div>
     </div>
   )
