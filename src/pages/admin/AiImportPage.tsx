@@ -9,7 +9,7 @@ import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
-import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig } from '@/lib/ai'
+import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig, hasMineruToken, getMineruToken } from '@/lib/ai'
 import type { MinerUMode } from '@/lib/ai/mineru'
 import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
@@ -27,11 +27,12 @@ export function Component() {
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
   const [mineruMode, setMineruMode] = useState<MinerUMode>('lightweight')
-  const [mineruToken, setMineruToken] = useState('')
+  const [mineruToken, setMineruToken] = useState(getMineruToken)
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
 
   const aiConfigured = hasAiConfig()
+  const mineruTokenConfigured = hasMineruToken()
 
   useEffect(() => {
     async function loadMeta() {
@@ -154,11 +155,20 @@ export function Component() {
         <h1 className="text-xl font-bold">AI 导入题目</h1>
       </div>
 
+      <div className="flex gap-4 text-xs text-muted-foreground">
+        <span className={aiConfigured ? 'text-green-500' : 'text-orange-500'}>
+          DeepSeek API {aiConfigured ? '✓ 已配置' : '✗ 未配置'}
+        </span>
+        <span className={mineruTokenConfigured ? 'text-green-500' : ''}>
+          MinerU Token {mineruTokenConfigured ? '✓ 已配置' : '○ 可选'}
+        </span>
+      </div>
+
       {!aiConfigured && (
         <Card className="border-orange-500/50 bg-orange-50/30 dark:bg-orange-950/10">
           <CardContent className="py-3 text-sm text-orange-600 dark:text-orange-400 flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            请先配置 VITE_DEEPSEEK_API_KEY 环境变量
+            请在 EdgeOne 环境变量中配置 VITE_DEEPSEEK_API_KEY
           </CardContent>
         </Card>
       )}
@@ -183,7 +193,7 @@ export function Component() {
                   >精准解析</button>
                 </div>
               </div>
-              {mineruMode === 'precise' && (
+              {mineruMode === 'precise' && !mineruTokenConfigured && (
                 <div className="mb-4">
                   <Label htmlFor="mineru-token" className="text-xs">MinerU Token</Label>
                   <Input
@@ -194,6 +204,9 @@ export function Component() {
                     className="h-8 text-xs mt-1"
                   />
                 </div>
+              )}
+              {mineruMode === 'precise' && mineruTokenConfigured && (
+                <p className="text-xs text-green-500 mb-4">MinerU Token 已通过环境变量配置 ✓</p>
               )}
               <AiImportUpload onFile={handleFile} disabled={!aiConfigured} />
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}

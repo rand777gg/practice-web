@@ -11,3 +11,11 @@ export function getAiConfig(): AiConfig {
 export function hasAiConfig(): boolean {
   return !!import.meta.env.VITE_DEEPSEEK_API_KEY
 }
+
+export function hasMineruToken(): boolean {
+  return !!import.meta.env.VITE_MINERU_TOKEN
+}
+
+export function getMineruToken(): string {
+  return import.meta.env.VITE_MINERU_TOKEN || ''
+}

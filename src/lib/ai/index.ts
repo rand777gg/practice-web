@@ -1,5 +1,5 @@
 export { DeepSeekParser } from './deepseek'
 export { MinerUClient } from './mineru'
 export type { MinerUMode } from './mineru'
-export { getAiConfig, hasAiConfig } from './config'
+export { getAiConfig, hasAiConfig, hasMineruToken, getMineruToken } from './config'
 export type { AiConfig, ParsedQuestion, AiParseResult, DocumentParseResult } from './types'
