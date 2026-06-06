@@ -7,15 +7,20 @@ import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
-import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig } from '@/lib/ai'
-import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle } from 'lucide-react'
-import type { ParsedQuestion } from '@/lib/ai/types'
+import {
+  DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
+  getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
+} from '@/lib/ai'
+import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
+import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, Settings2 } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
+type ParseMode = 'lightweight' | 'precision'
 
 export function Component() {
   const [step, setStep] = useState<Step>('upload')
   const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [questions, setQuestions] = useState<ParsedQuestion[]>([])
   const [subject, setSubject] = useState('')
   const [category, setCategory] = useState('')
@@ -26,7 +31,21 @@ export function Component() {
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
 
+  // MinerU precision parsing settings
+  const [parseMode, setParseMode] = useState<ParseMode>('lightweight')
+  const [modelVersion, setModelVersion] = useState<MinerUModelVersion>(getMinerUModelVersion())
+  const [mineruToken, setMineruTokenState] = useState(getMinerUToken())
+  const [enableOcr, setEnableOcr] = useState(false)
+  const [enableFormula, setEnableFormula] = useState(true)
+  const [enableTable, setEnableTable] = useState(true)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+
   const aiConfigured = hasAiConfig()
+  const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
+  const canStart = parseMode === 'precision'
+    ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
+    : !!file && aiConfigured
 
   useEffect(() => {
     async function loadMeta() {
@@ -43,34 +62,84 @@ export function Component() {
     loadMeta()
   }, [])
 
-  const handleFile = (f: File) => setFile(f)
+  const handleFile = (f: File) => { setFile(f); setFiles([]) }
+  const handleFiles = (fs: File[]) => { setFiles(fs); setFile(null) }
+
+  const handleTokenChange = (token: string) => {
+    setMineruTokenState(token)
+    setMinerUToken(token)
+  }
+
+  const handleModelChange = (model: MinerUModelVersion) => {
+    setModelVersion(model)
+    setMinerUModelVersion(model)
+  }
 
   const startParse = async () => {
-    if (!file) return
     setStep('parsing')
     setError('')
+    setQuestions([])
 
     try {
-      const mineru = new MinerUClient()
-      const { markdown } = await mineru.uploadAndParse(file, (msg) => setParseMsg(msg))
-
-      setParseMsg('AI 正在提取题目...')
-      const parser = new DeepSeekParser(getAiConfig())
-      const result = await parser.parseDocument(markdown)
-
-      if (result.questions.length === 0) {
-        setError('文档中未发现有效题目')
-        setStep('upload')
-        return
+      if (parseMode === 'precision') {
+        await runPrecisionParse()
+      } else {
+        await runLightweightParse()
       }
-
-      setQuestions(result.questions)
-      setSelectedIds(new Set(result.questions.map((_, i) => i)))
-      setStep('metadata')
     } catch (err) {
       setError(err instanceof Error ? err.message : '解析失败')
       setStep('upload')
     }
+  }
+
+  const runLightweightParse = async () => {
+    if (!file) return
+    const mineru = new MinerUClient()
+    const { markdown } = await mineru.uploadAndParse(file, (msg) => setParseMsg(msg))
+    await extractQuestions(markdown)
+  }
+
+  const runPrecisionParse = async () => {
+    const mineru = new MinerUClient()
+    const options = {
+      token: mineruToken,
+      modelVersion,
+      isOcr: enableOcr,
+      enableFormula,
+      enableTable,
+      language: 'ch',
+    }
+
+    if (batchMode && files.length > 0) {
+      const results = await mineru.uploadAndParseBatchPrecision(files, options, (msg) => setParseMsg(msg))
+      if (results.length === 0) {
+        setError('所有文件解析失败')
+        setStep('upload')
+        return
+      }
+      // Merge all markdowns
+      const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
+      await extractQuestions(mergedMd)
+    } else if (file) {
+      const { markdown } = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg))
+      await extractQuestions(markdown)
+    }
+  }
+
+  const extractQuestions = async (markdown: string) => {
+    setParseMsg('AI 正在提取题目...')
+    const parser = new DeepSeekParser(getAiConfig())
+    const result = await parser.parseDocument(markdown)
+
+    if (result.questions.length === 0) {
+      setError('文档中未发现有效题目')
+      setStep('upload')
+      return
+    }
+
+    setQuestions(result.questions)
+    setSelectedIds(new Set(result.questions.map((_, i) => i)))
+    setStep('metadata')
   }
 
   const goPreview = () => setStep('preview')
@@ -136,6 +205,16 @@ export function Component() {
     })
   }
 
+  const resetState = () => {
+    setStep('upload')
+    setFile(null)
+    setFiles([])
+    setQuestions([])
+    setSubject('')
+    setCategory('')
+    setSelectedIds(new Set())
+  }
+
   return (
     <div className="max-w-3xl space-y-4">
       <div className="flex items-center gap-3">
@@ -159,11 +238,123 @@ export function Component() {
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <>
-              <AiImportUpload onFile={handleFile} disabled={!aiConfigured} />
+              {/* Parse mode selection */}
+              <div className="flex gap-2">
+                <Button
+                  variant={parseMode === 'lightweight' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setParseMode('lightweight'); setBatchMode(false) }}
+                >
+                  轻量解析
+                </Button>
+                <Button
+                  variant={parseMode === 'precision' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setParseMode('precision')}
+                >
+                  精准解析
+                </Button>
+              </div>
+
+              {/* Precision mode settings */}
+              {parseMode === 'precision' && (
+                <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
+                  <div>
+                    <label className="text-sm font-medium">MinerU Token</label>
+                    <input
+                      type="password"
+                      className="w-full mt-1 px-3 py-1.5 text-sm border rounded-md bg-background"
+                      placeholder="输入 MinerU API Token"
+                      value={mineruToken}
+                      onChange={(e) => handleTokenChange(e.target.value)}
+                    />
+                    {!mineruToken && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        可在 MinerU API 管理页面创建 Token。也可通过 VITE_MINERU_TOKEN 环境变量配置。
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div>
+                      <label className="text-sm font-medium">模型版本</label>
+                      <select
+                        className="ml-2 px-2 py-1 text-sm border rounded-md bg-background"
+                        value={modelVersion}
+                        onChange={(e) => handleModelChange(e.target.value as MinerUModelVersion)}
+                      >
+                        <option value="vlm">vlm</option>
+                        <option value="pipeline">pipeline</option>
+                        <option value="MinerU-HTML">MinerU-HTML</option>
+                      </select>
+                    </div>
+
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={batchMode}
+                        onChange={(e) => { setBatchMode(e.target.checked); setFile(null); setFiles([]) }}
+                        className="rounded"
+                      />
+                      批量模式
+                    </label>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAdvanced(!showAdvanced)}
+                    >
+                      <Settings2 className="h-3 w-3" />
+                      {showAdvanced ? '收起' : '高级选项'}
+                    </Button>
+                  </div>
+
+                  {showAdvanced && (
+                    <div className="flex gap-4 text-sm">
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={enableFormula}
+                          onChange={(e) => setEnableFormula(e.target.checked)}
+                          className="rounded"
+                        />
+                        公式识别
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={enableTable}
+                          onChange={(e) => setEnableTable(e.target.checked)}
+                          className="rounded"
+                        />
+                        表格识别
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={enableOcr}
+                          onChange={(e) => setEnableOcr(e.target.checked)}
+                          className="rounded"
+                        />
+                        OCR
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <AiImportUpload
+                onFile={handleFile}
+                onFiles={handleFiles}
+                disabled={!aiConfigured || (parseMode === 'precision' && !mineruToken)}
+                multiple={parseMode === 'precision' && batchMode}
+              />
+
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}
-              <Button onClick={startParse} disabled={!file || !aiConfigured} className="w-full mt-4">
+
+              <Button onClick={startParse} disabled={!canStart} className="w-full mt-4">
                 <Play className="h-4 w-4" />
-                开始解析
+                {parseMode === 'precision' ? '开始精准解析' : '开始解析'}
               </Button>
             </>
           )}
@@ -185,9 +376,10 @@ export function Component() {
                 existingSubjects={existingSubjects}
                 existingCategories={existingCategories}
                 onChange={(f, v) => {
-                if (f === 'subject') setSubject(v)
-                else setCategory(v)
-              }} />
+                  if (f === 'subject') setSubject(v)
+                  else setCategory(v)
+                }}
+              />
               <div className="flex justify-between pt-2">
                 <Button variant="outline" onClick={() => setStep('upload')}>
                   <ArrowLeft className="h-4 w-4" /> 返回
@@ -239,14 +431,7 @@ export function Component() {
                 <p className="text-sm text-muted-foreground">成功导入 {importCount} 道题目</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => {
-                  setStep('upload')
-                  setFile(null)
-                  setQuestions([])
-                  setSubject('')
-                  setCategory('')
-                  setSelectedIds(new Set())
-                }}>
+                <Button variant="outline" onClick={resetState}>
                   继续导入
                 </Button>
                 <Button asChild>
