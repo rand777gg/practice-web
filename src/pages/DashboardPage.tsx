@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, TrendingUp, TrendingDown } from 'lucide-react'
+import { Pencil, Clock, RotateCcw, Star, TrendingUp, TrendingDown } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { DailyGoalHeatmap } from '@/components/charts/DailyGoalHeatmap'
 import { StackedBarChart as StackedBar } from '@/components/charts/StackedBarChart'
@@ -165,7 +165,37 @@ export function Component() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
+        {chartData && chartData.totalAnswered > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm">
+              <Link to="/practice">
+                <Pencil className="h-4 w-4" />
+                {t('dashboard.startPractice')}
+              </Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link to="/exam">
+                <Clock className="h-4 w-4" />
+                {t('dashboard.takeExam')}
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/favorites">
+                <Star className="h-4 w-4" />
+                {t('nav.favorites')}
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/review">
+                <RotateCcw className="h-4 w-4" />
+                {t('dashboard.reviewMistakes')}
+              </Link>
+            </Button>
+          </div>
+        )}
+      </div>
 
       {!chartData || (chartData.totalAnswered === 0 && chartData.sunburstData.length === 0) ? (
         <div className="text-center py-12 space-y-4">
@@ -236,26 +266,6 @@ export function Component() {
             </Card>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm">
-              <Link to="/practice">
-                <Pencil className="h-4 w-4" />
-                {t('dashboard.startPractice')}
-              </Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link to="/exam">
-                <Clock className="h-4 w-4" />
-                {t('dashboard.takeExam')}
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/review">
-                <RotateCcw className="h-4 w-4" />
-                {t('dashboard.reviewMistakes')}
-              </Link>
-            </Button>
-          </div>
         </>
       )}
     </div>

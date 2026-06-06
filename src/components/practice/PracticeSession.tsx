@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
+import { useFavorites } from '@/hooks/use-favorites'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
@@ -32,7 +33,7 @@ export function PracticeSession() {
   const [answerId, setAnswerId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const { saveAnswer, updateNote } = useUserAnswers()
-  const user = useAuthStore((s) => s.user)
+  const { isFavorite, toggleFavorite } = useFavorites()
 
   const [subjects, setSubjects] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
@@ -98,11 +99,12 @@ export function PracticeSession() {
     const picked = data[randomIndex] as unknown as Question
     setQuestion(picked)
 
-    if (user) {
+    const currentUser = useAuthStore.getState().user
+    if (currentUser) {
       const { data: statsData } = await supabase
         .from('user_answers')
         .select('is_correct, note')
-        .eq('user_id', user.id)
+        .eq('user_id', currentUser.id)
         .eq('question_id', picked.id)
         .order('answered_at', { ascending: false })
 
@@ -116,7 +118,7 @@ export function PracticeSession() {
     }
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory, user])
+  }, [selectedSubject, selectedCategory])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -230,6 +232,8 @@ export function PracticeSession() {
               attemptCount={attemptCount}
               wrongCount={wrongCount}
               note={note}
+              isFavorited={question ? isFavorite(question.id) : false}
+              onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
             />
           </div>
           {isSubmitted && (

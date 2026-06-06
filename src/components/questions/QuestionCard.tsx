@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
-import { Pencil } from 'lucide-react'
+import { Pencil, Star } from 'lucide-react'
 
 const POINT_COLORS = [
   'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
@@ -28,9 +28,11 @@ interface Props {
   attemptCount?: number
   wrongCount?: number
   note?: string | null
+  isFavorited?: boolean
+  onToggleFavorite?: () => void
 }
 
-export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note }: Props) {
+export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite }: Props) {
   const { t } = useT()
 
   return (
@@ -115,14 +117,35 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
           {note}
         </div>
       )}
-      {showResult && showEditLink && (
-        <div className="flex justify-end">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/admin/questions/${question.id}/edit`}>
-              <Pencil className="h-3 w-3" />
-              {t('questions.reportError')}
-            </Link>
-          </Button>
+      {(onToggleFavorite || (showResult && showEditLink)) && (
+        <div className="flex items-center justify-between">
+          <div>
+            {onToggleFavorite && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onToggleFavorite}
+                className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}
+              >
+                {isFavorited ? (
+                  <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
+                ) : (
+                  <Star className="h-3 w-3" />
+                )}
+                {isFavorited ? t('favorites.remove') : t('favorites.add')}
+              </Button>
+            )}
+          </div>
+          <div>
+            {showResult && showEditLink && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link to={`/admin/questions/${question.id}/edit`}>
+                  <Pencil className="h-3 w-3" />
+                  {t('questions.reportError')}
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>

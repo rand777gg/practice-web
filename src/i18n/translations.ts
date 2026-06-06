@@ -4,6 +4,7 @@ export const zh = {
     dashboard: '仪表盘',
     practice: '练习模式',
     exam: '考试模式',
+    favorites: '收藏题目',
     wrongReview: '错题回顾',
     admin: '管理',
     questions: '题目管理',
@@ -177,6 +178,12 @@ export const zh = {
     deadlinePassed: '已过期',
     change: '修改计划',
   },
+  favorites: {
+    title: '收藏题目',
+    empty: '还没有收藏任何题目，去练习模式收藏吧！',
+    add: '收藏',
+    remove: '取消收藏',
+  },
   common: {
     loading: '加载中...',
     error: '加载失败',
@@ -191,6 +198,7 @@ export const en = {
     dashboard: 'Dashboard',
     practice: 'Practice',
     exam: 'Exam Mode',
+    favorites: 'Favorites',
     wrongReview: 'Wrong Review',
     admin: 'Admin',
     questions: 'Questions',
@@ -363,6 +371,12 @@ export const en = {
     allDone: 'Daily goal reached!',
     deadlinePassed: 'Passed',
     change: 'Change Plan',
+  },
+  favorites: {
+    title: 'Favorites',
+    empty: "No favorites yet. Star questions in practice mode!",
+    add: 'Favorite',
+    remove: 'Unfavorite',
   },
   common: {
     loading: 'Loading...',

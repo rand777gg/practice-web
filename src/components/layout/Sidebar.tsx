@@ -8,11 +8,14 @@ import {
   FileQuestion,
   Users,
   GraduationCap,
+  Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { useT } from '@/i18n/use-t'
+import { useFavorites } from '@/hooks/use-favorites'
+import { useWrongCount } from '@/hooks/use-wrong-count'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -33,6 +36,8 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
   const { t } = useT()
+  const { favorites } = useFavorites()
+  const wrongCount = useWrongCount()
 
   const handleClick = () => onClose?.()
 
@@ -50,9 +55,23 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
         <Clock className="h-4 w-4" />
         {t('nav.exam')}
       </NavLink>
+      <NavLink to="/favorites" className={linkClass} onClick={handleClick}>
+        <Star className="h-4 w-4" />
+        {t('nav.favorites')}
+        {favorites.length > 0 && (
+          <Badge variant="secondary" className="ml-auto text-[10px] h-5">
+            {favorites.length}
+          </Badge>
+        )}
+      </NavLink>
       <NavLink to="/review" className={linkClass} onClick={handleClick}>
         <RotateCcw className="h-4 w-4" />
         {t('nav.wrongReview')}
+        {wrongCount > 0 && (
+          <Badge variant="secondary" className="ml-auto text-[10px] h-5">
+            {wrongCount}
+          </Badge>
+        )}
       </NavLink>
 
       {isAdmin && (
