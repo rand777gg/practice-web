@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig } from '@/lib/ai'
+import type { MinerUMode } from '@/lib/ai/mineru'
 import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
 
@@ -23,18 +26,41 @@ export function Component() {
   const [parseMsg, setParseMsg] = useState('')
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
+  const [mineruMode, setMineruMode] = useState<MinerUMode>('lightweight')
+  const [mineruToken, setMineruToken] = useState('')
+  const [existingSubjects, setExistingSubjects] = useState<string[]>([])
+  const [existingCategories, setExistingCategories] = useState<string[]>([])
 
   const aiConfigured = hasAiConfig()
+
+  useEffect(() => {
+    async function loadMeta() {
+      const { data } = await supabase.from('questions').select('subject, category')
+      const subs = new Set<string>()
+      const cats = new Set<string>()
+      for (const row of data ?? []) {
+        if (row.subject) subs.add(row.subject)
+        if (row.category) cats.add(row.category)
+      }
+      setExistingSubjects([...subs].sort())
+      setExistingCategories([...cats].sort())
+    }
+    loadMeta()
+  }, [])
 
   const handleFile = (f: File) => setFile(f)
 
   const startParse = async () => {
     if (!file) return
+    if (mineruMode === 'precise' && !mineruToken.trim()) {
+      setError('精准解析需要 MinerU Token')
+      return
+    }
     setStep('parsing')
     setError('')
 
     try {
-      const mineru = new MinerUClient()
+      const mineru = new MinerUClient(mineruMode, mineruToken || undefined)
       const { markdown } = await mineru.uploadAndParse(file, (msg) => setParseMsg(msg))
 
       setParseMsg('AI 正在提取题目...')
@@ -142,9 +168,36 @@ export function Component() {
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <>
+              <div className="flex items-center gap-3 mb-4">
+                <Label className="text-sm shrink-0">解析模式</Label>
+                <div className="flex rounded-md border overflow-hidden">
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 text-xs transition-colors ${mineruMode === 'lightweight' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+                    onClick={() => setMineruMode('lightweight')}
+                  >轻量解析</button>
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 text-xs transition-colors ${mineruMode === 'precise' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+                    onClick={() => setMineruMode('precise')}
+                  >精准解析</button>
+                </div>
+              </div>
+              {mineruMode === 'precise' && (
+                <div className="mb-4">
+                  <Label htmlFor="mineru-token" className="text-xs">MinerU Token</Label>
+                  <Input
+                    id="mineru-token"
+                    value={mineruToken}
+                    onChange={(e) => setMineruToken(e.target.value)}
+                    placeholder="在 MinerU API 管理页面创建"
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+              )}
               <AiImportUpload onFile={handleFile} disabled={!aiConfigured} />
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button onClick={startParse} disabled={!file || !aiConfigured} className="w-full">
+              {error && <p className="text-sm text-destructive mt-2">{error}</p>}
+              <Button onClick={startParse} disabled={!file || !aiConfigured} className="w-full mt-4">
                 <Play className="h-4 w-4" />
                 开始解析
               </Button>
@@ -162,7 +215,12 @@ export function Component() {
           {/* Step 3: Metadata */}
           {step === 'metadata' && (
             <>
-              <AiImportMetadata subject={subject} category={category} onChange={(f, v) => {
+              <AiImportMetadata
+                subject={subject}
+                category={category}
+                existingSubjects={existingSubjects}
+                existingCategories={existingCategories}
+                onChange={(f, v) => {
                 if (f === 'subject') setSubject(v)
                 else setCategory(v)
               }} />

@@ -1,6 +1,8 @@
 // MinerU proxy — relays browser requests to avoid CORS issues
+// Supports both lightweight (agent v1) and precise (v4) APIs
 
-const MINERU_BASE = 'https://mineru.net/api/v1/agent'
+const AGENT_BASE = 'https://mineru.net/api/v1/agent'
+const V4_BASE = 'https://mineru.net/api/v4'
 
 Deno.serve(async (req: Request) => {
   const corsHeaders: Record<string, string> = {
@@ -17,24 +19,7 @@ Deno.serve(async (req: Request) => {
   const pathname = url.pathname
 
   try {
-    // PUT /upload?url=<oss_signed_url> — proxy file upload to OSS
-    if (req.method === 'PUT' && pathname.endsWith('/upload')) {
-      const targetUrl = url.searchParams.get('url')
-      if (!targetUrl) {
-        return new Response(JSON.stringify({ error: 'missing url param' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-      const body = await req.arrayBuffer()
-      const res = await fetch(targetUrl, {
-        method: 'PUT',
-        body,
-        headers: { 'Content-Type': req.headers.get('Content-Type') || 'application/octet-stream' },
-      })
-      return new Response(null, { status: res.status, headers: corsHeaders })
-    }
-
-    // GET /download?url=<url> — proxy content download (CDN may be blocked)
+    // GET /download?url=<url> — proxy content download
     if (req.method === 'GET' && pathname.endsWith('/download')) {
       const targetUrl = url.searchParams.get('url')
       if (!targetUrl) {
@@ -43,6 +28,15 @@ Deno.serve(async (req: Request) => {
         })
       }
       const res = await fetch(targetUrl)
+      // For zip files, return as binary; for markdown, return as JSON { text }
+      const ct = res.headers.get('Content-Type') || ''
+      if (ct.includes('zip') || ct.includes('octet-stream')) {
+        const blob = await res.arrayBuffer()
+        return new Response(blob, {
+          status: res.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/zip' },
+        })
+      }
       const text = await res.text()
       return new Response(JSON.stringify({ text }), {
         status: res.status,
@@ -50,9 +44,46 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // All other requests — forward to MinerU
+    // v4 precise API — proxy to mineru.net/api/v4/...
+    if (pathname.includes('/v4/')) {
+      const v4Path = pathname.split('/v4')[1] || ''
+      const targetUrl = `${V4_BASE}${v4Path}`
+
+      let bodyText = ''
+      if (req.method === 'POST') {
+        bodyText = await req.text()
+      }
+
+      // Extract mineru token from request body and use it for v4 auth
+      let v4Token = ''
+      if (bodyText) {
+        try { const b = JSON.parse(bodyText); v4Token = b.token || '' } catch { /* */ }
+        // Remove token from body before forwarding (strip it, MinerU reads from header)
+        const clean = JSON.parse(bodyText)
+        delete clean.token
+        bodyText = JSON.stringify(clean)
+      }
+
+      const fetchHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (v4Token) fetchHeaders['Authorization'] = `Bearer ${v4Token}`
+
+      const fetchOpts: RequestInit = {
+        method: req.method,
+        headers: fetchHeaders,
+      }
+      if (req.method === 'POST') fetchOpts.body = bodyText
+
+      const res = await fetch(targetUrl, fetchOpts)
+      const data = await res.text()
+      return new Response(data, {
+        status: res.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Agent lightweight API — forward to mineru.net/api/v1/agent
     const afterFn = pathname.split('/mineru-proxy')[1] || ''
-    const targetUrl = `${MINERU_BASE}${afterFn}`
+    const targetUrl = `${AGENT_BASE}${afterFn}`
 
     const fetchOpts: RequestInit = {
       method: req.method,
