@@ -1,13 +1,15 @@
 import type { DocumentParseResult } from './types'
 
-const BASE_URL = 'https://mineru.net/api/v1/agent'
+// Route through Supabase Edge Function proxy to avoid CORS
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+const PROXY_BASE = `${SUPABASE_URL}/functions/v1/mineru-proxy`
 
 export class MinerUClient {
   async uploadAndParse(file: File, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
     onProgress?.('正在创建解析任务...')
 
-    // 1. Get signed upload URL
-    const initRes = await fetch(`${BASE_URL}/parse/file`, {
+    // 1. Get signed upload URL via proxy
+    const initRes = await fetch(`${PROXY_BASE}/parse/file`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_name: file.name, language: 'ch' }),
@@ -24,7 +26,7 @@ export class MinerUClient {
     const { task_id, file_url } = initData.data
     onProgress?.('正在上传文档...')
 
-    // 2. PUT file to OSS
+    // 2. PUT file to OSS — send directly (CORS should be fine for OSS signed URLs)
     const putRes = await fetch(file_url, {
       method: 'PUT',
       body: file,
@@ -36,11 +38,11 @@ export class MinerUClient {
 
     onProgress?.('文档解析中 (MinerU)...')
 
-    // 3. Poll for result (max 5 min, every 2s)
+    // 3. Poll for result via proxy
     for (let i = 0; i < 150; i++) {
       await new Promise(r => setTimeout(r, 2000))
 
-      const res = await fetch(`${BASE_URL}/parse/${task_id}`)
+      const res = await fetch(`${PROXY_BASE}/parse/${task_id}`)
       const data = await res.json() as {
         code: number; data: { state: string; markdown_url?: string; err_msg?: string }
       }
@@ -48,7 +50,6 @@ export class MinerUClient {
       const { state } = data.data
 
       if (state === 'done' && data.data.markdown_url) {
-        // Fetch the markdown content from CDN
         const mdRes = await fetch(data.data.markdown_url)
         const markdown = await mdRes.text()
         return { markdown, fileName: file.name }
