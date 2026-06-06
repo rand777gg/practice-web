@@ -15,8 +15,8 @@ Deno.serve(async (req: Request) => {
   }
 
   const url = new URL(req.url)
-  const path = url.pathname.replace('/mineru-proxy', '')
-  const targetUrl = `${MINERU_BASE}${path}`
+  const afterFn = url.pathname.split('/mineru-proxy')[1] || ''
+  const targetUrl = `${MINERU_BASE}${afterFn}`
 
   try {
     if (req.method === 'PUT') {
