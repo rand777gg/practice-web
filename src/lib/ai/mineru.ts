@@ -55,8 +55,12 @@ export class MinerUClient {
       const { state } = data.data
 
       if (state === 'done' && data.data.markdown_url) {
-        const mdRes = await fetch(data.data.markdown_url)
-        const markdown = await mdRes.text()
+        // Download markdown via proxy (CDN may be blocked)
+        const mdRes = await fetch(`${PROXY_BASE}/download?url=${encodeURIComponent(data.data.markdown_url)}`, {
+          headers: { ...AUTH_HEADER },
+        })
+        const mdJson = await mdRes.json() as { text: string }
+        const markdown = mdJson.text
 
         // Clean up temp file
         supabase.storage.from('files').remove([filePath]).catch(() => {})

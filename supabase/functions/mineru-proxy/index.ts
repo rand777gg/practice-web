@@ -34,6 +34,22 @@ Deno.serve(async (req: Request) => {
       return new Response(null, { status: res.status, headers: corsHeaders })
     }
 
+    // GET /download?url=<url> — proxy content download (CDN may be blocked)
+    if (req.method === 'GET' && pathname.endsWith('/download')) {
+      const targetUrl = url.searchParams.get('url')
+      if (!targetUrl) {
+        return new Response(JSON.stringify({ error: 'missing url param' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const res = await fetch(targetUrl)
+      const text = await res.text()
+      return new Response(JSON.stringify({ text }), {
+        status: res.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // All other requests — forward to MinerU
     const afterFn = pathname.split('/mineru-proxy')[1] || ''
     const targetUrl = `${MINERU_BASE}${afterFn}`
