@@ -48,9 +48,10 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         const raw = JSON.parse(text)
         const arr = Array.isArray(raw) ? raw : [raw]
         questions = arr.map((item: Record<string, unknown>) => ({
+          question_type: (item.question_type as ImportedQuestion['question_type']) ?? 'single_choice',
           question_text: String(item.question_text ?? ''),
           options: Array.isArray(item.options) ? item.options.map(String) : [],
-          correct_answer: Number(item.correct_answer ?? 0),
+          correct_answer: (item.correct_answer ?? 0) as ImportedQuestion['correct_answer'],
           category: item.category ? String(item.category) : undefined,
           subject: item.subject ? String(item.subject) : undefined,
           analysis: item.analysis ? String(item.analysis) : undefined,
@@ -80,6 +81,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
           }
 
           return {
+            question_type: 'single_choice' as const,
             question_text: obj.question_text ?? '',
             options,
             correct_answer: Number(obj.correct_answer ?? 0),
@@ -109,6 +111,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
     setState('importing')
     const { error } = await supabase.from('questions').insert(
       parsed.map((q) => ({
+        question_type: q.question_type ?? 'single_choice',
         question_text: q.question_text,
         options: q.options,
         correct_answer: q.correct_answer,

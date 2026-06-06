@@ -42,7 +42,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const isTrueFalse = questionType === 'true_false'
   const isFillBlank = questionType === 'fill_blank'
   const isShortAnswer = questionType === 'short_answer'
-  const isAnalysis = questionType === 'analysis'
 
   const handleTypeChange = (t: QuestionType) => {
     setQuestionType(t)
@@ -62,8 +61,9 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
       else if (correctAnswer > index) setCorrectAnswer(correctAnswer - 1)
     }
     if (isMulti && Array.isArray(correctAnswer)) {
+      const arr = correctAnswer as number[]
       setCorrectAnswer(
-        correctAnswer.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i)),
+        arr.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i)),
       )
     }
   }
@@ -75,7 +75,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
   const toggleMultiAnswer = (index: number) => {
     if (!Array.isArray(correctAnswer)) return
-    const arr = [...correctAnswer]
+    const arr: number[] = [...correctAnswer as number[]]
     const idx = arr.indexOf(index)
     if (idx >= 0) arr.splice(idx, 1)
     else arr.push(index)
@@ -183,7 +183,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                 {isSingle ? (
                   <input type="radio" name="correctAnswer" checked={correctAnswer === index} onChange={() => setCorrectAnswer(index)} className="h-4 w-4" />
                 ) : (
-                  <input type="checkbox" checked={Array.isArray(correctAnswer) && correctAnswer.includes(index)} onChange={() => toggleMultiAnswer(index)} className="h-4 w-4" />
+                  <input type="checkbox" checked={Array.isArray(correctAnswer) && (correctAnswer as number[]).includes(index)} onChange={() => toggleMultiAnswer(index)} className="h-4 w-4" />
                 )}
                 <span className="text-xs font-medium w-5">{OPTION_LABELS[index]}</span>
               </div>

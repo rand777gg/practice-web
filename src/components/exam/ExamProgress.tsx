@@ -8,11 +8,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Grid3X3 } from 'lucide-react'
+import type { CorrectAnswer } from '@/types'
 
 interface Props {
   current: number
   total: number
-  answers: Map<string, number>
+  answers: Map<string, CorrectAnswer>
   questionIds: string[]
   onJumpTo: (index: number) => void
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
@@ -10,12 +10,10 @@ import { Spinner } from '@/components/ui/spinner'
 import { DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig } from '@/lib/ai'
 import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
-import { useT } from '@/i18n/use-t'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 
 export function Component() {
-  const { t } = useT()
   const [step, setStep] = useState<Step>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [questions, setQuestions] = useState<ParsedQuestion[]>([])

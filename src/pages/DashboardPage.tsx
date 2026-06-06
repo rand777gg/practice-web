@@ -4,17 +4,15 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target } from 'lucide-react'
+import { Pencil, Clock, RotateCcw, Star } from 'lucide-react'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useT } from '@/i18n/use-t'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const StackedBar = lazy(() => import('@/components/charts/StackedBarChart').then(m => ({ default: m.StackedBarChart })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
-const SubjectNestedPie = lazy(() => import('@/components/charts/SubjectNestedPie').then(m => ({ default: m.SubjectNestedPie })))
-const CalendarPieChart = lazy(() => import('@/components/charts/CalendarPieChart').then(m => ({ default: m.CalendarPieChart })))
+const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
 
 const ChartFallback = () => (
   <div className="flex items-center justify-center py-12">
@@ -29,8 +27,6 @@ interface ChartData {
   dailyAnswers: { date: string; count: number }[]
   barData: { date: string; correct: number; wrong: number }[]
   sunburstData: { subject: string; category: string }[]
-  subjectStats: { subject: string; count: number }[]
-  dailySubjectPie: [string, { name: string; value: number }[]][]
   dailyGoal: number
 }
 
@@ -84,22 +80,6 @@ export function Component() {
         count: v.ids.size,
       }))
 
-      // Per-day subject distribution for calendar pie
-      const dailySubjMap = new Map<string, Map<string, number>>()
-      for (const a of answers ?? []) {
-        const day = (a.answered_at as string).slice(0, 10)
-        const qInfo = qMap.get(a.question_id)
-        const subj = qInfo?.subject || 'Other'
-        if (!dailySubjMap.has(day)) dailySubjMap.set(day, new Map())
-        const m = dailySubjMap.get(day)!
-        m.set(subj, (m.get(subj) ?? 0) + 1)
-      }
-      const dailySubjectPie: [string, { name: string; value: number }[]][] =
-        Array.from(dailySubjMap.entries()).map(([date, m]) => [
-          date,
-          Array.from(m.entries()).map(([name, value]) => ({ name, value })),
-        ])
-
       // Bar data for last 14 days
       const barData: { date: string; correct: number; wrong: number }[] = []
       for (let d = new Date(start14d); d <= now; d.setDate(d.getDate() + 1)) {
@@ -138,17 +118,7 @@ export function Component() {
         dailyGoal = Math.ceil(remaining / daysLeft)
       }
 
-      // Subject stats from sunburstData
-      const subjMap = new Map<string, number>()
-      for (const d of sunburstData) {
-        const s = d.subject || 'Other'
-        subjMap.set(s, (subjMap.get(s) ?? 0) + 1)
-      }
-      const subjectStats = [...subjMap.entries()]
-        .map(([subject, count]) => ({ subject, count }))
-        .sort((a, b) => b.count - a.count)
-
-      setChartData({ totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, subjectStats, dailySubjectPie, dailyGoal })
+      setChartData({ totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal })
       setIsLoading(false)
     }
     load()
@@ -194,6 +164,8 @@ export function Component() {
         )}
       </div>
 
+      <DashboardPlanCards />
+
       {!chartData || (chartData.totalAnswered === 0 && chartData.sunburstData.length === 0) ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('dashboard.noData')}</p>
@@ -206,94 +178,57 @@ export function Component() {
         </div>
       ) : (
         <>
-          <Tabs defaultValue="today" className="w-full">
-            <TabsList>
-              <TabsTrigger value="today" className="gap-1.5">
-                <Target className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabToday')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="subjects" className="gap-1.5">
-                <PieChart className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabSubjects')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="journey" className="gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabJourney')}</span>
-              </TabsTrigger>
-            </TabsList>
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+            <Card className="border-0 shadow-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyBreakdown')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Suspense fallback={<ChartFallback />}>
+                  <StackedBar data={chartData.barData} />
+                </Suspense>
+              </CardContent>
+            </Card>
 
-            <TabsContent value="today">
-              <div className="space-y-4">
-                <DashboardPlanCards />
-                <Card className="border-0 shadow-none">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyBreakdown')}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <StackedBar data={chartData.barData} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="subjects">
-              <div className="space-y-4">
-                <Card className="border-0 shadow-none">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectCategory')}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {chartData.sunburstData.length > 0 ? (
-                      <Suspense fallback={<ChartFallback />}>
-                        <SubjectCategorySunburst data={chartData.sunburstData} />
-                      </Suspense>
-                    ) : (
-                      <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
-                    )}
-                  </CardContent>
-                </Card>
-                {chartData.subjectStats.length > 0 && (
-                  <Card className="border-0 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectBreakdown')}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Suspense fallback={<ChartFallback />}>
-                        <SubjectNestedPie data={chartData.sunburstData} />
-                      </Suspense>
-                    </CardContent>
-                  </Card>
+            <Card className="border-0 shadow-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectCategory')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {chartData.sunburstData.length > 0 ? (
+                  <Suspense fallback={<ChartFallback />}>
+                    <SubjectCategorySunburst data={chartData.sunburstData} />
+                  </Suspense>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
                 )}
-              </div>
-            </TabsContent>
+              </CardContent>
+            </Card>
 
-            <TabsContent value="journey">
-              <div className="space-y-4">
-                <Card className="border-0 shadow-none">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-                <Card className="border-0 shadow-none">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.monthlySubject')}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <CalendarPieChart data={chartData.dailySubjectPie} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-          </Tabs>
+            <Card className="lg:col-span-2 border-0 shadow-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Suspense fallback={<ChartFallback />}>
+                  <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
+                </Suspense>
+              </CardContent>
+            </Card>
+          </div>
+
+          {chartData.sunburstData.length > 0 && (
+            <Card className="border-0 shadow-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectBreakdown')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Suspense fallback={<ChartFallback />}>
+                  <SubjectDonutCharts data={chartData.sunburstData} />
+                </Suspense>
+              </CardContent>
+            </Card>
+          )}
 
         </>
       )}

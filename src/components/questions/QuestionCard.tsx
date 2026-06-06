@@ -99,10 +99,10 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
           {question.options.map((option, index) => {
             const isSelected = isSingle
               ? selectedAnswer === index
-              : Array.isArray(selectedAnswer) && selectedAnswer.includes(index)
+              : Array.isArray(selectedAnswer) && (selectedAnswer as number[]).includes(index)
             const isCorrectOption = isSingle
               ? index === question.correct_answer
-              : Array.isArray(question.correct_answer) && question.correct_answer.includes(index)
+              : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(index)
             let optionClass = 'border-input hover:bg-accent'
 
             if (showResult) {
@@ -123,7 +123,7 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
                 )}
                 onClick={() => {
                   if (isMulti) {
-                    const arr = Array.isArray(selectedAnswer) ? [...selectedAnswer] : []
+                    const arr: number[] = Array.isArray(selectedAnswer) ? [...selectedAnswer as number[]] : []
                     const idx = arr.indexOf(index)
                     if (idx >= 0) arr.splice(idx, 1)
                     else arr.push(index)

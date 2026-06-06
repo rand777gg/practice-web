@@ -97,13 +97,13 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                 className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px]
                   ${type === 'single_choice'
                     ? question.correct_answer === oi ? 'bg-green-500 border-green-500 text-white' : 'border-muted-foreground/30'
-                    : Array.isArray(question.correct_answer) && question.correct_answer.includes(oi) ? 'bg-green-500 border-green-500 text-white' : 'border-muted-foreground/30'
+                    : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? 'bg-green-500 border-green-500 text-white' : 'border-muted-foreground/30'
                   }`}
                 onClick={() => {
                   if (type === 'single_choice') {
                     patch({ correct_answer: oi })
                   } else {
-                    const arr = Array.isArray(question.correct_answer) ? [...question.correct_answer] : []
+                    const arr: number[] = Array.isArray(question.correct_answer) ? [...question.correct_answer as number[]] : []
                     const idx = arr.indexOf(oi)
                     if (idx >= 0) arr.splice(idx, 1)
                     else arr.push(oi)
@@ -111,7 +111,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                   }
                 }}
               >
-                {type === 'single_choice' ? (question.correct_answer === oi ? '✓' : '') : (Array.isArray(question.correct_answer) && question.correct_answer.includes(oi) ? '✓' : '')}
+                {type === 'single_choice' ? (question.correct_answer === oi ? '✓' : '') : (Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? '✓' : '')}
               </button>
             </div>
           ))}
