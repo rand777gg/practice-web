@@ -1,36 +1,43 @@
-// MinerU proxy — relays browser requests to MinerU API to avoid CORS issues
+// MinerU proxy — relays browser requests to avoid CORS issues
 
 const MINERU_BASE = 'https://mineru.net/api/v1/agent'
 
 Deno.serve(async (req: Request) => {
-  // CORS headers
-  const headers: Record<string, string> = {
+  const corsHeaders: Record<string, string> = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   }
 
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers })
+    return new Response(null, { status: 204, headers: corsHeaders })
   }
 
   const url = new URL(req.url)
-  const afterFn = url.pathname.split('/mineru-proxy')[1] || ''
-  const targetUrl = `${MINERU_BASE}${afterFn}`
+  const pathname = url.pathname
 
   try {
-    if (req.method === 'PUT') {
-      // File upload to OSS — forward raw body
+    // PUT /upload?url=<oss_signed_url> — proxy file upload to OSS
+    if (req.method === 'PUT' && pathname.endsWith('/upload')) {
+      const targetUrl = url.searchParams.get('url')
+      if (!targetUrl) {
+        return new Response(JSON.stringify({ error: 'missing url param' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
       const body = await req.arrayBuffer()
       const res = await fetch(targetUrl, {
         method: 'PUT',
         body,
         headers: { 'Content-Type': req.headers.get('Content-Type') || 'application/octet-stream' },
       })
-      return new Response(res.body, { status: res.status, headers: { ...headers, 'Content-Type': 'application/json' } })
+      return new Response(null, { status: res.status, headers: corsHeaders })
     }
 
-    // GET or POST — forward as JSON
+    // All other requests — forward to MinerU
+    const afterFn = pathname.split('/mineru-proxy')[1] || ''
+    const targetUrl = `${MINERU_BASE}${afterFn}`
+
     const fetchOpts: RequestInit = {
       method: req.method,
       headers: { 'Content-Type': 'application/json' },
@@ -42,12 +49,12 @@ Deno.serve(async (req: Request) => {
     const data = await res.text()
     return new Response(data, {
       status: res.status,
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })

@@ -28,9 +28,11 @@ export class MinerUClient {
     const { task_id, file_url } = initData.data
     onProgress?.('正在上传文档...')
 
-    // 2. PUT file to OSS — send directly (CORS should be fine for OSS signed URLs)
-    const putRes = await fetch(file_url, {
+    // 2. PUT file to OSS via proxy (OSS signed URLs also block CORS)
+    const proxyUploadUrl = `${PROXY_BASE}/upload?url=${encodeURIComponent(file_url)}`
+    const putRes = await fetch(proxyUploadUrl, {
       method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', ...AUTH_HEADER },
       body: file,
     })
 
