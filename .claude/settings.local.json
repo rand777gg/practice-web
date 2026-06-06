@@ -5,7 +5,14 @@
       "Bash(npx tsc *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "WebFetch(domain:ai-sdk.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api *)",
+      "WebFetch(domain:lobehub.com)",
+      "WebSearch",
+      "Bash(npm ls *)",
+      "Bash(npm view *)"
     ]
   }
 }

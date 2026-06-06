@@ -111,6 +111,24 @@ export interface UserAnswer {
   answered_at: string
 }
 
+// === AI Provider Types ===
+export interface AiModel {
+  id: string
+  name: string
+  enabled: boolean
+}
+
+export interface AiProviderConfig {
+  id: string
+  name: string
+  description: string
+  type: 'official' | 'community'
+  enabled: boolean
+  apiKey: string
+  baseUrl: string
+  models: AiModel[]
+}
+
 export interface ImportedQuestion {
   question_type: QuestionType
   question_text: string

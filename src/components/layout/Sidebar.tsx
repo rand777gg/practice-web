@@ -10,14 +10,14 @@ import {
   GraduationCap,
   Star,
   BookOpen,
+  Sparkles,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { useT } from '@/i18n/use-t'
-import { useFavorites } from '@/hooks/use-favorites'
-import { useWrongCount } from '@/hooks/use-wrong-count'
+
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -38,9 +38,6 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
   const { t } = useT()
-  const { favorites } = useFavorites()
-  const wrongCount = useWrongCount()
-
   const handleClick = () => onClose?.()
 
   return (
@@ -60,20 +57,10 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
       <NavLink to="/favorites" className={linkClass} onClick={handleClick}>
         <Star className="h-4 w-4" />
         {t('nav.favorites')}
-        {favorites.length > 0 && (
-          <Badge variant="secondary" className="ml-auto text-[10px] h-5">
-            {favorites.length}
-          </Badge>
-        )}
       </NavLink>
       <NavLink to="/review" className={linkClass} onClick={handleClick}>
         <RotateCcw className="h-4 w-4" />
         {t('nav.wrongReview')}
-        {wrongCount > 0 && (
-          <Badge variant="secondary" className="ml-auto text-[10px] h-5">
-            {wrongCount}
-          </Badge>
-        )}
       </NavLink>
       <NavLink to="/notes" className={linkClass} onClick={handleClick}>
         <BookOpen className="h-4 w-4" />
@@ -93,6 +80,13 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
           <NavLink to="/admin/users" className={linkClass} onClick={handleClick}>
             <Users className="h-4 w-4" />
             {t('nav.users')}
+          </NavLink>
+          <NavLink to="/admin/ai" className={(p) => cn(linkClass(p), 'ai-nav-item border border-transparent')} onClick={handleClick}>
+            <Sparkles className="h-4 w-4" />
+            {t('nav.ai')}
+            <span className="ml-auto text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">
+              BETA
+            </span>
           </NavLink>
         </>
       )}

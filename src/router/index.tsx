@@ -70,6 +70,10 @@ export const router = createBrowserRouter([
                 path: 'users',
                 lazy: () => import('@/pages/admin/UsersManagePage'),
               },
+              {
+                path: 'ai',
+                lazy: () => import('@/pages/admin/AiManagePage'),
+              },
             ],
           },
         ],

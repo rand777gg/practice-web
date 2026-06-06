@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button'
 import { AiImportQuestionCard } from './AiImportQuestionCard'
 import type { ParsedQuestion } from '@/lib/ai/types'
 
@@ -19,16 +20,12 @@ export function AiImportPreview({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">预览题目</h3>
-        <button
-          type="button"
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onClick={onToggleAll}
-        >
+        <Button variant="ghost" size="sm" className="text-xs h-6" onClick={onToggleAll}>
           {allSelected ? '取消全选' : '全选'}
           <span className="ml-1 text-muted-foreground/60">
             ({selectedIds.size}/{questions.length})
           </span>
-        </button>
+        </Button>
       </div>
 
       <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">

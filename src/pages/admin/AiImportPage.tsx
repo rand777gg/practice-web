@@ -3,6 +3,17 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuCheckboxItem,
+} from '@/components/ui/dropdown-menu'
 import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
@@ -12,7 +23,7 @@ import {
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
 } from '@/lib/ai'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
-import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, Settings2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision'
@@ -38,7 +49,6 @@ export function Component() {
   const [enableOcr, setEnableOcr] = useState(false)
   const [enableFormula, setEnableFormula] = useState(true)
   const [enableTable, setEnableTable] = useState(true)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
 
   const aiConfigured = hasAiConfig()
@@ -221,7 +231,7 @@ export function Component() {
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <h1 className="text-xl font-bold">AI 导入题目</h1>
+        <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span></h1>
       </div>
 
       {!aiConfigured && (
@@ -239,31 +249,21 @@ export function Component() {
           {step === 'upload' && (
             <>
               {/* Parse mode selection */}
-              <div className="flex gap-2">
-                <Button
-                  variant={parseMode === 'lightweight' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => { setParseMode('lightweight'); setBatchMode(false) }}
-                >
-                  轻量解析
-                </Button>
-                <Button
-                  variant={parseMode === 'precision' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setParseMode('precision')}
-                >
-                  精准解析
-                </Button>
-              </div>
+              <Tabs value={parseMode} onValueChange={(v) => { setParseMode(v as ParseMode); if (v === 'lightweight') setBatchMode(false) }}>
+                <TabsList>
+                  <TabsTrigger value="lightweight">轻量解析</TabsTrigger>
+                  <TabsTrigger value="precision">精准解析</TabsTrigger>
+                </TabsList>
+              </Tabs>
 
               {/* Precision mode settings */}
               {parseMode === 'precision' && (
                 <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
                   <div>
                     <label className="text-sm font-medium">MinerU Token</label>
-                    <input
+                    <Input
                       type="password"
-                      className="w-full mt-1 px-3 py-1.5 text-sm border rounded-md bg-background"
+                      className="mt-1"
                       placeholder="输入 MinerU API Token"
                       value={mineruToken}
                       onChange={(e) => handleTokenChange(e.target.value)}
@@ -276,70 +276,50 @@ export function Component() {
                   </div>
 
                   <div className="flex items-center gap-3 flex-wrap">
-                    <div>
-                      <label className="text-sm font-medium">模型版本</label>
-                      <select
-                        className="ml-2 px-2 py-1 text-sm border rounded-md bg-background"
-                        value={modelVersion}
-                        onChange={(e) => handleModelChange(e.target.value as MinerUModelVersion)}
-                      >
-                        <option value="vlm">vlm</option>
-                        <option value="pipeline">pipeline</option>
-                        <option value="MinerU-HTML">MinerU-HTML</option>
-                      </select>
-                    </div>
-
-                    <label className="flex items-center gap-1.5 text-sm">
-                      <input
-                        type="checkbox"
+                    <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <Switch
                         checked={batchMode}
-                        onChange={(e) => { setBatchMode(e.target.checked); setFile(null); setFiles([]) }}
-                        className="rounded"
+                        onCheckedChange={(v) => { setBatchMode(v); setFile(null); setFiles([]) }}
                       />
                       批量模式
                     </label>
 
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowAdvanced(!showAdvanced)}
-                    >
-                      <Settings2 className="h-3 w-3" />
-                      {showAdvanced ? '收起' : '高级选项'}
-                    </Button>
-                  </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1 text-xs">
+                          模型版本: {modelVersion}
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuRadioGroup value={modelVersion} onValueChange={(v) => handleModelChange(v as MinerUModelVersion)}>
+                          <DropdownMenuRadioItem value="vlm">vlm</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="pipeline">pipeline</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="MinerU-HTML">MinerU-HTML</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
-                  {showAdvanced && (
-                    <div className="flex gap-4 text-sm">
-                      <label className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={enableFormula}
-                          onChange={(e) => setEnableFormula(e.target.checked)}
-                          className="rounded"
-                        />
-                        公式识别
-                      </label>
-                      <label className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={enableTable}
-                          onChange={(e) => setEnableTable(e.target.checked)}
-                          className="rounded"
-                        />
-                        表格识别
-                      </label>
-                      <label className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={enableOcr}
-                          onChange={(e) => setEnableOcr(e.target.checked)}
-                          className="rounded"
-                        />
-                        OCR
-                      </label>
-                    </div>
-                  )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1 text-xs">
+                          高级选项
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuCheckboxItem checked={enableFormula} onCheckedChange={setEnableFormula}>
+                          公式识别
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem checked={enableTable} onCheckedChange={setEnableTable}>
+                          表格识别
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem checked={enableOcr} onCheckedChange={setEnableOcr}>
+                          OCR
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               )}
 

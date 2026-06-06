@@ -17,8 +17,28 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
-import type { Question, CorrectAnswer } from '@/types'
+import type { Question, CorrectAnswer, Profile } from '@/types'
+import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
+
+function getGoalSubjects(profile: Profile | null): string[] {
+  if (!profile) return []
+  const subjects = new Set<string>()
+
+  try {
+    const raw = profile.daily_targets ? JSON.parse(profile.daily_targets) : []
+    for (const t of normalizeDailyTargets(raw)) {
+      for (const s of t.subjects) subjects.add(s.subject)
+    }
+  } catch { /* ignore parse errors */ }
+
+  try {
+    const plans = profile.plan_subjects ? JSON.parse(profile.plan_subjects) : []
+    if (Array.isArray(plans)) for (const s of plans) subjects.add(s)
+  } catch { /* ignore parse errors */ }
+
+  return [...subjects]
+}
 
 export function PracticeSession() {
   const { t } = useT()
@@ -52,12 +72,25 @@ export function PracticeSession() {
         if (row.subject) subs.add(row.subject)
         if (row.category) cats.add(row.category)
       }
-      setSubjects([...subs].sort())
-      setCategories([...cats].sort())
-      setFilteredCategories([...cats].sort())
+      const goalSubjects = getGoalSubjects(profile)
+      if (goalSubjects.length > 0) {
+        // When goals are set, limit subject options to goal subjects only
+        const goalSet = new Set(goalSubjects)
+        setSubjects(goalSubjects.filter((s) => subs.has(s)).sort())
+        const goalCats = new Set<string>()
+        for (const row of data ?? []) {
+          if (row.subject && goalSet.has(row.subject) && row.category) goalCats.add(row.category)
+        }
+        setCategories(goalCats.size > 0 ? [...goalCats].sort() : [...cats].sort())
+        setFilteredCategories(goalCats.size > 0 ? [...goalCats].sort() : [...cats].sort())
+      } else {
+        setSubjects([...subs].sort())
+        setCategories([...cats].sort())
+        setFilteredCategories([...cats].sort())
+      }
     }
     loadFilters()
-  }, [])
+  }, [profile])
 
   useEffect(() => {
     if (!selectedSubject) {
@@ -85,8 +118,17 @@ export function PracticeSession() {
     setIsSubmitted(false)
     setAnswerId(null)
 
+    const goalSubjects = getGoalSubjects(profile)
+
     let query = supabase.from('questions').select('*', { count: 'exact' })
-    if (selectedSubject) query = query.eq('subject', selectedSubject)
+    if (goalSubjects.length > 0) {
+      // Scoped to goal subjects: manual pick narrows further, otherwise all goal subjects
+      query = selectedSubject
+        ? query.eq('subject', selectedSubject)
+        : query.in('subject', goalSubjects)
+    } else if (selectedSubject) {
+      query = query.eq('subject', selectedSubject)
+    }
     if (selectedCategory) query = query.eq('category', selectedCategory)
 
     const { data } = await query
@@ -122,7 +164,7 @@ export function PracticeSession() {
     }
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory])
+  }, [selectedSubject, selectedCategory, profile])
 
   useEffect(() => {
     fetchRandomQuestion()

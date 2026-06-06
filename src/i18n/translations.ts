@@ -10,6 +10,7 @@ export const zh = {
     admin: '管理',
     questions: '题目管理',
     users: '用户管理',
+    ai: 'AI 管理',
   },
   auth: {
     login: '登录',
@@ -265,6 +266,17 @@ export const zh = {
     '小提示：AI 生成的题目带有流光边框动画和星星图标，注意辨别。',
     '小提示：本应用支持 PWA 安装，离线也能刷题。',
   ],
+  ai: {
+    title: 'AI 模型管理',
+    description: '启用并配置各家大模型，勾选希望使用的模型。',
+    official: '官方',
+    community: '社区',
+    enabled: '已启用',
+    enabledProviders: '已启用',
+    disabledProviders: '未启用',
+    providerId: 'Provider ID',
+    models: '可用模型',
+  },
   common: {
     loading: '加载中...',
     error: '加载失败',
@@ -285,6 +297,7 @@ export const en = {
     admin: 'Admin',
     questions: 'Questions',
     users: 'Users',
+    ai: 'AI Manage',
   },
   auth: {
     login: 'Login',
@@ -540,6 +553,17 @@ export const en = {
     'Tip: AI-generated questions have an animated glowing badge — verify carefully.',
     'Tip: This app works offline! Install it as a PWA for on-the-go practice.',
   ],
+  ai: {
+    title: 'AI Model Management',
+    description: 'Enable and configure AI providers, select models to use.',
+    official: 'Official',
+    community: 'Community',
+    enabled: 'Enabled',
+    enabledProviders: 'Enabled',
+    disabledProviders: 'Disabled',
+    providerId: 'Provider ID',
+    models: 'Models',
+  },
   common: {
     loading: 'Loading...',
     error: 'Failed to load',

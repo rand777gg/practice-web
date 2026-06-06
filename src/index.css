@@ -118,14 +118,26 @@
   0% {
     border-color: rgb(43, 209, 255);
   }
+  12.5% {
+    border-color: rgb(59, 130, 246);
+  }
   25% {
     border-color: rgb(139, 92, 246);
+  }
+  37.5% {
+    border-color: rgb(168, 85, 247);
   }
   50% {
     border-color: rgb(236, 72, 153);
   }
+  62.5% {
+    border-color: rgb(244, 114, 182);
+  }
   75% {
     border-color: rgb(249, 115, 22);
+  }
+  87.5% {
+    border-color: rgb(234, 179, 8);
   }
   100% {
     border-color: rgb(43, 209, 255);
@@ -182,7 +194,7 @@
 }
 
 .ai-badge:hover {
-  animation: colorWheel 1.5s linear infinite, geminiBorderGlow 1.5s ease-in-out infinite;
+  animation: colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite;
 }
 
 .ai-badge .gemini-star {
@@ -206,3 +218,9 @@
 .ai-badge-dark {
   @apply dark:text-blue-300;
 }
+
+.ai-nav-item:hover {
+  animation: colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite;
+}
+
+
