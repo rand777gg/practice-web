@@ -85,11 +85,16 @@ export class MinerUClient {
   }
 
   // ---- Precise (v4 API) ----
+  private v4Headers(): Record<string, string> {
+    const h: Record<string, string> = { 'Content-Type': 'application/json', ...AUTH_HEADER }
+    if (this.token) h['X-MinerU-Token'] = this.token
+    return h
+  }
+
   private async submitPrecise(url: string, fileName: string): Promise<string> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...AUTH_HEADER }
-    if (this.token) headers['X-MinerU-Token'] = this.token
     const res = await fetch(`${PROXY_BASE}/v4/extract/task`, {
       method: 'POST',
+      headers: this.v4Headers(),
       headers,
       body: JSON.stringify({ url, file_name: fileName, model_version: 'vlm', language: 'ch' }),
     })
@@ -101,7 +106,7 @@ export class MinerUClient {
   private async pollPrecise(taskId: string, onProgress?: (msg: string) => void): Promise<string> {
     for (let i = 0; i < 300; i++) {
       await new Promise(r => setTimeout(r, 3000))
-      const res = await fetch(`${PROXY_BASE}/v4/extract/task/${taskId}`, { headers: { ...AUTH_HEADER } })
+      const res = await fetch(`${PROXY_BASE}/v4/extract/task/${taskId}`, { headers: this.v4Headers() })
       const data = await res.json() as {
         code: number; data: { state: string; full_zip_url?: string; err_msg?: string }
       }
