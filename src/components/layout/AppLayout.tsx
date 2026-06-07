@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
+import { OnlinePresenceTracker } from './OnlinePresenceTracker'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -9,6 +10,7 @@ export function AppLayout() {
   return (
     <div className="min-h-screen flex">
       {/* Desktop sidebar — always visible */}
+      <OnlinePresenceTracker />
       <Sidebar className="hidden lg:flex" />
       {/* Mobile sidebar — overlay */}
       <Sidebar

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useRef, useEffect, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,10 +9,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Trash2, Check, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, Check, ChevronDown, Sparkles } from 'lucide-react'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
+import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -32,7 +33,19 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [subject, setSubject] = useState(initialData?.subject ?? '')
   const [analysis, setAnalysis] = useState(initialData?.analysis ?? '')
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
+  const [keyPointsGlow, setKeyPointsGlow] = useState(false)
+  const [keyPointsFade, setKeyPointsFade] = useState(false)
+  const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
+  const [keyPointsAnimating, setKeyPointsAnimating] = useState(false)
+  const [keyPointsLoading, setKeyPointsLoading] = useState(false)
+  const typewriterRef = useRef<{ text: string; timer: ReturnType<typeof setInterval> | null }>({ text: '', timer: null })
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (typewriterRef.current.timer) clearInterval(typewriterRef.current.timer)
+    }
+  }, [])
   const [error, setError] = useState('')
 
   const needsOptions = questionType === 'single_choice' || questionType === 'multi_select'
@@ -257,7 +270,110 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
       {/* Key points */}
       <div className="space-y-2">
         <Label htmlFor="keyPoints">{t('questions.keyPoints')}</Label>
-        <Input id="keyPoints" value={keyPoints} onChange={(e) => setKeyPoints(e.target.value)} placeholder={t('questions.keyPointsPlaceholder')} />
+        <div className="relative">
+          <Input
+            id="keyPoints"
+            value={keyPoints}
+            onChange={(e) => { setKeyPoints(e.target.value); setKeyPointsOpacity(1); setKeyPointsAnimating(false) }}
+            placeholder={t('questions.keyPointsPlaceholder')}
+            className={`pr-8 transition-[border-color,box-shadow] duration-1500 ease-out ${
+              keyPointsAnimating ? 'text-transparent select-none' : 'transition-opacity duration-300'
+            } ${
+              keyPointsGlow
+                ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]'
+                : keyPointsFade
+                  ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]'
+                  : ''
+            }`}
+            style={keyPointsAnimating ? undefined : { opacity: keyPointsOpacity }}
+          />
+          {keyPointsAnimating && (
+            <div
+              className="absolute inset-0 flex items-center px-3 pr-8 pointer-events-none overflow-hidden text-sm"
+              aria-hidden="true"
+            >
+              <span className="whitespace-pre">
+                {[...keyPoints].map((ch, i) => (
+                  <span
+                    key={i}
+                    className="animate-[charReveal_0.3s_ease-out_both]"
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+          {hasAiConfig() && (
+            <button
+              type="button"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer disabled:opacity-50"
+              disabled={keyPointsLoading}
+              onClick={async () => {
+                if (!questionText.trim()) return
+                setKeyPointsGlow(true)
+                setKeyPointsLoading(true)
+                setKeyPointsAnimating(true)
+                setKeyPoints('')
+                try {
+                  let answerStr = ''
+                  if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
+                  else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = correctAnswer.map((i: number) => options[i]).join('、')
+                  else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
+                  else if (typeof correctAnswer === 'string') answerStr = correctAnswer
+                  else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')
+
+                  const result = await generateKeyPoints({
+                    questionText: questionText.trim(),
+                    questionType: QUESTION_TYPE_LABELS[questionType] || questionType,
+                    options: isChoiceType ? options.filter(o => o.trim()) : undefined,
+                    correctAnswer: answerStr || undefined,
+                    analysis: analysis.trim() || undefined,
+                    answerExplanation: answerExplanation.trim() || undefined,
+                  })
+
+                  // Typewriter effect with varied pacing and gradual opacity
+                  if (typewriterRef.current.timer) clearTimeout(typewriterRef.current.timer)
+                  const len = result.length
+                  setKeyPointsOpacity(0.3)
+                  let i = 0
+                  const tick = () => {
+                    i++
+                    const progress = Math.min(i / Math.max(len, 1), 1)
+                    setKeyPoints(result.slice(0, i))
+                    setKeyPointsOpacity(0.3 + progress * 0.7)
+                    if (i >= len) {
+                      typewriterRef.current.timer = null
+                      setKeyPointsOpacity(1)
+                      setTimeout(() => {
+                        setKeyPointsFade(true)
+                        requestAnimationFrame(() => {
+                          setKeyPointsGlow(false)
+                          setTimeout(() => {
+                            setKeyPointsFade(false)
+                            setKeyPointsAnimating(false)
+                          }, 1500)
+                        })
+                      }, 500)
+                      return
+                    }
+                    // Simulate natural typing: fast base + random pause, longer on punctuation
+                    const ch = result[i]
+                    const baseDelay = 25
+                    const randomDelay = Math.random() * 55
+                    const punctDelay = /[，,。；;、]/.test(ch) ? 80 : 0
+                    typewriterRef.current.timer = setTimeout(tick, baseDelay + randomDelay + punctDelay)
+                  }
+                  typewriterRef.current.timer = setTimeout(tick, 60)
+                } catch { /* ignore */ }
+                setKeyPointsLoading(false)
+              }}
+              title="AI 生成知识点"
+            >
+              <Sparkles className={`h-4 w-4 text-muted-foreground hover:text-foreground transition-colors ${keyPointsLoading ? 'animate-pulse' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex justify-end gap-2">

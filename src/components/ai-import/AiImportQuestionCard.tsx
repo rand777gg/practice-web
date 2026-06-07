@@ -12,6 +12,12 @@ import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
 
+function circled(n: number): string {
+  if (n >= 1 && n <= 20) return String.fromCodePoint(0x245f + n)
+  if (n >= 21 && n <= 35) return String.fromCodePoint(0x3251 + n - 21)
+  return `#${n}`
+}
+
 interface Props {
   question: ParsedQuestion
   index: number
@@ -29,16 +35,17 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
     <div className={`rounded-lg border p-3 space-y-2 ${selected ? 'border-blue-500 bg-blue-50/30 dark:bg-blue-950/10' : ''}`}>
       {/* Header */}
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors
-            ${selected ? 'bg-blue-500 border-blue-500 text-white' : 'border-muted-foreground/30'}`}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`shrink-0 w-5 h-5 rounded border-2 transition-colors
+            ${selected ? 'bg-blue-500 border-blue-500 text-white hover:bg-blue-600 hover:text-white' : 'border-muted-foreground/30'}`}
           onClick={onToggleSelect}
         >
           {selected && <Check className="h-3 w-3" />}
-        </button>
+        </Button>
 
-        <span className="text-xs text-muted-foreground font-medium tabular-nums">#{index + 1}</span>
+        <span className="text-xs text-muted-foreground font-medium">{circled(index + 1)}</span>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -92,12 +99,13 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                 placeholder={`选项 ${String.fromCharCode(65 + oi)}`}
               />
               {/* Correct answer marker */}
-              <button
-                type="button"
-                className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px]
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`shrink-0 w-5 h-5 rounded-full border-2 text-[10px] transition-colors
                   ${type === 'single_choice'
-                    ? question.correct_answer === oi ? 'bg-green-500 border-green-500 text-white' : 'border-muted-foreground/30'
-                    : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? 'bg-green-500 border-green-500 text-white' : 'border-muted-foreground/30'
+                    ? question.correct_answer === oi ? 'bg-green-500 border-green-500 text-white hover:bg-green-600 hover:text-white' : 'border-muted-foreground/30'
+                    : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? 'bg-green-500 border-green-500 text-white hover:bg-green-600 hover:text-white' : 'border-muted-foreground/30'
                   }`}
                 onClick={() => {
                   if (type === 'single_choice') {
@@ -112,7 +120,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                 }}
               >
                 {type === 'single_choice' ? (question.correct_answer === oi ? '✓' : '') : (Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? '✓' : '')}
-              </button>
+              </Button>
             </div>
           ))}
           <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => patch({ options: [...question.options, ''] })}>
@@ -124,17 +132,22 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       {/* True/False toggle */}
       {type === 'true_false' && (
         <div className="flex gap-2 pl-1">
-          {['正确', '错误'].map((label, ti) => (
-            <button
-              key={label}
-              type="button"
-              className={`flex-1 h-8 rounded-md border text-xs font-medium transition-colors
-                ${question.correct_answer === (ti === 0) ? 'bg-green-500 border-green-500 text-white' : 'border-border hover:bg-accent'}`}
-              onClick={() => patch({ correct_answer: ti === 0 })}
-            >
-              {label}
-            </button>
-          ))}
+          <Button
+            size="sm"
+            variant={question.correct_answer === true ? 'default' : 'outline'}
+            className={`flex-1 h-8 text-xs ${question.correct_answer === true ? 'bg-green-500 hover:bg-green-600' : ''}`}
+            onClick={() => patch({ correct_answer: true })}
+          >
+            正确
+          </Button>
+          <Button
+            size="sm"
+            variant={question.correct_answer === false ? 'default' : 'outline'}
+            className={`flex-1 h-8 text-xs ${question.correct_answer === false ? 'bg-green-500 hover:bg-green-600' : ''}`}
+            onClick={() => patch({ correct_answer: false })}
+          >
+            错误
+          </Button>
         </div>
       )}
 

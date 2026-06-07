@@ -28,7 +28,7 @@ export function AiImportPreview({
         </Button>
       </div>
 
-      <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+      <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
         {questions.map((q, i) => (
           <AiImportQuestionCard
             key={i}

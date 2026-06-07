@@ -7,22 +7,37 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Profile } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { useOnlineUsers } from '@/hooks/use-online-users'
 
 export function Component() {
   const { t } = useT()
+  const onlineIds = useOnlineUsers()
   const { user: currentUser, profile: myProfile } = useAuthStore()
-  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [profiles, setProfiles] = useState<(Profile & { email?: string })[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .then(({ data }) => {
-        setProfiles((data ?? []) as Profile[])
-        setIsLoading(false)
-      })
+    async function load() {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: true })
+
+      const list = (data ?? []) as (Profile & { email?: string })[]
+
+      const emails = await Promise.all(
+        list.map(async (p) => {
+          const { data } = await supabase.rpc('get_user_email', { user_id: p.id })
+          return { id: p.id, email: (data as string) ?? '' }
+        }),
+      )
+      const emailMap = new Map(emails.map((e) => [e.id, e.email]))
+      for (const p of list) p.email = emailMap.get(p.id) ?? ''
+
+      setProfiles(list)
+      setIsLoading(false)
+    }
+    load()
   }, [])
 
   const toggleRole = async (profile: Profile) => {
@@ -47,22 +62,26 @@ export function Component() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t('users.userId')}</TableHead>
+              <TableHead className="w-12">{t('users.status')}</TableHead>
+              <TableHead className="min-w-[160px]">{t('users.email')}</TableHead>
               <TableHead>{t('users.role')}</TableHead>
-              <TableHead className="hidden sm:table-cell">{t('users.joined')}</TableHead>
-              <TableHead>{t('users.action')}</TableHead>
+              <TableHead>{t('users.joined')}</TableHead>
+              <TableHead className="w-20">{t('users.action')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {profiles.map((p) => (
               <TableRow key={p.id}>
-                <TableCell className="font-mono text-xs">{p.id.slice(0, 8)}...</TableCell>
+                <TableCell>
+                  <span className={`online-dot ${onlineIds.has(p.id) ? '' : 'offline'}`} />
+                </TableCell>
+                <TableCell className="font-mono text-xs whitespace-nowrap">{p.email || p.id.slice(0, 12)}</TableCell>
                 <TableCell>
                   <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
                     {p.role === 'admin' ? t('users.admin') : t('users.user')}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-muted-foreground hidden sm:table-cell">
+                <TableCell className="text-muted-foreground whitespace-nowrap">
                   {new Date(p.created_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell>

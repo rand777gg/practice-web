@@ -112,7 +112,7 @@ export const zh = {
     remove: '移除',
   },
   questions: {
-    questionType: '题目类型',
+    questionType: '类型',
     title: '题目管理',
     total: '道题目',
     import: '导入',
@@ -169,8 +169,9 @@ export const zh = {
   },
   users: {
     title: '用户管理',
-    userId: '用户 ID',
+    email: '邮箱',
     role: '角色',
+    status: '状态',
     joined: '注册时间',
     action: '操作',
     admin: '管理员',
@@ -397,7 +398,7 @@ export const en = {
     remove: 'Remove',
   },
   questions: {
-    questionType: 'Question Type',
+    questionType: 'Type',
     title: 'Questions',
     total: 'total questions',
     import: 'Import',
@@ -454,8 +455,9 @@ export const en = {
   },
   users: {
     title: 'User Management',
-    userId: 'User ID',
+    email: 'Email',
     role: 'Role',
+    status: 'Status',
     joined: 'Joined',
     action: 'Action',
     admin: 'Admin',

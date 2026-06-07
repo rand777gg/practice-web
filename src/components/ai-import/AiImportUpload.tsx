@@ -1,6 +1,22 @@
 import { useState, useRef, type DragEvent } from 'react'
 import { Button } from '@/components/ui/button'
-import { Upload, FileText, X } from 'lucide-react'
+import { Upload, FileText, FileImage, FileSpreadsheet, File, FileCode, X } from 'lucide-react'
+
+function fileIcon(ext: string) {
+  switch (ext) {
+    case 'pdf': return { Icon: FileText, color: 'text-red-500' }
+    case 'doc': case 'docx': return { Icon: FileText, color: 'text-blue-500' }
+    case 'xls': case 'xlsx': return { Icon: FileSpreadsheet, color: 'text-green-500' }
+    case 'ppt': case 'pptx': return { Icon: File, color: 'text-orange-500' }
+    case 'png': case 'jpg': case 'jpeg': case 'webp': case 'gif': case 'bmp': return { Icon: FileImage, color: 'text-purple-500' }
+    case 'html': return { Icon: FileCode, color: 'text-yellow-500' }
+    default: return { Icon: FileText, color: 'text-muted-foreground' }
+  }
+}
+
+function getFileIcon(f: File) {
+  return fileIcon(f.name.split('.').pop()?.toLowerCase() ?? '')
+}
 
 interface Props {
   onFile: (file: File) => void
@@ -124,23 +140,26 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
           </div>
         ) : multiple ? (
           <div className="space-y-2 max-h-48 overflow-y-auto">
-            {files.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm">
-                <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                <span className="truncate">{f.name}</span>
-                <span className="text-xs text-muted-foreground shrink-0">
-                  {(f.size / 1024 / 1024).toFixed(1)} MB
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 shrink-0"
-                  onClick={(e) => { e.stopPropagation(); removeFile(i) }}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
+            {files.map((f, i) => {
+              const { Icon, color } = getFileIcon(f)
+              return (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <Icon className={`h-4 w-4 shrink-0 ${color}`} />
+                  <span className="truncate">{f.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {(f.size / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); removeFile(i) }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )
+            })}
             <Button
               variant="outline"
               size="sm"
@@ -149,20 +168,23 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
               清除全部
             </Button>
           </div>
-        ) : (
-          <div className="space-y-2">
-            <FileText className="h-10 w-10 mx-auto text-blue-500" />
-            <p className="text-sm font-medium">{files[0].name}</p>
-            <p className="text-xs text-muted-foreground">{(files[0].size / 1024 / 1024).toFixed(1)} MB</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => { e.stopPropagation(); setFiles([]); inputRef.current!.value = '' }}
-            >
-              重新选择
-            </Button>
-          </div>
-        )}
+        ) : (() => {
+          const { Icon, color } = getFileIcon(files[0])
+          return (
+            <div className="space-y-2">
+              <Icon className={`h-10 w-10 mx-auto ${color}`} />
+              <p className="text-sm font-medium">{files[0].name}</p>
+              <p className="text-xs text-muted-foreground">{(files[0].size / 1024 / 1024).toFixed(1)} MB</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); setFiles([]); inputRef.current!.value = '' }}
+              >
+                重新选择
+              </Button>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

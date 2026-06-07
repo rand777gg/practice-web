@@ -1,9 +1,18 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { Question } from '@/types'
+import type { Question, QuestionType } from '@/types'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
+
+const TYPE_COLORS: Record<QuestionType, string> = {
+  single_choice: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  multi_select:  'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+  true_false:    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  fill_blank:    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  short_answer:  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  analysis:      'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
+}
 
 interface Props {
   questions: Question[]
@@ -22,10 +31,10 @@ export function QuestionList({ questions, onDelete }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{t('questions.question')}</TableHead>
-            <TableHead className="hidden sm:table-cell">{t('questions.subject')}</TableHead>
-            <TableHead className="hidden sm:table-cell">{t('questions.category')}</TableHead>
-            <TableHead className="hidden sm:table-cell">{t('questions.questionType')}</TableHead>
+            <TableHead className="min-w-[180px]">{t('questions.question')}</TableHead>
+            <TableHead>{t('questions.subject')}</TableHead>
+            <TableHead>{t('questions.category')}</TableHead>
+            <TableHead>{t('questions.questionType')}</TableHead>
             <TableHead className="w-20">{t('questions.actions')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -33,10 +42,10 @@ export function QuestionList({ questions, onDelete }: Props) {
           {questions.map((q) => (
             <TableRow key={q.id}>
               <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
-              <TableCell className="hidden sm:table-cell">{q.subject ?? '-'}</TableCell>
-              <TableCell className="hidden sm:table-cell">{q.category ?? '-'}</TableCell>
-              <TableCell className="hidden sm:table-cell">
-                <span className="text-xs rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">
+              <TableCell className="whitespace-nowrap">{q.subject ?? '-'}</TableCell>
+              <TableCell className="whitespace-nowrap">{q.category ?? '-'}</TableCell>
+              <TableCell className="whitespace-nowrap">
+                <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
                   {t(`questionTypes.${q.question_type}` as any) || q.question_type}
                 </span>
               </TableCell>

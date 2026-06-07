@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useT } from '@/i18n/use-t'
 import { Zap, Globe, Key, Link, ChevronDown, ChevronUp } from 'lucide-react'
+import { ProviderIcon } from '@lobehub/icons'
 import type { AiProviderConfig } from '@/types'
 
 export function Component() {
@@ -177,7 +178,7 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <ProviderIcon providerId={provider.id} />
+              <ProviderIcon provider={provider.id} size={20} type="avatar" />
               <CardTitle className="text-sm">{provider.name}</CardTitle>
             </div>
             <CardDescription className="text-xs mt-1 line-clamp-2">
@@ -259,20 +260,5 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
         </>
       )}
     </Card>
-  )
-}
-
-function ProviderIcon({ providerId }: { providerId: string }) {
-  const icons: Record<string, { bg: string; text: string }> = {
-    deepseek: { bg: 'bg-blue-100 dark:bg-blue-900', text: 'text-blue-600 dark:text-blue-300' },
-    openai: { bg: 'bg-emerald-100 dark:bg-emerald-900', text: 'text-emerald-600 dark:text-emerald-300' },
-    openrouter: { bg: 'bg-purple-100 dark:bg-purple-900', text: 'text-purple-600 dark:text-purple-300' },
-    dify: { bg: 'bg-amber-100 dark:bg-amber-900', text: 'text-amber-600 dark:text-amber-300' },
-  }
-  const style = icons[providerId] ?? { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-300' }
-  return (
-    <div className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold ${style.bg} ${style.text}`}>
-      {providerId.slice(0, 2).toUpperCase()}
-    </div>
   )
 }

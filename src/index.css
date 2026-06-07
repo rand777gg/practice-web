@@ -219,8 +219,90 @@
   @apply dark:text-blue-300;
 }
 
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--muted-foreground)) 40%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground)) 60%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmerSweep 2s ease-in-out infinite;
+}
+@keyframes charReveal {
+  from { opacity: 0; filter: blur(2px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+
+@keyframes shimmerSweep {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .ai-nav-item:hover {
   animation: colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite;
 }
 
+/* Radix Themes Spinner */
+:root {
+  --spinner-animation-duration: 800ms;
+  --spinner-opacity: 0.65;
+}
+.rt-Spinner {
+  display: block;
+  position: relative;
+  opacity: var(--spinner-opacity);
+}
+.rt-SpinnerLeaf {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 12.5% / 2);
+  width: 12.5%;
+  height: 100%;
+  animation: rt-spinner-leaf-fade var(--spinner-animation-duration) linear infinite;
+}
+.rt-SpinnerLeaf::before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 30%;
+  border-radius: var(--radius-1, 3px);
+  background-color: currentColor;
+}
+.rt-SpinnerLeaf:where(:nth-child(1)) { transform: rotate(0deg); animation-delay: calc(-8 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(2)) { transform: rotate(45deg); animation-delay: calc(-7 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(3)) { transform: rotate(90deg); animation-delay: calc(-6 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(4)) { transform: rotate(135deg); animation-delay: calc(-5 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(5)) { transform: rotate(180deg); animation-delay: calc(-4 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(6)) { transform: rotate(225deg); animation-delay: calc(-3 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(7)) { transform: rotate(270deg); animation-delay: calc(-2 / 8 * var(--spinner-animation-duration)); }
+.rt-SpinnerLeaf:where(:nth-child(8)) { transform: rotate(315deg); animation-delay: calc(-1 / 8 * var(--spinner-animation-duration)); }
+@keyframes rt-spinner-leaf-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.rt-Spinner:where(.rt-r-size-1) { width: 12px; height: 12px; }
+.rt-Spinner:where(.rt-r-size-2) { width: 16px; height: 16px; }
+.rt-Spinner:where(.rt-r-size-3) { width: 20px; height: 20px; }
 
+.online-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+}
+.online-dot.offline {
+  background: #9ca3af;
+  box-shadow: none;
+}

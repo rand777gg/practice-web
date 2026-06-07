@@ -1,7 +1,8 @@
 import { createDeepSeek } from '@ai-sdk/deepseek'
-import { generateObject } from 'ai'
+import { generateObject, generateText } from 'ai'
 import { z } from 'zod'
 import type { AiConfig, AiParseResult, ParsedQuestion } from './types'
+import { getAiConfig as getConfig } from './config'
 
 const questionSchema = z.object({
   question_type: z.enum(['single_choice','multi_select','true_false','fill_blank','short_answer','analysis']),
@@ -23,7 +24,7 @@ Rules for each question type:
 - single_choice: correct_answer is an integer (0-based index). options must have ≥2 items.
 - multi_select: correct_answer is an array of integers. options must have ≥2 items.
 - true_false: correct_answer is boolean. options=["正确","错误"] or ["True","False"].
-- fill_blank: correct_answer is a string. options is empty array [].
+- fill_blank: correct_answer is a string. options is empty array []. In the question_text, mark the blank position with ____ (double underscores).
 - short_answer: correct_answer is a string or string[]. options is empty array [].
 - analysis: correct_answer is null. options is empty array [].
 
@@ -51,6 +52,30 @@ export class DeepSeekParser {
     })
 
     return { questions: this.normalize(object.questions) }
+  }
+
+  async generateKeyPoints(context: {
+    questionText: string
+    questionType: string
+    options?: string[]
+    correctAnswer?: string
+    analysis?: string
+    answerExplanation?: string
+  }): Promise<string> {
+    const parts: string[] = [`题目类型：${context.questionType}`, `题干：${context.questionText}`]
+    if (context.options?.length) parts.push(`选项：${context.options.join(' | ')}`)
+    if (context.correctAnswer) parts.push(`正确答案：${context.correctAnswer}`)
+    if (context.analysis) parts.push(`解析：${context.analysis}`)
+    if (context.answerExplanation) parts.push(`答案解析：${context.answerExplanation}`)
+
+    const { text } = await generateText({
+      model: this.model,
+      system: '你是一个题目知识点的提炼助手。根据题干、答案、解析，提取3-5个核心知识点。用逗号分隔，每项简短（不超过10个字）。只输出知识点，不要其他内容。',
+      prompt: parts.join('\n'),
+      temperature: 0.2,
+    })
+
+    return text.trim()
   }
 
   private normalize(raw: z.infer<typeof resultSchema>['questions']): ParsedQuestion[] {
@@ -92,4 +117,16 @@ export class DeepSeekParser {
         }
       })
   }
+}
+
+export async function generateKeyPoints(context: {
+  questionText: string
+  questionType: string
+  options?: string[]
+  correctAnswer?: string
+  analysis?: string
+  answerExplanation?: string
+}): Promise<string> {
+  const parser = new DeepSeekParser(getConfig())
+  return parser.generateKeyPoints(context)
 }

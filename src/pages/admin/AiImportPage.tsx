@@ -226,7 +226,7 @@ export function Component() {
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-5xl space-y-4">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
@@ -340,12 +340,7 @@ export function Component() {
           )}
 
           {/* Step 2: Parsing */}
-          {step === 'parsing' && (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <Spinner />
-              <p className="text-sm text-muted-foreground">{parseMsg || '正在解析...'}</p>
-            </div>
-          )}
+          {step === 'parsing' && <ParsingProgress msg={parseMsg} />}
 
           {/* Step 3: Metadata */}
           {step === 'metadata' && (
@@ -422,6 +417,55 @@ export function Component() {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function ParsingProgress({ msg }: { msg: string }) {
+  const steps = [
+    { label: '上传文档', key: 'upload' },
+    { label: '文档解析', key: 'mineru' },
+    { label: 'AI 提取', key: 'ai' },
+  ]
+
+  let activeIdx = -1
+  if (msg.includes('上传')) activeIdx = 0
+  else if (msg.includes('MinerU') || msg.includes('解析')) activeIdx = 1
+  else if (msg.includes('AI') || msg.includes('提取')) activeIdx = 2
+
+  return (
+    <div className="flex flex-col items-center gap-6 py-8">
+      <div className="flex items-center w-full max-w-xs">
+        {steps.map((s, i) => (
+          <div key={s.key} className="flex items-center flex-1 last:flex-[0]">
+            <div className="flex flex-col items-center gap-1.5">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500
+                ${i <= activeIdx
+                  ? 'bg-primary text-primary-foreground scale-110 shadow-md'
+                  : 'bg-muted text-muted-foreground'}`}
+              >
+                {i < activeIdx ? '✓' : i + 1}
+              </div>
+              <span className={`text-[10px] whitespace-nowrap transition-colors duration-500
+                ${i <= activeIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}
+              >
+                {s.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div className="flex-1 h-0.5 mx-2 mt-[-12px] rounded bg-muted transition-all duration-700">
+                <div
+                  className="h-full rounded bg-primary transition-all duration-700 ease-out"
+                  style={{ width: i < activeIdx ? '100%' : i === activeIdx ? '50%' : '0%' }}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-sm font-medium shimmer-text">
+        {msg || '正在解析...'}
+      </p>
     </div>
   )
 }

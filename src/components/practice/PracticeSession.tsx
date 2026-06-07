@@ -17,8 +17,9 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
-import type { Question, CorrectAnswer, Profile } from '@/types'
+import type { Question, CorrectAnswer, Profile, QuestionType } from '@/types'
 import { normalizeDailyTargets } from '@/types'
+import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
 function getGoalSubjects(profile: Profile | null): string[] {
@@ -62,6 +63,7 @@ export function PracticeSession() {
   const [filteredCategories, setFilteredCategories] = useState<string[]>([])
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
   useEffect(() => {
     async function loadFilters() {
@@ -130,6 +132,7 @@ export function PracticeSession() {
       query = query.eq('subject', selectedSubject)
     }
     if (selectedCategory) query = query.eq('category', selectedCategory)
+    if (selectedType) query = query.eq('question_type', selectedType)
 
     const { data } = await query
 
@@ -164,7 +167,7 @@ export function PracticeSession() {
     }
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory, profile])
+  }, [selectedSubject, selectedCategory, selectedType, profile])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -248,6 +251,27 @@ export function PracticeSession() {
               <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
                 {c}
                 {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {selectedType ? t(`questionTypes.${selectedType}` as any) : t('questions.questionType')}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSelectedType('')}>
+              <span className="text-muted-foreground">{t('questions.questionType')}</span>
+              {!selectedType && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {QUESTION_TYPE_OPTIONS.map((o) => (
+              <DropdownMenuItem key={o.value} onClick={() => setSelectedType(o.value)}>
+                {t(`questionTypes.${o.value}` as any)}
+                {selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
