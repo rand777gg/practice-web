@@ -27,11 +27,10 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
 import { useSwipe } from '@/hooks/use-swipe'
 import {
   EXAM_DEFAULT_COUNT,

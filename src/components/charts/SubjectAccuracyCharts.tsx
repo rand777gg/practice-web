@@ -16,7 +16,6 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
   const theme = useThemeStore((s) => s.theme)
   const isDark = theme === 'dark'
   const textColor = isDark ? '#d1d5db' : '#374151'
-  const mutedColor = isDark ? '#9ca3af' : '#6b7280'
 
   const barOption = useMemo(() => {
     const sorted = [...subjectAccuracy]
@@ -55,7 +54,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
       },
       series: [{
         type: 'bar' as const,
-        data: data.map((d, i) => {
+        data: data.map((d) => {
           const rate = d.value / 100
           const r = Math.round(239 - rate * 200)
           const g = Math.round(68 + rate * 130)

@@ -2,7 +2,7 @@
 
 # Practice Web — 刷题网站
 
-A single-choice question practice website built with React + Supabase. Supports practice mode (with subject/category filter, public/private notes, and swipe navigation), configurable exam mode with auto-submit and resume, wrong answer review with favorites and note editing, ECharts-powered dashboard with analytics, dual study plan system (long-term auto-calc + custom daily targets), question error reporting, and question management (CRUD + CSV/JSON import). Interface available in Chinese and English. PWA-enabled for offline use.
+A comprehensive question practice platform built with React + Supabase. Supports multiple question types (single/multi-choice, true/false, fill-blank, short-answer), practice & exam modes, AI-powered study summaries and question import, ECharts-rich dashboard analytics, dual study plan system, and PWA offline support. Interface available in Chinese and English.
 
 ## Tech Stack
 
@@ -11,31 +11,33 @@ A single-choice question practice website built with React + Supabase. Supports 
 - **State**: Zustand
 - **Routing**: React Router v7 (lazy loading)
 - **Backend**: Supabase (Auth, Database, RLS)
+- **AI**: Vercel AI SDK + DeepSeek (question parsing, key points generation, daily study summary)
 - **I18n**: Built-in (Chinese / English toggle)
 
 ## Features
 
 | Feature | Description |
 |---|---|
-| **Dashboard Analytics** | ECharts-powered charts: calendar heatmap, stacked bar chart (Mon–Sun), Sankey diagram (subject→category), metrics card with trend arrows |
-| **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets (per-subject count + optional deadline). Real-time dual progress bars in header. Click dashboard cards to edit directly. |
-| **Practice Mode** | Random single-choice questions with subject/category linked filter, attempt/wrong tracking, skip button, persistent notes with public/private toggle, left-swipe to next question |
-| **Exam Mode** | Configurable question count (5–200) and duration (5–300 min), subject/category filter, grid question navigator, resume detection dialog, auto-submit on timeout, score report with per-question review |
-| **Wrong Answer Review** | Filter by practice/exam mode, inline note editing with public/private toggle, favorites star button, remove wrong answers, answer highlighted |
-| **Question Management** | Create, edit, delete questions with dynamic option count (2+ options) |
-| **Bulk Import** | CSV or JSON file import |
-| **Subject & Analysis** | Questions support subject tag (e.g., Logic, Math) and analysis field for answer explanations |
-| **Error Reporting** | Users can report errors on questions via "Report Error" link |
-| **User Roles** | Admin (CRUD questions, manage users) and User (practice only) |
+| **Dashboard Analytics** | ECharts-rich charts: calendar heatmap, concentric-circle time distribution (7 rings × 24h), daily stacked bar (subjects + correct/wrong), time scatter (today's hourly bubbles), accuracy horizontal bar + subject×type heatmap, nested donut (category→subject→type), subject rank bar, Sankey flow (subject↔category) |
+| **AI Study Summary** | Click the ✨ button in the header to get a friend-style AI summary of today's performance, weak areas, and personalized study suggestions — with typewriter reveal animation |
+| **AI Question Import** | Upload documents (PDF, Word, images), auto-extract questions via MinerU OCR + DeepSeek parsing, 6-step wizard with preview and batch import |
+| **AI Key Points** | One-click generate knowledge points for any question, with color-shift border animation and typewriter text reveal |
+| **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets. Real-time dual progress bars in header. Click dashboard cards to edit directly. |
+| **Practice Mode** | All question types supported, subject/category linked filter, skip button, persistent notes with public/private toggle, swipe navigation |
+| **Exam Mode** | Configurable question count and duration, subject/category/type filter, grid question navigator, resume detection, auto-submit on timeout, score report |
+| **Wrong Answer Review** | Filter by mode, inline note editing, favorites, answer highlighted |
+| **Question Management** | CRUD with dynamic option count, subject/category/type tagging, analysis & key points fields |
+| **Bulk Import** | CSV, JSON, or AI-powered document import |
+| **User Roles** | Admin (CRUD questions, manage users, AI config) and User (practice only) |
 | **First-user Auto-admin** | First registered user automatically becomes admin via DB trigger |
-| **Mobile Responsive** | Collapsible sidebar drawer, responsive tables and forms, left/right swipe to switch questions in practice and exam mode |
-| **PWA** | Service worker with offline caching, installable on mobile and desktop |
-| **Dark Mode** | System-preference detection, localStorage persistence, smooth 0.25s transitions, toggle in header and login page |
-| **Public Notes** | Mark notes as public to share with other users; shown with author email in question detail |
-| **Favorites** | Star questions in practice or wrong review; syncs to Supabase, accessible from sidebar |
+| **Mobile Responsive** | Collapsible sidebar, responsive charts (horizontal scroll for Sankey), swipe navigation |
+| **PWA** | Service worker with offline caching, installable |
+| **Dark Mode** | System-preference detection, localStorage persistence, toggle in header and login page |
+| **Public Notes** | Share notes with other users; shown with author info |
+| **Favorites** | Star questions, sync to Supabase, accessible from sidebar |
 | **I18n** | Chinese/English dropdown switcher in header |
-| **Loading Tips** | Rotating "Did you know?" tips cycling every 5s during loading states, with fade transitions. Edit in `src/i18n/translations.ts` |
-| **GitHub Release Badge** | Sidebar fetches latest GitHub release version and displays it as a badge |
+| **Loading Tips** | Rotating tips with fade transitions during loading states |
+| **GitHub Release Badge** | Sidebar shows latest release version from GitHub |
 
 ## Getting Started
 
@@ -109,10 +111,12 @@ practice-web/
     │   ├── ui/                   # shadcn primitives (button, card, dialog, etc.)
     │   ├── auth/                 # LoginForm, RegisterForm, ProtectedRoute
     │   ├── layout/               # AppLayout, Sidebar, Header, PlanDialog, PlanProgress, DashboardPlanCards, LoadingScreen, LoadingTips
+    │   ├── ai/                   # AiSummaryDialog
+    │   ├── ai-import/            # AiImportUpload, AiImportPreview, AiImportQuestionCard, AiImportMetadata
     │   ├── questions/            # QuestionCard, QuestionForm, QuestionList, ImportDialog
     │   ├── practice/             # PracticeSession
     │   ├── exam/                 # ExamSession, ExamTimer, ExamProgress, ExamResultCard
-    │   └── charts/               # ECharts components (CalendarHeatmap, StackedBar, Sankey)
+    │   └── charts/               # ECharts: TimeDistributionHistogram, TimeScatterChart, AnswerTimeScatterHistogram, SubjectCategorySunburst, SubjectDonutCharts, SubjectAccuracyCharts, SubjectRankChart, DailyGoalHeatmap
     └── pages/                    # Route pages (admin/ subfolder for admin pages)
 ```
 

@@ -88,7 +88,7 @@ export async function generateDailySummary(data: SummaryData): Promise<string> {
 - 某项数据为0或无就跳过不提`,
     prompt,
     temperature: 0.7,
-    maxTokens: 600,
+    maxOutputTokens: 600,
   })
 
   return text.trim()
