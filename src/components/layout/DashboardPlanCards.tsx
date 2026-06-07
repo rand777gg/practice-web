@@ -16,10 +16,6 @@ function todayStart(): string {
   return d.toISOString()
 }
 
-function daysBetween(a: Date, b: Date): number {
-  return Math.ceil((b.getTime() - a.getTime()) / 86400000)
-}
-
 function getPlanSubjects(profile: { plan_subjects?: string | null } | null): string[] {
   if (!profile?.plan_subjects) return []
   try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
@@ -42,8 +38,6 @@ export function DashboardPlanCards() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   // Long-term
-  const [dailyGoal, setDailyGoal] = useState(0)
-  const [todayLongDone, setTodayLongDone] = useState(0)
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
   const [yesterdayDone, setYesterdayDone] = useState(0)
@@ -56,9 +50,6 @@ export function DashboardPlanCards() {
     const uid = user.id
     async function load() {
       if (deadline) {
-        const deadlineDate = new Date(deadline + 'T23:59:59')
-        const daysLeft = Math.max(daysBetween(new Date(), deadlineDate), 1)
-
         let scopeIds: Set<string>
         if (planSubjects.length > 0) {
           const { data: scopeQs } = await supabase
@@ -80,8 +71,6 @@ export function DashboardPlanCards() {
         let doneAll = 0
         for (const id of scopeIds) if (doneIds.has(id)) doneAll++
 
-        const remaining = Math.max(scopeIds.size - doneAll, 0)
-        setDailyGoal(Math.ceil(remaining / daysLeft))
         setTotalScope(scopeIds.size)
         setTotalDone(doneAll)
 
@@ -96,18 +85,6 @@ export function DashboardPlanCards() {
         let doneBefore = 0
         for (const id of scopeIds) if (yesterdayIds.has(id)) doneBefore++
         setYesterdayDone(doneBefore)
-
-        // Today's count
-        const { data: todayData } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', uid)
-          .gte('answered_at', todayStart())
-
-        const todayIds = new Set((todayData ?? []).map((a) => a.question_id))
-        let todayCount = 0
-        for (const id of scopeIds) if (todayIds.has(id)) todayCount++
-        setTodayLongDone(todayCount)
       }
 
       if (dailyTargets.length > 0) {
