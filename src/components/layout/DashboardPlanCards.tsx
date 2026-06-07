@@ -5,7 +5,7 @@ import { useRefreshStore } from '@/stores/refresh-store'
 import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
-import { Check, TrendingUp, TrendingDown } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -125,8 +125,6 @@ export function DashboardPlanCards() {
 
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const changeFromYesterday = totalDone - yesterdayDone
-  const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 100) : null
-  const isUp = changeFromYesterday >= 0
 
   const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
@@ -160,14 +158,29 @@ export function DashboardPlanCards() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <Progress value={overallPct} className="flex-1 h-2 [&>div]:bg-blue-500" />
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
+                  {(() => {
+                    const yesterdayPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
+                    const todayPct = totalScope > 0 ? ((totalDone - yesterdayDone) / totalScope) * 100 : 0
+                    return (
+                      <>
+                        {yesterdayPct > 0 && (
+                          <div className="h-full bg-blue-500 transition-all" style={{ width: `${yesterdayPct}%` }} />
+                        )}
+                        {todayPct > 0 && (
+                          <div className="h-full bg-green-500 transition-all" style={{ width: `${todayPct}%` }} />
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
                 <span className="text-[11px] font-medium tabular-nums">{overallPct}%</span>
               </div>
               <p className="text-[11px] text-muted-foreground flex items-center gap-1">
                 {t('plan.doneCount')}: {totalDone}
-                {changePct != null && changePct > 0 && (
-                  <span className={isUp ? 'text-green-500' : 'text-red-500'}>
-                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct}%
+                {changeFromYesterday > 0 && (
+                  <span className="text-green-500">
+                    {' '}今日 +{changeFromYesterday}
                   </span>
                 )}
               </p>
