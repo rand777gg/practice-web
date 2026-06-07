@@ -10,8 +10,8 @@ interface Props {
 }
 
 const SUBJECT_COLORS = [
-  '#3b82f6', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899',
-  '#f97316', '#6366f1', '#14b8a6', '#a855f7', '#84cc16',
+  '#f0a5b5', '#a8d8ea', '#c3b1e1', '#ffe5b4', '#b5ead7',
+  '#ffccd5', '#b8e0f7', '#d5c6e0', '#fff0c8', '#c7f0d8',
 ]
 
 export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: Props) {
@@ -35,7 +35,7 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
         textStyle: { color: textColor, fontSize: 11 },
       },
       legend: {
-        bottom: 0,
+        top: 0,
         orient: 'horizontal' as const,
         textStyle: { color: textColor, fontSize: 10 },
         type: 'scroll' as const,
@@ -56,8 +56,8 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
       grid: {
         left: '3%',
         right: '4%',
-        bottom: 52,
-        top: 16,
+        bottom: 44,
+        top: 36,
         containLabel: true,
       },
       xAxis: {

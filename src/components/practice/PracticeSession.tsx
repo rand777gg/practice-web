@@ -43,7 +43,7 @@ function getGoalSubjects(profile: Profile | null): string[] {
 
 export function PracticeSession() {
   const { t } = useT()
-  const { profile } = useAuthStore()
+  const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
   const [question, setQuestion] = useState<Question | null>(null)
   const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
@@ -92,7 +92,7 @@ export function PracticeSession() {
       }
     }
     loadFilters()
-  }, [profile])
+  }, [profile?.id])
 
   useEffect(() => {
     if (!selectedSubject) {
@@ -167,7 +167,7 @@ export function PracticeSession() {
     }
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory, selectedType, profile])
+  }, [selectedSubject, selectedCategory, selectedType, profile?.daily_targets, profile?.plan_subjects])
 
   useEffect(() => {
     fetchRandomQuestion()

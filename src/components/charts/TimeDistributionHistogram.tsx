@@ -34,12 +34,12 @@ function wedgePath(
   ].join(' ')
 }
 
-const VIEWBOX_W = 440
-const VIEWBOX_H = 400
-const CX = 198
-const CY = 200
-const OUTER_R = 178
-const INNER_HUB = 27
+const VIEWBOX_W = 480
+const VIEWBOX_H = 440
+const CX = 215
+const CY = 218
+const OUTER_R = 198
+const INNER_HUB = 30
 const RING_W = (OUTER_R - INNER_HUB) / 7
 const ringRadii = Array.from({ length: 7 }, (_, i) => OUTER_R - i * RING_W)
 
@@ -86,8 +86,8 @@ export function TimeDistributionHistogram({ data }: Props) {
   const mutedStroke = isDark ? '#334155' : '#e2e8f0'
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: 440, margin: '0 auto' }}>
-      <svg viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`} style={{ width: '100%', height: 320 }}>
+    <div style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '0 auto' }}>
+      <svg viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`} style={{ width: '100%', height: 400 }}>
         {/* Radial hour separator lines */}
         {Array.from({ length: 24 }, (_, h) => {
           const angle = (h / 24) * Math.PI * 2 - Math.PI / 2

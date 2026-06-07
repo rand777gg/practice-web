@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Calendar, Check, ChevronDown, HelpCircle, Plus, Sparkles, X } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
+import { Spinner } from '@/components/ui/spinner'
+import { Calendar, Check, ChevronDown, HelpCircle, Plus, Play, Sparkles, X } from 'lucide-react'
 import {
   Dialog,
   DialogClose,
@@ -24,7 +27,11 @@ import { cn } from '@/lib/utils'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
+import { computeEbbinghaus, type EbbinghausData } from '@/lib/ai/ebbinghaus'
 import { useT } from '@/i18n/use-t'
+
+const EbbinghausCurve = lazy(() => import('@/components/charts/EbbinghausCurve').then(m => ({ default: m.EbbinghausCurve })))
+const UrgencyChart = lazy(() => import('@/components/charts/UrgencyChart').then(m => ({ default: m.UrgencyChart })))
 
 interface Props {
   open: boolean
@@ -49,13 +56,23 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [deadline, setDeadline] = useState(profile?.deadline ?? '')
   const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>(savedTargets)
   const [saving, setSaving] = useState(false)
+
+  // Ebbinghaus
+  const [ebbinghaus, setEbbinghaus] = useState<EbbinghausData | null>(null)
+  const [ebbinghausLoading, setEbbinghausLoading] = useState(false)
+
   const [allSubjects, setAllSubjects] = useState<string[]>([])
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
-  const [doneCount, setDoneCount] = useState(0)
+  const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
 
   useEffect(() => {
     if (!open) return
     async function load() {
+      // Load ebbinghaus in background
+      if (user) {
+        setEbbinghausLoading(true)
+        computeEbbinghaus(user.id).then(setEbbinghaus).finally(() => setEbbinghausLoading(false))
+      }
       const { data: qs } = await supabase.from('questions').select('subject')
       const counts = new Map<string, number>()
       for (const q of (qs ?? [])) {
@@ -66,23 +83,20 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       setSubjectCounts(counts)
 
       if (user) {
-        const subjectList = selectedSubjects.length > 0 ? selectedSubjects : [...counts.keys()]
-        const { data: done } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', user.id)
+        const [{ data: done }, { data: allQs }] = await Promise.all([
+          supabase.from('user_answers').select('question_id').eq('user_id', user.id),
+          supabase.from('questions').select('id, subject'),
+        ])
         const doneIds = new Set((done ?? []).map((a) => a.question_id))
-
-        const { data: selectedQs } = await supabase
-          .from('questions')
-          .select('id')
-          .in('subject', subjectList)
-
-        let doneInSubjects = 0
-        for (const q of (selectedQs ?? [])) {
-          if (doneIds.has(q.id)) doneInSubjects++
+        const progress = new Map<string, { total: number; done: number }>()
+        for (const q of (allQs ?? [])) {
+          const s = q.subject || 'Other'
+          const entry = progress.get(s) || { total: 0, done: 0 }
+          entry.total++
+          if (doneIds.has(q.id)) entry.done++
+          progress.set(s, entry)
         }
-        setDoneCount(doneInSubjects)
+        setSubjectProgress(progress)
       }
     }
     load()
@@ -97,7 +111,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   }, [profile])
 
   const totalSelected = selectedSubjects.reduce((sum, s) => sum + (subjectCounts.get(s) ?? 0), 0)
-  const remaining = Math.max(totalSelected - doneCount, 0)
+  const totalDone = selectedSubjects.reduce((sum, s) => sum + (subjectProgress.get(s)?.done ?? 0), 0)
+  const remaining = Math.max(totalSelected - totalDone, 0)
 
   let dailyGoal = 0
   if (deadline) {
@@ -247,15 +262,30 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 />
               </button>
 
-              {selectedSubjects.length > 0 && deadline && (
-                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2 text-[11px] space-y-0.5">
-                  <p>
-                    <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">{dailyGoal} {t('plan.perDay')}</span>
-                  </p>
-                  <p className="text-muted-foreground">
-                    {t('plan.remaining')}: {remaining} / {totalSelected}
-                  </p>
+              {selectedSubjects.length > 0 && (
+                <div className="space-y-1.5">
+                  {selectedSubjects.map((s) => {
+                    const p = subjectProgress.get(s)
+                    const total = p?.total ?? 0
+                    const done = p?.done ?? 0
+                    const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                    return (
+                      <div key={s} className="space-y-0.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-muted-foreground truncate max-w-[60%]">{s}</span>
+                          <span className="tabular-nums">{done}/{total}</span>
+                        </div>
+                        <Progress value={pct} className="h-1.5 [&>div]:bg-blue-500" />
+                      </div>
+                    )
+                  })}
+                  {deadline && (
+                    <p className="text-[11px] pt-1">
+                      <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">{dailyGoal} {t('plan.perDay')}</span>
+                      <span className="text-muted-foreground ml-2">{t('plan.remaining')}: {remaining}/{totalSelected}</span>
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -345,22 +375,31 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     </Button>
                   </div>
 
-                  {/* Per-subject count inputs */}
-                  {target.subjects.map((subj, si) => (
-                    <div key={subj.subject} className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">{subj.subject}</span>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          min={1}
-                          value={subj.count}
-                          onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
-                          className="h-7 w-14 text-xs text-center shrink-0"
-                        />
-                        <span className="text-xs text-muted-foreground">{t('plan.questions')}</span>
+                  {/* Per-subject count inputs with progress */}
+                  {target.subjects.map((subj, si) => {
+                    const p = subjectProgress.get(subj.subject)
+                    const total = p?.total ?? 0
+                    const done = p?.done ?? 0
+                    const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                    return (
+                    <div key={subj.subject} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">{subj.subject}</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">{done}/{total}</span>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={subj.count}
+                            onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
+                            className="h-7 w-14 text-xs text-center shrink-0"
+                          />
+                          <span className="text-xs text-muted-foreground">{t('plan.questions')}</span>
+                        </div>
                       </div>
+                      <Progress value={pct} className="h-1.5 [&>div]:bg-pink-500" />
                     </div>
-                  ))}
+                  )})}
                 </div>
               )
             })}
@@ -384,29 +423,58 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           </div>
         </div>
 
-        {/* AI recommendation card */}
-        <div
-          className="mt-3 rounded-lg p-2.5 text-center"
-          style={{
-            border: '1.5px solid',
-            animation: 'colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite',
-            background: 'linear-gradient(135deg, rgba(59,130,246,0.04), rgba(139,92,246,0.04))',
-          }}
-        >
-          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <Sparkles className="h-3 w-3" />
-            <span>基于艾宾浩斯机器学习算法的推荐学习计划</span>
+        {/* Ebbinghaus recommendation section */}
+        {ebbinghausLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Spinner />
+            <span className="text-xs text-muted-foreground ml-2">正在分析遗忘曲线...</span>
           </div>
-          <p className="text-[10px] text-muted-foreground/60 mt-0.5">即将推出</p>
-        </div>
+        ) : ebbinghaus && (ebbinghaus.curve.length > 0 || ebbinghaus.urgency.length > 0) ? (
+          <div className="space-y-3 mt-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Sparkles className="h-3 w-3 text-blue-500" />
+              <span>基于艾宾浩斯遗忘曲线的学习建议</span>
+              {ebbinghaus.totalReviewQueue > 0 && (
+                <span className="text-amber-500 font-medium ml-auto">待复习 {ebbinghaus.totalReviewQueue} 题</span>
+              )}
+            </div>
 
-        <DialogFooter>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {ebbinghaus.curve.length > 0 && (
+                <div className="border rounded-lg p-3">
+                  <p className="text-[11px] text-muted-foreground mb-1">遗忘曲线 & 临界题数</p>
+                  <Suspense fallback={<div className="h-[220px]" />}>
+                    <EbbinghausCurve curve={ebbinghaus.curve} />
+                  </Suspense>
+                </div>
+              )}
+              {ebbinghaus.urgency.length > 0 && (
+                <div className="border rounded-lg p-3">
+                  <p className="text-[11px] text-muted-foreground mb-1">学科紧急度</p>
+                  <Suspense fallback={<div className="h-[120px]" />}>
+                    <UrgencyChart urgency={ebbinghaus.urgency} />
+                  </Suspense>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        <DialogFooter className="flex-col sm:flex-row gap-2">
           <DialogClose asChild>
             <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
           </DialogClose>
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? t('questions.saving') : t('plan.save')}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? t('questions.saving') : t('plan.save')}
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/practice">
+                <Play className="h-3.5 w-3.5" />
+                开始学习
+              </Link>
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

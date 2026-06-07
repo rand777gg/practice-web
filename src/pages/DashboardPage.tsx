@@ -13,6 +13,8 @@ import { useT } from '@/i18n/use-t'
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
 const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
+const SubjectAccuracyCharts = lazy(() => import('@/components/charts/SubjectAccuracyCharts').then(m => ({ default: m.SubjectAccuracyCharts })))
+const SubjectRankChart = lazy(() => import('@/components/charts/SubjectRankChart').then(m => ({ default: m.SubjectRankChart })))
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
 const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/AnswerTimeScatterHistogram').then(m => ({ default: m.AnswerTimeScatterHistogram })))
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
@@ -29,11 +31,13 @@ interface ChartData {
   wrongCount: number
   dailyAnswers: { date: string; count: number }[]
   barData: { date: string; correct: number; wrong: number }[]
-  sunburstData: { subject: string; category: string }[]
+  sunburstData: { subject: string; category: string; questionType: string }[]
   dailyGoal: number
   hourlyDistribution: number[][] // 7 rows (Mon-Sun) x 24 cols (hours)
   dailySubjectData: { dates: string[]; subjects: string[]; data: Record<string, number>[] }
   todayHourlyData: number[] // 24 hours, count of answers today
+  subjectAccuracy: { subject: string; correct: number; total: number }[]
+  heatmapData: { subject: string; questionType: string; correctRate: number; total: number }[]
 }
 
 export function Component() {
@@ -60,16 +64,16 @@ export function Component() {
           .select('is_correct, answered_at, question_id')
           .eq('user_id', user!.id)
           .gte('answered_at', start12wk.toISOString()),
-        supabase.from('questions').select('id, subject, category'),
+        supabase.from('questions').select('id, subject, category, question_type'),
       ])
 
       function normalizeSubject(s: string): string {
         return /^\d{4}真题$/.test(s) ? '真题' : s
       }
 
-      const qMap = new Map<string, { subject: string; category: string }>()
+      const qMap = new Map<string, { subject: string; category: string; questionType: string }>()
       for (const q of questions ?? []) {
-        qMap.set(q.id, { subject: normalizeSubject(q.subject ?? ''), category: q.category ?? '' })
+        qMap.set(q.id, { subject: normalizeSubject(q.subject ?? ''), category: q.category ?? '', questionType: q.question_type ?? '' })
       }
 
       let correctCount = 0
@@ -105,6 +109,7 @@ export function Component() {
       const sunburstData = (questions ?? []).map((q) => ({
         subject: normalizeSubject(q.subject || ''),
         category: q.category || '',
+        questionType: q.question_type || '',
       }))
 
       // Daily goal
@@ -177,10 +182,36 @@ export function Component() {
         return row
       })
 
+      // Subject accuracy
+      const subjAccMap = new Map<string, { correct: number; total: number }>()
+      const heatmapMap = new Map<string, { correct: number; total: number }>()
+      for (const a of answers ?? []) {
+        const q = qMap.get(a.question_id)
+        const subj = q?.subject || '未分类'
+        if (!subjAccMap.has(subj)) subjAccMap.set(subj, { correct: 0, total: 0 })
+        const sa = subjAccMap.get(subj)!
+        sa.total++
+        if (a.is_correct) sa.correct++
+        const qt = q?.questionType || '未分类'
+        const hk = `${subj}|||${qt}`
+        if (!heatmapMap.has(hk)) heatmapMap.set(hk, { correct: 0, total: 0 })
+        const hm = heatmapMap.get(hk)!
+        hm.total++
+        if (a.is_correct) hm.correct++
+      }
+      const subjectAccuracy = [...subjAccMap.entries()]
+        .map(([subject, v]) => ({ subject, ...v }))
+        .filter((s) => s.total > 0)
+      const heatmapData = [...heatmapMap.entries()]
+        .map(([key, v]) => {
+          const [subject, questionType] = key.split('|||')
+          return { subject, questionType, correctRate: v.total > 0 ? v.correct / v.total : 0, total: v.total }
+        })
+
       setChartData({
         totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
-        todayHourlyData,
+        todayHourlyData, subjectAccuracy, heatmapData,
       })
       setIsLoading(false)
     }
@@ -294,6 +325,19 @@ export function Component() {
                   </Suspense>
                 </CardContent>
               </Card>
+              <Card className="border-0 shadow-none">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">正确率分析</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Suspense fallback={<ChartFallback />}>
+                    <SubjectAccuracyCharts
+                      subjectAccuracy={chartData.subjectAccuracy}
+                      heatmapData={chartData.heatmapData}
+                    />
+                  </Suspense>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
@@ -318,9 +362,14 @@ export function Component() {
                   <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectBreakdown')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Suspense fallback={<ChartFallback />}>
-                    <SubjectDonutCharts data={chartData.sunburstData} />
-                  </Suspense>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <Suspense fallback={<ChartFallback />}>
+                      <SubjectDonutCharts data={chartData.sunburstData} />
+                    </Suspense>
+                    <Suspense fallback={<ChartFallback />}>
+                      <SubjectRankChart data={chartData.sunburstData} />
+                    </Suspense>
+                  </div>
                 </CardContent>
               </Card>
             </div>

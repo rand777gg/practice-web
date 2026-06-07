@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
+import { useLangStore } from '@/stores/lang-store'
 import {
   LayoutDashboard,
   Pencil,
@@ -11,11 +12,13 @@ import {
   Star,
   BookOpen,
   Sparkles,
+  Languages,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { useT } from '@/i18n/use-t'
 
 
@@ -96,19 +99,42 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
 
 function SidebarFooter() {
   const { user, profile } = useAuthStore()
+  const { lang, setLang } = useLangStore()
   const { t } = useT()
   if (!user) return null
   return (
-    <div className="p-3 border-t border-sidebar-border space-y-1">
-      <p className="text-xs text-sidebar-foreground/70 truncate">{user.email}</p>
-      {profile && (
-        <Badge
-          variant={profile.role === 'admin' ? 'default' : 'secondary'}
-          className="text-[10px] h-5"
+    <div className="p-3 border-t border-sidebar-border space-y-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <p className="text-xs text-sidebar-foreground/70 truncate min-w-0 shrink">{user.email}</p>
+        {profile && (
+          <Badge
+            variant={profile.role === 'admin' ? 'default' : 'secondary'}
+            className="text-[10px] h-5 shrink-0"
+          >
+            {profile.role === 'admin' ? t('users.admin') : t('users.user')}
+          </Badge>
+        )}
+      </div>
+      <div className="flex gap-1">
+        <Button
+          variant={lang === 'zh' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs flex-1"
+          onClick={() => setLang('zh')}
         >
-          {profile.role === 'admin' ? t('users.admin') : t('users.user')}
-        </Badge>
-      )}
+          <Languages className="h-3 w-3" />
+          中文
+        </Button>
+        <Button
+          variant={lang === 'en' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs flex-1"
+          onClick={() => setLang('en')}
+        >
+          <Languages className="h-3 w-3" />
+          EN
+        </Button>
+      </div>
     </div>
   )
 }
