@@ -8,37 +8,45 @@ import type { Profile } from '@/types'
 import { LoadingScreen } from '@/components/layout/LoadingScreen'
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
-  try {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    return data as Profile | null
-  } catch {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchProfile error:', error)
     return null
   }
+  return data as Profile | null
 }
 
-async function upsertProfile(userId: string): Promise<Profile | null> {
-  try {
-    // Check if any profiles exist — first user becomes admin
-    const { count } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-
-    const role = count === 0 ? 'admin' : 'user'
-
-    const { data } = await supabase
-      .from('profiles')
-      .upsert({ id: userId, role })
-      .select()
-      .single()
-
-    return data as Profile | null
-  } catch {
+async function createProfile(userId: string): Promise<Profile | null> {
+  const { count, error: countErr } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true })
+  if (countErr) {
+    console.error('createProfile count error:', countErr)
     return null
   }
+
+  const role = count === 0 ? 'admin' : 'user'
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .insert({ id: userId, role })
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    // If insert failed due to duplicate, try fetching again
+    if (error.code === '23505') {
+      return fetchProfile(userId)
+    }
+    console.error('createProfile insert error:', error)
+    return null
+  }
+
+  return data as Profile | null
 }
 
 function ThemeInitializer({ children }: { children: ReactNode }) {
@@ -65,7 +73,7 @@ function AuthInitializer({ children }: { children: ReactNode }) {
     async function loadProfile(userId: string) {
       let profile = await fetchProfile(userId)
       if (!profile) {
-        profile = await upsertProfile(userId)
+        profile = await createProfile(userId)
       }
       if (!cancelled) {
         setProfile(profile)
