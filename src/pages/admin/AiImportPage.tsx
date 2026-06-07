@@ -352,7 +352,9 @@ export function Component() {
 
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-2">
-                      <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
+                      <label className="text-xs text-muted-foreground whitespace-nowrap">
+                        指定页数{batchMode ? ' (所有文件)' : ''}
+                      </label>
                       <Input
                         placeholder="如: 1-10,15-20"
                         value={pageRanges}
@@ -360,35 +362,39 @@ export function Component() {
                         className="h-7 text-xs w-[180px]"
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-muted-foreground whitespace-nowrap">数据ID</label>
-                      <Input
-                        placeholder="业务标识"
-                        value={dataId}
-                        onChange={(e) => setDataId(e.target.value)}
-                        className="h-7 text-xs w-[120px]"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                      <Switch checked={noCache} onCheckedChange={setNoCache} />
-                      <span className="text-xs">绕过缓存</span>
-                    </label>
-                    {!noCache && (
+                    {!batchMode && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-muted-foreground whitespace-nowrap">缓存容忍(秒)</label>
+                        <label className="text-xs text-muted-foreground whitespace-nowrap">数据ID</label>
                         <Input
-                          type="number"
-                          placeholder="900"
-                          value={cacheTolerance}
-                          onChange={(e) => setCacheTolerance(e.target.value)}
-                          className="h-7 text-xs w-[80px]"
+                          placeholder="业务标识"
+                          value={dataId}
+                          onChange={(e) => setDataId(e.target.value)}
+                          className="h-7 text-xs w-[120px]"
                         />
                       </div>
                     )}
                   </div>
+
+                  {!batchMode && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <Switch checked={noCache} onCheckedChange={setNoCache} />
+                        <span className="text-xs">绕过缓存</span>
+                      </label>
+                      {!noCache && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-muted-foreground whitespace-nowrap">缓存容忍(秒)</label>
+                          <Input
+                            type="number"
+                            placeholder="900"
+                            value={cacheTolerance}
+                            onChange={(e) => setCacheTolerance(e.target.value)}
+                            className="h-7 text-xs w-[80px]"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

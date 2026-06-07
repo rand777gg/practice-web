@@ -200,13 +200,15 @@ export class MinerUClient {
 
   // Batch URL-based precision parsing
   async createBatchTask(
-    files: { url: string; dataId?: string }[],
+    files: { url: string; name: string; dataId?: string; pageRanges?: string; isOcr?: boolean }[],
     options: MinerUPrecisionOptions,
   ): Promise<string> {
     const body: Record<string, unknown> = {
       files: files.map(f => {
-        const item: Record<string, string> = { url: f.url }
+        const item: Record<string, unknown> = { url: f.url, name: f.name }
         if (f.dataId) item.data_id = f.dataId
+        if (f.pageRanges) item.page_ranges = f.pageRanges
+        if (f.isOcr !== undefined) item.is_ocr = f.isOcr
         return item
       }),
       model_version: options.modelVersion,
@@ -214,10 +216,7 @@ export class MinerUClient {
       enable_formula: options.enableFormula ?? true,
       enable_table: options.enableTable ?? true,
     }
-    if (options.pageRanges) body.page_ranges = options.pageRanges
     if (options.extraFormats?.length) body.extra_formats = options.extraFormats
-    if (options.noCache !== undefined) body.no_cache = options.noCache
-    if (options.cacheTolerance !== undefined && options.cacheTolerance >= 0) body.cache_tolerance = options.cacheTolerance
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task/batch`, {
       method: 'POST',
@@ -277,7 +276,12 @@ export class MinerUClient {
     try {
       onProgress?.('正在创建批量精准解析任务...')
       const batchId = await this.createBatchTask(
-        uploads.map(u => ({ url: u.url })),
+        uploads.map(u => ({
+          url: u.url,
+          name: u.fileName,
+          pageRanges: options.pageRanges,
+          isOcr: options.isOcr,
+        })),
         options,
       )
 
