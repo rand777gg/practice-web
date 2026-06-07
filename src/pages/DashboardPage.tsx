@@ -45,12 +45,22 @@ interface ChartData {
   }
 }
 
+// Module-level cache for dashboard data
+interface CacheEntry { data: ChartData; key: string; ts: number }
+let dsCache: CacheEntry | null = null
+const CACHE_TTL = 2 * 60 * 1000
+
 export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const navigate = useNavigate()
-  const [chartData, setChartData] = useState<ChartData | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+
+  const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
+  const hasCache = !!(dsCache && dsCache.key === cacheKey && (Date.now() - dsCache.ts < CACHE_TTL))
+
+  const [chartData, setChartData] = useState<ChartData | null>(hasCache ? dsCache!.data : null)
+  const [isLoading, setIsLoading] = useState(!hasCache)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const headerRef = useRef<HTMLDivElement>(null)
 
@@ -68,6 +78,7 @@ export function Component() {
   useEffect(() => {
     if (!user) return
     async function load() {
+      if (chartData) setIsRefreshing(true)
       const now = new Date()
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const start12wk = new Date(today)
@@ -304,7 +315,18 @@ export function Component() {
         todayHourlyData, subjectAccuracy, heatmapData,
         knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
       })
+      dsCache = {
+        data: {
+          totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
+          dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
+          todayHourlyData, subjectAccuracy, heatmapData,
+          knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
+        },
+        key: cacheKey,
+        ts: Date.now(),
+      }
       setIsLoading(false)
+      setIsRefreshing(false)
     }
     load()
   }, [user, profile?.deadline, profile?.plan_subjects])
@@ -319,6 +341,12 @@ export function Component() {
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center justify-between gap-2 pb-1" ref={headerRef}>
         <h1 className="text-xl lg:text-2xl font-bold shrink-0">{t('dashboard.title')}</h1>
+        {isRefreshing && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+            更新中
+          </div>
+        )}
         {chartData && chartData.totalAnswered > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto">
             {([
