@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
+import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
@@ -57,62 +58,16 @@ export function PracticeSession() {
   const [isPublic, setIsPublic] = useState(false)
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
+  const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
 
-  const [subjects, setSubjects] = useState<string[]>([])
-  const [categories, setCategories] = useState<string[]>([])
-  const [filteredCategories, setFilteredCategories] = useState<string[]>([])
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
   useEffect(() => {
-    async function loadFilters() {
-      const { data } = await supabase.from('questions').select('subject, category')
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
-      }
-      const goalSubjects = getGoalSubjects(profile)
-      if (goalSubjects.length > 0) {
-        // When goals are set, limit subject options to goal subjects only
-        const goalSet = new Set(goalSubjects)
-        setSubjects(goalSubjects.filter((s) => subs.has(s)).sort())
-        const goalCats = new Set<string>()
-        for (const row of data ?? []) {
-          if (row.subject && goalSet.has(row.subject) && row.category) goalCats.add(row.category)
-        }
-        setCategories(goalCats.size > 0 ? [...goalCats].sort() : [...cats].sort())
-        setFilteredCategories(goalCats.size > 0 ? [...goalCats].sort() : [...cats].sort())
-      } else {
-        setSubjects([...subs].sort())
-        setCategories([...cats].sort())
-        setFilteredCategories([...cats].sort())
-      }
-    }
-    loadFilters()
-  }, [profile?.id])
-
-  useEffect(() => {
-    if (!selectedSubject) {
-      setFilteredCategories(categories)
-    } else {
-      async function loadCats() {
-        const { data } = await supabase
-          .from('questions')
-          .select('category')
-          .eq('subject', selectedSubject)
-        const cats = new Set<string>()
-        for (const row of data ?? []) {
-          if (row.category) cats.add(row.category)
-        }
-        setFilteredCategories([...cats].sort())
-      }
-      loadCats()
-    }
+    updateFilteredCategories(selectedSubject)
     setSelectedCategory('')
-  }, [selectedSubject, categories])
+  }, [selectedSubject, updateFilteredCategories])
 
   const fetchRandomQuestion = useCallback(async () => {
     setIsLoading(true)
@@ -120,51 +75,59 @@ export function PracticeSession() {
     setIsSubmitted(false)
     setAnswerId(null)
 
+    // Step 1: fetch only IDs (lightweight, ~100x smaller than fetching all columns)
     const goalSubjects = getGoalSubjects(profile)
-
-    let query = supabase.from('questions').select('*', { count: 'exact' })
+    let idQuery = supabase.from('questions').select('id')
     if (goalSubjects.length > 0) {
-      // Scoped to goal subjects: manual pick narrows further, otherwise all goal subjects
-      query = selectedSubject
-        ? query.eq('subject', selectedSubject)
-        : query.in('subject', goalSubjects)
+      idQuery = selectedSubject
+        ? idQuery.eq('subject', selectedSubject)
+        : idQuery.in('subject', goalSubjects)
     } else if (selectedSubject) {
-      query = query.eq('subject', selectedSubject)
+      idQuery = idQuery.eq('subject', selectedSubject)
     }
-    if (selectedCategory) query = query.eq('category', selectedCategory)
-    if (selectedType) query = query.eq('question_type', selectedType)
+    if (selectedCategory) idQuery = idQuery.eq('category', selectedCategory)
+    if (selectedType) idQuery = idQuery.eq('question_type', selectedType)
 
-    const { data } = await query
+    const { data: ids, error: idsErr } = await idQuery
 
-    if (!data || data.length === 0) {
+    if (idsErr || !ids || ids.length === 0) {
       setNoQuestions(true)
       setIsLoading(false)
       return
     }
 
-    const randomIndex = Math.floor(Math.random() * data.length)
-    const picked = data[randomIndex] as unknown as Question
-    setQuestion(picked)
-
+    // Step 2: pick random ID, fetch full question + stats in parallel
+    const pickedId = ids[Math.floor(Math.random() * ids.length)].id
     const currentUser = useAuthStore.getState().user
-    if (currentUser) {
-      const { data: statsData } = await supabase
-        .from('user_answers')
-        .select('is_correct, note, is_public')
-        .eq('user_id', currentUser.id)
-        .eq('question_id', picked.id)
-        .order('answered_at', { ascending: false })
 
-      const total = statsData?.length ?? 0
-      const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
-      setAttemptCount(total)
-      setWrongCount(wrong)
+    const [qRes, statsRes] = await Promise.all([
+      supabase.from('questions').select('*').eq('id', pickedId).single(),
+      currentUser
+        ? supabase.from('user_answers')
+            .select('is_correct, note, is_public')
+            .eq('user_id', currentUser.id)
+            .eq('question_id', pickedId)
+            .order('answered_at', { ascending: false })
+        : Promise.resolve(null),
+    ])
 
-      const latestNote = statsData?.find((a) => a.note)?.note ?? ''
-      const latestIsPublic = statsData?.find((a) => a.note)?.is_public ?? false
-      setNote(latestNote)
-      setIsPublic(latestIsPublic)
+    if (qRes.error || !qRes.data) {
+      setNoQuestions(true)
+      setIsLoading(false)
+      return
     }
+
+    setQuestion(qRes.data as unknown as Question)
+
+    const statsData = statsRes?.data
+    const total = statsData?.length ?? 0
+    const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
+    setAttemptCount(total)
+    setWrongCount(wrong)
+    const latestNote = statsData?.find((a) => a.note)?.note ?? ''
+    const latestIsPublic = statsData?.find((a) => a.note)?.is_public ?? false
+    setNote(latestNote)
+    setIsPublic(latestIsPublic)
 
     setIsLoading(false)
   }, [selectedSubject, selectedCategory, selectedType, profile?.daily_targets, profile?.plan_subjects])
