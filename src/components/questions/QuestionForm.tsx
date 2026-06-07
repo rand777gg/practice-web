@@ -318,7 +318,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                 try {
                   let answerStr = ''
                   if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
-                  else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = correctAnswer.map((i: number) => options[i]).join('、')
+                  else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = (correctAnswer as number[]).map(i => options[i]).join('、')
                   else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
                   else if (typeof correctAnswer === 'string') answerStr = correctAnswer
                   else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')

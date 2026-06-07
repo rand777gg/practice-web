@@ -164,45 +164,45 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader className="sm:text-center">
           <DialogTitle>{t('plan.title')}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-h-[65vh] overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
           {/* 左侧：Long-term plan */}
-          <div className="border rounded-lg p-5 mt-2">
-            <div className="text-base font-semibold mb-4 text-blue-600 dark:text-blue-400">
+          <div className="border rounded-lg p-3">
+            <div className="text-sm font-semibold mb-2 text-blue-600 dark:text-blue-400">
               {t('plan.longTerm')}
               <HoverCard openDelay={500}>
                 <HoverCardTrigger asChild>
                   <span className="inline-flex items-center ml-1 cursor-help">
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                    <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </span>
                 </HoverCardTrigger>
-                <HoverCardContent className="text-sm w-64">
+                <HoverCardContent className="text-xs w-56">
                   {t('plan.desc')}
                 </HoverCardContent>
               </HoverCard>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {/* Subject selection */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between text-sm font-normal">
-                    <span className={selectedSubjects.length === 0 ? 'text-muted-foreground' : ''}>
+                  <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                    <span className={selectedSubjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
                       {selectedSubjects.length === 0
                         ? t('plan.selectHint')
                         : selectedSubjects.map((s) => `${s} (${subjectCounts.get(s) ?? 0})`).join(', ')}
                     </span>
-                    <ChevronDown className="h-4 w-4 ml-2 shrink-0" />
+                    <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-60 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
                   <DropdownMenuItem
                     onSelect={(e) => { e.preventDefault(); setSelectedSubjects([]) }}
-                    className="text-muted-foreground text-sm"
+                    className="text-muted-foreground text-xs"
                   >
                     {t('plan.selectHint')}
                   </DropdownMenuItem>
@@ -213,9 +213,9 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       <DropdownMenuItem
                         key={s}
                         onSelect={(e) => { e.preventDefault(); toggleSubject(s) }}
-                        className="text-sm"
+                        className="text-xs"
                       >
-                        <Check className={cn('h-4 w-4', !checked && 'opacity-0')} />
+                        <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
                         <span>{s}</span>
                         <span className="ml-auto text-muted-foreground">{subjectCounts.get(s) ?? 0}</span>
                       </DropdownMenuItem>
@@ -231,12 +231,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   const btn = document.querySelector('.plan-date-input') as HTMLInputElement
                   btn?.showPicker()
                 }}
-                className="relative flex items-center justify-between w-full h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
+                className="relative flex items-center justify-between w-full h-8 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
               >
                 <span className={deadline ? '' : 'text-muted-foreground'}>
                   {deadline ? formatDate(deadline) : t('plan.pickDate')}
                 </span>
-                <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
                 <input
                   type="date"
                   value={deadline}
@@ -248,7 +248,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               </button>
 
               {selectedSubjects.length > 0 && deadline && (
-                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2.5 text-xs space-y-0.5">
+                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2 text-[11px] space-y-0.5">
                   <p>
                     <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
                     <span className="font-semibold text-blue-600 dark:text-blue-400">{dailyGoal} {t('plan.perDay')}</span>
@@ -262,22 +262,22 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           </div>
 
           {/* 右侧：Daily targets */}
-          <div className="border rounded-lg p-5 mt-2">
-            <div className="text-base font-semibold mb-4 text-pink-600 dark:text-pink-400">
+          <div className="border rounded-lg p-3">
+            <div className="text-sm font-semibold mb-2 text-pink-600 dark:text-pink-400">
               {t('plan.dailyTarget')}
               <HoverCard openDelay={500}>
                 <HoverCardTrigger asChild>
                   <span className="inline-flex items-center ml-1 cursor-help">
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                    <HelpCircle className="h-3 w-3 text-muted-foreground" />
                   </span>
                 </HoverCardTrigger>
-                <HoverCardContent className="text-sm w-64">
+                <HoverCardContent className="text-xs w-56">
                   {t('plan.dailyTargetDesc')}
                 </HoverCardContent>
               </HoverCard>
             </div>
 
-            <div className="space-y-5">
+            <div className="space-y-3">
             {dailyTargets.map((target, i) => {
               const usedByOthers = new Set(
                 dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
@@ -285,29 +285,29 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               const targetSubjectNames = target.subjects.map(s => s.subject)
               const availableSubjects = allSubjects.filter(s => !usedByOthers.has(s) || targetSubjectNames.includes(s))
               return (
-                <div key={i} className="space-y-3">
-                  {/* Subject multi-select — full width with counts */}
+                <div key={i} className="space-y-2">
+                  {/* Subject multi-select */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between text-sm font-normal">
-                        <span className={target.subjects.length === 0 ? 'text-muted-foreground' : ''}>
+                      <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                        <span className={target.subjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
                           {target.subjects.length === 0
                             ? t('plan.selectHint')
                             : target.subjects.map(s => `${s.subject} (${subjectCounts.get(s.subject) ?? 0})`).join(', ')}
                         </span>
-                        <ChevronDown className="h-4 w-4 ml-2 shrink-0" />
+                        <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-60 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                    <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
                       {availableSubjects.map((s) => {
                         const checked = targetSubjectNames.includes(s)
                         return (
                           <DropdownMenuItem
                             key={s}
                             onSelect={(e) => { e.preventDefault(); toggleTargetSubject(i, s) }}
-                            className="text-sm"
+                            className="text-xs"
                           >
-                            <Check className={cn('h-4 w-4', !checked && 'opacity-0')} />
+                            <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
                             <span>{s}</span>
                             <span className="ml-auto text-muted-foreground">{subjectCounts.get(s) ?? 0}</span>
                           </DropdownMenuItem>
@@ -316,22 +316,22 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {/* Deadline — full width, below subject dropdown */}
-                  <div className="flex items-center gap-1.5">
+                  {/* Deadline */}
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => {
                         const btn = document.querySelector(`.target-date-input-${i}`) as HTMLInputElement
                         btn?.showPicker()
                       }}
-                      className="relative flex items-center justify-between flex-1 h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
+                      className="relative flex items-center justify-between flex-1 h-8 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
                     >
                       <span className={target.deadline ? '' : 'text-muted-foreground'}>
                         {target.deadline
                           ? new Date(target.deadline).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                           : t('plan.deadline')}
                       </span>
-                      <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
                       <input
                         type="datetime-local"
                         value={target.deadline ?? ''}
@@ -340,24 +340,24 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                         style={{ colorScheme: theme }}
                       />
                     </button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeDailyTarget(i)}>
-                      <X className="h-4 w-4" />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeDailyTarget(i)}>
+                      <X className="h-3 w-3" />
                     </Button>
                   </div>
 
                   {/* Per-subject count inputs */}
                   {target.subjects.map((subj, si) => (
-                    <div key={subj.subject} className="flex items-center justify-between gap-2 pl-1">
-                      <span className="text-sm text-muted-foreground">{subj.subject}</span>
-                      <div className="flex items-center gap-1.5">
+                    <div key={subj.subject} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">{subj.subject}</span>
+                      <div className="flex items-center gap-1">
                         <Input
                           type="number"
                           min={1}
                           value={subj.count}
                           onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
-                          className="h-10 w-16 text-sm text-center shrink-0"
+                          className="h-7 w-14 text-xs text-center shrink-0"
                         />
-                        <span className="text-sm text-muted-foreground">{t('plan.questions')}</span>
+                        <span className="text-xs text-muted-foreground">{t('plan.questions')}</span>
                       </div>
                     </div>
                   ))}
@@ -372,10 +372,11 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               return (
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={addDailyTarget}
-                  className="text-sm"
+                  className="text-xs h-7 mt-2"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-3 w-3" />
                   {t('plan.addSubject')}
                 </Button>
               )
@@ -385,25 +386,25 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
         {/* AI recommendation card */}
         <div
-          className="mt-6 rounded-lg p-5 text-center"
+          className="mt-3 rounded-lg p-2.5 text-center"
           style={{
             border: '1.5px solid',
             animation: 'colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite',
             background: 'linear-gradient(135deg, rgba(59,130,246,0.04), rgba(139,92,246,0.04))',
           }}
         >
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Sparkles className="h-4 w-4" />
+          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <Sparkles className="h-3 w-3" />
             <span>基于艾宾浩斯机器学习算法的推荐学习计划</span>
           </div>
-          <p className="text-xs text-muted-foreground/60 mt-1">即将推出</p>
+          <p className="text-[10px] text-muted-foreground/60 mt-0.5">即将推出</p>
         </div>
 
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">{t('plan.cancel')}</Button>
+            <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
           </DialogClose>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
             {saving ? t('questions.saving') : t('plan.save')}
           </Button>
         </DialogFooter>

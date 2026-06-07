@@ -12,7 +12,14 @@
       "WebFetch(domain:lobehub.com)",
       "WebSearch",
       "Bash(npm ls *)",
-      "Bash(npm view *)"
+      "Bash(npm view *)",
+      "WebFetch(domain:icons.lobehub.com)",
+      "Bash(gh release create v1.5.2 --title v1.5.2 --notes ' *)",
+      "Bash(npm pack *)",
+      "Bash(npm install *)",
+      "WebFetch(domain:www.radix-ui.com)",
+      "Bash(git reset *)",
+      "Bash(gh release *)"
     ]
   }
 }

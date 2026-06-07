@@ -167,11 +167,11 @@ export function DashboardPlanCards() {
               <CardTitle className="text-sm text-blue-600 dark:text-blue-400">{t('plan.longTerm')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Progress value={longPct} className="flex-1 h-2.5 [&>div]:bg-blue-500" />
-                <span className="text-xs font-medium tabular-nums">{todayLongDone}/{dailyGoal}</span>
+              <div className="flex items-center gap-1.5">
+                <Progress value={longPct} className="flex-1 h-2 [&>div]:bg-blue-500" />
+                <span className="text-[11px] font-medium tabular-nums">{todayLongDone}/{dailyGoal}</span>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 {t('plan.remaining')}: {Math.max(totalScope - totalDone, 0)} / {totalScope} ({overallPct}%)
               </p>
             </CardContent>
@@ -191,23 +191,23 @@ export function DashboardPlanCards() {
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Progress value={dailyPct} className="flex-1 h-2.5 [&>div]:bg-pink-500" />
-                <span className="text-xs font-medium tabular-nums">{doneDaily}/{totalDaily}</span>
+              <div className="flex items-center gap-1.5">
+                <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
+                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{totalDaily}</span>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {targetProgress.map((tp, i) => {
                   return (
                     <div key={i} className="space-y-0.5">
                       {tp.subjects.map((subj) => {
                         const subjDone = subj.done >= subj.count
                         return (
-                          <div key={subj.subject} className="flex items-center gap-1.5 text-sm">
+                          <div key={subj.subject} className="flex items-center gap-1 text-xs">
                             <span className={subjDone ? 'text-green-500' : 'text-muted-foreground'}>
                               {subjDone ? (
-                                <Check className="h-4 w-4" />
+                                <Check className="h-3 w-3" />
                               ) : (
-                                <span className="inline-block w-4 h-4 rounded-full border" />
+                                <span className="inline-block w-3 h-3 rounded-full border" />
                               )}
                             </span>
                             <span className={subjDone ? 'line-through text-muted-foreground' : ''}>
