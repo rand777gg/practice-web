@@ -42,12 +42,14 @@ interface ChartData {
   knowledgeGraph: {
     nodes: { name: string; questionCount: number; correctRate: number | null; subject: string }[]
     edges: { source: string; target: string; weight: number }[]
-  }
+  } | null
 }
 
-// localStorage cache for dashboard data — survives browser restart
+// localStorage caches — survive browser restart
 const CACHE_KEY = 'ds_cache'
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes for dashboard data
+const Q_META_KEY = 'ds_qmeta'
+const Q_META_TTL = 30 * 60 * 1000 // 30 minutes for questions metadata
 
 interface CacheEntry { data: ChartData; key: string; ts: number }
 
@@ -57,13 +59,34 @@ function readCache(): CacheEntry | null {
     if (!raw) return null
     const entry = JSON.parse(raw) as CacheEntry
     if (Date.now() - entry.ts < CACHE_TTL) return entry
-  } catch { /* ignore — quota exceeded or corrupt data */ }
+  } catch { /* ignore */ }
   return null
 }
 
 function writeCache(data: ChartData, key: string) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ data, key, ts: Date.now() }))
+  } catch { /* ignore */ }
+}
+
+interface QMeta { id: string; subject: string; category: string; question_type: string }
+let qMetaCache: QMeta[] | null = null
+
+function readQMetaCache(): QMeta[] | null {
+  if (qMetaCache) return qMetaCache
+  try {
+    const raw = localStorage.getItem(Q_META_KEY)
+    if (!raw) return null
+    const entry = JSON.parse(raw) as { data: QMeta[]; ts: number }
+    if (Date.now() - entry.ts < Q_META_TTL) { qMetaCache = entry.data; return qMetaCache }
+  } catch { /* ignore */ }
+  return null
+}
+
+function writeQMetaCache(data: QMeta[]) {
+  qMetaCache = data
+  try {
+    localStorage.setItem(Q_META_KEY, JSON.stringify({ data, ts: Date.now() }))
   } catch { /* ignore */ }
 }
 
@@ -106,14 +129,27 @@ export function Component() {
       const end7d = new Date(today)
       end7d.setDate(end7d.getDate() + 7)
 
-      const [{ data: answers }, { data: questions }] = await Promise.all([
+      // Questions metadata: try cache first, otherwise fetch (without heavy key_points)
+      let questions = readQMetaCache()
+      const qFetchPromise = questions
+        ? Promise.resolve(null)
+        : supabase.from('questions').select('id, subject, category, question_type')
+            .then(({ data }) => { if (data) writeQMetaCache(data as QMeta[]); return null })
+
+      const [{ data: answers }] = await Promise.all([
         supabase
           .from('user_answers')
           .select('is_correct, answered_at, question_id')
           .eq('user_id', user!.id)
           .gte('answered_at', start12wk.toISOString()),
-        supabase.from('questions').select('id, subject, category, question_type, key_points'),
+        qFetchPromise,
       ])
+
+      if (!questions) {
+        const { data: fresh } = await supabase.from('questions').select('id, subject, category, question_type')
+        questions = (fresh ?? []) as QMeta[]
+        writeQMetaCache(questions)
+      }
 
       function normalizeSubject(s: string): string {
         return /^\d{4}真题$/.test(s) ? '真题' : s
@@ -256,94 +292,94 @@ export function Component() {
           return { subject, questionType, correctRate: v.total > 0 ? v.correct / v.total : 0, total: v.total }
         })
 
-      // Knowledge graph aggregation
-      const kpByQuestion = new Map<string, string[]>()
-      for (const q of questions ?? []) {
-        if (q.key_points) {
-          kpByQuestion.set(q.id, q.key_points.split(',').map((s: string) => s.trim()).filter(Boolean))
-        }
-      }
-
-      const nodeMap = new Map<string, {
-        questionIds: Set<string>
-        subjects: Map<string, number>
-        correctCount: number
-        totalAnswered: number
-      }>()
-      for (const q of questions ?? []) {
-        const kps = kpByQuestion.get(q.id)
-        if (!kps || kps.length === 0) continue
-        const subject = normalizeSubject(q.subject ?? '') || '未分类'
-        for (const kp of kps) {
-          if (!nodeMap.has(kp)) nodeMap.set(kp, { questionIds: new Set(), subjects: new Map(), correctCount: 0, totalAnswered: 0 })
-          const n = nodeMap.get(kp)!
-          n.questionIds.add(q.id)
-          n.subjects.set(subject, (n.subjects.get(subject) ?? 0) + 1)
-        }
-      }
-      for (const a of answers ?? []) {
-        const kps = kpByQuestion.get(a.question_id)
-        if (!kps) continue
-        for (const kp of kps) {
-          const n = nodeMap.get(kp)
-          if (!n) continue
-          n.totalAnswered++
-          if (a.is_correct) n.correctCount++
-        }
-      }
-
-      const knowledgeNodes = [...nodeMap.entries()]
-        .map(([name, info]) => {
-          const dominantSubject = [...info.subjects.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '未分类'
-          return {
-            name,
-            questionCount: info.questionIds.size,
-            correctRate: info.totalAnswered > 0 ? info.correctCount / info.totalAnswered : null,
-            subject: dominantSubject,
-          }
-        })
-        .sort((a, b) => b.questionCount - a.questionCount)
-
-      const edgeMap = new Map<string, number>()
-      for (const q of questions ?? []) {
-        const kps = kpByQuestion.get(q.id)
-        if (!kps || kps.length < 2) continue
-        for (let i = 0; i < kps.length; i++) {
-          for (let j = i + 1; j < kps.length; j++) {
-            const [a, b] = kps[i] < kps[j] ? [kps[i], kps[j]] : [kps[j], kps[i]]
-            const key = `${a}|||${b}`
-            edgeMap.set(key, (edgeMap.get(key) ?? 0) + 1)
-          }
-        }
-      }
-      const nodeNameSet = new Set(knowledgeNodes.map((n) => n.name))
-      const knowledgeEdges = [...edgeMap.entries()]
-        .filter(([key, weight]) => {
-          const [source, target] = key.split('|||')
-          return weight >= 2 && nodeNameSet.has(source) && nodeNameSet.has(target)
-        })
-        .map(([key, weight]) => {
-          const [source, target] = key.split('|||')
-          return { source, target, weight }
-        })
-
       setChartData({
         totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
-        knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
+        knowledgeGraph: null,
       })
       writeCache({
         totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
-        knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
+        knowledgeGraph: null,
       }, cacheKey)
       setIsLoading(false)
       setIsRefreshing(false)
     }
     load()
   }, [user, profile?.deadline, profile?.plan_subjects])
+
+  // Lazy-load key_points for knowledge graph (heavy field, not needed for initial render)
+  useEffect(() => {
+    if (!chartData || !user) return
+    const answers = chartData.totalAnswered
+    if (answers === 0) return
+    ;(async () => {
+      const { data: kpData } = await supabase.from('questions').select('id, key_points, subject')
+      if (!kpData) return
+      const kpByQ = new Map<string, string[]>()
+      const subjMap = new Map<string, string>()
+      for (const r of kpData) {
+        subjMap.set(r.id, r.subject ?? '')
+        if (r.key_points) kpByQ.set(r.id, r.key_points.split(',').map((s: string) => s.trim()).filter(Boolean))
+      }
+      const ansData = await supabase
+        .from('user_answers').select('question_id, is_correct')
+        .eq('user_id', user!.id).gte('answered_at', new Date(Date.now() - 12 * 7 * 86400000).toISOString())
+      const ansByQ = new Map<string, { correct: number; total: number }>()
+      for (const a of ansData.data ?? []) {
+        if (!ansByQ.has(a.question_id)) ansByQ.set(a.question_id, { correct: 0, total: 0 })
+        const entry = ansByQ.get(a.question_id)!
+        entry.total++
+        if (a.is_correct) entry.correct++
+      }
+      // Build nodes
+      const nm = new Map<string, { qIds: Set<string>; subs: Map<string, number>; corr: number; tot: number }>()
+      for (const [qId, kps] of kpByQ) {
+        if (kps.length === 0) continue
+        const subj = subjMap.get(qId) ?? ''
+        for (const kp of kps) {
+          if (!nm.has(kp)) nm.set(kp, { qIds: new Set(), subs: new Map(), corr: 0, tot: 0 })
+          const n = nm.get(kp)!
+          n.qIds.add(qId)
+          n.subs.set(subj, (n.subs.get(subj) ?? 0) + 1)
+        }
+      }
+      for (const [qId, stats] of ansByQ) {
+        const kps = kpByQ.get(qId)
+        if (!kps) continue
+        for (const kp of kps) {
+          const n = nm.get(kp)
+          if (!n) continue
+          n.corr += stats.correct
+          n.tot += stats.total
+        }
+      }
+      const nodes = [...nm.entries()]
+        .map(([name, info]) => {
+          const domSubj = [...info.subs.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
+          return { name, questionCount: info.qIds.size, correctRate: info.tot > 0 ? info.corr / info.tot : null, subject: domSubj }
+        })
+        .sort((a, b) => b.questionCount - a.questionCount)
+      // Build edges
+      const em = new Map<string, number>()
+      for (const [, kps] of kpByQ) {
+        if (kps.length < 2) continue
+        for (let i = 0; i < kps.length; i++) {
+          for (let j = i + 1; j < kps.length; j++) {
+            const key = kps[i] < kps[j] ? `${kps[i]}|||${kps[j]}` : `${kps[j]}|||${kps[i]}`
+            em.set(key, (em.get(key) ?? 0) + 1)
+          }
+        }
+      }
+      const nnSet = new Set(nodes.map((n) => n.name))
+      const edges = [...em.entries()]
+        .filter(([key, w]) => { const [s, t] = key.split('|||'); return w >= 2 && nnSet.has(s) && nnSet.has(t) })
+        .map(([key, w]) => { const [s, t] = key.split('|||'); return { source: s, target: t, weight: w } })
+      setChartData((prev) => prev ? { ...prev, knowledgeGraph: { nodes, edges } } : prev)
+    })()
+  }, [chartData?.totalAnswered, user])
 
   if (isLoading) {
     return (
@@ -543,7 +579,9 @@ export function Component() {
                 <CardTitle className="text-sm text-muted-foreground">{t('dashboard.knowledgeGraph')}</CardTitle>
               </CardHeader>
               <CardContent>
-                {chartData.knowledgeGraph.nodes.length > 0 ? (
+                {!chartData.knowledgeGraph ? (
+                  <ChartFallback />
+                ) : chartData.knowledgeGraph.nodes.length > 0 ? (
                   <Suspense fallback={<ChartFallback />}>
                     <KnowledgeGraph
                       nodes={chartData.knowledgeGraph.nodes}
