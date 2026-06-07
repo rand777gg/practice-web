@@ -45,10 +45,27 @@ interface ChartData {
   }
 }
 
-// Module-level cache for dashboard data
+// localStorage cache for dashboard data — survives browser restart
+const CACHE_KEY = 'ds_cache'
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
 interface CacheEntry { data: ChartData; key: string; ts: number }
-let dsCache: CacheEntry | null = null
-const CACHE_TTL = 2 * 60 * 1000
+
+function readCache(): CacheEntry | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const entry = JSON.parse(raw) as CacheEntry
+    if (Date.now() - entry.ts < CACHE_TTL) return entry
+  } catch { /* ignore — quota exceeded or corrupt data */ }
+  return null
+}
+
+function writeCache(data: ChartData, key: string) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, key, ts: Date.now() }))
+  } catch { /* ignore */ }
+}
 
 export function Component() {
   const { t } = useT()
@@ -56,9 +73,10 @@ export function Component() {
   const navigate = useNavigate()
 
   const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
-  const hasCache = !!(dsCache && dsCache.key === cacheKey && (Date.now() - dsCache.ts < CACHE_TTL))
+  const cached = readCache()
+  const hasCache = !!(cached && cached.key === cacheKey)
 
-  const [chartData, setChartData] = useState<ChartData | null>(hasCache ? dsCache!.data : null)
+  const [chartData, setChartData] = useState<ChartData | null>(hasCache ? cached!.data : null)
   const [isLoading, setIsLoading] = useState(!hasCache)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
@@ -315,16 +333,12 @@ export function Component() {
         todayHourlyData, subjectAccuracy, heatmapData,
         knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
       })
-      dsCache = {
-        data: {
-          totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
-          dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
-          todayHourlyData, subjectAccuracy, heatmapData,
-          knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
-        },
-        key: cacheKey,
-        ts: Date.now(),
-      }
+      writeCache({
+        totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
+        dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
+        todayHourlyData, subjectAccuracy, heatmapData,
+        knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
+      }, cacheKey)
       setIsLoading(false)
       setIsRefreshing(false)
     }
