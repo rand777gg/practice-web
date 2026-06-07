@@ -59,6 +59,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [saving, setSaving] = useState(false)
 
   // Ebbinghaus
+  const [showEbbinghaus, setShowEbbinghaus] = useState(false)
   const [ebbinghaus, setEbbinghaus] = useState<EbbinghausData | null>(null)
   const [ebbinghausLoading, setEbbinghausLoading] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState('')
@@ -461,13 +462,32 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           </div>
         </div>
 
+        {/* Ebbinghaus toggle button */}
+        {ebbinghaus && (ebbinghaus.curve.length > 0 || ebbinghaus.urgency.length > 0) && (
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowEbbinghaus((v) => !v)}
+              className="text-xs text-muted-foreground gap-1"
+            >
+              <Sparkles className="h-3 w-3 text-blue-500" />
+              {showEbbinghaus ? '隐藏学习建议' : '查看基于艾宾浩斯遗忘曲线的学习建议'}
+              {ebbinghaus.totalReviewQueue > 0 && (
+                <span className="text-amber-500 font-medium ml-1">({ebbinghaus.totalReviewQueue}题待复习)</span>
+              )}
+            </Button>
+          </div>
+        )}
+
         {/* Ebbinghaus recommendation section */}
-        {ebbinghausLoading ? (
+        {ebbinghausLoading && showEbbinghaus && (
           <div className="flex items-center justify-center py-8">
             <Spinner />
             <span className="text-xs text-muted-foreground ml-2">正在分析遗忘曲线...</span>
           </div>
-        ) : ebbinghaus && (ebbinghaus.curve.length > 0 || ebbinghaus.urgency.length > 0) ? (
+        )}
+        {showEbbinghaus && ebbinghaus && (ebbinghaus.curve.length > 0 || ebbinghaus.urgency.length > 0) && (
           <div className={`border rounded-lg p-3 space-y-3 transition-[border-color,box-shadow] duration-1500 ease-out ${
             aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''
           }`}>
@@ -504,7 +524,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               </Suspense>
             )}
           </div>
-        ) : null}
+        )}
         </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
