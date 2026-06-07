@@ -43,7 +43,7 @@ export class MinerUClient {
   }
 
   // Lightweight parsing — v1 agent API, no token required
-  async uploadAndParse(file: File, options?: { pageRange?: string }, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
+  async uploadAndParse(file: File, options?: { pageRanges?: string }, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
     onProgress?.('正在上传文档...')
     const filePath = `mineru-temp/${Date.now()}-${file.name}`
     const { error: uploadErr } = await supabase.storage
@@ -57,7 +57,7 @@ export class MinerUClient {
 
     onProgress?.('正在创建解析任务...')
     const v1Body: Record<string, string> = { url: publicUrl, language: 'ch' }
-    if (options?.pageRange) v1Body.page_range = options.pageRange
+    if (options?.pageRanges) v1Body.page_ranges = options.pageRanges
 
     const res = await fetch(`${PROXY_BASE}/parse/url`, {
       method: 'POST',
@@ -153,8 +153,11 @@ export class MinerUClient {
       enable_table: options.enableTable ?? true,
     }
     if (options.isOcr !== undefined) body.is_ocr = options.isOcr
-    if (options.pageRange) body.page_range = options.pageRange
-    if (options.dpi !== undefined && options.dpi > 0) body.dpi = options.dpi
+    if (options.pageRanges) body.page_ranges = options.pageRanges
+    if (options.extraFormats?.length) body.extra_formats = options.extraFormats
+    if (options.noCache !== undefined) body.no_cache = options.noCache
+    if (options.cacheTolerance !== undefined && options.cacheTolerance >= 0) body.cache_tolerance = options.cacheTolerance
+    if (options.dataId) body.data_id = options.dataId
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task`, {
       method: 'POST',
@@ -209,8 +212,10 @@ export class MinerUClient {
       enable_formula: options.enableFormula ?? true,
       enable_table: options.enableTable ?? true,
     }
-    if (options.pageRange) body.page_range = options.pageRange
-    if (options.dpi !== undefined && options.dpi > 0) body.dpi = options.dpi
+    if (options.pageRanges) body.page_ranges = options.pageRanges
+    if (options.extraFormats?.length) body.extra_formats = options.extraFormats
+    if (options.noCache !== undefined) body.no_cache = options.noCache
+    if (options.cacheTolerance !== undefined && options.cacheTolerance >= 0) body.cache_tolerance = options.cacheTolerance
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task/batch`, {
       method: 'POST',

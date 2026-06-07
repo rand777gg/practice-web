@@ -50,8 +50,11 @@ export function Component() {
   const [enableFormula, setEnableFormula] = useState(true)
   const [enableTable, setEnableTable] = useState(true)
   const [batchMode, setBatchMode] = useState(false)
-  const [pageRange, setPageRange] = useState('')
-  const [dpi, setDpi] = useState('')
+  const [pageRanges, setPageRanges] = useState('')
+  const [extraFormats, setExtraFormats] = useState<string[]>([])
+  const [noCache, setNoCache] = useState(false)
+  const [cacheTolerance, setCacheTolerance] = useState('')
+  const [dataId, setDataId] = useState('')
 
   const aiConfigured = hasAiConfig()
   const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
@@ -107,7 +110,7 @@ export function Component() {
   const runLightweightParse = async () => {
     if (!file) return
     const mineru = new MinerUClient()
-    const { markdown } = await mineru.uploadAndParse(file, { pageRange: pageRange || undefined }, (msg) => setParseMsg(msg))
+    const { markdown } = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg))
     await extractQuestions(markdown)
   }
 
@@ -120,8 +123,11 @@ export function Component() {
       enableFormula,
       enableTable,
       language: 'ch',
-      pageRange: pageRange || undefined,
-      dpi: dpi ? Number(dpi) : undefined,
+      pageRanges: pageRanges || undefined,
+      extraFormats: extraFormats.length > 0 ? extraFormats : undefined,
+      noCache: noCache || undefined,
+      cacheTolerance: cacheTolerance ? Number(cacheTolerance) : undefined,
+      dataId: dataId || undefined,
     }
 
     if (batchMode && files.length > 0) {
@@ -266,10 +272,10 @@ export function Component() {
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
                     <Input
-                      placeholder="如: 1-10 (留空=全部)"
-                      value={pageRange}
-                      onChange={(e) => setPageRange(e.target.value)}
-                      className="h-7 text-xs max-w-[180px]"
+                      placeholder="如: 1-10,15-20 (留空=全部)"
+                      value={pageRanges}
+                      onChange={(e) => setPageRanges(e.target.value)}
+                      className="h-7 text-xs max-w-[220px]"
                     />
                   </div>
                 </div>
@@ -347,23 +353,69 @@ export function Component() {
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
                       <Input
-                        placeholder="如: 1-10"
-                        value={pageRange}
-                        onChange={(e) => setPageRange(e.target.value)}
-                        className="h-7 text-xs w-[120px]"
+                        placeholder="如: 1-10,15-20"
+                        value={pageRanges}
+                        onChange={(e) => setPageRanges(e.target.value)}
+                        className="h-7 text-xs w-[180px]"
                       />
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-xs text-muted-foreground whitespace-nowrap">DPI</label>
+                      <label className="text-xs text-muted-foreground whitespace-nowrap">数据ID</label>
                       <Input
-                        type="number"
-                        placeholder="默认"
-                        value={dpi}
-                        onChange={(e) => setDpi(e.target.value)}
-                        className="h-7 text-xs w-[80px]"
+                        placeholder="业务标识"
+                        value={dataId}
+                        onChange={(e) => setDataId(e.target.value)}
+                        className="h-7 text-xs w-[120px]"
                       />
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <Switch checked={noCache} onCheckedChange={setNoCache} />
+                      <span className="text-xs">绕过缓存</span>
+                    </label>
+                    {!noCache && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-muted-foreground whitespace-nowrap">缓存容忍(秒)</label>
+                        <Input
+                          type="number"
+                          placeholder="900"
+                          value={cacheTolerance}
+                          onChange={(e) => setCacheTolerance(e.target.value)}
+                          className="h-7 text-xs w-[80px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs">
+                        导出格式{extraFormats.length > 0 ? ` (${extraFormats.length})` : ''}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {[
+                        { key: 'docx', label: 'DOCX' },
+                        { key: 'html', label: 'HTML' },
+                        { key: 'latex', label: 'LaTeX' },
+                      ].map((fmt) => (
+                        <DropdownMenuCheckboxItem
+                          key={fmt.key}
+                          checked={extraFormats.includes(fmt.key)}
+                          onCheckedChange={(v) => {
+                            setExtraFormats((prev) =>
+                              v ? [...prev, fmt.key] : prev.filter((x) => x !== fmt.key),
+                            )
+                          }}
+                        >
+                          {fmt.label}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               )}
 

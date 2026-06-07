@@ -34,8 +34,11 @@ export interface MinerUPrecisionOptions {
   enableFormula?: boolean
   enableTable?: boolean
   language?: string
-  pageRange?: string
-  dpi?: number
+  pageRanges?: string
+  extraFormats?: string[]
+  noCache?: boolean
+  cacheTolerance?: number
+  dataId?: string
 }
 
 export interface MinerUTaskResult {
