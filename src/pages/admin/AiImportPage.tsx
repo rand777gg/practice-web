@@ -37,6 +37,7 @@ export function Component() {
   const [category, setCategory] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [parseMsg, setParseMsg] = useState('')
+  const [parseStatus, setParseStatus] = useState<Record<string, unknown> | null>(null)
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
@@ -131,7 +132,7 @@ export function Component() {
     }
 
     if (batchMode && files.length > 0) {
-      const results = await mineru.uploadAndParseBatchPrecision(files, options, (msg) => setParseMsg(msg))
+      const results = await mineru.uploadAndParseBatchPrecision(files, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       if (results.length === 0) {
         setError('所有文件解析失败')
         setStep('upload')
@@ -141,7 +142,7 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       await extractQuestions(mergedMd)
     } else if (file) {
-      const { markdown } = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg))
+      const { markdown } = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       await extractQuestions(markdown)
     }
   }
@@ -436,7 +437,7 @@ export function Component() {
           )}
 
           {/* Step 2: Parsing */}
-          {step === 'parsing' && <ParsingProgress msg={parseMsg} />}
+          {step === 'parsing' && <ParsingProgress msg={parseMsg} status={parseStatus} />}
 
           {/* Step 3: Metadata */}
           {step === 'metadata' && (
@@ -517,7 +518,7 @@ export function Component() {
   )
 }
 
-function ParsingProgress({ msg }: { msg: string }) {
+function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
   const steps = [
     { label: '上传文档', key: 'upload' },
     { label: '文档解析', key: 'mineru' },
@@ -562,6 +563,16 @@ function ParsingProgress({ msg }: { msg: string }) {
       <p className="text-sm font-medium shimmer-text">
         {msg || '正在解析...'}
       </p>
+
+      {/* MinerU API response status */}
+      {status && (
+        <div className="w-full max-w-md mt-2">
+          <div className="text-[10px] text-muted-foreground mb-1">MinerU 响应</div>
+          <pre className="text-[10px] bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-auto font-mono leading-relaxed whitespace-pre-wrap break-all">
+            {JSON.stringify(status, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }

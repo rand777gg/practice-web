@@ -98,6 +98,7 @@ export class MinerUClient {
     file: File,
     options: MinerUPrecisionOptions,
     onProgress?: (msg: string) => void,
+    onStatus?: (status: MinerUTaskResult) => void,
   ): Promise<DocumentParseResult> {
     onProgress?.('正在上传文档...')
     const filePath = `mineru-temp/${Date.now()}-${file.name}`
@@ -119,6 +120,7 @@ export class MinerUClient {
       for (let i = 0; i < 300; i++) {
         await new Promise(r => setTimeout(r, 2000))
         const pollResult = await this.pollTask(taskId, options.token)
+        onStatus?.(pollResult)
 
         if (pollResult.state === 'done' && pollResult.fullZipUrl) {
           onProgress?.('正在提取解析结果...')
@@ -258,6 +260,7 @@ export class MinerUClient {
     files: File[],
     options: MinerUPrecisionOptions,
     onProgress?: (msg: string) => void,
+    onStatus?: (batchResults: MinerUBatchFileResult[]) => void,
   ): Promise<DocumentParseResult[]> {
     // Upload all files to Supabase Storage first
     onProgress?.(`正在上传 ${files.length} 个文件...`)
@@ -284,6 +287,7 @@ export class MinerUClient {
       for (let i = 0; i < 300; i++) {
         await new Promise(r => setTimeout(r, 3000))
         const batchResults = await this.pollBatch(batchId, options.token)
+        onStatus?.(batchResults)
 
         const done = batchResults.filter(r => r.state === 'done')
         const failed = batchResults.filter(r => r.state === 'failed')
