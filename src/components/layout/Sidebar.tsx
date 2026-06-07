@@ -13,6 +13,7 @@ import {
   BookOpen,
   Sparkles,
   Languages,
+  Library,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -68,6 +69,10 @@ function SidebarNav({ onClose }: { onClose?: () => void }) {
       <NavLink to="/notes" className={linkClass} onClick={handleClick}>
         <BookOpen className="h-4 w-4" />
         {t('nav.publicNotes')}
+      </NavLink>
+      <NavLink to="/question-bank" className={linkClass} onClick={handleClick}>
+        <Library className="h-4 w-4" />
+        {t('nav.questionBank')}
       </NavLink>
 
       {isAdmin && (

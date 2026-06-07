@@ -7,6 +7,7 @@ export const zh = {
     favorites: '收藏题目',
     wrongReview: '错题回顾',
     publicNotes: '公开笔记',
+    questionBank: '试题库',
     admin: '管理',
     questions: '题目管理',
     users: '用户管理',
@@ -209,6 +210,13 @@ export const zh = {
     daily: '自定义计划',
     vsYesterday: '较昨日',
   },
+  questionBank: {
+    allSubjects: '全部科目',
+    searchPlaceholder: '搜索题目...',
+    expandAnswer: '查看答案',
+    collapseAnswer: '收起答案',
+    noQuestions: '所选条件下暂无题目',
+  },
   notes: {
     title: '公开笔记',
     noNotes: '还没有人分享笔记，来做第一个吧！',
@@ -296,6 +304,7 @@ export const en = {
     favorites: 'Favorites',
     wrongReview: 'Wrong Review',
     publicNotes: 'Public Notes',
+    questionBank: 'Question Bank',
     admin: 'Admin',
     questions: 'Questions',
     users: 'Users',
@@ -497,6 +506,13 @@ export const en = {
     longTerm: 'Long-term',
     daily: 'Custom',
     vsYesterday: 'vs yesterday',
+  },
+  questionBank: {
+    allSubjects: 'All Subjects',
+    searchPlaceholder: 'Search questions...',
+    expandAnswer: 'View Answer',
+    collapseAnswer: 'Collapse',
+    noQuestions: 'No questions found',
   },
   notes: {
     title: 'Public Notes',
