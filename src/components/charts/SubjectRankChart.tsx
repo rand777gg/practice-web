@@ -73,9 +73,9 @@ export function SubjectRankChart({ data }: Props) {
   }, [data, isDark, textColor])
 
   return (
-    <div>
+    <div className="overflow-x-auto">
       <p className="text-xs text-muted-foreground text-center mb-1">学科题目排行</p>
-      <ReactECharts option={option} style={{ height: 480 }} />
+      <ReactECharts option={option} style={{ height: 480, minWidth: 320 }} />
     </div>
   )
 }

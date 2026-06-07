@@ -1,10 +1,10 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target } from 'lucide-react'
+import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen } from 'lucide-react'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -18,6 +18,7 @@ const SubjectRankChart = lazy(() => import('@/components/charts/SubjectRankChart
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
 const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/AnswerTimeScatterHistogram').then(m => ({ default: m.AnswerTimeScatterHistogram })))
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
+const KnowledgeGraph = lazy(() => import('@/components/charts/KnowledgeGraph').then(m => ({ default: m.KnowledgeGraph })))
 
 const ChartFallback = () => (
   <div className="flex items-center justify-center py-12">
@@ -38,13 +39,31 @@ interface ChartData {
   todayHourlyData: number[] // 24 hours, count of answers today
   subjectAccuracy: { subject: string; correct: number; total: number }[]
   heatmapData: { subject: string; questionType: string; correctRate: number; total: number }[]
+  knowledgeGraph: {
+    nodes: { name: string; questionCount: number; correctRate: number | null; subject: string }[]
+    edges: { source: string; target: string; weight: number }[]
+  }
 }
 
 export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
+  const navigate = useNavigate()
   const [chartData, setChartData] = useState<ChartData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (expandedBtn === null) return
+    const handler = (e: MouseEvent) => {
+      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
+        setExpandedBtn(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expandedBtn])
 
   useEffect(() => {
     if (!user) return
@@ -64,7 +83,7 @@ export function Component() {
           .select('is_correct, answered_at, question_id')
           .eq('user_id', user!.id)
           .gte('answered_at', start12wk.toISOString()),
-        supabase.from('questions').select('id, subject, category, question_type'),
+        supabase.from('questions').select('id, subject, category, question_type, key_points'),
       ])
 
       function normalizeSubject(s: string): string {
@@ -208,10 +227,82 @@ export function Component() {
           return { subject, questionType, correctRate: v.total > 0 ? v.correct / v.total : 0, total: v.total }
         })
 
+      // Knowledge graph aggregation
+      const kpByQuestion = new Map<string, string[]>()
+      for (const q of questions ?? []) {
+        if (q.key_points) {
+          kpByQuestion.set(q.id, q.key_points.split(',').map((s: string) => s.trim()).filter(Boolean))
+        }
+      }
+
+      const nodeMap = new Map<string, {
+        questionIds: Set<string>
+        subjects: Map<string, number>
+        correctCount: number
+        totalAnswered: number
+      }>()
+      for (const q of questions ?? []) {
+        const kps = kpByQuestion.get(q.id)
+        if (!kps || kps.length === 0) continue
+        const subject = normalizeSubject(q.subject ?? '') || '未分类'
+        for (const kp of kps) {
+          if (!nodeMap.has(kp)) nodeMap.set(kp, { questionIds: new Set(), subjects: new Map(), correctCount: 0, totalAnswered: 0 })
+          const n = nodeMap.get(kp)!
+          n.questionIds.add(q.id)
+          n.subjects.set(subject, (n.subjects.get(subject) ?? 0) + 1)
+        }
+      }
+      for (const a of answers ?? []) {
+        const kps = kpByQuestion.get(a.question_id)
+        if (!kps) continue
+        for (const kp of kps) {
+          const n = nodeMap.get(kp)
+          if (!n) continue
+          n.totalAnswered++
+          if (a.is_correct) n.correctCount++
+        }
+      }
+
+      const knowledgeNodes = [...nodeMap.entries()]
+        .map(([name, info]) => {
+          const dominantSubject = [...info.subjects.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '未分类'
+          return {
+            name,
+            questionCount: info.questionIds.size,
+            correctRate: info.totalAnswered > 0 ? info.correctCount / info.totalAnswered : null,
+            subject: dominantSubject,
+          }
+        })
+        .sort((a, b) => b.questionCount - a.questionCount)
+
+      const edgeMap = new Map<string, number>()
+      for (const q of questions ?? []) {
+        const kps = kpByQuestion.get(q.id)
+        if (!kps || kps.length < 2) continue
+        for (let i = 0; i < kps.length; i++) {
+          for (let j = i + 1; j < kps.length; j++) {
+            const [a, b] = kps[i] < kps[j] ? [kps[i], kps[j]] : [kps[j], kps[i]]
+            const key = `${a}|||${b}`
+            edgeMap.set(key, (edgeMap.get(key) ?? 0) + 1)
+          }
+        }
+      }
+      const nodeNameSet = new Set(knowledgeNodes.map((n) => n.name))
+      const knowledgeEdges = [...edgeMap.entries()]
+        .filter(([key, weight]) => {
+          const [source, target] = key.split('|||')
+          return weight >= 2 && nodeNameSet.has(source) && nodeNameSet.has(target)
+        })
+        .map(([key, weight]) => {
+          const [source, target] = key.split('|||')
+          return { source, target, weight }
+        })
+
       setChartData({
         totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
+        knowledgeGraph: { nodes: knowledgeNodes, edges: knowledgeEdges },
       })
       setIsLoading(false)
     }
@@ -226,34 +317,44 @@ export function Component() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
+      <div className="flex items-center justify-between gap-2 pb-1" ref={headerRef}>
+        <h1 className="text-xl lg:text-2xl font-bold shrink-0">{t('dashboard.title')}</h1>
         {chartData && chartData.totalAnswered > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm">
-              <Link to="/practice">
-                <Pencil className="h-4 w-4" />
-                {t('dashboard.startPractice')}
-              </Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link to="/exam">
-                <Clock className="h-4 w-4" />
-                {t('dashboard.takeExam')}
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/favorites">
-                <Star className="h-4 w-4" />
-                {t('nav.favorites')}
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/review">
-                <RotateCcw className="h-4 w-4" />
-                {t('dashboard.reviewMistakes')}
-              </Link>
-            </Button>
+          <div className="flex items-center gap-2 overflow-x-auto">
+            {([
+              { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
+              { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
+              { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
+              { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
+              { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
+            ]).map((btn, i) => {
+              const isExpanded = expandedBtn === i
+              const Icon = btn.icon
+              const showText = isExpanded
+              return (
+                <Button
+                  key={btn.to}
+                  variant={btn.variant}
+                  size="sm"
+                  className={`shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${showText ? 'px-3' : 'px-1.5'}`}
+                  onClick={() => {
+                    if (window.innerWidth >= 640) {
+                      navigate(btn.to)
+                    } else if (isExpanded) {
+                      setExpandedBtn(null)
+                      navigate(btn.to)
+                    } else {
+                      setExpandedBtn(i)
+                    }
+                  }}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${showText ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
+                    {btn.label}
+                  </span>
+                </Button>
+              )
+            })}
           </div>
         )}
       </div>
@@ -282,6 +383,10 @@ export function Component() {
             <TabsTrigger value="journey" className="gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{t('dashboard.tabJourney')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="knowledge" className="gap-1.5">
+              <GitBranch className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t('dashboard.tabKnowledge')}</span>
             </TabsTrigger>
           </TabsList>
 
@@ -384,6 +489,26 @@ export function Component() {
                 <Suspense fallback={<ChartFallback />}>
                   <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
                 </Suspense>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="knowledge">
+            <Card className="border-0 shadow-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.knowledgeGraph')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {chartData.knowledgeGraph.nodes.length > 0 ? (
+                  <Suspense fallback={<ChartFallback />}>
+                    <KnowledgeGraph
+                      nodes={chartData.knowledgeGraph.nodes}
+                      edges={chartData.knowledgeGraph.edges}
+                    />
+                  </Suspense>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

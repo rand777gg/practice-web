@@ -107,5 +107,9 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
     }
   }, [dates, subjects, data, barData, isDark, textColor, mutedColor])
 
-  return <ReactECharts option={option} style={{ height: 420 }} />
+  return (
+    <div className="overflow-x-auto">
+      <ReactECharts option={option} style={{ height: 420, minWidth: 600 }} />
+    </div>
+  )
 }

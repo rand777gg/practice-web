@@ -143,13 +143,13 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div>
+      <div className="overflow-x-auto">
         <p className="text-xs text-muted-foreground text-center mb-1">科目正确率</p>
-        <ReactECharts option={barOption} style={{ height: 320 }} />
+        <ReactECharts option={barOption} style={{ height: 320, minWidth: 280 }} />
       </div>
-      <div>
+      <div className="overflow-x-auto">
         <p className="text-xs text-muted-foreground text-center mb-1">科目 × 题型 正确率热力图</p>
-        <ReactECharts option={heatmapOption} style={{ height: 320 }} />
+        <ReactECharts option={heatmapOption} style={{ height: 320, minWidth: 360 }} />
       </div>
     </div>
   )

@@ -82,5 +82,9 @@ export function TimeScatterChart({ data }: Props) {
     }
   }, [data, isDark, textColor])
 
-  return <ReactECharts option={option} style={{ height: 400 }} />
+  return (
+    <div className="overflow-x-auto">
+      <ReactECharts option={option} style={{ height: 400, minWidth: 320 }} />
+    </div>
+  )
 }
