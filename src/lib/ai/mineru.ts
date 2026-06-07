@@ -43,7 +43,7 @@ export class MinerUClient {
   }
 
   // Lightweight parsing — v1 agent API, no token required
-  async uploadAndParse(file: File, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
+  async uploadAndParse(file: File, options?: { pageRange?: string }, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
     onProgress?.('正在上传文档...')
     const filePath = `mineru-temp/${Date.now()}-${file.name}`
     const { error: uploadErr } = await supabase.storage
@@ -56,10 +56,13 @@ export class MinerUClient {
     const publicUrl = urlData.publicUrl
 
     onProgress?.('正在创建解析任务...')
+    const v1Body: Record<string, string> = { url: publicUrl, language: 'ch' }
+    if (options?.pageRange) v1Body.page_range = options.pageRange
+
     const res = await fetch(`${PROXY_BASE}/parse/url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
-      body: JSON.stringify({ url: publicUrl, language: 'ch' }),
+      body: JSON.stringify(v1Body),
     })
     const data = await res.json() as { code: number; msg: string; data: { task_id: string } }
     if (data.code !== 0) throw new Error(`MinerU init failed: ${data.msg}`)
@@ -150,6 +153,8 @@ export class MinerUClient {
       enable_table: options.enableTable ?? true,
     }
     if (options.isOcr !== undefined) body.is_ocr = options.isOcr
+    if (options.pageRange) body.page_range = options.pageRange
+    if (options.dpi !== undefined && options.dpi > 0) body.dpi = options.dpi
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task`, {
       method: 'POST',
@@ -204,6 +209,8 @@ export class MinerUClient {
       enable_formula: options.enableFormula ?? true,
       enable_table: options.enableTable ?? true,
     }
+    if (options.pageRange) body.page_range = options.pageRange
+    if (options.dpi !== undefined && options.dpi > 0) body.dpi = options.dpi
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task/batch`, {
       method: 'POST',

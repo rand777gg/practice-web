@@ -50,6 +50,8 @@ export function Component() {
   const [enableFormula, setEnableFormula] = useState(true)
   const [enableTable, setEnableTable] = useState(true)
   const [batchMode, setBatchMode] = useState(false)
+  const [pageRange, setPageRange] = useState('')
+  const [dpi, setDpi] = useState('')
 
   const aiConfigured = hasAiConfig()
   const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
@@ -105,7 +107,7 @@ export function Component() {
   const runLightweightParse = async () => {
     if (!file) return
     const mineru = new MinerUClient()
-    const { markdown } = await mineru.uploadAndParse(file, (msg) => setParseMsg(msg))
+    const { markdown } = await mineru.uploadAndParse(file, { pageRange: pageRange || undefined }, (msg) => setParseMsg(msg))
     await extractQuestions(markdown)
   }
 
@@ -118,6 +120,8 @@ export function Component() {
       enableFormula,
       enableTable,
       language: 'ch',
+      pageRange: pageRange || undefined,
+      dpi: dpi ? Number(dpi) : undefined,
     }
 
     if (batchMode && files.length > 0) {
@@ -257,7 +261,18 @@ export function Component() {
               </Tabs>
 
               {parseMode === 'lightweight' && (
-                <p className="text-xs text-muted-foreground">支持 PDF、DOCX，单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">支持 PDF、DOCX，单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
+                    <Input
+                      placeholder="如: 1-10 (留空=全部)"
+                      value={pageRange}
+                      onChange={(e) => setPageRange(e.target.value)}
+                      className="h-7 text-xs max-w-[180px]"
+                    />
+                  </div>
+                </div>
               )}
               {parseMode === 'precision' && (
                 <p className="text-xs text-muted-foreground">支持 PDF/DOCX/PPT/XLS/图片/HTML，单文件 ≤ 200MB、≤ 200 页，支持批量最多 200 个文件。需配置 MinerU Token。</p>
@@ -326,6 +341,28 @@ export function Component() {
                         </DropdownMenuCheckboxItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
+                      <Input
+                        placeholder="如: 1-10"
+                        value={pageRange}
+                        onChange={(e) => setPageRange(e.target.value)}
+                        className="h-7 text-xs w-[120px]"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-muted-foreground whitespace-nowrap">DPI</label>
+                      <Input
+                        type="number"
+                        placeholder="默认"
+                        value={dpi}
+                        onChange={(e) => setDpi(e.target.value)}
+                        className="h-7 text-xs w-[80px]"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

@@ -34,6 +34,8 @@ export interface MinerUPrecisionOptions {
   enableFormula?: boolean
   enableTable?: boolean
   language?: string
+  pageRange?: string
+  dpi?: number
 }
 
 export interface MinerUTaskResult {
