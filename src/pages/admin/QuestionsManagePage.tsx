@@ -28,11 +28,11 @@ export function Component() {
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Trigger fetch when filters or search change
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (debounceRef.current !== null) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       fetchQuestions({
         page: 1,
@@ -42,7 +42,7 @@ export function Component() {
         questionType: selectedType,
       })
     }, 300)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    return () => { if (debounceRef.current !== null) clearTimeout(debounceRef.current) }
   }, [search, selectedSubject, selectedCategory, selectedType, fetchQuestions])
 
   // Update filtered categories when subject changes
