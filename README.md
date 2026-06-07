@@ -11,7 +11,7 @@ A comprehensive question practice platform built with React + Supabase. Supports
 - **State**: Zustand
 - **Routing**: React Router v7 (lazy loading)
 - **Backend**: Supabase (Auth, Database, RLS)
-- **AI**: Vercel AI SDK + DeepSeek (question parsing, key points generation, daily study summary)
+- **AI**: Vercel AI SDK + DeepSeek (question parsing, key points generation, smart exam setup, Ebbinghaus learning plan, daily study summary)
 - **I18n**: Built-in (Chinese / English toggle)
 
 ## Features
@@ -22,9 +22,11 @@ A comprehensive question practice platform built with React + Supabase. Supports
 | **AI Study Summary** | Click the ✨ button in the header to get a friend-style AI summary of today's performance, weak areas, and personalized study suggestions — with typewriter reveal animation |
 | **AI Question Import** | Upload documents (PDF, Word, images), auto-extract questions via MinerU OCR + DeepSeek parsing, 6-step wizard with preview and batch import |
 | **AI Key Points** | One-click generate knowledge points for any question, with color-shift border animation and typewriter text reveal |
-| **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets. Real-time dual progress bars in header. Click dashboard cards to edit directly. |
-| **Practice Mode** | All question types supported, subject/category linked filter, skip button, persistent notes with public/private toggle, swipe navigation |
-| **Exam Mode** | Configurable question count and duration, subject/category/type filter, grid question navigator, resume detection, auto-submit on timeout, score report |
+| **AI Smart Exam** | Analyzes practice history via DeepSeek, auto-recommends subjects/categories/types/count/duration for exams — with border glow animation |
+| **AI Learning Plan** | Ebbinghaus forgetting curve analysis + subject urgency scoring + AI-generated personalized study advice, cached for session |
+| **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets with per-subject progress bars. Click dashboard cards to edit directly. |
+| **Practice Mode** | Goal-based question scoping (daily targets / plan subjects), subject/category/type multi-filter, skip button, persistent notes with public/private toggle, swipe navigation |
+| **Exam Mode** | Configurable question count and duration, multi-select subject/category/type filter, grid question navigator, resume detection, auto-submit on timeout, ECharts gauge + donut + bar chart score report |
 | **Wrong Answer Review** | Filter by mode, inline note editing, favorites, answer highlighted |
 | **Question Management** | CRUD with dynamic option count, subject/category/type tagging, analysis & key points fields |
 | **Bulk Import** | CSV, JSON, or AI-powered document import |
@@ -102,7 +104,7 @@ practice-web/
     ├── App.tsx                   # Auth initializer + session listener
     ├── index.css                 # Tailwind + CSS custom properties
     ├── types/                    # TypeScript types (Question, ExamSession, etc.)
-    ├── lib/                      # supabase client, cn util, constants
+    ├── lib/                      # supabase client, cn util, constants, ai (deepseek, ebbinghaus, summary)
     ├── stores/                   # Zustand stores (auth, exam, lang, theme, refresh)
     ├── hooks/                    # useQuestions, useTimer, useUserAnswers, useFavorites, useSwipe
     ├── i18n/                     # translations (zh/en) + useT hook
@@ -116,7 +118,7 @@ practice-web/
     │   ├── questions/            # QuestionCard, QuestionForm, QuestionList, ImportDialog
     │   ├── practice/             # PracticeSession
     │   ├── exam/                 # ExamSession, ExamTimer, ExamProgress, ExamResultCard
-    │   └── charts/               # ECharts: TimeDistributionHistogram, TimeScatterChart, AnswerTimeScatterHistogram, SubjectCategorySunburst, SubjectDonutCharts, SubjectAccuracyCharts, SubjectRankChart, DailyGoalHeatmap
+    │   └── charts/               # ECharts: TimeDistributionHistogram, TimeScatterChart, AnswerTimeScatterHistogram, SubjectCategorySunburst, SubjectDonutCharts, SubjectAccuracyCharts, SubjectRankChart, DailyGoalHeatmap, EbbinghausCurve, UrgencyChart
     └── pages/                    # Route pages (admin/ subfolder for admin pages)
 ```
 
@@ -131,11 +133,14 @@ practice-web/
 | `/exam` | Exam Mode | Authenticated |
 | `/exam/result/:sessionId` | Exam Results | Authenticated |
 | `/favorites` | Favorites | Authenticated |
+| `/notes` | Public Notes | Authenticated |
 | `/review` | Wrong Answer Review | Authenticated |
 | `/admin/questions` | Question Management | Admin |
 | `/admin/questions/new` | Create Question | Admin |
 | `/admin/questions/:id/edit` | Edit Question | Admin |
 | `/admin/users` | User Management | Admin |
+| `/admin/ai` | AI Management | Admin |
+| `/admin/ai-import` | AI Question Import | Admin |
 
 ## Scripts
 
