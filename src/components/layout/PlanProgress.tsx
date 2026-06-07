@@ -38,6 +38,7 @@ export function PlanProgress() {
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [dailyGoal, setDailyGoal] = useState(0)
   const [todayLongDone, setTodayLongDone] = useState(0)
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
@@ -45,6 +46,7 @@ export function PlanProgress() {
   useEffect(() => {
     if (!user) return
     const uid = user.id
+    setIsLoading(true)
     async function load() {
       // Long-term goal
       if (deadline) {
@@ -134,11 +136,29 @@ export function PlanProgress() {
       } else {
         setTargetProgress([])
       }
+      setIsLoading(false)
     }
     load()
   }, [user, deadline, planSubjects.join(','), JSON.stringify(dailyTargets), version])
 
   if (!user) return null
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-3 rounded-md border border-border px-2.5 py-1.5 min-w-0">
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="hidden sm:block h-3 w-8 animate-pulse rounded bg-muted" />
+          <div className="h-2 w-10 animate-pulse rounded-full bg-muted" />
+          <div className="h-3 w-6 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="hidden sm:block h-3 w-6 animate-pulse rounded bg-muted" />
+          <div className="h-2 w-10 animate-pulse rounded-full bg-muted" />
+          <div className="h-3 w-6 animate-pulse rounded bg-muted" />
+        </div>
+      </div>
+    )
+  }
 
   const hasDailyTargets = dailyTargets.length > 0
   const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
