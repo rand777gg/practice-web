@@ -4,10 +4,11 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen } from 'lucide-react'
+import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen, ListChecks } from 'lucide-react'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { SkeletonCard } from '@/components/ui/skeleton'
 import { useT } from '@/i18n/use-t'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
@@ -103,6 +104,7 @@ export function Component() {
   const [isLoading, setIsLoading] = useState(!hasCache)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
   const headerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -448,9 +450,17 @@ export function Component() {
           </Button>
         </div>
       ) : (
-        <Tabs defaultValue="today" className="w-full">
+        <Tabs
+          defaultValue="plan"
+          className="w-full"
+          onValueChange={(v) => setVisitedTabs((prev) => new Set(prev).add(v))}
+        >
           <TabsList className="justify-center">
-            <TabsTrigger value="today" className="gap-1.5">
+            <TabsTrigger value="plan" className="gap-1.5">
+              <ListChecks className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t('dashboard.tabPlan')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="stats" className="gap-1.5">
               <Target className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{t('dashboard.tabStats')}</span>
             </TabsTrigger>
@@ -468,131 +478,162 @@ export function Component() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="today">
-            <div className="space-y-4">
-              <DashboardPlanCards />
-              <Card className="border-0 shadow-none">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">每日答题分布</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Suspense fallback={<ChartFallback />}>
-                    <AnswerTimeScatterHistogram
-                      dates={chartData.dailySubjectData.dates}
-                      subjects={chartData.dailySubjectData.subjects}
-                      data={chartData.dailySubjectData.data}
-                      barData={chartData.barData}
-                    />
-                  </Suspense>
-                </CardContent>
-              </Card>
-              <Card className="border-0 shadow-none">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">正确率分析</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Suspense fallback={<ChartFallback />}>
-                    <SubjectAccuracyCharts
-                      subjectAccuracy={chartData.subjectAccuracy}
-                      heatmapData={chartData.heatmapData}
-                    />
-                  </Suspense>
-                </CardContent>
-              </Card>
-            </div>
+          <TabsContent value="plan">
+            <DashboardPlanCards />
+          </TabsContent>
+
+          <TabsContent value="stats">
+            {visitedTabs.has('stats') ? (
+              <div className="space-y-4">
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">每日答题分布</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <AnswerTimeScatterHistogram
+                        dates={chartData.dailySubjectData.dates}
+                        subjects={chartData.dailySubjectData.subjects}
+                        data={chartData.dailySubjectData.data}
+                        barData={chartData.barData}
+                      />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">正确率分析</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <SubjectAccuracyCharts
+                        subjectAccuracy={chartData.subjectAccuracy}
+                        heatmapData={chartData.heatmapData}
+                      />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="subjects">
-            <div className="space-y-4">
+            {visitedTabs.has('subjects') ? (
+              <div className="space-y-4">
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectCategory')}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {chartData.sunburstData.length > 0 ? (
+                      <Suspense fallback={<ChartFallback />}>
+                        <SubjectCategorySunburst data={chartData.sunburstData} />
+                      </Suspense>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectBreakdown')}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <Suspense fallback={<ChartFallback />}>
+                        <SubjectDonutCharts data={chartData.sunburstData} />
+                      </Suspense>
+                      <Suspense fallback={<ChartFallback />}>
+                        <SubjectRankChart data={chartData.sunburstData} />
+                      </Suspense>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="journey">
+            {visitedTabs.has('journey') ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                  <Card className="border-0 shadow-none flex flex-col">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="text-sm text-muted-foreground">做题时间分布</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Suspense fallback={<ChartFallback />}>
+                        <TimeDistributionHistogram data={chartData.hourlyDistribution} />
+                      </Suspense>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-0 shadow-none flex flex-col">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="text-sm text-muted-foreground">做题时间散点</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Suspense fallback={<ChartFallback />}>
+                        <TimeScatterChart data={chartData.todayHourlyData} />
+                      </Suspense>
+                    </CardContent>
+                  </Card>
+                </div>
+                <Card className="border-0 shadow-none">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </div>
+                <SkeletonCard />
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="knowledge">
+            {visitedTabs.has('knowledge') ? (
               <Card className="border-0 shadow-none">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectCategory')}</CardTitle>
+                  <CardTitle className="text-sm text-muted-foreground">{t('dashboard.knowledgeGraph')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {chartData.sunburstData.length > 0 ? (
+                  {!chartData.knowledgeGraph ? (
+                    <ChartFallback />
+                  ) : chartData.knowledgeGraph.nodes.length > 0 ? (
                     <Suspense fallback={<ChartFallback />}>
-                      <SubjectCategorySunburst data={chartData.sunburstData} />
+                      <KnowledgeGraph
+                        nodes={chartData.knowledgeGraph.nodes}
+                        edges={chartData.knowledgeGraph.edges}
+                      />
                     </Suspense>
                   ) : (
                     <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
                   )}
                 </CardContent>
               </Card>
-              <Card className="border-0 shadow-none">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">{t('dashboard.subjectBreakdown')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <Suspense fallback={<ChartFallback />}>
-                      <SubjectDonutCharts data={chartData.sunburstData} />
-                    </Suspense>
-                    <Suspense fallback={<ChartFallback />}>
-                      <SubjectRankChart data={chartData.sunburstData} />
-                    </Suspense>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="journey">
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                <Card className="border-0 shadow-none flex flex-col">
-                  <CardHeader className="pb-1">
-                    <CardTitle className="text-sm text-muted-foreground">做题时间分布</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <TimeDistributionHistogram data={chartData.hourlyDistribution} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-                <Card className="border-0 shadow-none flex flex-col">
-                  <CardHeader className="pb-1">
-                    <CardTitle className="text-sm text-muted-foreground">做题时间散点</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <TimeScatterChart data={chartData.todayHourlyData} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-              </div>
-              <Card className="border-0 shadow-none">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Suspense fallback={<ChartFallback />}>
-                    <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
-                  </Suspense>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="knowledge">
-            <Card className="border-0 shadow-none">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.knowledgeGraph')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!chartData.knowledgeGraph ? (
-                  <ChartFallback />
-                ) : chartData.knowledgeGraph.nodes.length > 0 ? (
-                  <Suspense fallback={<ChartFallback />}>
-                    <KnowledgeGraph
-                      nodes={chartData.knowledgeGraph.nodes}
-                      edges={chartData.knowledgeGraph.edges}
-                    />
-                  </Suspense>
-                ) : (
-                  <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
-                )}
-              </CardContent>
-            </Card>
+            ) : (
+              <SkeletonCard />
+            )}
           </TabsContent>
         </Tabs>
       )}
