@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
+import { useQuestionFilters } from '@/hooks/use-question-filters'
 import type { QuestionType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
+import { Pagination } from '@/components/ui/pagination'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
@@ -19,61 +20,35 @@ import { useT } from '@/i18n/use-t'
 
 export function Component() {
   const { t } = useT()
-  const { questions, count, isLoading, deleteQuestion, refetch } = useQuestions()
+  const { questions, count, isLoading, page, totalPages, deleteQuestion, fetchQuestions, refetch } = useQuestions()
+  const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
-
-  // Filters
-  const [subjects, setSubjects] = useState<string[]>([])
-  const [categories, setCategories] = useState<string[]>([])
-  const [filteredCategories, setFilteredCategories] = useState<string[]>([])
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
-  useEffect(() => {
-    async function loadFilters() {
-      const { data } = await supabase.from('questions').select('subject, category')
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
-      }
-      setSubjects([...subs].sort())
-      setCategories([...cats].sort())
-      setFilteredCategories([...cats].sort())
-    }
-    loadFilters()
-  }, [])
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
+  // Trigger fetch when filters or search change
   useEffect(() => {
-    if (!selectedSubject) {
-      setFilteredCategories(categories)
-    } else {
-      async function loadCats() {
-        const { data } = await supabase
-          .from('questions')
-          .select('category')
-          .eq('subject', selectedSubject)
-        const cats = new Set<string>()
-        for (const row of data ?? []) {
-          if (row.category) cats.add(row.category)
-        }
-        setFilteredCategories([...cats].sort())
-      }
-      loadCats()
-    }
-    setSelectedCategory('')
-  }, [selectedSubject, categories])
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      fetchQuestions({
+        page: 1,
+        search,
+        subject: selectedSubject,
+        category: selectedCategory,
+        questionType: selectedType,
+      })
+    }, 300)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [search, selectedSubject, selectedCategory, selectedType, fetchQuestions])
 
-  const filtered = questions.filter((q) => {
-    if (!q.question_text.toLowerCase().includes(search.toLowerCase())) return false
-    if (selectedSubject && q.subject !== selectedSubject) return false
-    if (selectedCategory && q.category !== selectedCategory) return false
-    if (selectedType && q.question_type !== selectedType) return false
-    return true
-  })
+  // Update filtered categories when subject changes
+  useEffect(() => {
+    updateFilteredCategories(selectedSubject)
+  }, [selectedSubject, updateFilteredCategories])
 
   return (
     <div className="space-y-4 max-w-5xl">
@@ -175,7 +150,16 @@ export function Component() {
       {isLoading ? (
         <LoadingTips className="py-12" compact />
       ) : (
-        <QuestionList questions={filtered} onDelete={deleteQuestion} />
+        <>
+          <QuestionList questions={questions} onDelete={deleteQuestion} />
+          <Pagination page={page} totalPages={totalPages} onPageChange={(p) => fetchQuestions({
+            page: p,
+            search,
+            subject: selectedSubject,
+            category: selectedCategory,
+            questionType: selectedType,
+          })} />
+        </>
       )}
 
       <QuestionImportDialog
