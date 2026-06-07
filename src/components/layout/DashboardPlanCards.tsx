@@ -123,9 +123,9 @@ export function DashboardPlanCards() {
 
   if (!user) return null
 
-  const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
+  const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 1000) / 10 : 0
   const changeFromYesterday = totalDone - yesterdayDone
-  const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 100) : null
+  const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
 
   const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
@@ -176,13 +176,13 @@ export function DashboardPlanCards() {
                     )
                   })()}
                 </div>
-                <span className="text-[11px] font-medium tabular-nums">{overallPct}%</span>
+                <span className="text-[11px] font-medium tabular-nums">{overallPct.toFixed(1)}%</span>
               </div>
               <p className="text-[11px] text-muted-foreground flex items-center gap-1">
                 {t('plan.doneCount')}: {totalDone}
                 {changePct != null && changePct > 0 && (
                   <span className={isUp ? 'text-green-500' : 'text-red-500'}>
-                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct}%
+                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct.toFixed(1)}%
                   </span>
                 )}
               </p>
