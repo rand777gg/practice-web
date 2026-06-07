@@ -145,6 +145,7 @@ export function PlanProgress() {
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
   const dailyPct = totalDaily > 0 ? Math.min(Math.round((doneDaily / totalDaily) * 100), 100) : 0
   const dailyDone = doneDaily >= totalDaily && totalDaily > 0
+  const longDone = dailyGoal > 0 && todayLongDone >= dailyGoal
 
   const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 0
 
@@ -174,7 +175,9 @@ export function PlanProgress() {
           <div className="flex items-center gap-1 shrink-0">
             <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
             <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
-            <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
+            <span className="tabular-nums shrink-0 text-[10px]">
+              {longDone ? '✓' : `${todayLongDone}/${dailyGoal}`}
+            </span>
           </div>
         )}
         {hasDailyTargets && (

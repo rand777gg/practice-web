@@ -393,28 +393,6 @@ export function Component() {
           <TabsContent value="today">
             <div className="space-y-4">
               <DashboardPlanCards />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                <Card className="border-0 shadow-none flex flex-col">
-                  <CardHeader className="pb-1">
-                    <CardTitle className="text-sm text-muted-foreground">做题时间分布</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <TimeDistributionHistogram data={chartData.hourlyDistribution} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-                <Card className="border-0 shadow-none flex flex-col">
-                  <CardHeader className="pb-1">
-                    <CardTitle className="text-sm text-muted-foreground">做题时间散点</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Suspense fallback={<ChartFallback />}>
-                      <TimeScatterChart data={chartData.todayHourlyData} />
-                    </Suspense>
-                  </CardContent>
-                </Card>
-              </div>
               <Card className="border-0 shadow-none">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-muted-foreground">每日答题分布</CardTitle>
@@ -481,16 +459,40 @@ export function Component() {
           </TabsContent>
 
           <TabsContent value="journey">
-            <Card className="border-0 shadow-none">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Suspense fallback={<ChartFallback />}>
-                  <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
-                </Suspense>
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                <Card className="border-0 shadow-none flex flex-col">
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm text-muted-foreground">做题时间分布</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <TimeDistributionHistogram data={chartData.hourlyDistribution} />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+                <Card className="border-0 shadow-none flex flex-col">
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm text-muted-foreground">做题时间散点</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <TimeScatterChart data={chartData.todayHourlyData} />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+              </div>
+              <Card className="border-0 shadow-none">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Suspense fallback={<ChartFallback />}>
+                    <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
+                  </Suspense>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="knowledge">

@@ -5,7 +5,7 @@ import { useRefreshStore } from '@/stores/refresh-store'
 import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
-import { Check } from 'lucide-react'
+import { Check, TrendingUp, TrendingDown } from 'lucide-react'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -46,6 +46,7 @@ export function DashboardPlanCards() {
   const [todayLongDone, setTodayLongDone] = useState(0)
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
+  const [yesterdayDone, setYesterdayDone] = useState(0)
 
   // Daily targets
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
@@ -83,6 +84,18 @@ export function DashboardPlanCards() {
         setDailyGoal(Math.ceil(remaining / daysLeft))
         setTotalScope(scopeIds.size)
         setTotalDone(doneAll)
+
+        // Yesterday's count (answers before today)
+        const { data: doneBeforeToday } = await supabase
+          .from('user_answers')
+          .select('question_id')
+          .eq('user_id', uid)
+          .lt('answered_at', todayStart())
+
+        const yesterdayIds = new Set((doneBeforeToday ?? []).map((a) => a.question_id))
+        let doneBefore = 0
+        for (const id of scopeIds) if (yesterdayIds.has(id)) doneBefore++
+        setYesterdayDone(doneBefore)
 
         // Today's count
         const { data: todayData } = await supabase
@@ -135,6 +148,9 @@ export function DashboardPlanCards() {
 
   const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 0
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
+  const changeFromYesterday = totalDone - yesterdayDone
+  const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 100) : null
+  const isUp = changeFromYesterday >= 0
 
   const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
@@ -168,11 +184,16 @@ export function DashboardPlanCards() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <Progress value={longPct} className="flex-1 h-2 [&>div]:bg-blue-500" />
-                <span className="text-[11px] font-medium tabular-nums">{todayLongDone}/{dailyGoal}</span>
+                <Progress value={overallPct} className="flex-1 h-2 [&>div]:bg-blue-500" />
+                <span className="text-[11px] font-medium tabular-nums">{overallPct}%</span>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                {t('plan.remaining')}: {Math.max(totalScope - totalDone, 0)} / {totalScope} ({overallPct}%)
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                {t('plan.doneCount')}: {totalDone}
+                {changePct != null && changePct > 0 && (
+                  <span className={isUp ? 'text-green-500' : 'text-red-500'}>
+                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct}%
+                  </span>
+                )}
               </p>
             </CardContent>
           </Card>

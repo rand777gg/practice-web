@@ -51,7 +51,6 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
       },
       dataZoom: [
         { type: 'inside' as const },
-        { type: 'slider' as const, bottom: 0, height: 16, borderColor: 'transparent' },
       ],
       grid: {
         left: '3%',
@@ -66,15 +65,25 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
         axisLabel: { color: textColor, fontSize: 10 },
         axisTick: { alignWithLabel: true },
       },
-      yAxis: {
-        type: 'value' as const,
-        axisLabel: { color: textColor, fontSize: 10 },
-        splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#f1f5f9', type: 'dashed' as const } },
-        name: '答题数',
-        nameTextStyle: { color: mutedColor, fontSize: 10 },
-      },
+      yAxis: [
+        {
+          type: 'value' as const,
+          axisLabel: { color: textColor, fontSize: 10 },
+          splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#f1f5f9', type: 'dashed' as const } },
+          name: '答题数',
+          nameTextStyle: { color: mutedColor, fontSize: 10 },
+        },
+        {
+          type: 'value' as const,
+          min: 0,
+          max: 100,
+          axisLabel: { color: mutedColor, fontSize: 10, formatter: '{value}%' },
+          splitLine: { show: false },
+          name: '正确率',
+          nameTextStyle: { color: mutedColor, fontSize: 10 },
+        },
+      ],
       series: [
-        // Subject stack
         ...subjects.map((subject, i) => ({
           name: subject,
           type: 'bar' as const,
@@ -84,7 +93,6 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
           data: data.map((d) => d[subject] ?? 0),
           itemStyle: { color: SUBJECT_COLORS[i % SUBJECT_COLORS.length] },
         })),
-        // Correct / Wrong stack
         {
           name: '正确',
           type: 'bar' as const,
@@ -102,6 +110,23 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
           data: dates.map((d) => barData.find((b) => b.date === d)?.wrong ?? 0),
           itemStyle: { color: '#ef4444' },
           emphasis: { focus: 'series' as const },
+        },
+        {
+          name: '正确率',
+          type: 'line' as const,
+          yAxisIndex: 1,
+          data: dates.map((d) => {
+            const b = barData.find((x) => x.date === d)
+            if (!b) return null
+            const total = b.correct + b.wrong
+            return total > 0 ? Math.round((b.correct / total) * 100) : null
+          }),
+          smooth: true,
+          lineStyle: { color: '#06b6d4', type: 'solid' as const, width: 2 },
+          itemStyle: { color: '#06b6d4' },
+          symbol: 'circle',
+          symbolSize: 4,
+          z: 10,
         },
       ],
     }

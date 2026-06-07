@@ -207,6 +207,7 @@ export const zh = {
     questions: '题',
     longTerm: '长期计划',
     daily: '自定义计划',
+    vsYesterday: '较昨日',
   },
   notes: {
     title: '公开笔记',
@@ -495,6 +496,7 @@ export const en = {
     questions: 'q',
     longTerm: 'Long-term',
     daily: 'Custom',
+    vsYesterday: 'vs yesterday',
   },
   notes: {
     title: 'Public Notes',
