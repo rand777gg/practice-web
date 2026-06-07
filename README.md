@@ -1,6 +1,6 @@
 [中文](README.zh.md) | English
 
-# Practice Web — 刷题网站
+# Practice Web
 
 A comprehensive question practice platform built with React + Supabase. Supports multiple question types (single/multi-choice, true/false, fill-blank, short-answer), practice & exam modes, AI-powered study summaries and question import, ECharts-rich dashboard analytics, dual study plan system, and PWA offline support. Interface available in Chinese and English.
 
@@ -35,7 +35,7 @@ A comprehensive question practice platform built with React + Supabase. Supports
 | **Dark Mode** | System-preference detection, localStorage persistence, toggle in header and login page |
 | **Public Notes** | Share notes with other users; shown with author info |
 | **Favorites** | Star questions, sync to Supabase, accessible from sidebar |
-| **I18n** | Chinese/English dropdown switcher in header |
+| **I18n** | Chinese/English toggle in sidebar footer |
 | **Loading Tips** | Rotating tips with fade transitions during loading states |
 | **GitHub Release Badge** | Sidebar shows latest release version from GitHub |
 
