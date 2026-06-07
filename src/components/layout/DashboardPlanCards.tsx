@@ -5,7 +5,7 @@ import { useRefreshStore } from '@/stores/refresh-store'
 import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
-import { Check } from 'lucide-react'
+import { Check, TrendingUp, TrendingDown } from 'lucide-react'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -125,6 +125,8 @@ export function DashboardPlanCards() {
 
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const changeFromYesterday = totalDone - yesterdayDone
+  const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 100) : null
+  const isUp = changeFromYesterday >= 0
 
   const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
@@ -178,9 +180,9 @@ export function DashboardPlanCards() {
               </div>
               <p className="text-[11px] text-muted-foreground flex items-center gap-1">
                 {t('plan.doneCount')}: {totalDone}
-                {changeFromYesterday > 0 && (
-                  <span className="text-green-500">
-                    {' '}今日 +{changeFromYesterday}
+                {changePct != null && changePct > 0 && (
+                  <span className={isUp ? 'text-green-500' : 'text-red-500'}>
+                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct}%
                   </span>
                 )}
               </p>
