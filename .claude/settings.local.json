@@ -19,7 +19,8 @@
       "Bash(npm install *)",
       "WebFetch(domain:www.radix-ui.com)",
       "Bash(git reset *)",
-      "Bash(gh release *)"
+      "Bash(gh release *)",
+      "Bash(git push *)"
     ]
   }
 }
