@@ -78,6 +78,68 @@ export class DeepSeekParser {
     return text.trim()
   }
 
+  async suggestExam(stats: {
+    totalPractice: number
+    wrongBySubject: { subject: string; wrong: number; total: number }[]
+    wrongByCategory: { category: string; wrong: number }[]
+    wrongByType: { type: string; wrong: number }[]
+    availableSubjects: string[]
+    availableCategories: string[]
+    availableTypes: string[]
+  }): Promise<{
+    subjects: string[]
+    categories: string[]
+    types: string[]
+    questionCount: number
+    durationMin: number
+    reason: string
+  }> {
+    const wrongSummary = stats.wrongBySubject
+      .filter(s => s.wrong > 0)
+      .map(s => `${s.subject}（错${s.wrong}/${s.total}）`)
+      .join('，') || '无显著弱项'
+    const wrongCats = stats.wrongByCategory
+      .filter(c => c.wrong > 0)
+      .map(c => `${c.category}（错${c.wrong}）`)
+      .join('，') || '无'
+    const wrongTypes = stats.wrongByType
+      .filter(t => t.wrong > 0)
+      .map(t => `${t.type}（错${t.wrong}）`)
+      .join('，') || '无'
+
+    const prompt = [
+      `总练习量：${stats.totalPractice} 题`,
+      `各学科错误：${wrongSummary}`,
+      `各分类错误：${wrongCats}`,
+      `各题型错误：${wrongTypes}`,
+      `可选学科：${stats.availableSubjects.join('、') || '全部'}`,
+      `可选分类：${stats.availableCategories.join('、') || '全部'}`,
+      `可选题型：${stats.availableTypes.join('、') || '全部'}`,
+    ].join('\n')
+
+    const { object } = await generateObject({
+      model: this.model,
+      schema: z.object({
+        subjects: z.array(z.string()),
+        categories: z.array(z.string()),
+        types: z.array(z.string()),
+        questionCount: z.number().min(5).max(100),
+        durationMin: z.number().min(5).max(300),
+        reason: z.string(),
+      }),
+      system: `你是一个智能出题助手。根据用户的练习数据分析弱项，推荐考试配置。
+- subjects/categories/types 从可选列表中选，优先选择错误率高的
+- 如果某类错误为0或数据不足，选2-3个有代表性的
+- questionCount 建议 10-50 题，弱项多则多出
+- durationMin 建议 10-60 分钟，平均每题 1-2 分钟
+- reason 用简短中文解释推荐理由，50字以内`,
+      prompt,
+      temperature: 0.3,
+    })
+
+    return object
+  }
+
   private normalize(raw: z.infer<typeof resultSchema>['questions']): ParsedQuestion[] {
     return raw
       .filter(q => q.question_text.trim().length > 0)
@@ -129,4 +191,24 @@ export async function generateKeyPoints(context: {
 }): Promise<string> {
   const parser = new DeepSeekParser(getConfig())
   return parser.generateKeyPoints(context)
+}
+
+export async function suggestExamConfig(stats: {
+  totalPractice: number
+  wrongBySubject: { subject: string; wrong: number; total: number }[]
+  wrongByCategory: { category: string; wrong: number }[]
+  wrongByType: { type: string; wrong: number }[]
+  availableSubjects: string[]
+  availableCategories: string[]
+  availableTypes: string[]
+}): Promise<{
+  subjects: string[]
+  categories: string[]
+  types: string[]
+  questionCount: number
+  durationMin: number
+  reason: string
+}> {
+  const parser = new DeepSeekParser(getConfig())
+  return parser.suggestExam(stats)
 }

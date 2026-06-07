@@ -234,6 +234,11 @@
   background-clip: text;
   animation: shimmerSweep 2s ease-in-out infinite;
 }
+@keyframes thinking {
+  0%, 60%, 100% { opacity: 0.2; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1.2); }
+}
+
 @keyframes charReveal {
   from { opacity: 0; filter: blur(2px); }
   to   { opacity: 1; filter: blur(0); }

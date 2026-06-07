@@ -256,6 +256,13 @@ export function Component() {
                 </TabsList>
               </Tabs>
 
+              {parseMode === 'lightweight' && (
+                <p className="text-xs text-muted-foreground">支持 PDF、DOCX，单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
+              )}
+              {parseMode === 'precision' && (
+                <p className="text-xs text-muted-foreground">支持 PDF/DOCX/PPT/XLS/图片/HTML，单文件 ≤ 200MB、≤ 200 页，支持批量最多 200 个文件。需配置 MinerU Token。</p>
+              )}
+
               {/* Precision mode settings */}
               {parseMode === 'precision' && (
                 <div className="space-y-3 p-4 rounded-lg border bg-muted/30">

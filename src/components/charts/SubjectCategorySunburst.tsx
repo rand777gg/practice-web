@@ -65,5 +65,5 @@ export function SubjectCategorySunburst({ data }: Props) {
     }
   }, [data, theme])
 
-  return <ReactECharts option={option} style={{ height: 300 }} />
+  return <ReactECharts option={option} style={{ height: 440 }} />
 }

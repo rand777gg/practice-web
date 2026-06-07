@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useThemeStore } from '@/stores/theme-store'
@@ -9,7 +10,8 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { PlanProgress } from './PlanProgress'
-import { Check, ChevronDown, LogOut, Menu, Moon, Sun } from 'lucide-react'
+import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
+import { Check, ChevronDown, LogOut, Menu, Moon, Sparkles, Sun } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -21,6 +23,7 @@ export function Header({ onMenuClick }: Props) {
   const { signOut } = useAuthStore()
   const { lang, setLang } = useLangStore()
   const { theme, toggle } = useThemeStore()
+  const [aiOpen, setAiOpen] = useState(false)
 
   return (
     <header className="h-14 border-b flex items-center justify-between px-4 lg:px-6 shrink-0 gap-2">
@@ -36,6 +39,14 @@ export function Header({ onMenuClick }: Props) {
         <PlanProgress />
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setAiOpen(true)}
+          title="AI 学习总结"
+        >
+          <Sparkles className="h-5 w-5 text-yellow-500" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -71,6 +82,7 @@ export function Header({ onMenuClick }: Props) {
           <span className="hidden sm:inline ml-1">{t('auth.logout')}</span>
         </Button>
       </div>
+      <AiSummaryDialog open={aiOpen} onOpenChange={setAiOpen} />
     </header>
   )
 }

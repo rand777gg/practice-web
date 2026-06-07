@@ -104,9 +104,11 @@ function AuthInitializer({ children }: { children: ReactNode }) {
     init()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         const user = session?.user ?? null
         if (!cancelled) setUser(user)
+        // Skip profile reload on token refresh to avoid UI flicker
+        if (event === 'TOKEN_REFRESHED') return
         if (user) {
           await loadProfile(user.id)
         } else {

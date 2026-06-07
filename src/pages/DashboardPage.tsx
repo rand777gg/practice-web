@@ -11,9 +11,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useT } from '@/i18n/use-t'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
-const StackedBar = lazy(() => import('@/components/charts/StackedBarChart').then(m => ({ default: m.StackedBarChart })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
 const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
+const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
+const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/AnswerTimeScatterHistogram').then(m => ({ default: m.AnswerTimeScatterHistogram })))
+const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
 
 const ChartFallback = () => (
   <div className="flex items-center justify-center py-12">
@@ -29,6 +31,9 @@ interface ChartData {
   barData: { date: string; correct: number; wrong: number }[]
   sunburstData: { subject: string; category: string }[]
   dailyGoal: number
+  hourlyDistribution: number[][] // 7 rows (Mon-Sun) x 24 cols (hours)
+  dailySubjectData: { dates: string[]; subjects: string[]; data: Record<string, number>[] }
+  todayHourlyData: number[] // 24 hours, count of answers today
 }
 
 export function Component() {
@@ -41,10 +46,13 @@ export function Component() {
     if (!user) return
     async function load() {
       const now = new Date()
-      const start12wk = new Date(now)
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const start12wk = new Date(today)
       start12wk.setDate(start12wk.getDate() - 12 * 7)
-      const start14d = new Date(now)
-      start14d.setDate(start14d.getDate() - 14)
+      const start7d = new Date(today)
+      start7d.setDate(start7d.getDate() - 7)
+      const end7d = new Date(today)
+      end7d.setDate(end7d.getDate() + 7)
 
       const [{ data: answers }, { data: questions }] = await Promise.all([
         supabase
@@ -55,9 +63,13 @@ export function Component() {
         supabase.from('questions').select('id, subject, category'),
       ])
 
+      function normalizeSubject(s: string): string {
+        return /^\d{4}真题$/.test(s) ? '真题' : s
+      }
+
       const qMap = new Map<string, { subject: string; category: string }>()
       for (const q of questions ?? []) {
-        qMap.set(q.id, { subject: q.subject ?? '', category: q.category ?? '' })
+        qMap.set(q.id, { subject: normalizeSubject(q.subject ?? ''), category: q.category ?? '' })
       }
 
       let correctCount = 0
@@ -81,9 +93,9 @@ export function Component() {
         count: v.ids.size,
       }))
 
-      // Bar data for last 14 days
+      // Bar data for today ±7 days (15 days)
       const barData: { date: string; correct: number; wrong: number }[] = []
-      for (let d = new Date(start14d); d <= now; d.setDate(d.getDate() + 1)) {
+      for (let d = new Date(start7d); d <= end7d; d.setDate(d.getDate() + 1)) {
         const key = d.toISOString().slice(0, 10)
         const entry = dailyMap.get(key)
         barData.push({ date: key, correct: entry?.correct ?? 0, wrong: entry?.wrong ?? 0 })
@@ -91,7 +103,7 @@ export function Component() {
 
       // Sunburst data from all questions (not just answered)
       const sunburstData = (questions ?? []).map((q) => ({
-        subject: q.subject || '',
+        subject: normalizeSubject(q.subject || ''),
         category: q.category || '',
       }))
 
@@ -119,7 +131,57 @@ export function Component() {
         dailyGoal = Math.ceil(remaining / daysLeft)
       }
 
-      setChartData({ totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal })
+      // Today's hourly distribution
+      const todayStr = today.toISOString().slice(0, 10)
+      const todayHourlyData = new Array(24).fill(0)
+      for (const a of answers ?? []) {
+        if ((a.answered_at as string).slice(0, 10) === todayStr) {
+          todayHourlyData[new Date(a.answered_at as string).getHours()]++
+        }
+      }
+
+      // Hourly distribution by day of week: 7 rows (Mon=0..Sun=6) x 24 hours
+      const hourlyDistribution = Array.from({ length: 7 }, () => new Array(24).fill(0))
+      for (const a of answers ?? []) {
+        const d = new Date(a.answered_at as string)
+        const dayOfWeek = (d.getDay() + 6) % 7 // Sun=0 -> Mon=0, Sun=6
+        const h = d.getHours()
+        hourlyDistribution[dayOfWeek][h]++
+      }
+
+      // Daily subject stacked bar data for today ±7 days (15 days)
+      const dailySubjectDates: string[] = []
+      const subjectSet = new Set<string>()
+      const dateSubjectMap = new Map<string, Map<string, number>>()
+      for (let d = new Date(start7d); d <= end7d; d.setDate(d.getDate() + 1)) {
+        const key = d.toISOString().slice(0, 10)
+        dailySubjectDates.push(key)
+        dateSubjectMap.set(key, new Map())
+      }
+      for (const a of answers ?? []) {
+        const dateKey = (a.answered_at as string).slice(0, 10)
+        const daySubjectMap = dateSubjectMap.get(dateKey)
+        if (!daySubjectMap) continue
+        const qInfo = qMap.get(a.question_id)
+        const subject = qInfo?.subject || '未分类'
+        subjectSet.add(subject)
+        daySubjectMap.set(subject, (daySubjectMap.get(subject) ?? 0) + 1)
+      }
+      const dailySubjectSubjects = Array.from(subjectSet)
+      const dailySubjectData = dailySubjectDates.map((date) => {
+        const dayMap = dateSubjectMap.get(date)!
+        const row: Record<string, number> = {}
+        for (const s of dailySubjectSubjects) {
+          row[s] = dayMap.get(s) ?? 0
+        }
+        return row
+      })
+
+      setChartData({
+        totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
+        dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
+        todayHourlyData,
+      })
       setIsLoading(false)
     }
     load()
@@ -195,13 +257,40 @@ export function Component() {
           <TabsContent value="today">
             <div className="space-y-4">
               <DashboardPlanCards />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                <Card className="border-0 shadow-none flex flex-col">
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm text-muted-foreground">做题时间分布</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <TimeDistributionHistogram data={chartData.hourlyDistribution} />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+                <Card className="border-0 shadow-none flex flex-col">
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm text-muted-foreground">做题时间散点</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Suspense fallback={<ChartFallback />}>
+                      <TimeScatterChart data={chartData.todayHourlyData} />
+                    </Suspense>
+                  </CardContent>
+                </Card>
+              </div>
               <Card className="border-0 shadow-none">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyBreakdown')}</CardTitle>
+                  <CardTitle className="text-sm text-muted-foreground">每日答题分布</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Suspense fallback={<ChartFallback />}>
-                    <StackedBar data={chartData.barData} />
+                    <AnswerTimeScatterHistogram
+                      dates={chartData.dailySubjectData.dates}
+                      subjects={chartData.dailySubjectData.subjects}
+                      data={chartData.dailySubjectData.data}
+                      barData={chartData.barData}
+                    />
                   </Suspense>
                 </CardContent>
               </Card>

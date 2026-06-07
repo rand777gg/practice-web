@@ -28,8 +28,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Play } from 'lucide-react'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
 import { useSwipe } from '@/hooks/use-swipe'
 import {
   EXAM_DEFAULT_COUNT,
@@ -39,7 +41,9 @@ import {
   EXAM_MIN_DURATION_MIN,
   EXAM_MAX_DURATION_MIN,
 } from '@/lib/constants'
-import type { ExamSession as ExamSessionType } from '@/types'
+import type { ExamSession as ExamSessionType, QuestionType } from '@/types'
+import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 
 export function ExamSession() {
@@ -76,8 +80,13 @@ export function ExamSession() {
   const [subjects, setSubjects] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [filteredCategories, setFilteredCategories] = useState<string[]>([])
-  const [selectedSubject, setSelectedSubject] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [selectedTypes, setSelectedTypes] = useState<QuestionType[]>([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiGlow, setAiGlow] = useState(false)
+  const [aiFade, setAiFade] = useState(false)
+  const [aiReason, setAiReason] = useState('')
 
   useEffect(() => {
     async function loadFilters() {
@@ -96,14 +105,14 @@ export function ExamSession() {
   }, [])
 
   useEffect(() => {
-    if (!selectedSubject) {
+    if (selectedSubjects.length === 0) {
       setFilteredCategories(categories)
     } else {
       async function loadCats() {
         const { data } = await supabase
           .from('questions')
           .select('category')
-          .eq('subject', selectedSubject)
+          .in('subject', selectedSubjects)
         const cats = new Set<string>()
         for (const row of data ?? []) {
           if (row.category) cats.add(row.category)
@@ -112,8 +121,7 @@ export function ExamSession() {
       }
       loadCats()
     }
-    setSelectedCategory('')
-  }, [selectedSubject, categories])
+  }, [selectedSubjects, categories])
 
   useEffect(() => {
     const sessionId = searchParams.get('sessionId')
@@ -144,13 +152,13 @@ export function ExamSession() {
         }
         setCheckingSession(false)
       })
-  }, [searchParams, user, resumeExam])
+  }, [searchParams, user?.id, resumeExam])
 
   const handleStart = async () => {
     if (!user) return
     const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
     const mins = Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, durationMin || EXAM_DEFAULT_DURATION_MIN))
-    await startExam(user.id, count, mins * 60 * 1000, selectedSubject || undefined, selectedCategory || undefined)
+    await startExam(user.id, count, mins * 60 * 1000, selectedSubjects.length ? selectedSubjects : undefined, selectedCategories.length ? selectedCategories : undefined, selectedTypes.length ? selectedTypes : undefined)
     setShowStart(false)
     setHasStarted(true)
   }
@@ -203,86 +211,189 @@ export function ExamSession() {
       <>
         <Card className="max-w-2xl">
           <CardContent className="py-6 lg:py-8 space-y-5">
-            <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {/* Left: filters + rules */}
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground font-medium">{t('plan.selectSubjects')}</p>
-                <div className="flex flex-wrap gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1 text-xs">
-                        {selectedSubject || t('questions.subject')}
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                      <DropdownMenuItem onClick={() => setSelectedSubject('')}>
-                        <span className="text-muted-foreground">{t('questions.subject')}</span>
-                        {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
-                      </DropdownMenuItem>
-                      {subjects.map((s) => (
-                        <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
-                          {s}
-                          {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1 text-xs">
-                        {selectedCategory || t('questions.category')}
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                      <DropdownMenuItem onClick={() => setSelectedCategory('')}>
-                        <span className="text-muted-foreground">{t('questions.category')}</span>
-                        {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
-                      </DropdownMenuItem>
-                      {filteredCategories.map((c) => (
-                        <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                          {c}
-                          {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  <p>{t('exam.rule3')}</p>
-                  <p>{t('exam.rule4')}</p>
-                </div>
-              </div>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
+              {hasAiConfig() && (
+                <HoverCard openDelay={300}>
+                  <HoverCardTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      disabled={aiLoading}
+                      onClick={async () => {
+                        if (!user) return
+                        setAiLoading(true)
+                        setAiGlow(true)
+                        try {
+                          const { data: history } = await supabase
+                            .from('user_answers')
+                            .select('is_correct, questions(subject, category, question_type)')
+                            .eq('user_id', user.id)
 
-              {/* Right: count + duration */}
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="questionCount">{t('exam.questionCount')}</Label>
-                  <Input
-                    id="questionCount"
-                    type="number"
-                    min={EXAM_MIN_COUNT}
-                    max={EXAM_MAX_COUNT}
-                    value={questionCount}
-                    onChange={(e) => setQuestionCount(Number(e.target.value))}
-                  />
-                  <p className="text-xs text-muted-foreground">{EXAM_MIN_COUNT}-{EXAM_MAX_COUNT}</p>
+                          const wrongBySubject = new Map<string, { wrong: number; total: number }>()
+                          const wrongByCategory = new Map<string, number>()
+                          const wrongByType = new Map<string, number>()
+                          for (const r of (history ?? [])) {
+                            const q = (r.questions as any)
+                            if (!q) continue
+                            const s = q.subject || 'Other'
+                            const c = q.category || 'Other'
+                            const t = q.question_type || 'single_choice'
+                            const se = wrongBySubject.get(s) || { wrong: 0, total: 0 }
+                            se.total++
+                            if (!r.is_correct) { se.wrong++; wrongByCategory.set(c, (wrongByCategory.get(c) ?? 0) + 1); wrongByType.set(t, (wrongByType.get(t) ?? 0) + 1) }
+                            wrongBySubject.set(s, se)
+                          }
+
+                          const result = await suggestExamConfig({
+                            totalPractice: (history ?? []).length,
+                            wrongBySubject: [...wrongBySubject.entries()].map(([subject, v]) => ({ subject, ...v })),
+                            wrongByCategory: [...wrongByCategory.entries()].map(([category, wrong]) => ({ category, wrong })),
+                            wrongByType: [...wrongByType.entries()].map(([type, wrong]) => ({ type, wrong })),
+                            availableSubjects: subjects,
+                            availableCategories: categories,
+                            availableTypes: QUESTION_TYPE_OPTIONS.map(o => o.value),
+                          })
+
+                          setSelectedSubjects(result.subjects.filter(s => subjects.includes(s)))
+                          setSelectedCategories(result.categories.filter(c => categories.includes(c)))
+                          setSelectedTypes(result.types.filter(t => QUESTION_TYPE_OPTIONS.some(o => o.value === t)) as QuestionType[])
+                          setQuestionCount(Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, result.questionCount)))
+                          setDurationMin(Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, result.durationMin)))
+                          setAiReason(result.reason)
+                        } catch { /* ignore */ }
+                        setAiLoading(false)
+                        setTimeout(() => {
+                          setAiFade(true)
+                          requestAnimationFrame(() => {
+                            setAiGlow(false)
+                            setTimeout(() => setAiFade(false), 1500)
+                          })
+                        }, 500)
+                      }}
+                    >
+                      <Sparkles className={`h-3.5 w-3.5 ${aiLoading ? 'animate-pulse' : ''}`} />
+                      AI 智能出题
+                    </Button>
+                  </HoverCardTrigger>
+                  <HoverCardContent side="bottom" className="text-xs max-w-[220px]">
+                    根据您的历史做题记录智能出题，结合练习数据自动给出题目数量和考试时间
+                  </HoverCardContent>
+                </HoverCard>
+              )}
+            </div>
+            <div className="space-y-4">
+              {aiLoading && (
+                <p className="text-xs text-muted-foreground font-medium inline-flex items-center gap-1">
+                  {[...'正在为您智能出题'].map((ch, i) => (
+                    <span key={i} className="animate-[charReveal_0.3s_ease-out_both]" style={{ animationDelay: `${i * 0.04}s` }}>{ch}</span>
+                  ))}
+                  <span className="inline-flex gap-0.5">
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground animate-[thinking_1.4s_ease-in-out_infinite]" />
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground animate-[thinking_1.4s_ease-in-out_0.2s_infinite]" />
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground animate-[thinking_1.4s_ease-in-out_0.4s_infinite]" />
+                  </span>
+                </p>
+              )}
+              {aiReason && (
+                <p className="text-xs text-muted-foreground">
+                  {[...aiReason].map((ch, i) => (
+                    <span key={i} className="animate-[charReveal_0.3s_ease-out_both]" style={{ animationDelay: `${i * 0.03}s` }}>{ch}</span>
+                  ))}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className={`gap-1 text-xs transition-[border-color,box-shadow] duration-1500 ease-out ${aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''}`}>
+                        {selectedSubjects.length ? `学科(${selectedSubjects.length})` : t('questions.subject')}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                      {subjects.map((s) => {
+                        const checked = selectedSubjects.includes(s)
+                        return (
+                          <DropdownMenuCheckboxItem key={s} checked={checked} onCheckedChange={() => {
+                            setSelectedSubjects(prev => checked ? prev.filter(x => x !== s) : [...prev, s])
+                          }}>
+                            {s}
+                          </DropdownMenuCheckboxItem>
+                        )
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className={`gap-1 text-xs transition-[border-color,box-shadow] duration-1500 ease-out ${aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''}`}>
+                        {selectedCategories.length ? `分类(${selectedCategories.length})` : t('questions.category')}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                      {(selectedSubjects.length ? filteredCategories : categories).map((c) => {
+                        const checked = selectedCategories.includes(c)
+                        return (
+                          <DropdownMenuCheckboxItem key={c} checked={checked} onCheckedChange={() => {
+                            setSelectedCategories(prev => checked ? prev.filter(x => x !== c) : [...prev, c])
+                          }}>
+                            {c}
+                          </DropdownMenuCheckboxItem>
+                        )
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className={`gap-1 text-xs transition-[border-color,box-shadow] duration-1500 ease-out ${aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''}`}>
+                        {selectedTypes.length ? `类型(${selectedTypes.length})` : t('questions.questionType')}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {QUESTION_TYPE_OPTIONS.map((o) => {
+                        const checked = selectedTypes.includes(o.value)
+                        return (
+                          <DropdownMenuCheckboxItem key={o.value} checked={checked} onCheckedChange={() => {
+                            setSelectedTypes(prev => checked ? prev.filter(x => x !== o.value) : [...prev, o.value])
+                          }}>
+                            {t(`questionTypes.${o.value}` as any)}
+                          </DropdownMenuCheckboxItem>
+                        )
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="duration">{t('exam.duration')}</Label>
-                  <Input
-                    id="duration"
-                    type="number"
-                    min={EXAM_MIN_DURATION_MIN}
-                    max={EXAM_MAX_DURATION_MIN}
-                    value={durationMin}
-                    onChange={(e) => setDurationMin(Number(e.target.value))}
-                  />
-                  <p className="text-xs text-muted-foreground">{EXAM_MIN_DURATION_MIN}-{EXAM_MAX_DURATION_MIN} {t('exam.minutes')}</p>
+                <div className="flex gap-3">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="questionCount" className="text-xs">{t('exam.questionCount')}</Label>
+                    <Input
+                      id="questionCount"
+                      type="number"
+                      min={EXAM_MIN_COUNT}
+                      max={EXAM_MAX_COUNT}
+                      value={questionCount}
+                      onChange={(e) => setQuestionCount(Number(e.target.value))}
+                      className={`transition-[border-color,box-shadow] duration-1500 ease-out ${aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''}`}
+                    />
+                    <p className="text-[10px] text-muted-foreground">{EXAM_MIN_COUNT}-{EXAM_MAX_COUNT}</p>
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="duration" className="text-xs">{t('exam.duration')}</Label>
+                    <Input
+                      id="duration"
+                      type="number"
+                      min={EXAM_MIN_DURATION_MIN}
+                      max={EXAM_MAX_DURATION_MIN}
+                      value={durationMin}
+                      onChange={(e) => setDurationMin(Number(e.target.value))}
+                      className={`transition-[border-color,box-shadow] duration-1500 ease-out ${aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''}`}
+                    />
+                    <p className="text-[10px] text-muted-foreground">{EXAM_MIN_DURATION_MIN}-{EXAM_MAX_DURATION_MIN} {t('exam.minutes')}</p>
+                  </div>
                 </div>
-              </div>
             </div>
             <Button onClick={handleStart} disabled={isLoading} size="lg" className="w-full">
               {isLoading ? <Spinner /> : <Play className="h-4 w-4" />}

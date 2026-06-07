@@ -33,7 +33,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         clientsClaim: true,
-        skipWaiting: true,
+        skipWaiting: false,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,

@@ -11,7 +11,7 @@ export function Component() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('exam.score')}</h1>
       <ExamResultCard sessionId={sessionId} />
     </div>

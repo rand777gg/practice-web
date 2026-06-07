@@ -20,7 +20,9 @@
       "WebFetch(domain:www.radix-ui.com)",
       "Bash(git reset *)",
       "Bash(gh release *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "WebFetch(domain:echarts.apache.org)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

@@ -1,4 +1,6 @@
-export { DeepSeekParser, generateKeyPoints } from './deepseek'
+export { DeepSeekParser, generateKeyPoints, suggestExamConfig } from './deepseek'
 export { MinerUClient } from './mineru'
+export { generateDailySummary } from './summary'
+export type { SummaryData } from './summary'
 export { getAiConfig, hasAiConfig, getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion, hasMinerUToken } from './config'
 export type { AiConfig, ParsedQuestion, AiParseResult, DocumentParseResult, MinerUModelVersion, MinerUPrecisionOptions, MinerUTaskResult, MinerUBatchFileResult } from './types'
