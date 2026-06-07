@@ -7,9 +7,9 @@ interface Props {
 }
 
 const URGENCY_COLORS = [
-  { lt: 30, color: '#22c55e' },
-  { lt: 60, color: '#f59e0b' },
-  { lt: 100, color: '#ef4444' },
+  { lt: 30, color: '#06b6d4' },
+  { lt: 60, color: '#6366f1' },
+  { lt: 100, color: '#8b5cf6' },
 ]
 
 export function UrgencyChart({ urgency }: Props) {
@@ -45,7 +45,13 @@ export function UrgencyChart({ urgency }: Props) {
           待复习: ${d.reviewQueue}/${d.totalQuestions}`
       },
     },
-    grid: { top: 4, right: 30, bottom: 20, left: 8 },
+    title: {
+      text: '学科紧急度',
+      left: 'center',
+      top: 0,
+      textStyle: { color: '#22d3ee', fontSize: 12, fontWeight: 'normal' },
+    },
+    grid: { top: 24, right: 30, bottom: 20, left: 8 },
     xAxis: {
       type: 'value' as const,
       max: 100,

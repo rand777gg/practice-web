@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
@@ -28,6 +28,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { computeEbbinghaus, type EbbinghausData } from '@/lib/ai/ebbinghaus'
+import { suggestPlan, hasAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 
 const EbbinghausCurve = lazy(() => import('@/components/charts/EbbinghausCurve').then(m => ({ default: m.EbbinghausCurve })))
@@ -60,6 +61,11 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   // Ebbinghaus
   const [ebbinghaus, setEbbinghaus] = useState<EbbinghausData | null>(null)
   const [ebbinghausLoading, setEbbinghausLoading] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState('')
+  const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false)
+  const [aiGlow, setAiGlow] = useState(false)
+  const [aiFade, setAiFade] = useState(false)
+  const ebbinghausLoaded = useRef(false)
 
   const [allSubjects, setAllSubjects] = useState<string[]>([])
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
@@ -68,10 +74,41 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (!open) return
     async function load() {
-      // Load ebbinghaus in background
-      if (user) {
+      // Load ebbinghaus once, cache result
+      if (user && !ebbinghausLoaded.current) {
+        ebbinghausLoaded.current = true
         setEbbinghausLoading(true)
-        computeEbbinghaus(user.id).then(setEbbinghaus).finally(() => setEbbinghausLoading(false))
+        setAiGlow(true)
+        computeEbbinghaus(user.id).then(async (data) => {
+          setEbbinghaus(data)
+          if (hasAiConfig() && data.urgency.length > 0) {
+            setAiSuggestionLoading(true)
+            try {
+              const text = await suggestPlan({
+                totalReviewQueue: data.totalReviewQueue,
+                topUrgent: data.urgency.map(u => ({
+                  subject: u.subject,
+                  urgency: u.urgency,
+                  reviewQueue: u.reviewQueue,
+                  errorRate: u.errorRate,
+                })),
+                atRiskCurve: data.curve,
+                totalSubjects: data.urgency.length,
+              })
+              setAiSuggestion(text)
+            } catch { /* ignore */ }
+            setAiSuggestionLoading(false)
+          }
+        }).finally(() => {
+          setEbbinghausLoading(false)
+          setTimeout(() => {
+            setAiFade(true)
+            requestAnimationFrame(() => {
+              setAiGlow(false)
+              setTimeout(() => setAiFade(false), 1500)
+            })
+          }, 300)
+        })
       }
       const { data: qs } = await supabase.from('questions').select('subject')
       const counts = new Map<string, number>()
@@ -184,7 +221,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           <DialogTitle>{t('plan.title')}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+        <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* 左侧：Long-term plan */}
           <div className="border rounded-lg p-3">
             <div className="text-sm font-semibold mb-2 text-blue-600 dark:text-blue-400">
@@ -425,12 +463,14 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
         {/* Ebbinghaus recommendation section */}
         {ebbinghausLoading ? (
-          <div className="flex items-center justify-center py-4">
+          <div className="flex items-center justify-center py-8">
             <Spinner />
             <span className="text-xs text-muted-foreground ml-2">正在分析遗忘曲线...</span>
           </div>
         ) : ebbinghaus && (ebbinghaus.curve.length > 0 || ebbinghaus.urgency.length > 0) ? (
-          <div className="space-y-3 mt-3">
+          <div className={`border rounded-lg p-3 space-y-3 transition-[border-color,box-shadow] duration-1500 ease-out ${
+            aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''
+          }`}>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Sparkles className="h-3 w-3 text-blue-500" />
               <span>基于艾宾浩斯遗忘曲线的学习建议</span>
@@ -439,26 +479,33 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {ebbinghaus.curve.length > 0 && (
-                <div className="border rounded-lg p-3">
-                  <p className="text-[11px] text-muted-foreground mb-1">遗忘曲线 & 临界题数</p>
-                  <Suspense fallback={<div className="h-[220px]" />}>
-                    <EbbinghausCurve curve={ebbinghaus.curve} />
-                  </Suspense>
-                </div>
-              )}
-              {ebbinghaus.urgency.length > 0 && (
-                <div className="border rounded-lg p-3">
-                  <p className="text-[11px] text-muted-foreground mb-1">学科紧急度</p>
-                  <Suspense fallback={<div className="h-[120px]" />}>
-                    <UrgencyChart urgency={ebbinghaus.urgency} />
-                  </Suspense>
-                </div>
-              )}
-            </div>
+            {aiSuggestionLoading && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 animate-pulse" />
+                AI 正在生成学习建议...
+              </p>
+            )}
+            {aiSuggestion && (
+              <p className="text-xs text-muted-foreground leading-relaxed bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5">
+                {[...aiSuggestion].map((ch, i) => (
+                  <span key={i} className="animate-[charReveal_0.25s_ease-out_both]" style={{ animationDelay: `${i * 0.02}s` }}>{ch}</span>
+                ))}
+              </p>
+            )}
+
+            {ebbinghaus.curve.length > 0 && (
+              <Suspense fallback={<div className="h-[220px]" />}>
+                <EbbinghausCurve curve={ebbinghaus.curve} />
+              </Suspense>
+            )}
+            {ebbinghaus.urgency.length > 0 && (
+              <Suspense fallback={<div className="h-[120px]" />}>
+                <UrgencyChart urgency={ebbinghaus.urgency} />
+              </Suspense>
+            )}
           </div>
         ) : null}
+        </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
           <DialogClose asChild>

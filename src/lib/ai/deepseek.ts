@@ -140,6 +140,38 @@ export class DeepSeekParser {
     return object
   }
 
+  async suggestPlan(data: {
+    totalReviewQueue: number
+    topUrgent: { subject: string; urgency: number; reviewQueue: number; errorRate: number }[]
+    atRiskCurve: { day: number; atRisk: number }[]
+    totalSubjects: number
+  }): Promise<string> {
+    const urgentSummary = data.topUrgent
+      .slice(0, 5)
+      .map(s => `${s.subject}（紧急度${s.urgency}，待复习${s.reviewQueue}题，错误率${Math.round(s.errorRate * 100)}%）`)
+      .join('\n')
+    const curveSummary = data.atRiskCurve
+      .filter(p => p.atRisk > 0)
+      .map(p => `第${p.day}天: ${p.atRisk}题进入遗忘临界`)
+      .join('\n')
+
+    const { text } = await generateText({
+      model: this.model,
+      system: `你是一个基于艾宾浩斯遗忘曲线的学习规划助手。根据用户的遗忘曲线和学科紧急度数据，给出个性化的学习建议。
+输出要求：
+- 用自然的口吻，像一位学习教练
+- 指出最需要复习的学科，建议每天复习多少题
+- 根据遗忘曲线的高峰期（第1、3、7天）给出复习节奏
+- 输出 3-5 句话，总长度控制在 150 字以内
+- 不要用 markdown 格式`,
+      prompt: `待复习总题数：${data.totalReviewQueue}\n学科总数：${data.totalSubjects}\n\n学科紧急度：\n${urgentSummary}\n\n遗忘曲线临界分布：\n${curveSummary}`,
+      temperature: 0.5,
+      maxOutputTokens: 300,
+    })
+
+    return text.trim()
+  }
+
   private normalize(raw: z.infer<typeof resultSchema>['questions']): ParsedQuestion[] {
     return raw
       .filter(q => q.question_text.trim().length > 0)
@@ -211,4 +243,14 @@ export async function suggestExamConfig(stats: {
 }> {
   const parser = new DeepSeekParser(getConfig())
   return parser.suggestExam(stats)
+}
+
+export async function suggestPlan(data: {
+  totalReviewQueue: number
+  topUrgent: { subject: string; urgency: number; reviewQueue: number; errorRate: number }[]
+  atRiskCurve: { day: number; atRisk: number }[]
+  totalSubjects: number
+}): Promise<string> {
+  const parser = new DeepSeekParser(getConfig())
+  return parser.suggestPlan(data)
 }

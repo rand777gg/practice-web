@@ -49,7 +49,7 @@ export function TimeScatterChart({ data }: Props) {
         min: 0,
         max: 24,
         splitNumber: 5,
-        axisLabel: { color: textColor, fontSize: 10, formatter: '{value}h' },
+        axisLabel: { color: textColor, fontSize: 10, formatter: (v: number) => `${String(v).padStart(2, '0')}:00` },
         splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#f1f5f9', type: 'dashed' as const } },
         name: '小时',
         nameTextStyle: { color: textColor, fontSize: 10 },

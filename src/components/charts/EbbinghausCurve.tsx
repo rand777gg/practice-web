@@ -20,12 +20,18 @@ export function EbbinghausCurve({ curve }: Props) {
       borderColor: isDark ? '#334155' : '#e2e8f0',
       textStyle: { color: textColor, fontSize: 11 },
     },
+    title: {
+      text: '记忆留存趋势',
+      left: 'center',
+      top: 0,
+      textStyle: { color: '#22d3ee', fontSize: 12, fontWeight: 'normal' },
+    },
     legend: {
-      data: ['记忆留存率', '遗忘临界题数'],
+      data: ['记忆留存率', '临界复习题数'],
       bottom: 0,
       textStyle: { color: textColor, fontSize: 10 },
     },
-    grid: { top: 12, right: 50, bottom: 32, left: 44 },
+    grid: { top: 28, right: 50, bottom: 32, left: 44 },
     xAxis: {
       type: 'category' as const,
       data: curve.map(p => `第${p.day}天`),
@@ -70,7 +76,7 @@ export function EbbinghausCurve({ curve }: Props) {
         },
       },
       {
-        name: '遗忘临界题数',
+        name: '临界复习题数',
         type: 'bar',
         yAxisIndex: 1,
         data: curve.map(p => p.atRisk),
@@ -81,8 +87,8 @@ export function EbbinghausCurve({ curve }: Props) {
             type: 'linear' as const,
             x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: '#f59e0b' },
-              { offset: 1, color: '#ef4444' },
+              { offset: 0, color: '#06b6d4' },
+              { offset: 1, color: '#3b82f6' },
             ],
           },
         },

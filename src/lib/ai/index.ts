@@ -1,4 +1,4 @@
-export { DeepSeekParser, generateKeyPoints, suggestExamConfig } from './deepseek'
+export { DeepSeekParser, generateKeyPoints, suggestExamConfig, suggestPlan } from './deepseek'
 export { MinerUClient } from './mineru'
 export { generateDailySummary } from './summary'
 export type { SummaryData } from './summary'
