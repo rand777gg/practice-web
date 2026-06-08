@@ -6,8 +6,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 const PROXY_BASE = `${SUPABASE_URL}/functions/v1/mineru-proxy`
 const AUTH_HEADER = { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
 
-async function fetchZipAndExtractMd(zipUrl: string): Promise<string> {
-  // Proxy the zip download through the edge function to avoid CORS issues
+async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: string; jsonData?: string }> {
   const res = await fetch(`${PROXY_BASE}/download-zip?url=${encodeURIComponent(zipUrl)}`, {
     headers: { ...AUTH_HEADER },
   })
@@ -15,22 +14,23 @@ async function fetchZipAndExtractMd(zipUrl: string): Promise<string> {
 
   const { text } = await res.json() as { text: string }
 
-  // Edge function may fall back to base64 zip if server-side decompression fails
   if (text.startsWith('__B64ZIP__')) {
     const b64 = text.slice('__B64ZIP__'.length)
     const binary = atob(b64)
     const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i)
-    }
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
     const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(bytes)
     const mdFile = zip.file('full.md')
     if (!mdFile) throw new Error('full.md not found in zip archive')
-    return mdFile.async('text')
+    const markdown = await mdFile.async('text')
+    let jsonData: string | undefined
+    const jsonFile = zip.file('full.json')
+    if (jsonFile) jsonData = await jsonFile.async('text')
+    return { markdown, jsonData }
   }
 
-  return text
+  return { markdown: text }
 }
 
 export class MinerUClient {
@@ -131,8 +131,8 @@ export class MinerUClient {
 
         if (pollResult.state === 'done' && pollResult.fullZipUrl) {
           onProgress?.('正在提取解析结果...')
-          const markdown = await fetchZipAndExtractMd(pollResult.fullZipUrl)
-          return { markdown, fileName: file.name }
+          const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
+          return { markdown, fileName: file.name, jsonData }
         }
         if (pollResult.state === 'failed') {
           throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
@@ -318,8 +318,8 @@ export class MinerUClient {
           for (const r of done) {
             if (r.fullZipUrl) {
               onProgress?.(`正在提取 ${r.fileName} 的解析结果...`)
-              const markdown = await fetchZipAndExtractMd(r.fullZipUrl)
-              results.push({ markdown, fileName: r.fileName })
+              const { markdown, jsonData } = await fetchZipAndExtractFiles(r.fullZipUrl)
+              results.push({ markdown, fileName: r.fileName, jsonData })
             }
           }
           if (failed.length > 0) {

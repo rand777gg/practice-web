@@ -187,7 +187,7 @@ export function Component() {
         barData.push({ date: key, correct: entry?.correct ?? 0, wrong: entry?.wrong ?? 0 })
       }
 
-      // Sunburst data — merge year-prefixed subjects (2024真题 → 真题)
+      // Sunburst — merge year subjects (2024真题 → 真题)
       const sunburstData = (questions ?? []).map((q) => ({
         subject: /^\d{4}真题$/.test(q.subject || '') ? '真题' : q.subject || '',
         category: q.category || '',

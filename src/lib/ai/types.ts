@@ -23,6 +23,7 @@ export interface AiParseResult {
 export interface DocumentParseResult {
   markdown: string
   fileName: string
+  jsonData?: string
 }
 
 export type MinerUModelVersion = 'pipeline' | 'vlm' | 'MinerU-HTML'

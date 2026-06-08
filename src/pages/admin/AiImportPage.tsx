@@ -146,7 +146,7 @@ export function Component() {
         return
       }
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
-      setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', ') })
+      setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
     } else if (file) {
       const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
@@ -155,7 +155,7 @@ export function Component() {
     }
   }
 
-  const [parseResult, setParseResult] = useState<{ markdown: string; fileName: string } | null>(null)
+  const [parseResult, setParseResult] = useState<{ markdown: string; fileName: string; jsonData?: string } | null>(null)
   const [parsingDone, setParsingDone] = useState(false)
   const [parsePage, setParsePage] = useState(0)
   const [showSplitView, setShowSplitView] = useState(false)
@@ -371,6 +371,7 @@ export function Component() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
                         {[
+                          { key: 'json', label: 'JSON (含坐标)' },
                           { key: 'docx', label: 'DOCX' },
                           { key: 'html', label: 'HTML' },
                           { key: 'latex', label: 'LaTeX' },
