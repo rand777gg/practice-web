@@ -158,7 +158,9 @@ export function Component() {
   const [parseResult, setParseResult] = useState<{ markdown: string; fileName: string } | null>(null)
   const [parsingDone, setParsingDone] = useState(false)
   const [parsePage, setParsePage] = useState(0)
+  const [showSplitView, setShowSplitView] = useState(false)
   const CHARS_PER_PAGE = 3000
+  const pdfUrl = file ? URL.createObjectURL(file) : files.length > 0 ? URL.createObjectURL(files[0]) : null
 
   const extractQuestions = async (markdown: string) => {
     setParseMsg('AI 正在提取题目...')
@@ -457,41 +459,58 @@ export function Component() {
 
               {parsingDone && parseResult && (
                 <>
-                  <Card className="border-0 shadow-none">
-                    <CardContent className="py-4 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">解析结果</p>
-                        <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
-                      </div>
-                      <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[300px]">
-                        <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
-                          {(() => {
-                            const start = parsePage * CHARS_PER_PAGE
-                            return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
-                          })()}
-                        </pre>
-                      </ScrollArea>
-                      {(() => {
-                        const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
-                        if (totalPages <= 1) return null
-                        return (
-                          <div className="flex items-center justify-center gap-2 pt-1">
-                            <Button variant="ghost" size="sm" className="h-6 text-xs"
-                              disabled={parsePage === 0}
-                              onClick={() => setParsePage(p => p - 1)}>
-                              上一页
-                            </Button>
-                            <span className="text-xs text-muted-foreground tabular-nums">{parsePage + 1} / {totalPages}</span>
-                            <Button variant="ghost" size="sm" className="h-6 text-xs"
-                              disabled={parsePage >= totalPages - 1}
-                              onClick={() => setParsePage(p => p + 1)}>
-                              下一页
-                            </Button>
-                          </div>
-                        )
-                      })()}
-                    </CardContent>
-                  </Card>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-medium">解析结果</p>
+                      <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
+                    </div>
+                    {pdfUrl && (
+                      <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowSplitView(!showSplitView)}>
+                        {showSplitView ? '隐藏原文' : '对照原文'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className={`grid gap-4 ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {showSplitView && pdfUrl && (
+                      <Card className="border-0 shadow-none">
+                        <CardContent className="p-0">
+                          <iframe src={pdfUrl} className="w-full h-[500px] rounded-lg border" title="PDF Preview" />
+                        </CardContent>
+                      </Card>
+                    )}
+                    <Card className="border-0 shadow-none">
+                      <CardContent className="py-4 space-y-2">
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
+                          <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
+                            {(() => {
+                              const start = parsePage * CHARS_PER_PAGE
+                              return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
+                            })()}
+                          </pre>
+                        </ScrollArea>
+                        {(() => {
+                          const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
+                          if (totalPages <= 1) return null
+                          return (
+                            <div className="flex items-center justify-center gap-2 pt-1">
+                              <Button variant="ghost" size="sm" className="h-6 text-xs"
+                                disabled={parsePage === 0}
+                                onClick={() => setParsePage(p => p - 1)}>
+                                上一页
+                              </Button>
+                              <span className="text-xs text-muted-foreground tabular-nums">{parsePage + 1} / {totalPages}</span>
+                              <Button variant="ghost" size="sm" className="h-6 text-xs"
+                                disabled={parsePage >= totalPages - 1}
+                                onClick={() => setParsePage(p => p + 1)}>
+                                下一页
+                              </Button>
+                            </div>
+                          )
+                        })()}
+                      </CardContent>
+                    </Card>
+                  </div>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
                       重新解析
