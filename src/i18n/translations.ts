@@ -30,6 +30,8 @@ export const zh = {
     checkEmail: '注册成功！请查收 Supabase Auth 发送的验证邮件，点击邮件中的链接完成注册。',
     alreadyRegistered: '该邮箱已注册，请直接登录或检查邮箱中的验证邮件。',
     confirmComplete: '邮箱验证成功，注册完成！',
+    githubLogin: '使用 GitHub 登录',
+    githubRegister: '使用 GitHub 注册',
   },
   dashboard: {
     title: '仪表盘',
@@ -361,6 +363,8 @@ export const en = {
     checkEmail: 'Registration successful! Please check your email from Supabase Auth and click the confirmation link to complete registration.',
     alreadyRegistered: 'This email is already registered. Please log in or check your email for the confirmation link.',
     confirmComplete: 'Email verified successfully — registration complete!',
+    githubLogin: 'Sign in with GitHub',
+    githubRegister: 'Sign up with GitHub',
   },
   dashboard: {
     title: 'Dashboard',
