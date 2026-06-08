@@ -325,8 +325,9 @@ export function Component() {
               disabled={deleting}
               onClick={async () => {
                 setDeleting(true)
+                setDeleteOpen(false)
                 try { await supabase.functions.invoke('delete-account') } catch { /* ignore */ }
-                await signOut()
+                signOut()
               }}
             >
               {deleting ? '注销中...' : '确认注销'}
