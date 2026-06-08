@@ -81,13 +81,16 @@ export function Component() {
       setNotes(result)
     }
 
-    // Fetch user nicknames in batch
     const userIds = [...new Set(result.map((n) => n.user_id))]
     const nicknames: Record<string, string> = {}
     await Promise.all(
       userIds.map(async (uid) => {
-        const { data: prof } = await supabase.from('profiles').select('nickname').eq('id', uid).single()
-        nicknames[uid] = prof?.nickname || `用户${uid.slice(0, 6)}`
+        try {
+          const { data: prof } = await supabase.from('profiles').select('nickname').eq('id', uid).maybeSingle()
+          nicknames[uid] = prof?.nickname || `用户${uid.slice(0, 6)}`
+        } catch {
+          nicknames[uid] = `用户${uid.slice(0, 6)}`
+        }
       }),
     )
     setUserNicknames(nicknames)
