@@ -4,9 +4,9 @@ import * as pdfjsLib from 'pdfjs-dist'
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs`
 
 interface PdfBlock {
-  page_num: number
+  page_idx: number
   bbox: [number, number, number, number]
-  content?: string
+  text?: string
   type?: string
 }
 
@@ -103,7 +103,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   const displayWidth = Math.min(page.width * 0.8, 600)
   const scale = displayWidth / page.width
 
-  const pageBlocks = blocks.filter(b => b.page_num === currentPage - 1)
+  const pageBlocks = blocks.filter(b => b.page_idx === currentPage - 1)
 
   return (
     <div className="space-y-2">
@@ -120,15 +120,18 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
       </div>
       <div className="relative mx-auto" style={{ width: displayWidth, height: page.height * scale }} ref={containerRef}>
         <canvas ref={setCanvasRef(currentPage)} className="absolute inset-0 w-full h-full rounded border" />
+        {/* content_list.json bbox is in 0-1000 range; scale to canvas size */}
         {pageBlocks.map((block, i) => {
           const [x0, y0, x1, y1] = block.bbox
           const isActive = activeBbox && activeBbox[0] === x0 && activeBbox[1] === y0
+          const sx = displayWidth / 1000
+          const sy = (page.height * scale) / 1000
           return (
             <div
               key={i}
               className={`absolute border transition-colors cursor-pointer ${isActive ? 'border-blue-500 bg-blue-500/20' : 'border-transparent hover:border-amber-400/50 hover:bg-amber-400/10'}`}
-              style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }}
-              title={`${block.content?.slice(0, 100) || ''} — 点击定位`}
+              style={{ left: x0 * sx, top: y0 * sy, width: (x1 - x0) * sx, height: (y1 - y0) * sy }}
+              title={`${block.text?.slice(0, 100) || ''} — 点击定位`}
               onClick={() => onBlockClick?.(block)}
             />
           )
@@ -141,28 +144,16 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
 function parseBlocks(jsonData: string): PdfBlock[] {
   try {
     const data = JSON.parse(jsonData)
-    const extractBlocks = (arr: unknown[]): PdfBlock[] => {
-      const result: PdfBlock[] = []
-      for (const item of arr) {
-        if (!item || typeof item !== 'object') continue
-        const obj = item as Record<string, unknown>
-        if (obj.page_num !== undefined && obj.bbox) {
-          result.push({
-            page_num: obj.page_num as number,
-            bbox: obj.bbox as [number, number, number, number],
-            content: obj.content as string | undefined,
-            type: obj.type as string | undefined,
-          })
-        }
-        if (Array.isArray(obj.children)) {
-          result.push(...extractBlocks(obj.children as unknown[]))
-        }
-      }
-      return result
+    if (Array.isArray(data)) {
+      return (data as Record<string, unknown>[]).filter(item =>
+        item.page_idx !== undefined && item.bbox
+      ).map(item => ({
+        page_idx: item.page_idx as number,
+        bbox: item.bbox as [number, number, number, number],
+        text: item.text as string | undefined,
+        type: item.type as string | undefined,
+      }))
     }
-    if (Array.isArray(data)) return extractBlocks(data)
     return []
-  } catch {
-    return []
-  }
+  } catch { return [] }
 }

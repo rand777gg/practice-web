@@ -25,7 +25,7 @@ async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: stri
     if (!mdFile) throw new Error('full.md not found in zip archive')
     const markdown = await mdFile.async('text')
     let jsonData: string | undefined
-    const jsonFile = zip.file('full.json')
+    const jsonFile = zip.file('content_list.json') || zip.file('middle.json')
     if (jsonFile) jsonData = await jsonFile.async('text')
     return { markdown, jsonData }
   }

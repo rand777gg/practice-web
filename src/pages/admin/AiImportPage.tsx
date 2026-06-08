@@ -164,6 +164,7 @@ export function Component() {
   const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
   const [activeMdIdx, setActiveMdIdx] = useState<number | null>(null)
   const mdRef = useRef<HTMLDivElement>(null)
+  const sectionsRef = useRef<ReturnType<typeof matchMarkdownToPdf>>([])
   const CHARS_PER_PAGE = 3000
   const pdfUrl = file ? URL.createObjectURL(file) : files.length > 0 ? URL.createObjectURL(files[0]) : null
 
@@ -480,23 +481,58 @@ export function Component() {
                     {showSplitView && pdfUrl && (
                       <Card className="border-0 shadow-none">
                         <CardContent className="p-3">
-                          <PdfViewer pdfUrl={pdfUrl} activePage={activePage} onPageChange={setActivePage} />
+                          <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
+                            activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
+                            onBlockClick={(block) => {
+                              const idx = sectionsRef.current.findIndex(
+                                s => s.bbox && s.bbox[0] === block.bbox[0] && s.bbox[1] === block.bbox[1]
+                              )
+                              if (idx >= 0) {
+                                setActiveMdIdx(idx)
+                                setActivePage(block.page_idx + 1)
+                                setActiveBbox(block.bbox)
+                                setTimeout(() => {
+                                  mdRef.current?.querySelector(`[data-md-idx="${idx}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                }, 50)
+                              }
+                            }}
+                          />
                         </CardContent>
                       </Card>
                     )}
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>MinerU 解析结果（Markdown 格式）</span>
-                          {parseResult.jsonData && <span className="text-green-500">· 含坐标数据</span>}
+                          <span>MinerU 解析结果</span>
+                          {parseResult.jsonData ? (() => {
+                            const blocks = parseBlocks(parseResult.jsonData)
+                            return <span className="text-green-500">· 含坐标 — {blocks.length} 个块</span>
+                          })() : (
+                            <span>（Markdown）</span>
+                          )}
                         </div>
                         <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
-                          <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
-                            {(() => {
-                              const start = parsePage * CHARS_PER_PAGE
-                              return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
-                            })()}
-                          </pre>
+                          {parseResult.jsonData ? (() => {
+                            const blocks = parseBlocks(parseResult.jsonData)
+                            const secs = matchMarkdownToPdf(parseResult.markdown, blocks)
+                            sectionsRef.current = secs
+                            return (
+                              <div ref={mdRef}>
+                                <ClickableMarkdown
+                                  sections={secs}
+                                  activeIdx={activeMdIdx}
+                                  onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
+                                />
+                              </div>
+                            )
+                          })() : (
+                            <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
+                              {(() => {
+                                const start = parsePage * CHARS_PER_PAGE
+                                return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
+                              })()}
+                            </pre>
+                          )}
                         </ScrollArea>
                         {!showSplitView && (() => {
                           const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
@@ -615,24 +651,22 @@ export function Component() {
   )
 }
 
-type PdfBlock = { page_num: number; bbox: [number, number, number, number]; content?: string; type?: string }
+type PdfBlock = { page_idx: number; bbox: [number, number, number, number]; text?: string; type?: string }
 
 function parseBlocks(jsonData: string): PdfBlock[] {
   try {
     const data = JSON.parse(jsonData)
-    const extract = (arr: unknown[]): PdfBlock[] => {
-      const result: PdfBlock[] = []
-      for (const item of arr) {
-        if (!item || typeof item !== 'object') continue
-        const obj = item as Record<string, unknown>
-        if (obj.page_num !== undefined && obj.bbox) {
-          result.push({ page_num: obj.page_num as number, bbox: obj.bbox as [number, number, number, number], content: obj.content as string | undefined, type: obj.type as string | undefined })
-        }
-        if (Array.isArray(obj.children)) result.push(...extract(obj.children as unknown[]))
-      }
-      return result
+    if (Array.isArray(data)) {
+      return (data as Record<string, unknown>[]).filter(item =>
+        item.page_idx !== undefined && item.bbox && item.text
+      ).map(item => ({
+        page_idx: item.page_idx as number,
+        bbox: item.bbox as [number, number, number, number],
+        text: item.text as string,
+        type: item.type as string | undefined,
+      }))
     }
-    return Array.isArray(data) ? extract(data) : []
+    return []
   } catch { return [] }
 }
 
@@ -650,10 +684,9 @@ function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): { text: string; pag
     const endIdx = Math.min(startIdx + chunkSize * 3, blocks.length)
     for (let i = startIdx; i < endIdx; i++) {
       const b = blocks[i]
-      if (!b.content) continue
-      const bNorm = normalize(b.content)
+      if (!b.text) continue
+      const bNorm = normalize(b.text)
       if (bNorm.length < 2) continue
-      // Use substring matching for better results
       const words = bNorm.split(/\s+/).filter(w => w.length > 1)
       const matched = words.filter(w => norm.includes(w)).length
       const shortMatched = words.filter(w => normShort.includes(w)).length
@@ -661,8 +694,8 @@ function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): { text: string; pag
       const score = bestMatch / Math.max(words.length, 1)
       if (score > bestScore) { bestScore = score; best = b }
     }
-    if (bestScore < 0.15) return { text: para, page: (blocks[Math.min(pi, blocks.length - 1)]?.page_num ?? 0) + 1, bbox: null }
-    return { text: para, page: (best?.page_num ?? 0) + 1, bbox: best?.bbox ?? null }
+    if (bestScore < 0.15) return { text: para, page: (blocks[Math.min(pi, blocks.length - 1)]?.page_idx ?? 0) + 1, bbox: null }
+    return { text: para, page: (best?.page_idx ?? 0) + 1, bbox: best?.bbox ?? null }
   })
 }
 
