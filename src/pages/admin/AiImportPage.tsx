@@ -150,7 +150,7 @@ export function Component() {
   }
 
   const extractQuestions = async (markdown: string) => {
-    setParseMsg('AI 正在提取题目…')
+    setParseMsg('AI 正在提取题目...')
     const parser = new DeepSeekParser(getAiConfig())
     const result = await parser.parseDocument(markdown)
 
@@ -500,7 +500,7 @@ export function Component() {
           {step === 'importing' && (
             <div className="flex flex-col items-center gap-3 py-8">
               <Spinner />
-              <p className="text-sm text-muted-foreground">正在导入题目…</p>
+              <p className="text-sm text-muted-foreground">正在导入题目...</p>
             </div>
           )}
 
@@ -571,7 +571,7 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
         ))}
       </div>
       <p className="text-sm font-medium shimmer-text">
-        {msg || '正在解析…'}
+        {msg || '正在解析...'}
       </p>
 
       {/* MinerU API response status */}
