@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useT } from '@/i18n/use-t'
-import { Zap, Globe, Key, Link, ChevronDown, ChevronUp, Wifi, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Zap, Globe, Key, Link, ChevronUp, ChevronDown, Wifi, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { ProviderIcon } from '@lobehub/icons'
 import type { AiProviderConfig } from '@/types'
 
@@ -19,6 +19,8 @@ export function Component() {
   const community = providers.filter((p) => p.type === 'community')
   const enabledCount = providers.filter((p) => p.enabled).length
   const disabledCount = providers.filter((p) => !p.enabled).length
+
+  const cardProps = { toggleProvider, toggleModel, setApiKey, setBaseUrl }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -38,9 +40,7 @@ export function Component() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {providers.filter((p) => p.enabled).map((p) => (
-              <ProviderCard
-                key={p.id}
-                provider={p}
+              <ProviderCard key={p.id} provider={p}
                 onToggle={() => toggleProvider(p.id)}
                 onToggleModel={(mid) => toggleModel(p.id, mid)}
                 onApiKeyChange={(key) => setApiKey(p.id, key)}
@@ -61,9 +61,7 @@ export function Component() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {providers.filter((p) => !p.enabled).map((p) => (
-              <ProviderCard
-                key={p.id}
-                provider={p}
+              <ProviderCard key={p.id} provider={p}
                 onToggle={() => toggleProvider(p.id)}
                 onToggleModel={(mid) => toggleModel(p.id, mid)}
                 onApiKeyChange={(key) => setApiKey(p.id, key)}
@@ -76,60 +74,30 @@ export function Component() {
 
       {enabledCount === 0 && disabledCount === providers.length && (
         <>
-          <ProviderGroup
-            icon={<Zap className="h-4 w-4 text-yellow-500" />}
-            label={t('ai.official')}
-            providers={official}
-            onToggle={toggleProvider}
-            onToggleModel={toggleModel}
-            onApiKeyChange={setApiKey}
-            onBaseUrlChange={setBaseUrl}
-          />
+          <ProviderGroup icon={<Zap className="h-4 w-4 text-yellow-500" />} label={t('ai.official')} providers={official} {...cardProps} />
           <Separator />
-          <ProviderGroup
-            icon={<Globe className="h-4 w-4 text-blue-500" />}
-            label={t('ai.community')}
-            providers={community}
-            onToggle={toggleProvider}
-            onToggleModel={toggleModel}
-            onApiKeyChange={setApiKey}
-            onBaseUrlChange={setBaseUrl}
-          />
+          <ProviderGroup icon={<Globe className="h-4 w-4 text-blue-500" />} label={t('ai.community')} providers={community} {...cardProps} />
         </>
       )}
     </div>
   )
 }
 
-interface ProviderGroupProps {
-  icon: React.ReactNode
-  label: string
-  providers: AiProviderConfig[]
-  onToggle: (id: string) => void
-  onToggleModel: (providerId: string, modelId: string) => void
-  onApiKeyChange: (providerId: string, key: string) => void
-  onBaseUrlChange: (providerId: string, url: string) => void
-}
-
-function ProviderGroup({
-  icon, label, providers,
-  onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange,
-}: ProviderGroupProps) {
+function ProviderGroup({ icon, label, providers, ...cardProps }: {
+  icon: React.ReactNode; label: string; providers: AiProviderConfig[]
+  onToggle: (id: string) => void; onToggleModel: (pid: string, mid: string) => void
+  onApiKeyChange: (pid: string, key: string) => void; onBaseUrlChange: (pid: string, url: string) => void
+}) {
   return (
     <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        {icon}
-        <h2 className="text-sm font-semibold">{label}</h2>
-      </div>
+      <div className="flex items-center gap-2">{icon}<h2 className="text-sm font-semibold">{label}</h2></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {providers.map((p) => (
-          <ProviderCard
-            key={p.id}
-            provider={p}
-            onToggle={() => onToggle(p.id)}
-            onToggleModel={(mid) => onToggleModel(p.id, mid)}
-            onApiKeyChange={(key) => onApiKeyChange(p.id, key)}
-            onBaseUrlChange={(url) => onBaseUrlChange(p.id, url)}
+          <ProviderCard key={p.id} provider={p}
+            onToggle={() => cardProps.onToggle(p.id)}
+            onToggleModel={(mid) => cardProps.onToggleModel(p.id, mid)}
+            onApiKeyChange={(key) => cardProps.onApiKeyChange(p.id, key)}
+            onBaseUrlChange={(url) => cardProps.onBaseUrlChange(p.id, url)}
           />
         ))}
       </div>
@@ -137,15 +105,11 @@ function ProviderGroup({
   )
 }
 
-interface ProviderCardProps {
+function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange }: {
   provider: AiProviderConfig
-  onToggle: () => void
-  onToggleModel: (modelId: string) => void
-  onApiKeyChange: (key: string) => void
-  onBaseUrlChange: (url: string) => void
-}
-
-function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange }: ProviderCardProps) {
+  onToggle: () => void; onToggleModel: (mid: string) => void
+  onApiKeyChange: (key: string) => void; onBaseUrlChange: (url: string) => void
+}) {
   const { t } = useT()
   const enabledCount = provider.models.filter((m) => m.enabled).length
   const hasEnvKey = !!(import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`]
@@ -179,93 +143,76 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
   }, [provider.apiKey, provider.baseUrl, provider.models])
 
   return (
-    <Card className={provider.enabled ? 'border-primary/30' : 'opacity-70'}>
+    <Card
+      className={`cursor-pointer transition-all duration-200 ${provider.enabled ? 'border-primary/30' : 'opacity-70 hover:opacity-90'}`}
+      onClick={() => provider.enabled && setExpanded(!expanded)}
+    >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <ProviderIcon provider={provider.id} size={20} type="avatar" />
               <CardTitle className="text-sm">{provider.name}</CardTitle>
+              {provider.enabled && (
+                expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              )}
             </div>
-            <CardDescription className="text-xs mt-1 line-clamp-2">
-              {provider.description}
-            </CardDescription>
+            <CardDescription className="text-xs mt-1 line-clamp-2">{provider.description}</CardDescription>
           </div>
-          <Switch checked={provider.enabled} onCheckedChange={onToggle} />
+          <Switch checked={provider.enabled} onCheckedChange={onToggle} onClick={(e) => e.stopPropagation()} />
         </div>
       </CardHeader>
 
       {provider.enabled && (
         <>
           <div
-            className="flex items-center justify-center gap-1 py-1 cursor-pointer hover:bg-accent/50 transition-colors text-xs text-muted-foreground"
-            onClick={() => setExpanded(!expanded)}
+            className="grid transition-all duration-300 ease-in-out"
+            style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
           >
-            {enabledCount > 0 && (
-              <span className="text-[10px]">{t('ai.models')}: {enabledCount}/{provider.models.length}</span>
-            )}
-            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            <div className="overflow-hidden">
+              <CardContent className="space-y-4 pt-0">
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Key className="h-3 w-3" />API Key
+                  </label>
+                  <Input type="password" value={provider.apiKey}
+                    onChange={(e) => onApiKeyChange(e.target.value)}
+                    placeholder={hasEnvKey ? '••••••••' : 'sk-...'}
+                    className="h-8 text-xs" onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Link className="h-3 w-3" />Base URL
+                  </label>
+                  <Input value={provider.baseUrl}
+                    onChange={(e) => onBaseUrlChange(e.target.value)}
+                    className="h-8 text-xs" onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">{t('ai.models')}</p>
+                    <span className="text-[10px] text-muted-foreground">{enabledCount}/{provider.models.length}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {provider.models.map((m) => (
+                      <button key={m.id} type="button"
+                        onClick={(e) => { e.stopPropagation(); onToggleModel(m.id) }}
+                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all border
+                          ${m.enabled ? 'bg-primary/10 border-primary/40 text-primary shadow-sm' : 'bg-muted/50 border-border text-muted-foreground hover:border-primary/20 hover:bg-muted'}`}
+                      >{m.name}</button>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </div>
           </div>
 
-          {expanded && (
-            <CardContent className="space-y-4 pt-0">
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Key className="h-3 w-3" />
-                  API Key
-                </label>
-                <Input
-                  type="password"
-                  value={provider.apiKey}
-                  onChange={(e) => onApiKeyChange(e.target.value)}
-                  placeholder={hasEnvKey ? '••••••••' : 'sk-...'}
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Link className="h-3 w-3" />
-                  Base URL
-                </label>
-                <Input
-                  value={provider.baseUrl}
-                  onChange={(e) => onBaseUrlChange(e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-muted-foreground">{t('ai.models')}</p>
-                  {enabledCount > 0 && (
-                    <span className="text-[10px] text-muted-foreground">{enabledCount}/{provider.models.length}</span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {provider.models.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => onToggleModel(m.id)}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all border
-                        ${m.enabled
-                          ? 'bg-primary/10 border-primary/40 text-primary shadow-sm'
-                          : 'bg-muted/50 border-border text-muted-foreground hover:border-primary/20 hover:bg-muted'}`}
-                    >
-                      {m.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-1.5 text-xs"
-                onClick={runTest}
-                disabled={testing || !provider.apiKey}
-              >
+          {hasKey && (
+            <CardContent className="pt-0 space-y-2">
+              <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs"
+                onClick={(e) => { e.stopPropagation(); runTest() }} disabled={testing}>
                 {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
                 连通性测试
               </Button>
