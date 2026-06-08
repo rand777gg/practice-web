@@ -26,7 +26,7 @@ import {
 } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
-import { ArrowLeft, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision'
