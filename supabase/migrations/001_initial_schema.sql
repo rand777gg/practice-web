@@ -244,12 +244,15 @@ REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;
 -- 9c. 收紧 files bucket 权限：认证用户可读写，禁止 anon 列出文件
 -- 文件仍可通过 publicUrl 访问，MinerU 上传不受影响
 DROP POLICY IF EXISTS "allow_read" ON storage.objects;
+DROP POLICY IF EXISTS "files_select_auth" ON storage.objects;
 CREATE POLICY "files_select_auth" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'files');
-CREATE POLICY IF NOT EXISTS "files_insert_auth" ON storage.objects
+DROP POLICY IF EXISTS "files_insert_auth" ON storage.objects;
+CREATE POLICY "files_insert_auth" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'files');
-CREATE POLICY IF NOT EXISTS "files_delete_auth" ON storage.objects
+DROP POLICY IF EXISTS "files_delete_auth" ON storage.objects;
+CREATE POLICY "files_delete_auth" ON storage.objects
   FOR DELETE TO authenticated
   USING (bucket_id = 'files');
