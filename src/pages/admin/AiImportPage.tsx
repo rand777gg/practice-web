@@ -785,6 +785,8 @@ function ClickableMarkdown({ sections, activeIdx, onNavigate }: { sections: Retu
   )
 }
 
+function s(v: unknown): string { return v != null ? String(v) : '' }
+
 function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
   const steps = [
     { label: '上传文档', key: 'upload' },
@@ -853,24 +855,20 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
             {/* Basic info table */}
             <table className="w-full border-collapse">
               <tbody>
-                {(() => {
-                  const rows: React.ReactNode[] = []
-                  if (status.taskId) rows.push(<tr key="task"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{String(status.taskId)}</td></tr>)
-                  if (status.batchId) rows.push(<tr key="batch"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{String(status.batchId)}</td></tr>)
-                  if (status.dataId) rows.push(<tr key="data"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{String(status.dataId)}</td></tr>)
-                  if (status.code !== undefined) rows.push(<tr key="code"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${(status.code as number) === 0 ? 'text-green-600' : 'text-red-500'}`}>{String(status.code)}{status.msg ? ` — ${String(status.msg)}` : ''}</td></tr>)
-                  if (status.state !== undefined) rows.push(<tr key="state"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr>)
-                  if (status.markdownUrl) rows.push(<tr key="md"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{String(status.markdownUrl)}</td></tr>)
-                  if (status.fullZipUrl) rows.push(<tr key="zip"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{String(status.fullZipUrl)}</td></tr>)
-                  if (status.errMsg) rows.push(<tr key="err"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{String(status.errMsg)}</td></tr>)
-                  if (status.extractProgress) rows.push(<tr key="pages"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>)
-                  return rows
-                })()}
+                {s(status.taskId) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{s(status.taskId)}</td></tr>}
+                {s(status.batchId) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{s(status.batchId)}</td></tr>}
+                {s(status.dataId) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{s(status.dataId)}</td></tr>}
+                {status.code !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${(status.code as number) === 0 ? 'text-green-600' : 'text-red-500'}`}>{s(status.code)}{status.msg ? ` — ${s(status.msg)}` : ''}</td></tr>}
+                {status.state !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr>}
+                {s(status.markdownUrl) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{s(status.markdownUrl)}</td></tr>}
+                {s(status.fullZipUrl) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{s(status.fullZipUrl)}</td></tr>}
+                {s(status.errMsg) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{s(status.errMsg)}</td></tr>}
+                {status.extractProgress && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>}
               </tbody>
             </table>
 
             {/* File list for batch */}
-            {status.files && (status.files as Array<Record<string, unknown>>).length > 0 && (
+            {s(status.files) && (status.files as Array<Record<string, unknown>>).length > 0 && (
               <div>
                 <p className="text-muted-foreground mb-1.5">文件列表</p>
                 <table className="w-full border-collapse text-[10px]">
