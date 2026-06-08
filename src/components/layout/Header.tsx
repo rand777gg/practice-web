@@ -4,16 +4,17 @@ import { Button } from '@/components/ui/button'
 import { PlanProgress } from './PlanProgress'
 import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
 import { Link } from 'react-router-dom'
-import { Settings, Menu, Moon, Sparkles, Sun } from 'lucide-react'
+import { Settings, Menu, Moon, Sparkles, Sun, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
   onMenuClick: () => void
+  onToggleCollapse: () => void
 }
 
-export function Header({ onMenuClick }: Props) {
+export function Header({ onMenuClick, onToggleCollapse }: Props) {
   const { t } = useT()
   const { theme, toggle } = useThemeStore()
   const { isEnabled } = useSettingsStore()
@@ -30,6 +31,15 @@ export function Header({ onMenuClick }: Props) {
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden lg:flex shrink-0"
+          onClick={onToggleCollapse}
+          title="收起侧边栏"
+        >
+          <PanelLeftClose className="h-5 w-5" />
         </Button>
         <PlanProgress />
       </div>
