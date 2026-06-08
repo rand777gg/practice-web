@@ -484,8 +484,7 @@ export function Component() {
                           <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
                             activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
                             onBlockClick={(block) => {
-                              const blocks = parseBlocks(parseResult.jsonData!)
-                              const idx = matchMarkdownToPdf(parseResult.markdown, blocks).findIndex(
+                              const idx = sections.findIndex(
                                 s => s.bbox && s.bbox[0] === block.bbox[0] && s.bbox[1] === block.bbox[1]
                               )
                               if (idx >= 0) {
@@ -504,16 +503,24 @@ export function Component() {
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
                         <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
-                          {showSplitView && parseResult.jsonData ? (
-                            <div ref={mdRef}>
-                              <ClickableMarkdown
-                                markdown={parseResult.markdown}
-                                jsonData={parseResult.jsonData}
-                                activeIdx={activeMdIdx}
-                                onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
-                              />
-                            </div>
-                          ) : (
+                          {showSplitView && parseResult.jsonData ? (() => {
+                            const blocks = parseBlocks(parseResult.jsonData)
+                            const sections = matchMarkdownToPdf(parseResult.markdown, blocks)
+                            return (
+                              <>
+                                <div className="text-xs text-muted-foreground mb-1">
+                                  {blocks.length > 0 ? `${blocks.length} 个定位块，${sections.filter(s => s.bbox).length} 个匹配段落` : 'JSON 已加载，正在匹配...'}
+                                </div>
+                                <div ref={mdRef}>
+                                  <ClickableMarkdown
+                                    sections={sections}
+                                    activeIdx={activeMdIdx}
+                                    onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
+                                  />
+                                </div>
+                              </>
+                            )
+                          })() : (
                             <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
                               {(() => {
                                 const start = parsePage * CHARS_PER_PAGE
@@ -664,34 +671,42 @@ function normalize(s: string) { return s.replace(/[#*\s\n\r]+/g, ' ').replace(/\
 
 function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): { text: string; page: number; bbox: [number, number, number, number] | null }[] {
   const paragraphs = md.split(/\n\n+/).filter(p => p.trim())
-  return paragraphs.map(para => {
+  const chunkSize = Math.max(Math.floor(blocks.length / Math.max(paragraphs.length, 1)), 1)
+  return paragraphs.map((para, pi) => {
     const norm = normalize(para)
+    // also try matching individual lines for more precise matching
+    const normShort = normalize(para.split('\n').slice(0, 2).join(' '))
     let best: PdfBlock | null = null; let bestScore = 0
-    for (const b of blocks) {
+    const startIdx = pi * chunkSize
+    const endIdx = Math.min(startIdx + chunkSize * 3, blocks.length)
+    for (let i = startIdx; i < endIdx; i++) {
+      const b = blocks[i]
       if (!b.content) continue
       const bNorm = normalize(b.content)
-      if (bNorm.length < 3) continue
-      const overlap = bNorm.split(' ').filter(w => norm.includes(w)).length
-      const score = overlap / Math.max(bNorm.split(' ').length, 1)
-      if (score > bestScore && score > 0.3) { bestScore = score; best = b }
+      if (bNorm.length < 2) continue
+      // Use substring matching for better results
+      const words = bNorm.split(/\s+/).filter(w => w.length > 1)
+      const matched = words.filter(w => norm.includes(w)).length
+      const shortMatched = words.filter(w => normShort.includes(w)).length
+      const bestMatch = Math.max(matched, shortMatched)
+      const score = bestMatch / Math.max(words.length, 1)
+      if (score > bestScore) { bestScore = score; best = b }
     }
+    if (bestScore < 0.15) return { text: para, page: (blocks[Math.min(pi, blocks.length - 1)]?.page_num ?? 0) + 1, bbox: null }
     return { text: para, page: (best?.page_num ?? 0) + 1, bbox: best?.bbox ?? null }
   })
 }
 
-function ClickableMarkdown({ markdown, jsonData, activeIdx, onNavigate }: { markdown: string; jsonData: string; activeIdx: number | null; onNavigate: (page: number, bbox: [number, number, number, number] | null, idx: number) => void }) {
-  const blocks = parseBlocks(jsonData)
-  const sections = matchMarkdownToPdf(markdown, blocks)
-
+function ClickableMarkdown({ sections, activeIdx, onNavigate }: { sections: ReturnType<typeof matchMarkdownToPdf>; activeIdx: number | null; onNavigate: (page: number, bbox: [number, number, number, number] | null, idx: number) => void }) {
   return (
     <div className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
       {sections.map((sec, i) => (
         <span
           key={i}
           data-md-idx={i}
-          className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${sec.bbox ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20' : ''} ${activeIdx === i ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' : ''}`}
+          className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${sec.bbox ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20' : 'text-muted-foreground/50'} ${activeIdx === i ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' : ''}`}
           onClick={() => { if (sec.bbox) onNavigate(sec.page, sec.bbox, i) }}
-          title={sec.bbox ? `第 ${sec.page} 页 — 点击定位` : undefined}
+          title={sec.bbox ? `第 ${sec.page} 页 — 点击定位` : '无匹配'}
         >
           {sec.text}
         </span>
