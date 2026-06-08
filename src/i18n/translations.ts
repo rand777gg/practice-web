@@ -214,6 +214,8 @@ export const zh = {
   ebbinghaus: {
     title: '基于艾宾浩斯遗忘曲线的学习建议',
     pendingReview: '待复习 {n} 题',
+    view: '查看学习建议',
+    hide: '隐藏学习建议',
   },
   questionBank: {
     allSubjects: '全部科目',
@@ -516,6 +518,8 @@ export const en = {
   ebbinghaus: {
     title: 'Ebbinghaus Forgetting Curve Suggestions',
     pendingReview: '{n} questions to review',
+    view: 'View Suggestions',
+    hide: 'Hide Suggestions',
   },
   questionBank: {
     allSubjects: 'All Subjects',
