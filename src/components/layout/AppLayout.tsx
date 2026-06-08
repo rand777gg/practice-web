@@ -1,36 +1,28 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { OnlinePresenceTracker } from './OnlinePresenceTracker'
 import { NicknameDialog } from './NicknameDialog'
-
-function loadSidebarCollapsed(): boolean {
-  return localStorage.getItem('sidebar_collapsed') === 'true'
-}
+import { useSettingsStore } from '@/stores/settings-store'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
-
-  const toggleCollapse = useCallback(() => {
-    setSidebarCollapsed((prev) => {
-      localStorage.setItem('sidebar_collapsed', String(!prev))
-      return !prev
-    })
-  }, [])
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
+  const toggleCollapse = useSettingsStore((s) => s.setSidebarCollapsed)
+  const handleToggle = () => toggleCollapse(!sidebarCollapsed)
 
   return (
     <div className="min-h-screen flex">
       <OnlinePresenceTracker />
       <NicknameDialog />
-      <Sidebar className="hidden lg:flex" collapsed={sidebarCollapsed} onToggleCollapse={toggleCollapse} />
+      <Sidebar className="hidden lg:flex" collapsed={sidebarCollapsed} onToggleCollapse={handleToggle} />
       <Sidebar
         className="flex lg:hidden"
         overlay
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        onToggleCollapse={toggleCollapse}
+        onToggleCollapse={handleToggle}
       />
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />

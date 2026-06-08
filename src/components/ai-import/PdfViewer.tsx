@@ -60,7 +60,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
     async function render() {
       const pdf = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
-      const scale = 0.8
+      const scale = 1.0
       for (const [pageNum, canvas] of canvasRefs.current) {
         if (cancelled) return
         const page = await pdf.getPage(pageNum)
@@ -100,7 +100,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
 
   const page = pages[currentPage - 1]
   if (!page) return null
-  const displayWidth = Math.min(page.width * 0.8, 600)
+  const displayWidth = Math.min(page.width, 800)
   const scale = displayWidth / page.width
 
   const pageBlocks = blocks.filter(b => b.page_idx === currentPage - 1)

@@ -60,7 +60,7 @@ export function Component() {
   const [cacheTolerance, setCacheTolerance] = useState('')
   const [dataId, setDataId] = useState('')
 
-  const { isEnabled } = useSettingsStore()
+  const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const aiConfigured = hasAiConfig()
   const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
   const canStart = parseMode === 'precision'
@@ -471,7 +471,11 @@ export function Component() {
                       <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
                     </div>
                     {pdfUrl && (
-                      <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowSplitView(!showSplitView)}>
+                      <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => {
+                        const next = !showSplitView
+                        setShowSplitView(next)
+                        if (next) setSidebarCollapsed(true)
+                      }}>
                         {showSplitView ? '隐藏原文' : '对照原文'}
                       </button>
                     )}
