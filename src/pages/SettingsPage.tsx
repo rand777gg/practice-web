@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { DataList, Badge } from '@radix-ui/themes'
+import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ExternalLink, Languages, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -50,30 +50,22 @@ export function Component() {
               <CardTitle className="text-sm">{t('settings.account')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <DataList.Root>
-                <DataList.Item>
-                  <DataList.Label minWidth="80px">{t('auth.email')}</DataList.Label>
-                  <DataList.Value>{user.email}</DataList.Value>
-                </DataList.Item>
-                <DataList.Item>
-                  <DataList.Label minWidth="80px">ID</DataList.Label>
-                  <DataList.Value className="font-mono text-xs text-muted-foreground">{user.id}</DataList.Value>
-                </DataList.Item>
-                <DataList.Item>
-                  <DataList.Label minWidth="80px">{t('users.role')}</DataList.Label>
-                  <DataList.Value>
-                    <Badge color={profile?.role === 'admin' ? 'blue' : 'gray'} variant="soft" radius="full">
-                      {profile?.role === 'admin' ? t('users.admin') : t('users.user')}
-                    </Badge>
-                  </DataList.Value>
-                </DataList.Item>
-                <DataList.Item>
-                  <DataList.Label minWidth="80px">{t('users.status')}</DataList.Label>
-                  <DataList.Value>
-                    <Badge color="green" variant="soft" radius="full">Active</Badge>
-                  </DataList.Value>
-                </DataList.Item>
-              </DataList.Root>
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <span className="text-muted-foreground">{t('auth.email')}</span>
+                <span>{user.email}</span>
+                <span className="text-muted-foreground">ID</span>
+                <span className="font-mono text-xs text-muted-foreground truncate">{user.id}</span>
+                <span className="text-muted-foreground">{t('users.role')}</span>
+                <span>
+                  <Badge color={profile?.role === 'admin' ? 'blue' : 'gray'} variant="soft" radius="full">
+                    {profile?.role === 'admin' ? t('users.admin') : t('users.user')}
+                  </Badge>
+                </span>
+                <span className="text-muted-foreground">{t('users.status')}</span>
+                <span>
+                  <Badge color="green" variant="soft" radius="full">Active</Badge>
+                </span>
+              </div>
             </CardContent>
           </Card>
 
