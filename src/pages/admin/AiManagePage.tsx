@@ -25,36 +25,6 @@ export function Component() {
     setExpandedId(expandedId === id ? null : id)
   }
 
-  // Connectivity test
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [testing, setTesting] = useState(false)
-  const activeProviders = providers.filter(p => p.enabled && p.apiKey)
-
-  const runTest = useCallback(async () => {
-    if (activeProviders.length === 0) return
-    setTesting(true)
-    setTestResult(null)
-    try {
-      const p = activeProviders[0]
-      const model = p.models.find(m => m.enabled)?.id ?? p.models[0].id
-      const res = await fetch(`${p.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${p.apiKey}` },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
-        signal: AbortSignal.timeout(10000),
-      })
-      if (res.ok) {
-        setTestResult({ ok: true, msg: `${p.name} (${model}) 连通正常` })
-      } else {
-        const err = await res.text().catch(() => '')
-        setTestResult({ ok: false, msg: `HTTP ${res.status}${err ? ': ' + err.slice(0, 200) : ''}` })
-      }
-    } catch (e) {
-      setTestResult({ ok: false, msg: e instanceof Error ? e.message : '连接失败' })
-    }
-    setTesting(false)
-  }, [activeProviders])
-
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
@@ -65,43 +35,6 @@ export function Component() {
         <p className="text-sm text-muted-foreground mt-1">{t('ai.description')}</p>
       </div>
 
-      {/* Env var status */}
-      <Card className="border-0 shadow-none">
-        <CardContent className="py-4 space-y-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">DeepSeek API Key:</span>
-              {import.meta.env.VITE_DEEPSEEK_API_KEY ? (
-                <Badge variant="secondary" className="gap-1 text-xs"><CheckCircle className="h-3 w-3 text-green-500" />已配置</Badge>
-              ) : (
-                <Badge variant="outline" className="gap-1 text-xs text-muted-foreground"><XCircle className="h-3 w-3" />未配置</Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">MinerU Token:</span>
-              {import.meta.env.VITE_MINERU_TOKEN ? (
-                <Badge variant="secondary" className="gap-1 text-xs"><CheckCircle className="h-3 w-3 text-green-500" />已配置</Badge>
-              ) : (
-                <Badge variant="outline" className="gap-1 text-xs text-muted-foreground"><XCircle className="h-3 w-3" />未配置</Badge>
-              )}
-            </div>
-          </div>
-          {activeProviders.length > 0 && (
-            <Button variant="outline" size="sm" onClick={runTest} disabled={testing} className="gap-1.5">
-              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-              连通性测试
-            </Button>
-          )}
-          {testResult && (
-            <div className={`flex items-center gap-1.5 text-xs ${testResult.ok ? 'text-green-600' : 'text-red-500'}`}>
-              {testResult.ok ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-              {testResult.msg}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Enabled Section */}
       {enabledCount > 0 && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
@@ -127,7 +60,6 @@ export function Component() {
 
       {enabledCount > 0 && disabledCount > 0 && <Separator />}
 
-      {/* Disabled Section */}
       {disabledCount > 0 && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
@@ -151,7 +83,6 @@ export function Component() {
         </section>
       )}
 
-      {/* Official / Community grouping when no providers are enabled yet */}
       {enabledCount === 0 && disabledCount === providers.length && (
         <>
           <ProviderGroup
@@ -165,9 +96,7 @@ export function Component() {
             onApiKeyChange={setApiKey}
             onBaseUrlChange={setBaseUrl}
           />
-
           <Separator />
-
           <ProviderGroup
             icon={<Globe className="h-4 w-4 text-blue-500" />}
             label={t('ai.community')}
@@ -238,6 +167,34 @@ interface ProviderCardProps {
 function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange }: ProviderCardProps) {
   const { t } = useT()
   const enabledCount = provider.models.filter((m) => m.enabled).length
+  const hasEnvKey = !!(import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`]
+
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+
+  const runTest = useCallback(async () => {
+    if (!provider.apiKey) return
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const model = provider.models.find(m => m.enabled)?.id ?? provider.models[0].id
+      const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) {
+        setTestResult({ ok: true, msg: '连通正常' })
+      } else {
+        const err = await res.text().catch(() => '')
+        setTestResult({ ok: false, msg: `HTTP ${res.status}${err ? ': ' + err.slice(0, 100) : ''}` })
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: e instanceof Error ? e.message : '连接失败' })
+    }
+    setTesting(false)
+  }, [provider.apiKey, provider.baseUrl, provider.models])
 
   return (
     <Card className={provider.enabled ? 'border-primary/30' : 'opacity-70'}>
@@ -247,6 +204,12 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
             <div className="flex items-center gap-2">
               <ProviderIcon provider={provider.id} size={20} type="avatar" />
               <CardTitle className="text-sm">{provider.name}</CardTitle>
+              {hasEnvKey && (
+                <Badge variant="secondary" className="text-[10px] h-4 px-1">环境变量</Badge>
+              )}
+              {provider.apiKey && (
+                <Badge className="text-[10px] h-4 px-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">已配置</Badge>
+              )}
             </div>
             <CardDescription className="text-xs mt-1 line-clamp-2">
               {provider.description}
@@ -270,7 +233,6 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
 
           {expanded && (
             <CardContent className="space-y-4 pt-0">
-              {/* API Key */}
               <div className="space-y-1.5">
                 <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Key className="h-3 w-3" />
@@ -285,7 +247,6 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
                 />
               </div>
 
-              {/* Base URL */}
               <div className="space-y-1.5">
                 <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Link className="h-3 w-3" />
@@ -298,7 +259,6 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
                 />
               </div>
 
-              {/* Models */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-medium text-muted-foreground">{t('ai.models')}</p>
@@ -322,6 +282,23 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
                   ))}
                 </div>
               </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 text-xs"
+                onClick={runTest}
+                disabled={testing || !provider.apiKey}
+              >
+                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                连通性测试
+              </Button>
+              {testResult && (
+                <div className={`flex items-center gap-1.5 text-xs ${testResult.ok ? 'text-green-600' : 'text-red-500'}`}>
+                  {testResult.ok ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+                  {testResult.msg}
+                </div>
+              )}
             </CardContent>
           )}
         </>
