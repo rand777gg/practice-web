@@ -1,95 +1,101 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { LoadingScreen } from '@/components/layout/LoadingScreen'
 
 export const router = createBrowserRouter([
   {
-    path: '/login',
-    lazy: () => import('@/pages/LoginPage'),
-  },
-  {
-    path: '/register',
-    lazy: () => import('@/pages/RegisterPage'),
-  },
-  {
-    path: '/',
-    element: <ProtectedRoute />,
+    HydrateFallback: LoadingScreen,
     children: [
       {
-        element: <AppLayout />,
+        path: '/login',
+        lazy: () => import('@/pages/LoginPage'),
+      },
+      {
+        path: '/register',
+        lazy: () => import('@/pages/RegisterPage'),
+      },
+      {
+        path: '/',
+        element: <ProtectedRoute />,
         children: [
           {
-            index: true,
-            lazy: () => import('@/pages/DashboardPage'),
-          },
-          {
-            path: 'practice',
-            lazy: () => import('@/pages/PracticePage'),
-          },
-          {
-            path: 'exam',
-            lazy: () => import('@/pages/ExamPage'),
-          },
-          {
-            path: 'exam/result/:sessionId',
-            lazy: () => import('@/pages/ExamResultPage'),
-          },
-          {
-            path: 'favorites',
-            lazy: () => import('@/pages/FavoritesPage'),
-          },
-          {
-            path: 'review',
-            lazy: () => import('@/pages/WrongReviewPage'),
-          },
-          {
-            path: 'notes',
-            lazy: () => import('@/pages/PublicNotesPage'),
-          },
-          {
-            path: 'question-bank',
-            lazy: () => import('@/pages/QuestionBankPage'),
-          },
-          {
-            path: 'settings',
-            lazy: () => import('@/pages/SettingsPage'),
-          },
-          {
-            path: 'admin',
-            element: <ProtectedRoute requiredRole="admin" />,
+            element: <AppLayout />,
             children: [
               {
-                path: 'questions',
-                lazy: () => import('@/pages/admin/QuestionsManagePage'),
+                index: true,
+                lazy: () => import('@/pages/DashboardPage'),
               },
               {
-                path: 'questions/new',
-                lazy: () => import('@/pages/admin/QuestionCreatePage'),
+                path: 'practice',
+                lazy: () => import('@/pages/PracticePage'),
               },
               {
-                path: 'questions/:questionId/edit',
-                lazy: () => import('@/pages/admin/QuestionEditPage'),
+                path: 'exam',
+                lazy: () => import('@/pages/ExamPage'),
               },
               {
-                path: 'ai-import',
-                lazy: () => import('@/pages/admin/AiImportPage'),
+                path: 'exam/result/:sessionId',
+                lazy: () => import('@/pages/ExamResultPage'),
               },
               {
-                path: 'users',
-                lazy: () => import('@/pages/admin/UsersManagePage'),
+                path: 'favorites',
+                lazy: () => import('@/pages/FavoritesPage'),
               },
               {
-                path: 'ai',
-                lazy: () => import('@/pages/admin/AiManagePage'),
+                path: 'review',
+                lazy: () => import('@/pages/WrongReviewPage'),
+              },
+              {
+                path: 'notes',
+                lazy: () => import('@/pages/PublicNotesPage'),
+              },
+              {
+                path: 'question-bank',
+                lazy: () => import('@/pages/QuestionBankPage'),
+              },
+              {
+                path: 'settings',
+                lazy: () => import('@/pages/SettingsPage'),
+              },
+              {
+                path: 'admin',
+                element: <ProtectedRoute requiredRole="admin" />,
+                children: [
+                  {
+                    path: 'questions',
+                    lazy: () => import('@/pages/admin/QuestionsManagePage'),
+                  },
+                  {
+                    path: 'questions/new',
+                    lazy: () => import('@/pages/admin/QuestionCreatePage'),
+                  },
+                  {
+                    path: 'questions/:questionId/edit',
+                    lazy: () => import('@/pages/admin/QuestionEditPage'),
+                  },
+                  {
+                    path: 'ai-import',
+                    lazy: () => import('@/pages/admin/AiImportPage'),
+                  },
+                  {
+                    path: 'users',
+                    lazy: () => import('@/pages/admin/UsersManagePage'),
+                  },
+                  {
+                    path: 'ai',
+                    lazy: () => import('@/pages/admin/AiManagePage'),
+                  },
+                ],
               },
             ],
           },
         ],
       },
+      {
+        path: '*',
+        lazy: () => import('@/pages/NotFoundPage'),
+      },
     ],
-  },
-  {
-    path: '*',
-    lazy: () => import('@/pages/NotFoundPage'),
   },
 ])
