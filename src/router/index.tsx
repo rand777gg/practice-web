@@ -51,6 +51,10 @@ export const router = createBrowserRouter([
             lazy: () => import('@/pages/QuestionBankPage'),
           },
           {
+            path: 'settings',
+            lazy: () => import('@/pages/SettingsPage'),
+          },
+          {
             path: 'admin',
             element: <ProtectedRoute requiredRole="admin" />,
             children: [

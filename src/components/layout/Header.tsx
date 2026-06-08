@@ -5,7 +5,8 @@ import { useSyncStore } from '@/stores/sync-store'
 import { Button } from '@/components/ui/button'
 import { PlanProgress } from './PlanProgress'
 import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
-import { LogOut, Menu, Moon, Sparkles, Sun, CloudOff, Upload } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Settings, Menu, Moon, Sparkles, Sun, CloudOff, Upload } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -53,7 +54,6 @@ export function SyncBadge() {
 
 export function Header({ onMenuClick }: Props) {
   const { t } = useT()
-  const { signOut } = useAuthStore()
   const { theme, toggle } = useThemeStore()
   const [aiOpen, setAiOpen] = useState(false)
 
@@ -92,9 +92,10 @@ export function Header({ onMenuClick }: Props) {
             <Sun className="h-5 w-5" />
           )}
         </Button>
-        <Button variant="ghost" size="sm" onClick={signOut}>
-          <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline ml-1">{t('auth.logout')}</span>
+        <Button variant="ghost" size="icon" asChild title={t('settings.title')}>
+          <Link to="/settings">
+            <Settings className="h-5 w-5" />
+          </Link>
         </Button>
       </div>
       <AiSummaryDialog open={aiOpen} onOpenChange={setAiOpen} />
