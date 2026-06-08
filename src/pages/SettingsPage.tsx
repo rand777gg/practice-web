@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -10,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, ExternalLink, Languages, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
+import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
@@ -18,6 +20,7 @@ export function Component() {
   const { lang, setLang } = useLangStore()
   const { flags, setFlag, offlineMode, setOfflineMode } = useSettingsStore()
   const navigate = useNavigate()
+  const [aiGlow, setAiGlow] = useState(false)
 
   if (!user) return null
 
@@ -33,6 +36,16 @@ export function Component() {
     { key: 'mineru' as const, label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), available: mineruConfigured },
   ]
 
+  const anyAiOn = aiFeatures.some((f) => f.available && flags[f.key])
+
+  const handleSetFlag = (key: string, v: boolean) => {
+    setFlag(key as any, v)
+    if (v) {
+      setAiGlow(true)
+      setTimeout(() => setAiGlow(false), 2000)
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center gap-3">
@@ -45,31 +58,41 @@ export function Component() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left column */}
         <div className="space-y-6">
-          <Card className="border-0 shadow-none">
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t('settings.account')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                <span className="text-muted-foreground">{t('auth.email')}</span>
-                <span>{user.email}</span>
-                <span className="text-muted-foreground">ID</span>
-                <span className="font-mono text-xs text-muted-foreground truncate">{user.id}</span>
-                <span className="text-muted-foreground">{t('users.role')}</span>
-                <span>
-                  <Badge color={profile?.role === 'admin' ? 'blue' : 'gray'} variant="soft" radius="full">
-                    {profile?.role === 'admin' ? t('users.admin') : t('users.user')}
-                  </Badge>
-                </span>
-                <span className="text-muted-foreground">{t('users.status')}</span>
-                <span>
-                  <Badge color="green" variant="soft" radius="full">Active</Badge>
-                </span>
-              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr>
+                    <td className="py-1.5 pr-4 text-muted-foreground w-[80px]">{t('auth.email')}</td>
+                    <td className="py-1.5">{user.email}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 pr-4 text-muted-foreground">ID</td>
+                    <td className="py-1.5 font-mono text-xs text-muted-foreground">{user.id}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 pr-4 text-muted-foreground">{t('users.role')}</td>
+                    <td className="py-1.5">
+                      <Badge color={profile?.role === 'admin' ? 'blue' : 'gray'} variant="soft" radius="full">
+                        {profile?.role === 'admin' ? t('users.admin') : t('users.user')}
+                      </Badge>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 pr-4 text-muted-foreground">{t('users.status')}</td>
+                    <td className="py-1.5">
+                      <Badge color="green" variant="soft" radius="full">Active</Badge>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-none">
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t('settings.language')}</CardTitle>
             </CardHeader>
@@ -95,7 +118,7 @@ export function Component() {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-none">
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t('settings.offline')}</CardTitle>
             </CardHeader>
@@ -113,7 +136,11 @@ export function Component() {
 
         {/* Right column */}
         <div className="space-y-6">
-          <Card className="border-0 shadow-none">
+          <Card className={cn(
+            'transition-[border-color,box-shadow] duration-1000',
+            aiGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
+            !aiGlow && anyAiOn && 'border-purple-500/30',
+          )}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
             </CardHeader>
@@ -129,7 +156,7 @@ export function Component() {
                     <Switch
                       checked={f.available && flags[f.key]}
                       disabled={!f.available}
-                      onCheckedChange={(v) => setFlag(f.key, v)}
+                      onCheckedChange={(v) => handleSetFlag(f.key, v)}
                     />
                   </div>
                 ))}
