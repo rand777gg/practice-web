@@ -18,6 +18,7 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
+import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, Profile, QuestionType } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
@@ -91,6 +92,17 @@ export function PracticeSession() {
     const { data: ids, error: idsErr } = await idQuery
 
     if (idsErr || !ids || ids.length === 0) {
+      // Offline fallback: try IndexedDB prefetched questions
+      const localIds = await getPrefetchedQuestionIds()
+      if (localIds.length > 0) {
+        const pickedId = localIds[Math.floor(Math.random() * localIds.length)]
+        const localQ = await getPrefetchedQuestion(pickedId)
+        if (localQ) {
+          setQuestion(localQ as Question)
+          setIsLoading(false)
+          return
+        }
+      }
       setNoQuestions(true)
       setIsLoading(false)
       return
@@ -112,6 +124,13 @@ export function PracticeSession() {
     ])
 
     if (qRes.error || !qRes.data) {
+      // Offline fallback: try IndexedDB
+      const localQ = await getPrefetchedQuestion(pickedId)
+      if (localQ) {
+        setQuestion(localQ as Question)
+        setIsLoading(false)
+        return
+      }
       setNoQuestions(true)
       setIsLoading(false)
       return

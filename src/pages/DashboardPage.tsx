@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen, ListChecks } from 'lucide-react'
@@ -304,6 +305,17 @@ export function Component() {
         knowledgeGraph: null,
       }, cacheKey)
       setIsRefreshing(false)
+
+      // Background prefetch full questions for offline practice
+      ;(async () => {
+        try {
+          const { data } = await supabase.from('questions').select('*')
+          if (data && data.length > 0) {
+            await clearPrefetchedQuestions()
+            await prefetchQuestions(data.map((q) => ({ id: q.id, data: q })))
+          }
+        } catch { /* best-effort */ }
+      })()
     }
     load()
   }, [user, profile?.deadline, profile?.plan_subjects])

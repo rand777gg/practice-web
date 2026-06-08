@@ -115,6 +115,27 @@ export async function getPendingAnswerIdsForQuestion(questionId: string): Promis
   return all.filter((a: PendingAnswer) => a.question_id === questionId).map((a: PendingAnswer) => a.id!)
 }
 
+// Get IDs of all prefetched questions (for offline fallback)
+export async function getPrefetchedQuestionIds(): Promise<string[]> {
+  const db = await openDB()
+  const tx = db.transaction('prefetched_questions', 'readonly')
+  const store = tx.objectStore('prefetched_questions')
+  const all = await promisify(store.getAllKeys())
+  db.close()
+  return all as string[]
+}
+
+// Get a single prefetched question by ID
+export async function getPrefetchedQuestion(id: string): Promise<unknown | null> {
+  const db = await openDB()
+  const tx = db.transaction('prefetched_questions', 'readonly')
+  const store = tx.objectStore('prefetched_questions')
+  const result = await promisify(store.get(id))
+  db.close()
+  if (!result) return null
+  return (result as PrefetchedQuestion).data
+}
+
 // Utility for sync
 export async function syncPendingAnswers(
   insertFn: (answers: PendingAnswer[]) => Promise<number[]>,
