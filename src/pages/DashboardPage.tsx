@@ -5,7 +5,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen, ListChecks } from 'lucide-react'
-import { LoadingTips } from '@/components/layout/LoadingTips'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SkeletonCard } from '@/components/ui/skeleton'
@@ -101,7 +100,6 @@ export function Component() {
   const hasCache = !!(cached && cached.key === cacheKey)
 
   const [chartData, setChartData] = useState<ChartData | null>(hasCache ? cached!.data : null)
-  const [isLoading, setIsLoading] = useState(!hasCache)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
@@ -306,7 +304,6 @@ export function Component() {
         todayHourlyData, subjectAccuracy, heatmapData,
         knowledgeGraph: null,
       }, cacheKey)
-      setIsLoading(false)
       setIsRefreshing(false)
     }
     load()
@@ -383,12 +380,6 @@ export function Component() {
     })()
   }, [chartData?.totalAnswered, user])
 
-  if (isLoading) {
-    return (
-      <LoadingTips className="py-12" compact />
-    )
-  }
-
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center justify-between gap-2 pb-1" ref={headerRef}>
@@ -399,47 +390,59 @@ export function Component() {
             更新中
           </div>
         )}
-        {chartData && chartData.totalAnswered > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto">
-            {([
-              { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
-              { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
-              { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
-              { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
-              { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
-            ]).map((btn, i) => {
-              const isExpanded = expandedBtn === i
-              const Icon = btn.icon
-              const showText = isExpanded
-              return (
-                <Button
-                  key={btn.to}
-                  variant={btn.variant}
-                  size="sm"
-                  className={`shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${showText ? 'px-3' : 'px-1.5'}`}
-                  onClick={() => {
-                    if (window.innerWidth >= 640) {
-                      navigate(btn.to)
-                    } else if (isExpanded) {
-                      setExpandedBtn(null)
-                      navigate(btn.to)
-                    } else {
-                      setExpandedBtn(i)
-                    }
-                  }}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${showText ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
-                    {btn.label}
-                  </span>
-                </Button>
-              )
-            })}
-          </div>
-        )}
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {([
+            { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
+            { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
+            { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
+            { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
+            { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
+          ]).map((btn, i) => {
+            const isExpanded = expandedBtn === i
+            const Icon = btn.icon
+            const showText = isExpanded
+            return (
+              <Button
+                key={btn.to}
+                variant={btn.variant}
+                size="sm"
+                className={`shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${showText ? 'px-3' : 'px-1.5'}`}
+                onClick={() => {
+                  if (window.innerWidth >= 640) {
+                    navigate(btn.to)
+                  } else if (isExpanded) {
+                    setExpandedBtn(null)
+                    navigate(btn.to)
+                  } else {
+                    setExpandedBtn(i)
+                  }
+                }}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${showText ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
+                  {btn.label}
+                </span>
+              </Button>
+            )
+          })}
+        </div>
       </div>
 
-      {!chartData || (chartData.totalAnswered === 0 && chartData.sunburstData.length === 0) ? (
+      {!chartData ? (
+        // First load — skeleton shell
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="animate-pulse rounded-lg border p-6 space-y-3">
+              <div className="h-4 w-1/3 bg-muted rounded" />
+              <div className="h-40 w-full bg-muted rounded" />
+            </div>
+            <div className="animate-pulse rounded-lg border p-6 space-y-3">
+              <div className="h-4 w-1/4 bg-muted rounded" />
+              <div className="h-40 w-full bg-muted rounded" />
+            </div>
+          </div>
+        </div>
+      ) : (chartData.totalAnswered === 0 && chartData.sunburstData.length === 0) ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('dashboard.noData')}</p>
           <Button asChild size="sm">
