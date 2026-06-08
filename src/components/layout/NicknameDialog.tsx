@@ -35,7 +35,8 @@ export function NicknameDialog() {
   const save = async (name: string) => {
     if (!name.trim()) return
     setSaving(true)
-    await supabase.from('profiles').update({ nickname: name.trim() }).eq('id', user.id)
+    const { error } = await supabase.from('profiles').upsert({ id: user.id, nickname: name.trim() })
+    if (error) { setSaving(false); return }
     await refreshProfile()
     setSaving(false)
   }
