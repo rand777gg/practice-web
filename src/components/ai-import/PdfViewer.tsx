@@ -121,19 +121,21 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
       <div className="relative mx-auto" style={{ width: displayWidth, height: page.height * scale }} ref={containerRef}>
         <div className="overflow-auto max-h-[calc(100vh-280px)]">
         <canvas ref={setCanvasRef(currentPage)} className="absolute inset-0 w-full h-full rounded border" />
-        {/* content_list.json bbox: try raw coordinates first, fallback to 0-1000 */}
+        {/* content_list.json bbox: 0-1000 range, PDF y-axis flipped to CSS top-left */}
         {pageBlocks.map((block, i) => {
           const [x0, y0, x1, y1] = block.bbox
           const isActive = activeBbox && activeBbox[0] === x0 && activeBbox[1] === y0
-          // Detect if bbox is 0-1000 range (> 1 means likely raw, <= 1 means 0-1 normalized)
-          const use1000 = x1 > 1 // if > 1, assume 0-1000 range
-          const sx = use1000 ? displayWidth / 1000 : displayWidth
-          const sy = use1000 ? (page.height * scale) / 1000 : page.height * scale
+          const containerH = page.height * scale
+          const sx = displayWidth / 1000
+          const sy = containerH / 1000
+          // PDF bottom-left → CSS top-left: flip Y
+          const cssTop = containerH - y1 * sy
+          const cssH = (y1 - y0) * sy
           return (
             <div
               key={i}
               className={`absolute border transition-colors cursor-pointer ${isActive ? 'border-blue-500 bg-blue-500/20' : 'border-transparent hover:border-amber-400/50 hover:bg-amber-400/10'}`}
-              style={{ left: x0 * sx, top: y0 * sy, width: (x1 - x0) * sx, height: (y1 - y0) * sy }}
+              style={{ left: x0 * sx, top: cssTop, width: (x1 - x0) * sx, height: cssH }}
               title={`${block.text?.slice(0, 100) || ''} — 点击定位`}
               onClick={() => onBlockClick?.(block)}
             />
