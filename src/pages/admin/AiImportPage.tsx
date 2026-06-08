@@ -18,6 +18,7 @@ import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
@@ -459,9 +460,11 @@ export function Component() {
                         <p className="text-sm font-medium">解析结果</p>
                         <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
                       </div>
-                      <pre className="text-xs bg-muted/50 rounded-lg p-3 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono leading-relaxed">
-                        {parseResult.markdown.slice(0, 5000)}{parseResult.markdown.length > 5000 ? '\n\n... (内容过长，已截断)' : ''}
-                      </pre>
+                      <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[300px]">
+                        <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
+                          {parseResult.markdown.slice(0, 5000)}{parseResult.markdown.length > 5000 ? '\n\n... (内容过长，已截断)' : ''}
+                        </pre>
+                      </ScrollArea>
                     </CardContent>
                   </Card>
                   <div className="flex justify-end gap-2">
