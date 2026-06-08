@@ -119,6 +119,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
         </button>
       </div>
       <div className="relative mx-auto" style={{ width: displayWidth, height: page.height * scale }} ref={containerRef}>
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
         <canvas ref={setCanvasRef(currentPage)} className="absolute inset-0 w-full h-full rounded border" />
         {/* content_list.json bbox is in 0-1000 range; scale to canvas size */}
         {pageBlocks.map((block, i) => {
@@ -136,6 +137,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
             />
           )
         })}
+        </div>
       </div>
     </div>
   )
