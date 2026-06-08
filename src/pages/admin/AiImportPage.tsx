@@ -162,7 +162,7 @@ export function Component() {
 
     setQuestions(result.questions)
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
-    setStep('metadata')
+    setStep('preview')
   }
 
   const goPreview = () => setStep('preview')
@@ -462,10 +462,10 @@ export function Component() {
                 }}
               />
               <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => setStep('upload')}>
+                <Button variant="outline" onClick={() => setStep('preview')}>
                   <ArrowLeft className="h-4 w-4" /> 返回
                 </Button>
-                <Button onClick={goPreview}>
+                <Button onClick={() => { goPreview() }}>
                   下一步 <ArrowRight className="h-4 w-4" />
                 </Button>
               </div>
