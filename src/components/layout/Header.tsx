@@ -30,25 +30,32 @@ export function SyncBadge() {
     }
   }, [])
 
-  if (pendingCount === 0) return null
-
   return (
     <Button
       variant="ghost"
       size="sm"
       className="gap-1 text-xs"
-      onClick={sync}
+      onClick={isOnline ? sync : undefined}
       disabled={syncing}
-      title={`${pendingCount} 条答案待同步`}
+      title={isOnline ? (pendingCount > 0 ? `${pendingCount} 条答案待同步` : '已同步') : '离线模式'}
     >
       {syncing ? (
         <Upload className="h-3.5 w-3.5 animate-pulse" />
       ) : isOnline ? (
-        <Upload className="h-3.5 w-3.5 text-amber-500" />
+        pendingCount > 0 ? (
+          <>
+            <Upload className="h-3.5 w-3.5 text-amber-500" />
+            <span className="hidden sm:inline">{pendingCount}</span>
+          </>
+        ) : (
+          <Upload className="h-3.5 w-3.5 text-green-500" />
+        )
       ) : (
-        <CloudOff className="h-3.5 w-3.5 text-muted-foreground" />
+        <>
+          <CloudOff className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="hidden sm:inline text-muted-foreground">离线</span>
+        </>
       )}
-      <span className="hidden sm:inline">{pendingCount}</span>
     </Button>
   )
 }
