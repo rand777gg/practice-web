@@ -223,3 +223,29 @@ CREATE POLICY user_answers_public_select ON public.user_answers FOR SELECT
 DROP POLICY IF EXISTS favorites_own ON public.favorites;
 CREATE POLICY favorites_own ON public.favorites FOR ALL
   USING (user_id = auth.uid() OR public.is_admin());
+
+-- ----------------------------------------------------------------------------
+-- 9. SECURITY HARDENING — 修复 Security Advisor 警告
+-- ----------------------------------------------------------------------------
+
+-- 9a. 禁止未认证用户调用 SECURITY DEFINER 函数
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.is_admin()       FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_email(uuid) FROM anon;
+-- get_user_email 供认证用户（管理员页、公开笔记）使用，保留 authenticated 权限
+
+-- 9b. 禁止 rls_auto_enable 被外部调用（Supabase 内部函数）
+REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;
+
+-- 9c. 收紧 files bucket 权限：认证用户可读写，禁止 anon 列出文件
+-- 文件仍可通过 publicUrl 访问，MinerU 上传不受影响
+DROP POLICY IF EXISTS "allow_read" ON storage.objects;
+CREATE POLICY "files_select_auth" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (bucket_id = 'files');
+CREATE POLICY IF NOT EXISTS "files_insert_auth" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'files');
+CREATE POLICY IF NOT EXISTS "files_delete_auth" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (bucket_id = 'files');
