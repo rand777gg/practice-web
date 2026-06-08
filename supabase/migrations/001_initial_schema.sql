@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS public.favorites (
 -- ----------------------------------------------------------------------------
 -- 6. INDEXES — 查询性能优化
 -- ----------------------------------------------------------------------------
+
+-- Ensure question_type column exists (added post-initial schema)
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'single_choice';
+
 -- questions: filter dropdowns, random pick, dashboard metadata
 CREATE INDEX IF NOT EXISTS idx_questions_category       ON public.questions(category);
 CREATE INDEX IF NOT EXISTS idx_questions_subject        ON public.questions(subject);
