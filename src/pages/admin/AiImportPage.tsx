@@ -379,7 +379,6 @@ export function Component() {
                           { key: 'docx', label: 'DOCX' },
                           { key: 'html', label: 'HTML' },
                           { key: 'latex', label: 'LaTeX' },
-                          { key: 'json', label: 'JSON' },
                         ].map((fmt) => (
                           <DropdownMenuCheckboxItem
                             key={fmt.key}
@@ -481,53 +480,23 @@ export function Component() {
                     {showSplitView && pdfUrl && (
                       <Card className="border-0 shadow-none">
                         <CardContent className="p-3">
-                          <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
-                            activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
-                            onBlockClick={(block) => {
-                              const idx = sections.findIndex(
-                                s => s.bbox && s.bbox[0] === block.bbox[0] && s.bbox[1] === block.bbox[1]
-                              )
-                              if (idx >= 0) {
-                                setActiveMdIdx(idx)
-                                setActivePage(block.page_num + 1)
-                                setActiveBbox(block.bbox)
-                                setTimeout(() => {
-                                  mdRef.current?.querySelector(`[data-md-idx="${idx}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                }, 50)
-                              }
-                            }}
-                          />
+                          <PdfViewer pdfUrl={pdfUrl} activePage={activePage} onPageChange={setActivePage} />
                         </CardContent>
                       </Card>
                     )}
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>MinerU 解析结果（Markdown 格式）</span>
+                          {parseResult.jsonData && <span className="text-green-500">· 含坐标数据</span>}
+                        </div>
                         <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
-                          {showSplitView && parseResult.jsonData ? (() => {
-                            const blocks = parseBlocks(parseResult.jsonData)
-                            const sections = matchMarkdownToPdf(parseResult.markdown, blocks)
-                            return (
-                              <>
-                                <div className="text-xs text-muted-foreground mb-1">
-                                  {blocks.length > 0 ? `${blocks.length} 个定位块，${sections.filter(s => s.bbox).length} 个匹配段落` : 'JSON 已加载，正在匹配...'}
-                                </div>
-                                <div ref={mdRef}>
-                                  <ClickableMarkdown
-                                    sections={sections}
-                                    activeIdx={activeMdIdx}
-                                    onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
-                                  />
-                                </div>
-                              </>
-                            )
-                          })() : (
-                            <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
-                              {(() => {
-                                const start = parsePage * CHARS_PER_PAGE
-                                return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
-                              })()}
-                            </pre>
-                          )}
+                          <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
+                            {(() => {
+                              const start = parsePage * CHARS_PER_PAGE
+                              return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
+                            })()}
+                          </pre>
                         </ScrollArea>
                         {!showSplitView && (() => {
                           const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
