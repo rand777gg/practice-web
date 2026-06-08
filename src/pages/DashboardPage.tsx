@@ -430,14 +430,6 @@ export function Component() {
           </Button>
         </div>
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="rounded-lg border bg-card px-4 py-3 text-center min-w-[100px]">
-              <p className="text-xs text-muted-foreground">已打卡</p>
-              <p className="text-3xl font-bold tabular-nums">{chartData.checkinDays}</p>
-              <p className="text-xs text-muted-foreground">天</p>
-            </div>
-          </div>
         <Tabs
           defaultValue="plan"
           className="w-full"
@@ -592,6 +584,13 @@ export function Component() {
           <TabsContent value="journey">
             {visitedTabs.has('journey') ? (
               <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="rounded-lg border bg-card px-4 py-3 text-center min-w-[100px]">
+                    <p className="text-xs text-muted-foreground">已打卡</p>
+                    <p className="text-3xl font-bold tabular-nums">{chartData.checkinDays}</p>
+                    <p className="text-xs text-muted-foreground">天</p>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
                   <Card className="border-0 shadow-none flex flex-col">
                     <CardHeader className="pb-1">
@@ -662,7 +661,6 @@ export function Component() {
             )}
           </TabsContent>
         </Tabs>
-        </>
       )}
     </div>
   )
