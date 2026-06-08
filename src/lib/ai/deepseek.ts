@@ -21,7 +21,7 @@ const resultSchema = z.object({
 const SYSTEM_PROMPT = `You are a test question extraction assistant. Given a document in markdown format, extract ALL questions found in the document.
 
 Rules for each question type:
-- single_choice: correct_answer is an integer (0-based index). options must have ≥2 items.
+- single_choice: correct_answer is an integer (0-based index). 
 - multi_select: correct_answer is an array of integers. options must have ≥2 items.
 - true_false: correct_answer is boolean. options=["正确","错误"] or ["True","False"].
 - fill_blank: correct_answer is a string. options is empty array []. In the question_text, mark the blank position with ____ (double underscores).

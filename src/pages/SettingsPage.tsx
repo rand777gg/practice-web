@@ -327,28 +327,33 @@ export function Component() {
           <LogOut className="h-3.5 w-3.5" />
           {t('auth.logout')}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)} className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
+        <Button variant="outline" size="sm" disabled onClick={() => setDeleteOpen(true)} className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
           <Trash2 className="h-3.5 w-3.5" />
           注销账号
         </Button>
       </div>
 
-      <AlertDialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialog.Root open={deleteOpen} onOpenChange={(open) => {
+        if (deleting && !open) return
+        setDeleteOpen(open)
+      }}>
         <AlertDialog.Content maxWidth="400px">
           <AlertDialog.Title>确认注销账号</AlertDialog.Title>
           <AlertDialog.Description size="2">
             此操作将永久删除你的账号及所有数据（包括答题记录、收藏、笔记等），且无法恢复。确定要继续吗？
           </AlertDialog.Description>
           <div className="flex gap-3 mt-4 justify-end">
-            <Button variant="outline" size="sm" disabled={deleting} onClick={() => setDeleteOpen(false)}>取消</Button>
+            <AlertDialog.Cancel>
+              <Button variant="outline" size="sm" disabled={deleting}>取消</Button>
+            </AlertDialog.Cancel>
             <Button
               variant="destructive"
               size="sm"
               disabled={deleting}
               onClick={async () => {
                 setDeleting(true)
-                setDeleteOpen(false)
                 try { await supabase.functions.invoke('delete-account') } catch { /* ignore */ }
+                setDeleteOpen(false)
                 signOut()
               }}
             >
