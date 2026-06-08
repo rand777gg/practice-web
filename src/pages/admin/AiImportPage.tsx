@@ -244,7 +244,7 @@ export function Component() {
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span><span className="text-[10px] text-muted-foreground ml-1">由 MinerU 提供解析</span></h1>
+        <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span><a href="https://mineru.net" target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground ml-1 hover:underline">由 MinerU 提供解析</a></h1>
       </div>
 
       {!aiConfigured && (
