@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, Languages, LogOut } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -35,8 +35,6 @@ export function Component() {
     { key: 'keypoints' as const, label: t('settings.aiKeypoints'), desc: t('settings.aiKeypointsDesc'), available: aiConfigured },
     { key: 'mineru' as const, label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), available: mineruConfigured },
   ]
-
-  const anyAiOn = aiFeatures.some((f) => f.available && flags[f.key])
 
   const handleSetFlag = (key: string, v: boolean) => {
     setFlag(key as any, v)
@@ -137,9 +135,7 @@ export function Component() {
         {/* Right column */}
         <div className="space-y-6">
           <Card className={cn(
-            'transition-[border-color,box-shadow] duration-1000',
             aiGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
-            !aiGlow && anyAiOn && 'border-purple-500/30',
           )}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
@@ -149,9 +145,14 @@ export function Component() {
               <div className="space-y-3">
                 {aiFeatures.map((f) => (
                   <div key={f.key} className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm">{f.label}</p>
-                      <p className="text-xs text-muted-foreground">{f.desc}</p>
+                    <div className="min-w-0 flex items-center gap-1.5">
+                      {f.available && flags[f.key] && (
+                        <Sparkles className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                      )}
+                      <div>
+                        <p className="text-sm">{f.label}</p>
+                        <p className="text-xs text-muted-foreground">{f.desc}</p>
+                      </div>
                     </div>
                     <Switch
                       checked={f.available && flags[f.key]}
