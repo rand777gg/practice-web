@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useSyncStore } from '@/stores/sync-store'
 import { Button } from '@/components/ui/button'

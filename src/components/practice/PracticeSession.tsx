@@ -16,9 +16,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
-import { Check, ChevronDown, Shuffle } from 'lucide-react'
+import { Check, ChevronDown, Shuffle, Sparkles } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion, getQuestionStat, upsertQuestionStat } from '@/lib/offline-db'
+import { useEbbinghausReview } from '@/hooks/use-ebbinghaus-review'
 import type { Question, CorrectAnswer, Profile, QuestionType } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
@@ -44,6 +45,12 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
+function pickRandomBatch<T>(arr: T[], count: number): T[] {
+  if (count <= 0 || arr.length === 0) return []
+  const shuffled = [...arr].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, Math.min(count, arr.length))
+}
+
 export function PracticeSession() {
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
@@ -61,6 +68,8 @@ export function PracticeSession() {
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
+  const { reviewItems, reviewCount, loading: reviewLoading } = useEbbinghausReview()
+  const [ebbinghausMode, setEbbinghausMode] = useState(false)
   const prefetchPromiseRef = useRef<Promise<void> | null>(null)
 
   const [selectedSubject, setSelectedSubject] = useState('')
@@ -143,6 +152,17 @@ export function PracticeSession() {
       availableIds = serverIds.map((r: any) => r.id)
     }
 
+    // Ebbinghaus review mode: prioritize at-risk questions
+    if (ebbinghausMode && reviewItems.length > 0) {
+      const reviewIdSet = new Set(reviewItems.map((r) => r.questionId))
+      const reviewPool = availableIds.filter((id) => reviewIdSet.has(id))
+      const nonReviewPool = availableIds.filter((id) => !reviewIdSet.has(id))
+      // Mix: 80% review + 20% fresh for variety
+      if (reviewPool.length > 0) {
+        availableIds = [...reviewPool, ...pickRandomBatch(nonReviewPool, Math.ceil(reviewPool.length * 0.25))]
+      }
+    }
+
     if (availableIds.length === 0) {
       setNoQuestions(true)
       setIsLoading(false)
@@ -181,7 +201,7 @@ export function PracticeSession() {
         await bulkPrefetchQuestions([{ id: nextId, data }])
       }
     })()
-  }, [selectedSubject, selectedCategory, selectedType, profile?.daily_targets, profile?.plan_subjects, loadQuestionFromLocal, loadStatsFromServer])
+  }, [selectedSubject, selectedCategory, selectedType, ebbinghausMode, reviewItems, profile?.daily_targets, profile?.plan_subjects, loadQuestionFromLocal, loadStatsFromServer])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -302,10 +322,30 @@ export function PracticeSession() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
 
-      {isLoading ? (
-        <LoadingTips className="py-12" compact />
+          {reviewCount > 0 && (
+            <Button
+              variant={ebbinghausMode ? 'default' : 'outline'}
+              size="sm"
+              className="gap-1 text-xs"
+              onClick={() => setEbbinghausMode((v) => !v)}
+              disabled={reviewLoading}
+            >
+              <Sparkles className={`h-3.5 w-3.5 ${ebbinghausMode ? 'text-white' : 'text-amber-500'}`} />
+              <span className="hidden sm:inline">艾宾浩斯</span>
+              <span className="tabular-nums">({reviewCount})</span>
+            </Button>
+          )}
+        </div>
+
+        {ebbinghausMode && reviewCount > 0 && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-1.5">
+            艾宾浩斯复习模式：优先展示 {reviewCount} 道临近遗忘的题目（80%复习 + 20%新题）
+          </p>
+        )}
+
+        {isLoading ? (
+          <LoadingTips className="py-12" compact />
       ) : noQuestions ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('practice.noQuestions')}</p>
