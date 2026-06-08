@@ -10,7 +10,7 @@ import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
-import { AlertDialog, Flex } from '@radix-ui/themes'
+import { AlertDialog } from '@radix-ui/themes'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
@@ -317,7 +317,7 @@ export function Component() {
           <AlertDialog.Description size="2">
             此操作将永久删除你的账号及所有数据（包括答题记录、收藏、笔记等），且无法恢复。确定要继续吗？
           </AlertDialog.Description>
-          <Flex gap="3" mt="4" justify="end">
+          <div className="flex gap-3 mt-4 justify-end">
             <Button variant="outline" size="sm" disabled={deleting} onClick={() => setDeleteOpen(false)}>取消</Button>
             <Button
               variant="destructive"
@@ -325,15 +325,13 @@ export function Component() {
               disabled={deleting}
               onClick={async () => {
                 setDeleting(true)
-                try { await supabase.functions.invoke('delete-account') } catch { /* fall through */ }
-                setDeleting(false)
-                setDeleteOpen(false)
+                try { await supabase.functions.invoke('delete-account') } catch { /* ignore */ }
                 await signOut()
               }}
             >
               {deleting ? '注销中...' : '确认注销'}
             </Button>
-          </Flex>
+          </div>
         </AlertDialog.Content>
       </AlertDialog.Root>
     </div>
