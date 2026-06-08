@@ -273,7 +273,7 @@ export function Component() {
 
               {parseMode === 'lightweight' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground">支持 PDF、DOCX，单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
+                  <p className="text-xs text-muted-foreground">支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx，单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
                     <Input
@@ -286,7 +286,7 @@ export function Component() {
                 </div>
               )}
               {parseMode === 'precision' && (
-                <p className="text-xs text-muted-foreground">支持 PDF/DOCX/PPT/XLS/图片/HTML，单文件 ≤ 200MB、≤ 200 页，支持批量最多 200 个文件。需配置 MinerU Token。</p>
+                <p className="text-xs text-muted-foreground">支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx、PPTx、Xlsx，单文件 ≤ 200MB、≤ 200 页，批量最多 200 个文件。需配置 MinerU Token。</p>
               )}
 
               {/* Precision mode settings */}
@@ -575,11 +575,47 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
 
       {/* MinerU API response status */}
       {status && (
-        <div className="w-full max-w-md mt-2">
-          <div className="text-[10px] text-muted-foreground mb-1">MinerU 响应</div>
-          <pre className="text-[10px] bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-auto font-mono leading-relaxed whitespace-pre-wrap break-all">
-            {JSON.stringify(status, null, 2)}
-          </pre>
+        <div className="w-full max-w-lg mt-2 space-y-2">
+          <div className="text-[11px] font-medium text-muted-foreground">MinerU 响应</div>
+
+          {/* Single task status */}
+          {status.taskId && (
+            <div className="bg-muted/50 rounded-lg p-3 space-y-1.5 text-[11px]">
+              <div className="flex gap-2"><span className="text-muted-foreground">Task ID</span><span className="font-mono">{status.taskId as string}</span></div>
+              {status.dataId && <div className="flex gap-2"><span className="text-muted-foreground">Data ID</span><span className="font-mono">{status.dataId as string}</span></div>}
+              {status.code !== undefined && <div className="flex gap-2"><span className="text-muted-foreground">Code</span><span className={status.code === 0 ? 'text-green-600' : 'text-red-500'}>{status.code as number}{status.msg ? ` — ${status.msg}` : ''}</span></div>}
+              <div className="flex gap-2"><span className="text-muted-foreground">State</span><span className={`font-medium ${status.state === 'done' ? 'text-green-600' : status.state === 'failed' ? 'text-red-500' : 'text-amber-500'}`}>{status.state as string}</span></div>
+              {status.extractProgress && (
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground">Pages</span>
+                  <span>{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</span>
+                </div>
+              )}
+              {status.fullZipUrl && <div className="text-xs text-muted-foreground truncate">ZIP: {status.fullZipUrl as string}</div>}
+              {status.errMsg && <div className="text-xs text-red-500">{status.errMsg as string}</div>}
+            </div>
+          )}
+
+          {/* Batch status */}
+          {status.batchId && (
+            <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-[11px]">
+              <div className="flex gap-2"><span className="text-muted-foreground">Batch ID</span><span className="font-mono">{status.batchId as string}</span></div>
+              {status.code !== undefined && <div className="flex gap-2"><span className="text-muted-foreground">Code</span><span className={status.code === 0 ? 'text-green-600' : 'text-red-500'}>{status.code as number}{status.msg ? ` — ${status.msg}` : ''}</span></div>}
+              {status.files && (status.files as Array<Record<string, unknown>>).length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-muted-foreground">文件状态</span>
+                  {(status.files as Array<Record<string, unknown>>).map((f: Record<string, unknown>, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs pl-2">
+                      <span className={`w-1.5 h-1.5 rounded-full ${f.state === 'done' ? 'bg-green-500' : f.state === 'failed' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                      <span className="truncate">{f.fileName as string}</span>
+                      <span className="text-muted-foreground shrink-0">{f.state as string}</span>
+                      {f.dataId && <span className="text-muted-foreground font-mono text-[10px]">{f.dataId as string}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -266,7 +266,7 @@ export const zh = {
   ai_import: {
     title: 'AI 导入题目',
     uploadHint: '拖拽文档到此处，或点击选择文件',
-    uploadFormats: '支持 PDF、DOCX 格式',
+    uploadFormats: '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx、PPTx、Xlsx',
     startParse: '开始解析',
     parsing: '正在解析...',
     uploadStep: '正在上传文档...',
@@ -597,7 +597,7 @@ export const en = {
   ai_import: {
     title: 'AI Import',
     uploadHint: 'Drag document here or click to select',
-    uploadFormats: 'Supports PDF and DOCX formats',
+    uploadFormats: 'Supports PDF, images (png/jpg/jpeg/jp2/webp/gif/bmp), Docx, PPTx, Xlsx',
     startParse: 'Start Parsing',
     parsing: 'Parsing...',
     uploadStep: 'Uploading document...',
