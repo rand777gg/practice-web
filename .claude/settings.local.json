@@ -27,7 +27,8 @@
       "Bash(awk 'NR>=120 && NR<=140')",
       "Bash(git pull *)",
       "WebFetch(domain:mineru.net)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/sparanoid/chinese-copywriting-guidelines/master/README.md\")"
     ]
   }
 }

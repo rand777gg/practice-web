@@ -98,7 +98,7 @@ export function DashboardEbbinghaus() {
             {aiLoading && (
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3 animate-pulse" />
-                AI 正在生成学习建议...
+                AI 正在生成学习建议…
               </p>
             )}
             {aiSuggestion && (

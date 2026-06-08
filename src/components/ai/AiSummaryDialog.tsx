@@ -223,7 +223,7 @@ export function AiSummaryDialog({ open, onOpenChange }: Props) {
                 <Sparkles className="absolute inset-0 m-auto h-4 w-4 text-yellow-500 animate-pulse" />
               </div>
               <p className="text-sm text-muted-foreground animate-pulse">
-                AI 正在分析你的学习数据...
+                AI 正在分析你的学习数据…
               </p>
             </div>
           )}
