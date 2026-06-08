@@ -132,6 +132,9 @@ export const zh = {
     aiKeypoints: 'AI 生成知识点',
     aiKeypointsDesc: '创建题目时自动生成知识点标签',
     aiManagement: 'AI 模型管理',
+    offline: '同步',
+    offlineMode: '离线模式',
+    offlineModeDesc: '开启后答案仅保存在本地，不自动上传',
   },
   questions: {
     questionType: '类型',
@@ -455,6 +458,9 @@ export const en = {
     aiKeypoints: 'AI Key Points Generation',
     aiKeypointsDesc: 'Auto-generate knowledge point tags when creating questions',
     aiManagement: 'AI Model Management',
+    offline: 'Sync',
+    offlineMode: 'Offline Mode',
+    offlineModeDesc: 'Save answers locally without auto-upload',
   },
   questions: {
     questionType: 'Type',

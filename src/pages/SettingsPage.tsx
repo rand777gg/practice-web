@@ -16,7 +16,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode } = useSettingsStore()
   const navigate = useNavigate()
 
   if (!user) return null
@@ -82,6 +82,21 @@ export function Component() {
               <Languages className="h-3.5 w-3.5" />
               English
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 shadow-none">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">{t('settings.offline')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm">{t('settings.offlineMode')}</p>
+              <p className="text-xs text-muted-foreground">{t('settings.offlineModeDesc')}</p>
+            </div>
+            <Switch checked={offlineMode} onCheckedChange={setOfflineMode} />
           </div>
         </CardContent>
       </Card>

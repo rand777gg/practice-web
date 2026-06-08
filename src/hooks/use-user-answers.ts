@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSyncStore } from '@/stores/sync-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { addPendingAnswer } from '@/lib/offline-db'
 
 export function useUserAnswers() {
@@ -34,7 +35,6 @@ export function useUserAnswers() {
       }
 
       // Always write to IndexedDB first — instant, never blocks UI
-      // Fallback to direct Supabase insert if IndexedDB is unavailable
       let localId: number | null = null
       try {
         localId = await addPendingAnswer(payload)
@@ -43,8 +43,9 @@ export function useUserAnswers() {
         // IndexedDB unavailable — fall through to direct insert
       }
 
-      // Background sync — fire and forget
-      if (navigator.onLine) {
+      // Background sync — only if online and offline mode is off
+      const offlineMode = useSettingsStore.getState().offlineMode
+      if (navigator.onLine && !offlineMode) {
         sync().catch(() => { /* best-effort */ })
       }
 

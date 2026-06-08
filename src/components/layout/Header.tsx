@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { PlanProgress } from './PlanProgress'
 import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
 import { Link } from 'react-router-dom'
-import { Settings, Menu, Moon, Sparkles, Sun, CloudOff, Upload } from 'lucide-react'
+import { Settings, Menu, Moon, Sparkles, Sun, Wifi, WifiOff } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
@@ -16,6 +16,7 @@ interface Props {
 
 export function SyncBadge() {
   const { pendingCount, syncing, refresh, sync } = useSyncStore()
+  const offlineMode = useSettingsStore((s) => s.offlineMode)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {
@@ -30,31 +31,26 @@ export function SyncBadge() {
     }
   }, [])
 
+  const effectiveOffline = !isOnline || offlineMode
+  const canSync = isOnline && !offlineMode && pendingCount > 0
+
   return (
     <Button
       variant="ghost"
-      size="sm"
-      className="gap-1 text-xs"
-      onClick={isOnline ? sync : undefined}
-      disabled={syncing}
-      title={isOnline ? (pendingCount > 0 ? `${pendingCount} 条答案待同步` : '已同步') : '离线模式'}
+      size="icon"
+      className="gap-1"
+      onClick={canSync ? sync : undefined}
+      disabled={syncing || !canSync}
+      title={effectiveOffline ? (offlineMode ? '离线模式已开启' : '无网络连接') : (pendingCount > 0 ? `${pendingCount} 条答案待同步` : '已同步')}
     >
       {syncing ? (
-        <Upload className="h-3.5 w-3.5 animate-pulse" />
-      ) : isOnline ? (
-        pendingCount > 0 ? (
-          <>
-            <Upload className="h-3.5 w-3.5 text-amber-500" />
-            <span className="hidden sm:inline">{pendingCount}</span>
-          </>
-        ) : (
-          <Upload className="h-3.5 w-3.5 text-green-500" />
-        )
+        <Wifi className="h-4 w-4 animate-pulse text-blue-400" />
+      ) : effectiveOffline ? (
+        <WifiOff className="h-4 w-4 text-muted-foreground" />
+      ) : pendingCount > 0 ? (
+        <Wifi className="h-4 w-4 text-amber-500" />
       ) : (
-        <>
-          <CloudOff className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="hidden sm:inline text-muted-foreground">离线</span>
-        </>
+        <Wifi className="h-4 w-4 text-green-500" />
       )}
     </Button>
   )
