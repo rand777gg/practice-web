@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import type { Profile } from '@/types'
 import { LoadingScreen } from '@/components/layout/LoadingScreen'
+import { PwaUpdatePrompt } from '@/components/layout/PwaUpdatePrompt'
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -139,6 +140,7 @@ export default function App() {
     <ThemeInitializer>
       <AuthInitializer>
         <RouterProvider router={router} />
+        <PwaUpdatePrompt />
       </AuthInitializer>
     </ThemeInitializer>
   )
