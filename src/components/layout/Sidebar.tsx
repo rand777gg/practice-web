@@ -111,11 +111,13 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
               <GraduationCap className="h-6 w-6 text-sidebar-primary" />
               <span className="font-semibold text-sidebar-foreground">{t('app.shortTitle')}</span>
             </div>
-            <AppVersion collapsed={collapsed} />
           </>
         )}
       </div>
       <SidebarNav onClose={onClose} collapsed={collapsed} />
+      <div className={cn('border-t border-sidebar-border', collapsed ? 'p-1 flex justify-center' : 'p-3')}>
+        <AppVersion collapsed={collapsed} />
+      </div>
     </aside>
   )
 
