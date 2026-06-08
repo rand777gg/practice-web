@@ -211,6 +211,10 @@ export const zh = {
     daily: '自定义计划',
     vsYesterday: '较昨日',
   },
+  ebbinghaus: {
+    title: '基于艾宾浩斯遗忘曲线的学习建议',
+    pendingReview: '待复习 {n} 题',
+  },
   questionBank: {
     allSubjects: '全部科目',
     searchPlaceholder: '搜索题目...',
@@ -508,6 +512,10 @@ export const en = {
     longTerm: 'Long-term',
     daily: 'Custom',
     vsYesterday: 'vs yesterday',
+  },
+  ebbinghaus: {
+    title: 'Ebbinghaus Forgetting Curve Suggestions',
+    pendingReview: '{n} questions to review',
   },
   questionBank: {
     allSubjects: 'All Subjects',
