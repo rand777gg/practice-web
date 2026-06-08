@@ -376,7 +376,6 @@ export function Component() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
                         {[
-                          { key: 'json', label: 'JSON (含坐标)' },
                           { key: 'docx', label: 'DOCX' },
                           { key: 'html', label: 'HTML' },
                           { key: 'latex', label: 'LaTeX' },
