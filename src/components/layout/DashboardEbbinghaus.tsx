@@ -101,7 +101,9 @@ export function DashboardEbbinghaus() {
             )}
             {aiSuggestion && (
               <p className="text-xs text-muted-foreground leading-relaxed bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5">
-                {aiSuggestion}
+                {[...aiSuggestion].map((ch, i) => (
+                  <span key={i} className="animate-[charReveal_0.3s_ease-out_both]" style={{ animationDelay: `${i * 0.02}s` }}>{ch}</span>
+                ))}
               </p>
             )}
 
