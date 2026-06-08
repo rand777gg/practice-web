@@ -113,8 +113,9 @@ export function Component() {
   const runLightweightParse = async () => {
     if (!file) return
     const mineru = new MinerUClient()
-    const { markdown } = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
-    await extractQuestions(markdown)
+    const result = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
+    setParseResult(result)
+    setParsingDone(true)
   }
 
   const runPrecisionParse = async () => {
@@ -140,19 +141,20 @@ export function Component() {
         setStep('upload')
         return
       }
-      // Merge all markdowns
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
-      await extractQuestions(mergedMd)
+      setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', ') })
+      setParsingDone(true)
     } else if (file) {
-      const { markdown } = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
-      await extractQuestions(markdown)
+      const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
+      setParseResult(result)
+      setParsingDone(true)
     }
   }
 
-  const [parseMarkdown, setParseMarkdown] = useState('')
+  const [parseResult, setParseResult] = useState<{ markdown: string; fileName: string } | null>(null)
+  const [parsingDone, setParsingDone] = useState(false)
 
   const extractQuestions = async (markdown: string) => {
-    setParseMarkdown(markdown)
     setParseMsg('AI 正在提取题目...')
     const parser = new DeepSeekParser(getAiConfig())
     const result = await parser.parseDocument(markdown)
@@ -443,7 +445,38 @@ export function Component() {
           )}
 
           {/* Step 2: Parsing */}
-          {step === 'parsing' && <ParsingProgress msg={parseMsg} status={parseStatus} />}
+          {step === 'parsing' && (
+            <div className="space-y-4">
+              <ParsingProgress msg={parseMsg} status={parseStatus} />
+
+              {parsingDone && parseResult && (
+                <>
+                  <Card className="border-0 shadow-none">
+                    <CardContent className="py-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">解析结果</p>
+                        <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
+                      </div>
+                      <pre className="text-xs bg-muted/50 rounded-lg p-3 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono leading-relaxed">
+                        {parseResult.markdown.slice(0, 5000)}{parseResult.markdown.length > 5000 ? '\n\n... (内容过长，已截断)' : ''}
+                      </pre>
+                    </CardContent>
+                  </Card>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
+                      重新解析
+                    </Button>
+                    <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
+                      <ArrowRight className="h-4 w-4" />
+                      AI 提取题目
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+            </div>
+          )}
 
           {/* Step 3: Metadata */}
           {step === 'metadata' && (
