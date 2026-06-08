@@ -85,45 +85,45 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       {/* Options (for choice types) */}
       {['single_choice','multi_select'].includes(type) && (
         <div className="space-y-1 pl-1">
-          {question.options.map((opt, oi) => (
-            <div key={oi} className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground w-5 tabular-nums">{String.fromCharCode(65 + oi)}.</span>
-              <Input
-                value={opt}
-                onChange={(e) => {
-                  const newOpts = [...question.options]
-                  newOpts[oi] = e.target.value
-                  patch({ options: newOpts })
-                }}
-                className="h-7 text-xs"
-                placeholder={`选项 ${String.fromCharCode(65 + oi)}`}
-              />
-              {/* Correct answer marker */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`shrink-0 w-5 h-5 rounded-full border-2 text-[10px] transition-colors
-                  ${type === 'single_choice'
-                    ? question.correct_answer === oi ? 'bg-green-500 border-green-500 text-white hover:bg-green-600 hover:text-white' : 'border-muted-foreground/30'
-                    : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? 'bg-green-500 border-green-500 text-white hover:bg-green-600 hover:text-white' : 'border-muted-foreground/30'
-                  }`}
-                onClick={() => {
-                  if (type === 'single_choice') {
-                    patch({ correct_answer: oi })
-                  } else {
+          {question.options.map((opt, oi) => {
+            const isCorrect = type === 'single_choice'
+              ? question.correct_answer === oi
+              : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi)
+            const hasAnswer = type === 'single_choice'
+              ? question.correct_answer !== undefined && question.correct_answer !== null
+              : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).length > 0
+            const isWrong = hasAnswer && !isCorrect
+
+            return (
+              <div key={oi} className={`flex items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors ${isWrong ? 'bg-red-100 dark:bg-red-950/30 border border-red-200 dark:border-red-800' : ''}`}>
+                {type === 'single_choice' ? (
+                  <input type="radio" name={`q-${index}`} checked={isCorrect} onChange={() => patch({ correct_answer: oi })}
+                    className="shrink-0 h-3.5 w-3.5 accent-green-500 cursor-pointer" />
+                ) : (
+                  <input type="checkbox" checked={isCorrect} onChange={() => {
                     const arr: number[] = Array.isArray(question.correct_answer) ? [...question.correct_answer as number[]] : []
                     const idx = arr.indexOf(oi)
                     if (idx >= 0) arr.splice(idx, 1)
                     else arr.push(oi)
                     patch({ correct_answer: arr })
-                  }
-                }}
-              >
-                {type === 'single_choice' ? (question.correct_answer === oi ? '✓' : '') : (Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi) ? '✓' : '')}
-              </Button>
-            </div>
-          ))}
-          <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => patch({ options: [...question.options, ''] })}>
+                  }}
+                    className="shrink-0 h-3.5 w-3.5 accent-green-500 cursor-pointer" />
+                )}
+                <span className="text-[11px] text-muted-foreground w-4 tabular-nums shrink-0">{String.fromCharCode(65 + oi)}</span>
+                <Input
+                  value={opt}
+                  onChange={(e) => {
+                    const newOpts = [...question.options]
+                    newOpts[oi] = e.target.value
+                    patch({ options: newOpts })
+                  }}
+                  className={`h-6 text-[11px] ${isWrong ? 'border-red-300 dark:border-red-700' : ''}`}
+                  placeholder={`选项 ${String.fromCharCode(65 + oi)}`}
+                />
+              </div>
+            )
+          })}
+          <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => patch({ options: [...question.options, ''] })}>
             + 添加选项
           </Button>
         </div>
