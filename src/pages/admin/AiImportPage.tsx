@@ -792,17 +792,21 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
 
             {/* Basic info table */}
             <table className="w-full border-collapse">
-              <tbody>{[
-                status.taskId ? <tr key="task"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{String(status.taskId)}</td></tr> : null,
-                status.batchId ? <tr key="batch"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{String(status.batchId)}</td></tr> : null,
-                status.dataId ? <tr key="data"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{String(status.dataId)}</td></tr> : null,
-                status.code !== undefined ? <tr key="code"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${(status.code as number) === 0 ? 'text-green-600' : 'text-red-500'}`}>{String(status.code)}{status.msg ? ` — ${String(status.msg)}` : ''}</td></tr> : null,
-                status.state !== undefined ? <tr key="state"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr> : null,
-                status.markdownUrl ? <tr key="md"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{String(status.markdownUrl)}</td></tr> : null,
-                status.fullZipUrl ? <tr key="zip"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{String(status.fullZipUrl)}</td></tr> : null,
-                status.errMsg ? <tr key="err"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{String(status.errMsg)}</td></tr> : null,
-                status.extractProgress ? <tr key="pages"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr> : null,
-              ]}</tbody>
+              <tbody>
+                {(() => {
+                  const rows: React.ReactNode[] = []
+                  if (status.taskId) rows.push(<tr key="task"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{String(status.taskId)}</td></tr>)
+                  if (status.batchId) rows.push(<tr key="batch"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{String(status.batchId)}</td></tr>)
+                  if (status.dataId) rows.push(<tr key="data"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{String(status.dataId)}</td></tr>)
+                  if (status.code !== undefined) rows.push(<tr key="code"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${(status.code as number) === 0 ? 'text-green-600' : 'text-red-500'}`}>{String(status.code)}{status.msg ? ` — ${String(status.msg)}` : ''}</td></tr>)
+                  if (status.state !== undefined) rows.push(<tr key="state"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr>)
+                  if (status.markdownUrl) rows.push(<tr key="md"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{String(status.markdownUrl)}</td></tr>)
+                  if (status.fullZipUrl) rows.push(<tr key="zip"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{String(status.fullZipUrl)}</td></tr>)
+                  if (status.errMsg) rows.push(<tr key="err"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{String(status.errMsg)}</td></tr>)
+                  if (status.extractProgress) rows.push(<tr key="pages"><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>)
+                  return rows
+                })()}
+              </tbody>
             </table>
 
             {/* File list for batch */}
