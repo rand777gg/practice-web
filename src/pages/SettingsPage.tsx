@@ -138,7 +138,10 @@ export function Component() {
             aiGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
           )}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
+              <CardTitle className="text-sm flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-blue-400" />
+                {t('settings.aiFeatures')}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -155,10 +158,7 @@ export function Component() {
               <div className="space-y-3">
                 {aiFeatures.map((f) => (
                   <div key={f.key} className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex items-center gap-1.5">
-                      {f.available && flags[f.key] && (
-                        <Sparkles className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-                      )}
+                    <div className="min-w-0">
                       <div>
                         <p className="text-sm">{f.label}</p>
                         <p className="text-xs text-muted-foreground">{f.desc}</p>
