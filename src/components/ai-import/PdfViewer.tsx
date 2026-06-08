@@ -94,7 +94,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
 
   if (pages.length === 0) {
     return (
-      <iframe src={pdfUrl} className="w-full h-[500px] rounded-lg border" title="PDF" />
+      <iframe src={pdfUrl} className="w-full h-full min-h-[400px] rounded-lg border" title="PDF" />
     )
   }
 
