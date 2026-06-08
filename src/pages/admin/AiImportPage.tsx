@@ -22,6 +22,7 @@ import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
 } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
 
@@ -57,6 +58,7 @@ export function Component() {
   const [cacheTolerance, setCacheTolerance] = useState('')
   const [dataId, setDataId] = useState('')
 
+  const { isEnabled } = useSettingsStore()
   const aiConfigured = hasAiConfig()
   const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
   const canStart = parseMode === 'precision'
@@ -263,7 +265,9 @@ export function Component() {
               <Tabs value={parseMode} onValueChange={(v) => { setParseMode(v as ParseMode); if (v === 'lightweight') setBatchMode(false) }}>
                 <TabsList>
                   <TabsTrigger value="lightweight">轻量解析</TabsTrigger>
-                  <TabsTrigger value="precision">精准解析</TabsTrigger>
+                  {isEnabled('mineru') && (
+                    <TabsTrigger value="precision">精准解析</TabsTrigger>
+                  )}
                 </TabsList>
               </Tabs>
 

@@ -42,11 +42,13 @@ import {
 import type { ExamSession as ExamSessionType, QuestionType } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
 export function ExamSession() {
   const { t } = useT()
   const { user } = useAuthStore()
+  const { isEnabled } = useSettingsStore()
   const {
     session,
     questions,
@@ -211,7 +213,7 @@ export function ExamSession() {
           <CardContent className="py-6 lg:py-8 space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
-              {hasAiConfig() && (
+              {hasAiConfig() && isEnabled('exam') && (
                 <Button
                   variant="outline"
                   size="sm"

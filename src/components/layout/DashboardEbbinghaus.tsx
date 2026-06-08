@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles } from 'lucide-react'
 import { computeEbbinghaus, type EbbinghausData } from '@/lib/ai/ebbinghaus'
 import { suggestPlan, hasAiConfig } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
 const EbbinghausCurve = lazy(() => import('@/components/charts/EbbinghausCurve').then(m => ({ default: m.EbbinghausCurve })))
@@ -13,6 +14,7 @@ const UrgencyChart = lazy(() => import('@/components/charts/UrgencyChart').then(
 export function DashboardEbbinghaus() {
   const { t } = useT()
   const { user } = useAuthStore()
+  const { isEnabled } = useSettingsStore()
   const [expanded, setExpanded] = useState(false)
   const [data, setData] = useState<EbbinghausData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -36,7 +38,7 @@ export function DashboardEbbinghaus() {
     setData(d)
     setLoading(false)
 
-    if (hasAiConfig() && d.urgency.length > 0) {
+    if (hasAiConfig() && isEnabled('suggestions') && d.urgency.length > 0) {
       setAiLoading(true)
       try {
         const text = await suggestPlan({

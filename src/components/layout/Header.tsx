@@ -7,6 +7,8 @@ import { PlanProgress } from './PlanProgress'
 import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
 import { Link } from 'react-router-dom'
 import { Settings, Menu, Moon, Sparkles, Sun, CloudOff, Upload } from 'lucide-react'
+import { hasAiConfig } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -55,6 +57,8 @@ export function SyncBadge() {
 export function Header({ onMenuClick }: Props) {
   const { t } = useT()
   const { theme, toggle } = useThemeStore()
+  const { isEnabled } = useSettingsStore()
+  const summaryVisible = hasAiConfig() && isEnabled('summary')
   const [aiOpen, setAiOpen] = useState(false)
 
   return (
@@ -72,14 +76,16 @@ export function Header({ onMenuClick }: Props) {
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <SyncBadge />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setAiOpen(true)}
-          title="AI 学习总结"
-        >
-          <Sparkles className="h-5 w-5 text-blue-400 dark:text-blue-300" />
-        </Button>
+        {summaryVisible && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setAiOpen(true)}
+            title="AI 学习总结"
+          >
+            <Sparkles className="h-5 w-5 text-blue-400 dark:text-blue-300" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"

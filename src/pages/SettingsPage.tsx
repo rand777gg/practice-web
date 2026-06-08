@@ -1,10 +1,12 @@
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Languages, LogOut, CheckCircle, XCircle } from 'lucide-react'
+import { ArrowLeft, Languages, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
@@ -13,19 +15,20 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut } = useAuthStore()
   const { lang, setLang } = useLangStore()
+  const { flags, setFlag } = useSettingsStore()
   const navigate = useNavigate()
 
   if (!user) return null
 
-  const aiEnabled = hasAiConfig()
-  const mineruEnabled = hasMinerUToken()
+  const aiConfigured = hasAiConfig()
+  const mineruConfigured = hasMinerUToken()
   const mineruModel = getMinerUModelVersion()
 
   const aiFeatures = [
-    { key: 'exam', label: t('settings.aiExam'), desc: t('settings.aiExamDesc'), ok: aiEnabled },
-    { key: 'summary', label: t('settings.aiSummary'), desc: t('settings.aiSummaryDesc'), ok: aiEnabled },
-    { key: 'suggestions', label: t('settings.aiSuggestions'), desc: t('settings.aiSuggestionsDesc'), ok: aiEnabled },
-    { key: 'mineru', label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), ok: mineruEnabled },
+    { key: 'exam' as const, label: t('settings.aiExam'), desc: t('settings.aiExamDesc'), available: aiConfigured },
+    { key: 'summary' as const, label: t('settings.aiSummary'), desc: t('settings.aiSummaryDesc'), available: aiConfigured },
+    { key: 'suggestions' as const, label: t('settings.aiSuggestions'), desc: t('settings.aiSuggestionsDesc'), available: aiConfigured },
+    { key: 'mineru' as const, label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), available: mineruConfigured },
   ]
 
   return (
@@ -37,7 +40,6 @@ export function Component() {
         <h1 className="text-xl font-bold">{t('settings.title')}</h1>
       </div>
 
-      {/* User info */}
       <Card className="border-0 shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">{t('settings.account')}</CardTitle>
@@ -56,7 +58,6 @@ export function Component() {
         </CardContent>
       </Card>
 
-      {/* Language */}
       <Card className="border-0 shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">{t('settings.language')}</CardTitle>
@@ -83,25 +84,24 @@ export function Component() {
         </CardContent>
       </Card>
 
-      {/* AI features */}
       <Card className="border-0 shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">{t('settings.aiDesc')}</p>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {aiFeatures.map((f) => (
-              <div key={f.key} className="flex items-start justify-between gap-2">
+              <div key={f.key} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm">{f.label}</p>
                   <p className="text-xs text-muted-foreground">{f.desc}</p>
                 </div>
-                {f.ok ? (
-                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                )}
+                <Switch
+                  checked={f.available && flags[f.key]}
+                  disabled={!f.available}
+                  onCheckedChange={(v) => setFlag(f.key, v)}
+                />
               </div>
             ))}
           </div>
@@ -110,7 +110,6 @@ export function Component() {
 
       <Separator />
 
-      {/* Logout */}
       <Button variant="outline" size="sm" onClick={signOut} className="w-full">
         <LogOut className="h-4 w-4" />
         {t('auth.logout')}
