@@ -1,4 +1,4 @@
-import { useState, useRef, type DragEvent } from 'react'
+import { useState, useRef, useEffect, type DragEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Upload, FileText, FileImage, FileSpreadsheet, File, FileCode, X } from 'lucide-react'
 
@@ -96,6 +96,25 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
     }
   }
 
+  // Clipboard paste support
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items || items.length === 0) return
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.kind === 'file') {
+          e.preventDefault()
+          const f = item.getAsFile()
+          if (f) acceptFile(f)
+          return
+        }
+      }
+    }
+    document.addEventListener('paste', handler)
+    return () => document.removeEventListener('paste', handler)
+  }, [multiple, files])
+
   const formatLabel = multiple
     ? '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx、PPTx、Xlsx'
     : '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx'
@@ -141,7 +160,7 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
         {files.length === 0 ? (
           <div className="space-y-2">
             <Upload className="h-10 w-10 mx-auto text-muted-foreground" />
-            <p className="text-sm font-medium">拖拽文档到此处，或点击选择文件</p>
+            <p className="text-sm font-medium">拖拽文档到此处，或点击选择文件，或 Ctrl+V 粘贴</p>
             <p className="text-xs text-muted-foreground">{formatLabel}</p>
           </div>
         ) : multiple ? (
