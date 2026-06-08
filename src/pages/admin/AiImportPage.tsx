@@ -308,15 +308,17 @@ export function Component() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
                       <Switch
                         checked={batchMode}
                         onCheckedChange={(v) => { setBatchMode(v); setFile(null); setFiles([]) }}
                       />
-                      批量模式
+                      <span className="text-xs">批量模式</span>
                     </label>
+                  </div>
 
+                  <div className="flex items-center gap-2 flex-wrap">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-1 text-xs">
@@ -336,7 +338,7 @@ export function Component() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-1 text-xs">
-                          高级选项
+                          识别选项
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -352,10 +354,38 @@ export function Component() {
                         </DropdownMenuCheckboxItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1 text-xs">
+                          导出格式{extraFormats.length > 0 ? ` (${extraFormats.length})` : ''}
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {[
+                          { key: 'docx', label: 'DOCX' },
+                          { key: 'html', label: 'HTML' },
+                          { key: 'latex', label: 'LaTeX' },
+                        ].map((fmt) => (
+                          <DropdownMenuCheckboxItem
+                            key={fmt.key}
+                            checked={extraFormats.includes(fmt.key)}
+                            onCheckedChange={(v) => {
+                              setExtraFormats((prev) =>
+                                v ? [...prev, fmt.key] : prev.filter((x) => x !== fmt.key),
+                              )
+                            }}
+                          >
+                            {fmt.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5">
                       <label className="text-xs text-muted-foreground whitespace-nowrap">
                         指定页数{batchMode ? ' (所有文件)' : ''}
                       </label>
@@ -363,70 +393,39 @@ export function Component() {
                         placeholder="如: 1-10,15-20"
                         value={pageRanges}
                         onChange={(e) => setPageRanges(e.target.value)}
-                        className="h-7 text-xs w-[180px]"
+                        className="h-7 text-xs w-[160px]"
                       />
                     </div>
                     {!batchMode && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-muted-foreground whitespace-nowrap">数据ID</label>
-                        <Input
-                          placeholder="业务标识"
-                          value={dataId}
-                          onChange={(e) => setDataId(e.target.value)}
-                          className="h-7 text-xs w-[120px]"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {!batchMode && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <Switch checked={noCache} onCheckedChange={setNoCache} />
-                        <span className="text-xs">绕过缓存</span>
-                      </label>
-                      {!noCache && (
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs text-muted-foreground whitespace-nowrap">缓存容忍(秒)</label>
+                      <>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <Switch checked={noCache} onCheckedChange={setNoCache} />
+                          <span className="text-xs">绕过缓存</span>
+                        </label>
+                        {!noCache && (
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-xs text-muted-foreground whitespace-nowrap">缓存容忍</label>
+                            <Input
+                              type="number"
+                              placeholder="900s"
+                              value={cacheTolerance}
+                              onChange={(e) => setCacheTolerance(e.target.value)}
+                              className="h-7 text-xs w-[70px]"
+                            />
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-xs text-muted-foreground whitespace-nowrap">数据 ID</label>
                           <Input
-                            type="number"
-                            placeholder="900"
-                            value={cacheTolerance}
-                            onChange={(e) => setCacheTolerance(e.target.value)}
-                            className="h-7 text-xs w-[80px]"
+                            placeholder="业务标识"
+                            value={dataId}
+                            onChange={(e) => setDataId(e.target.value)}
+                            className="h-7 text-xs w-[100px]"
                           />
                         </div>
-                      )}
-                    </div>
-                  )}
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1 text-xs">
-                        导出格式{extraFormats.length > 0 ? ` (${extraFormats.length})` : ''}
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      {[
-                        { key: 'docx', label: 'DOCX' },
-                        { key: 'html', label: 'HTML' },
-                        { key: 'latex', label: 'LaTeX' },
-                      ].map((fmt) => (
-                        <DropdownMenuCheckboxItem
-                          key={fmt.key}
-                          checked={extraFormats.includes(fmt.key)}
-                          onCheckedChange={(v) => {
-                            setExtraFormats((prev) =>
-                              v ? [...prev, fmt.key] : prev.filter((x) => x !== fmt.key),
-                            )
-                          }}
-                        >
-                          {fmt.label}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
