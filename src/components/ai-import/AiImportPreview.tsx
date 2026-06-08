@@ -44,9 +44,10 @@ export function AiImportPreview({
       </div>
 
       {/* Subject & Category */}
-      <div className="flex gap-2">
+      <div className="flex items-center gap-1.5">
+        <label className="text-[10px] text-muted-foreground shrink-0">{t('questions.subject')}</label>
         <Input
-          className="h-7 text-xs flex-1"
+          className="h-6 text-[10px] flex-1 max-w-[160px]"
           placeholder={t('questions.subjectPlaceholder')}
           value={subject}
           onChange={(e) => onSubjectChange(e.target.value)}
@@ -55,8 +56,9 @@ export function AiImportPreview({
         <datalist id="preview-subjects">
           {existingSubjects.map(s => <option key={s} value={s} />)}
         </datalist>
+        <label className="text-[10px] text-muted-foreground shrink-0">{t('questions.category')}</label>
         <Input
-          className="h-7 text-xs flex-1"
+          className="h-6 text-[10px] flex-1 max-w-[160px]"
           placeholder={t('questions.categoryPlaceholder')}
           value={category}
           onChange={(e) => onCategoryChange(e.target.value)}
