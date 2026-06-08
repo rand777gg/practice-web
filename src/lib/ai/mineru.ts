@@ -163,7 +163,7 @@ export class MinerUClient {
     }
     if (options.isOcr !== undefined) body.is_ocr = options.isOcr
     if (options.pageRanges) body.page_ranges = options.pageRanges
-    if (options.extraFormats?.length) body.extra_formats = options.extraFormats
+    if (options.extraFormats?.length) body.formats = options.extraFormats
     if (options.noCache !== undefined) body.no_cache = options.noCache
     if (options.cacheTolerance !== undefined && options.cacheTolerance >= 0) body.cache_tolerance = options.cacheTolerance
     if (options.dataId) body.data_id = options.dataId
@@ -225,7 +225,7 @@ export class MinerUClient {
       enable_formula: options.enableFormula ?? true,
       enable_table: options.enableTable ?? true,
     }
-    if (options.extraFormats?.length) body.extra_formats = options.extraFormats
+    if (options.extraFormats?.length) body.formats = options.extraFormats
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task/batch`, {
       method: 'POST',
