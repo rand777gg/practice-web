@@ -49,7 +49,6 @@ interface ChartData {
 
 // localStorage caches — survive browser restart
 const CACHE_KEY = 'ds_cache'
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes for dashboard data
 const Q_META_KEY = 'ds_qmeta'
 const Q_META_TTL = 30 * 60 * 1000 // 30 minutes for questions metadata
 
@@ -59,8 +58,7 @@ function readCache(): CacheEntry | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return null
-    const entry = JSON.parse(raw) as CacheEntry
-    if (Date.now() - entry.ts < CACHE_TTL) return entry
+    return JSON.parse(raw) as CacheEntry
   } catch { /* ignore */ }
   return null
 }
