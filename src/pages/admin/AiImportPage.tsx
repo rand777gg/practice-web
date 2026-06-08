@@ -62,7 +62,7 @@ export function Component() {
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const user = useAuthStore((s) => s.user)
 
@@ -71,7 +71,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data } = await supabase
       .from('parse_history')
-      .select('id, file_name, markdown, json_data, mode, created_at')
+      .select('id, file_name, markdown, json_data, questions_json, mode, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -79,13 +79,14 @@ export function Component() {
     setHistoryLoading(false)
   }
 
-  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; mode: string }) => {
+  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string }) => {
     if (!user) return
     await supabase.from('parse_history').insert({
       user_id: user.id,
       file_name: record.fileName,
       markdown: record.markdown,
       json_data: record.jsonData || null,
+      questions_json: record.questions ? JSON.stringify(record.questions) : null,
       mode: record.mode,
     })
   }
@@ -94,6 +95,9 @@ export function Component() {
     const entry = history.find(h => h.id === id)
     if (entry) {
       setParseResult({ markdown: entry.markdown, fileName: entry.file_name, jsonData: entry.json_data || undefined })
+      if (entry.questions_json) {
+        try { setQuestions(JSON.parse(entry.questions_json)) } catch { /* ignore */ }
+      }
       setParsingDone(true)
       setStep('parsing')
       setShowHistory(false)
@@ -223,6 +227,9 @@ export function Component() {
     setQuestions(result.questions)
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
     setStep('preview')
+    if (parseResult) {
+      saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+    }
   }
 
   const startImport = async () => {
@@ -321,7 +328,7 @@ export function Component() {
                 <div key={h.id} className="flex items-center gap-2 text-xs bg-muted/30 rounded-lg p-2 group">
                   <button type="button" className="flex-1 text-left min-w-0" onClick={() => loadHistory(h.id)}>
                     <p className="font-medium truncate">{h.file_name}</p>
-                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {h.mode === 'lightweight' ? '轻量' : '精准'}</p>
+                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {h.mode === 'lightweight' ? '轻量' : '精准'}{h.questions_json ? ` · ${(JSON.parse(h.questions_json) as unknown[]).length} 题` : ''}</p>
                   </button>
                   <button type="button" className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
                     onClick={() => deleteHistory(h.id)}>
