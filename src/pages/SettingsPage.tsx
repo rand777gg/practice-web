@@ -34,13 +34,16 @@ export function Component() {
   ]
 
   return (
-    <div className="space-y-6 max-w-xl">
+    <div className="space-y-6 max-w-3xl">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-xl font-bold">{t('settings.title')}</h1>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-6">
 
       <Card className="border-0 shadow-none">
         <CardHeader className="pb-2">
@@ -101,9 +104,12 @@ export function Component() {
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-none">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
+        </div>
+
+        <div className="space-y-6">
+          <Card className="border-0 shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">{t('settings.aiDesc')}</p>
@@ -124,6 +130,9 @@ export function Component() {
           </div>
         </CardContent>
       </Card>
+
+        </div>
+      </div>
 
       {profile?.role === 'admin' && (
         <>
