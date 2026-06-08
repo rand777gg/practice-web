@@ -1,5 +1,4 @@
 // Supabase Edge Function: unlink-identity
-// Removes a linked OAuth identity from the authenticated user
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -13,9 +12,7 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
     const authHeader = req.headers.get('Authorization')
@@ -38,33 +35,39 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing provider' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Find the identity to unlink
-    const identity = user.identities?.find((i: any) => i.provider === provider)
-    if (!identity) {
+    const targetIdentity = user.identities?.find((i: any) => i.provider === provider)
+    if (!targetIdentity) {
       return new Response(JSON.stringify({ error: 'Identity not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Must keep at least one identity
     if (!user.identities || user.identities.length <= 1) {
       return new Response(JSON.stringify({ error: 'Cannot unlink the only login method' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Unlink identity via GoTrue admin API
-    // PUT /admin/users/{id} with identity_id unlinks that specific identity
-    const unlinkRes = await fetch(
-      `${SUPABASE_URL}/auth/v1/admin/users/${user.id}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ identity_id: identity.identity_id }),
-      }
-    )
+    // Keep all identities except the one to unlink
+    const remainingIdentities = user.identities
+      .filter((i: any) => i.provider !== provider)
+      .map((i: any) => ({
+        id: i.identity_id,
+        user_id: user.id,
+        identity_data: i.identity_data,
+        provider: i.provider,
+        last_sign_in_at: i.last_sign_in_at,
+        created_at: i.created_at,
+        updated_at: i.updated_at,
+      }))
 
-    if (!unlinkRes.ok) {
-      const err = await unlinkRes.text()
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${user.id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ identities: remainingIdentities }),
+    })
+
+    if (!res.ok) {
+      const err = await res.text()
       return new Response(JSON.stringify({ error: err }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
