@@ -1,5 +1,5 @@
 const DB_NAME = 'practice-offline'
-const DB_VERSION = 1
+const DB_VERSION = 3
 
 interface PendingAnswer {
   id?: number
@@ -23,6 +23,10 @@ function openDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
+      // Clean up orphaned stores from previous versions
+      if (db.objectStoreNames.contains('question_stats')) {
+        db.deleteObjectStore('question_stats')
+      }
       if (!db.objectStoreNames.contains('pending_answers')) {
         db.createObjectStore('pending_answers', { keyPath: 'id', autoIncrement: true })
       }
