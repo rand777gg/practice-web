@@ -32,6 +32,8 @@ export const zh = {
     confirmComplete: '邮箱验证成功，注册完成！',
     githubLogin: '使用 GitHub 登录',
     githubRegister: '使用 GitHub 注册',
+    githubBind: '绑定 GitHub',
+    githubBound: '已绑定',
   },
   dashboard: {
     title: '仪表盘',
@@ -365,6 +367,8 @@ export const en = {
     confirmComplete: 'Email verified successfully — registration complete!',
     githubLogin: 'Sign in with GitHub',
     githubRegister: 'Sign up with GitHub',
+    githubBind: 'Link GitHub',
+    githubBound: 'Linked',
   },
   dashboard: {
     title: 'Dashboard',
