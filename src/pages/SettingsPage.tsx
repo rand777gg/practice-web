@@ -10,10 +10,7 @@ import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+import { AlertDialog, Button as RadixButton, Flex } from '@radix-ui/themes'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
@@ -304,47 +301,45 @@ export function Component() {
       <Separator />
 
       <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={signOut} className="flex-1">
-          <LogOut className="h-4 w-4" />
+        <Button variant="outline" size="sm" onClick={signOut} className="h-8 text-xs flex-1">
+          <LogOut className="h-3.5 w-3.5" />
           {t('auth.logout')}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
-          <Trash2 className="h-4 w-4" />
+        <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)} className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
+          <Trash2 className="h-3.5 w-3.5" />
           注销账号
         </Button>
       </div>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>确认注销账号</DialogTitle>
-            <DialogDescription>
-              此操作将永久删除你的账号及所有数据（包括答题记录、收藏、笔记等），且无法恢复。确定要继续吗？
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(false)}>取消</Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleting}
-              onClick={async () => {
-                setDeleting(true)
-                const { error } = await supabase.functions.invoke('delete-account', { body: { user_id: user?.id } })
-                if (error) {
-                  // Fallback: just sign out
-                  await signOut()
-                } else {
-                  await signOut()
-                }
-                setDeleting(false)
-              }}
-            >
-              {deleting ? '注销中...' : '确认注销'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialog.Content maxWidth="400px">
+          <AlertDialog.Title>确认注销账号</AlertDialog.Title>
+          <AlertDialog.Description size="2">
+            此操作将永久删除你的账号及所有数据（包括答题记录、收藏、笔记等），且无法恢复。确定要继续吗？
+          </AlertDialog.Description>
+          <Flex gap="3" mt="4" justify="end">
+            <AlertDialog.Cancel>
+              <RadixButton variant="soft" color="gray" disabled={deleting}>取消</RadixButton>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action>
+              <RadixButton
+                variant="solid"
+                color="red"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true)
+                  const { error } = await supabase.functions.invoke('delete-account', { body: { user_id: user?.id } })
+                  if (error) await signOut()
+                  else await signOut()
+                  setDeleting(false)
+                }}
+              >
+                {deleting ? '注销中...' : '确认注销'}
+              </RadixButton>
+            </AlertDialog.Action>
+          </Flex>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
     </div>
   )
 }
