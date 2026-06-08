@@ -22,7 +22,12 @@
       "Bash(gh release *)",
       "Bash(git push *)",
       "WebFetch(domain:echarts.apache.org)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git commit *)",
+      "Bash(awk 'NR>=120 && NR<=140')",
+      "Bash(git pull *)",
+      "WebFetch(domain:mineru.net)",
+      "Bash(npm uninstall *)"
     ]
   }
 }
