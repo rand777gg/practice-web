@@ -419,7 +419,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               )
             })()}
           </div>
-        </div>
           )}
 
         </div>
