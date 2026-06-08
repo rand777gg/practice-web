@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -102,7 +102,20 @@ export function Component() {
 
   const [chartData, setChartData] = useState<ChartData | null>(hasCache ? cached!.data : null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
+  const btnRowRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (expandedBtn === null) return
+    const handler = (e: MouseEvent) => {
+      if (btnRowRef.current && !btnRowRef.current.contains(e.target as Node)) {
+        setExpandedBtn(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expandedBtn])
 
   useEffect(() => {
     if (!user) return
@@ -437,25 +450,40 @@ export function Component() {
             <div className="space-y-4">
               <DashboardPlanCards />
               <DashboardEbbinghaus />
-              <div className="flex items-center gap-2 overflow-x-auto">
+              <div className="flex items-center gap-2 overflow-x-auto" ref={btnRowRef}>
                 {([
                   { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
                   { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
                   { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
                   { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
                   { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
-                ]).map((btn) => (
-                  <Button
-                    key={btn.to}
-                    variant={btn.variant}
-                    size="sm"
-                    className="shrink-0 gap-2"
-                    onClick={() => navigate(btn.to)}
-                  >
-                    <btn.icon className="h-4 w-4" />
-                    {btn.label}
-                  </Button>
-                ))}
+                ]).map((btn, i) => {
+                  const isExpanded = expandedBtn === i
+                  const Icon = btn.icon
+                  return (
+                    <Button
+                      key={btn.to}
+                      variant={btn.variant}
+                      size="sm"
+                      className={`shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${isExpanded ? 'px-3 gap-2' : 'px-1.5'}`}
+                      onClick={() => {
+                        if (window.innerWidth >= 640) {
+                          navigate(btn.to)
+                        } else if (isExpanded) {
+                          setExpandedBtn(null)
+                          navigate(btn.to)
+                        } else {
+                          setExpandedBtn(i)
+                        }
+                      }}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${isExpanded ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
+                        {btn.label}
+                      </span>
+                    </Button>
+                  )
+                })}
               </div>
             </div>
           </TabsContent>
