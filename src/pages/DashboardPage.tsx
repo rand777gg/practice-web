@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -104,20 +104,7 @@ export function Component() {
 
   const [chartData, setChartData] = useState<ChartData | null>(hasCache ? cached!.data : null)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
-  const headerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (expandedBtn === null) return
-    const handler = (e: MouseEvent) => {
-      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
-        setExpandedBtn(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [expandedBtn])
 
   useEffect(() => {
     if (!user) return
@@ -385,50 +372,14 @@ export function Component() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center justify-between gap-2 pb-1" ref={headerRef}>
-        <h1 className="text-xl lg:text-2xl font-bold shrink-0">{t('dashboard.title')}</h1>
+      <div className="flex items-center gap-2 pb-1">
+        <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
         {isRefreshing && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
             更新中
           </div>
         )}
-        <div className="flex items-center gap-2 overflow-x-auto">
-          {([
-            { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
-            { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
-            { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
-            { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
-            { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
-          ]).map((btn, i) => {
-            const isExpanded = expandedBtn === i
-            const Icon = btn.icon
-            const showText = isExpanded
-            return (
-              <Button
-                key={btn.to}
-                variant={btn.variant}
-                size="sm"
-                className={`shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${showText ? 'px-3' : 'px-1.5'}`}
-                onClick={() => {
-                  if (window.innerWidth >= 640) {
-                    navigate(btn.to)
-                  } else if (isExpanded) {
-                    setExpandedBtn(null)
-                    navigate(btn.to)
-                  } else {
-                    setExpandedBtn(i)
-                  }
-                }}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${showText ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
-                  {btn.label}
-                </span>
-              </Button>
-            )
-          })}
-        </div>
       </div>
 
       {!chartData ? (
@@ -488,6 +439,26 @@ export function Component() {
             <div className="space-y-4">
               <DashboardPlanCards />
               <DashboardEbbinghaus />
+              <div className="flex items-center gap-2 overflow-x-auto">
+                {([
+                  { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
+                  { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
+                  { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
+                  { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
+                  { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
+                ]).map((btn) => (
+                  <Button
+                    key={btn.to}
+                    variant={btn.variant}
+                    size="sm"
+                    className="shrink-0 gap-2"
+                    onClick={() => navigate(btn.to)}
+                  >
+                    <btn.icon className="h-4 w-4" />
+                    {btn.label}
+                  </Button>
+                ))}
+              </div>
             </div>
           </TabsContent>
 
