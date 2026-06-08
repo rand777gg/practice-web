@@ -14,16 +14,11 @@ import type { AiProviderConfig } from '@/types'
 export function Component() {
   const { t } = useT()
   const { providers, toggleProvider, toggleModel, setApiKey, setBaseUrl } = useAiStore()
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const official = providers.filter((p) => p.type === 'official')
   const community = providers.filter((p) => p.type === 'community')
   const enabledCount = providers.filter((p) => p.enabled).length
   const disabledCount = providers.filter((p) => !p.enabled).length
-
-  const toggleExpanded = (id: string) => {
-    setExpandedId(expandedId === id ? null : id)
-  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -46,8 +41,6 @@ export function Component() {
               <ProviderCard
                 key={p.id}
                 provider={p}
-                expanded={expandedId === p.id}
-                onToggleExpand={() => toggleExpanded(p.id)}
                 onToggle={() => toggleProvider(p.id)}
                 onToggleModel={(mid) => toggleModel(p.id, mid)}
                 onApiKeyChange={(key) => setApiKey(p.id, key)}
@@ -71,8 +64,6 @@ export function Component() {
               <ProviderCard
                 key={p.id}
                 provider={p}
-                expanded={expandedId === p.id}
-                onToggleExpand={() => toggleExpanded(p.id)}
                 onToggle={() => toggleProvider(p.id)}
                 onToggleModel={(mid) => toggleModel(p.id, mid)}
                 onApiKeyChange={(key) => setApiKey(p.id, key)}
@@ -89,8 +80,6 @@ export function Component() {
             icon={<Zap className="h-4 w-4 text-yellow-500" />}
             label={t('ai.official')}
             providers={official}
-            expandedId={expandedId}
-            onToggleExpand={toggleExpanded}
             onToggle={toggleProvider}
             onToggleModel={toggleModel}
             onApiKeyChange={setApiKey}
@@ -101,8 +90,6 @@ export function Component() {
             icon={<Globe className="h-4 w-4 text-blue-500" />}
             label={t('ai.community')}
             providers={community}
-            expandedId={expandedId}
-            onToggleExpand={toggleExpanded}
             onToggle={toggleProvider}
             onToggleModel={toggleModel}
             onApiKeyChange={setApiKey}
@@ -118,8 +105,6 @@ interface ProviderGroupProps {
   icon: React.ReactNode
   label: string
   providers: AiProviderConfig[]
-  expandedId: string | null
-  onToggleExpand: (id: string) => void
   onToggle: (id: string) => void
   onToggleModel: (providerId: string, modelId: string) => void
   onApiKeyChange: (providerId: string, key: string) => void
@@ -127,8 +112,8 @@ interface ProviderGroupProps {
 }
 
 function ProviderGroup({
-  icon, label, providers, expandedId,
-  onToggleExpand, onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange,
+  icon, label, providers,
+  onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange,
 }: ProviderGroupProps) {
   return (
     <section className="space-y-3">
@@ -141,8 +126,6 @@ function ProviderGroup({
           <ProviderCard
             key={p.id}
             provider={p}
-            expanded={expandedId === p.id}
-            onToggleExpand={() => onToggleExpand(p.id)}
             onToggle={() => onToggle(p.id)}
             onToggleModel={(mid) => onToggleModel(p.id, mid)}
             onApiKeyChange={(key) => onApiKeyChange(p.id, key)}
@@ -156,19 +139,18 @@ function ProviderGroup({
 
 interface ProviderCardProps {
   provider: AiProviderConfig
-  expanded: boolean
-  onToggleExpand: () => void
   onToggle: () => void
   onToggleModel: (modelId: string) => void
   onApiKeyChange: (key: string) => void
   onBaseUrlChange: (url: string) => void
 }
 
-function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange }: ProviderCardProps) {
+function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBaseUrlChange }: ProviderCardProps) {
   const { t } = useT()
   const enabledCount = provider.models.filter((m) => m.enabled).length
   const hasEnvKey = !!(import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`]
-
+  const hasKey = hasEnvKey || !!provider.apiKey
+  const [expanded, setExpanded] = useState(provider.enabled && hasKey)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testing, setTesting] = useState(false)
 
@@ -204,12 +186,6 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
             <div className="flex items-center gap-2">
               <ProviderIcon provider={provider.id} size={20} type="avatar" />
               <CardTitle className="text-sm">{provider.name}</CardTitle>
-              {hasEnvKey && (
-                <Badge variant="secondary" className="text-[10px] h-4 px-1">环境变量</Badge>
-              )}
-              {provider.apiKey && (
-                <Badge className="text-[10px] h-4 px-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">已配置</Badge>
-              )}
             </div>
             <CardDescription className="text-xs mt-1 line-clamp-2">
               {provider.description}
@@ -223,7 +199,7 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
         <>
           <div
             className="flex items-center justify-center gap-1 py-1 cursor-pointer hover:bg-accent/50 transition-colors text-xs text-muted-foreground"
-            onClick={onToggleExpand}
+            onClick={() => setExpanded(!expanded)}
           >
             {enabledCount > 0 && (
               <span className="text-[10px]">{t('ai.models')}: {enabledCount}/{provider.models.length}</span>
@@ -242,7 +218,7 @@ function ProviderCard({ provider, expanded, onToggleExpand, onToggle, onToggleMo
                   type="password"
                   value={provider.apiKey}
                   onChange={(e) => onApiKeyChange(e.target.value)}
-                  placeholder="sk-..."
+                  placeholder={hasEnvKey ? '••••••••' : 'sk-...'}
                   className="h-8 text-xs"
                 />
               </div>
