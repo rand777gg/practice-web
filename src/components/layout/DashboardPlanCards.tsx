@@ -28,17 +28,6 @@ function getDailyTargets(profile: { daily_targets?: string | null } | null): Dai
 
 function subjectKey(s: string) { return s || 'Other' }
 
-function useAlternatingText(deps: unknown[], interval = 3000) {
-  const [idx, setIdx] = useState(0)
-  useEffect(() => {
-    if (deps.length === 0) return
-    setIdx(0)
-    const timer = setInterval(() => setIdx((i) => (i + 1) % deps.length), interval)
-    return () => clearInterval(timer)
-  }, [deps.join(','), interval])
-  return idx
-}
-
 export function DashboardPlanCards() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
@@ -48,14 +37,11 @@ export function DashboardPlanCards() {
   const dailyTargets = getDailyTargets(profile)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  // Long-term
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
   const [yesterdayDone, setYesterdayDone] = useState(0)
 
-  // Daily targets
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
-  const [yesterdayDailyDone, setYesterdayDailyDone] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -64,34 +50,22 @@ export function DashboardPlanCards() {
       if (deadline) {
         let scopeIds: Set<string>
         if (planSubjects.length > 0) {
-          const { data: scopeQs } = await supabase
-            .from('questions')
-            .select('id')
-            .in('subject', planSubjects)
+          const { data: scopeQs } = await supabase.from('questions').select('id').in('subject', planSubjects)
           scopeIds = new Set((scopeQs ?? []).map((q) => q.id))
         } else {
           const { data: allQs } = await supabase.from('questions').select('id')
           scopeIds = new Set((allQs ?? []).map((q) => q.id))
         }
 
-        const { data: done } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', uid)
-
+        const { data: done } = await supabase.from('user_answers').select('question_id').eq('user_id', uid)
         const doneIds = new Set((done ?? []).map((a) => a.question_id))
         let doneAll = 0
         for (const id of scopeIds) if (doneIds.has(id)) doneAll++
-
         setTotalScope(scopeIds.size)
         setTotalDone(doneAll)
 
-        const { data: doneBeforeToday } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', uid)
-          .lt('answered_at', todayStart())
-
+        const { data: doneBeforeToday } = await supabase.from('user_answers')
+          .select('question_id').eq('user_id', uid).lt('answered_at', todayStart())
         const yesterdayIds = new Set((doneBeforeToday ?? []).map((a) => a.question_id))
         let doneBefore = 0
         for (const id of scopeIds) if (yesterdayIds.has(id)) doneBefore++
@@ -99,27 +73,16 @@ export function DashboardPlanCards() {
       }
 
       if (dailyTargets.length > 0) {
-        const allTargetSubjects = dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject))
-        const targetSubjectSet = new Set(allTargetSubjects)
-
-        const { data: today } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', uid)
-          .gte('answered_at', todayStart())
-
+        const targetSubjectSet = new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))
+        const { data: today } = await supabase.from('user_answers')
+          .select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
         const todayIds = new Set((today ?? []).map((a) => a.question_id))
-        const { data: todayQs } = await supabase
-          .from('questions')
-          .select('id, subject')
-          .in('id', [...todayIds])
+        const { data: todayQs } = await supabase.from('questions').select('id, subject').in('id', [...todayIds])
 
         const subjectCounts = new Map<string, number>()
         for (const q of (todayQs ?? [])) {
           const s = subjectKey(q.subject)
-          if (targetSubjectSet.has(s)) {
-            subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
-          }
+          if (targetSubjectSet.has(s)) subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
         }
 
         setTargetProgress(dailyTargets.map((t) => {
@@ -132,26 +95,6 @@ export function DashboardPlanCards() {
           const totalDone = subjects.reduce((sum, s) => sum + s.done, 0)
           return { subjects, total: totalCount, totalDone }
         }))
-
-        // Yesterday's daily target count
-        const { data: yesterdayData } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', uid)
-          .gte('answered_at', (() => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0); return d.toISOString() })())
-          .lt('answered_at', todayStart())
-
-        const yesterdayAnsIds = new Set((yesterdayData ?? []).map((a) => a.question_id))
-        const { data: yesterdayQs } = await supabase
-          .from('questions')
-          .select('id, subject')
-          .in('id', [...yesterdayAnsIds])
-
-        let yestCount = 0
-        for (const q of (yesterdayQs ?? [])) {
-          if (targetSubjectSet.has(subjectKey(q.subject))) yestCount++
-        }
-        setYesterdayDailyDone(yestCount)
       }
     }
     load()
@@ -159,31 +102,19 @@ export function DashboardPlanCards() {
 
   if (!user) return null
 
-  // Long-term calcs
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 1000) / 10 : 0
   const changeFromYesterday = totalDone - yesterdayDone
   const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
 
-  // Daily targets calcs
   const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
   const dailyPct = totalDaily > 0 ? Math.min(Math.round((doneDaily / totalDaily) * 100), 100) : 0
-  const dailyChangePct = yesterdayDailyDone > 0
-    ? Math.round((Math.abs(doneDaily - yesterdayDailyDone) / yesterdayDailyDone) * 1000) / 10
-    : null
-  const dailyIsUp = doneDaily >= yesterdayDailyDone
 
-  // Alternating text index
-  const longAlt = useAlternatingText([totalDone, changePct].filter(Boolean))
-  const dailyAlt = useAlternatingText([doneDaily, dailyChangePct].filter(Boolean) as number[])
-
-  // Nearest deadline
-  const nearestDeadline = dailyTargets
-    .filter(t => t.deadline)
+  const nearestDeadline = dailyTargets.filter(t => t.deadline)
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
 
-  const remainingLabel = nearestDeadline ? (() => {
+  const deadlineText = nearestDeadline ? (() => {
     const diff = new Date(nearestDeadline.deadline!).getTime() - Date.now()
     if (diff <= 0) return t('plan.deadlinePassed')
     const d = Math.floor(diff / 86400000)
@@ -212,30 +143,21 @@ export function DashboardPlanCards() {
                     const todayPct = totalScope > 0 ? ((totalDone - yesterdayDone) / totalScope) * 100 : 0
                     return (
                       <>
-                        {yesterdayPct > 0 && (
-                          <div className="h-full bg-blue-500 transition-all" style={{ width: `${yesterdayPct}%` }} />
-                        )}
-                        {todayPct > 0 && (
-                          <div className="h-full bg-green-500 transition-all" style={{ width: `${todayPct}%` }} />
-                        )}
+                        {yesterdayPct > 0 && <div className="h-full bg-blue-500 transition-all" style={{ width: `${yesterdayPct}%` }} />}
+                        {todayPct > 0 && <div className="h-full bg-green-500 transition-all" style={{ width: `${todayPct}%` }} />}
                       </>
                     )
                   })()}
                 </div>
                 <span className="text-[11px] font-medium tabular-nums">{overallPct.toFixed(1)}%</span>
               </div>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1 min-h-[16px]">
-                <span className="transition-opacity duration-300" key={longAlt}>
-                  {longAlt === 0 ? (
-                    <>{t('plan.doneCount')}: {totalDone}</>
-                  ) : changePct != null && changePct > 0 ? (
-                    <span className={isUp ? 'text-green-500' : 'text-red-500'}>
-                      {t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct.toFixed(1)}%
-                    </span>
-                  ) : (
-                    <>{t('plan.doneCount')}: {totalDone}</>
-                  )}
-                </span>
+              <p className="text-[11px] text-muted-foreground truncate">
+                {t('plan.doneCount')}: {totalDone}
+                {changePct != null && changePct > 0 && (
+                  <span className={isUp ? 'text-green-500' : 'text-red-500'}>
+                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct.toFixed(1)}%
+                  </span>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -244,29 +166,17 @@ export function DashboardPlanCards() {
         {dailyTargets.length > 0 && (
           <Card className="flex-1 min-w-0 border-0 shadow-none cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => setDialogOpen(true)}>
             <CardHeader className="pb-1">
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle className="text-sm text-pink-600 dark:text-pink-400">{t('plan.dailyTarget')}</CardTitle>
-              </div>
+              <CardTitle className="text-sm text-pink-600 dark:text-pink-400">{t('plan.dailyTarget')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
                 <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{totalDaily}</span>
               </div>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1 min-h-[16px]">
-                <span className="transition-opacity duration-300" key={dailyAlt}>
-                  {dailyAlt === 0 ? (
-                    <>{t('plan.doneCount')}: {doneDaily}</>
-                  ) : dailyChangePct != null && dailyChangePct > 0 ? (
-                    <span className={dailyIsUp ? 'text-green-500' : 'text-red-500'}>
-                      {t('plan.vsYesterday')} {dailyIsUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {dailyChangePct.toFixed(1)}%
-                    </span>
-                  ) : (
-                    <>{t('plan.doneCount')}: {doneDaily}</>
-                  )}
-                </span>
-                {remainingLabel && doneDaily < totalDaily && (
-                  <span className="text-xs text-muted-foreground shrink-0 truncate">{remainingLabel}</span>
+              <p className="text-[11px] text-muted-foreground truncate">
+                {t('plan.doneCount')}: {doneDaily}
+                {deadlineText && (
+                  <span className="text-muted-foreground"> — {deadlineText}</span>
                 )}
               </p>
               <div className="space-y-1">
@@ -278,18 +188,10 @@ export function DashboardPlanCards() {
                         return (
                           <div key={subj.subject} className="flex items-center gap-1 text-xs">
                             <span className={subjDone ? 'text-green-500' : 'text-muted-foreground'}>
-                              {subjDone ? (
-                                <Check className="h-3 w-3" />
-                              ) : (
-                                <span className="inline-block w-3 h-3 rounded-full border" />
-                              )}
+                              {subjDone ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border" />}
                             </span>
-                            <span className={subjDone ? 'line-through text-muted-foreground' : ''}>
-                              {subj.subject}
-                            </span>
-                            <span className="ml-auto text-muted-foreground tabular-nums">
-                              {subj.done}/{subj.count}
-                            </span>
+                            <span className={subjDone ? 'line-through text-muted-foreground' : ''}>{subj.subject}</span>
+                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}</span>
                           </div>
                         )
                       })}
