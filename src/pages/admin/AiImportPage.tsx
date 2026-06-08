@@ -78,6 +78,7 @@ export function Component() {
     if (entry) {
       setParseResult({ markdown: entry.markdown, fileName: entry.fileName, jsonData: entry.jsonData })
       setParsingDone(true)
+      setStep('parsing')
       setShowHistory(false)
     }
   }
