@@ -22,6 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import { SegmentedControl } from '@radix-ui/themes'
 import { cn } from '@/lib/utils'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
@@ -51,6 +52,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [deadline, setDeadline] = useState(profile?.deadline ?? '')
   const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>(savedTargets)
   const [saving, setSaving] = useState(false)
+  const [planTab, setPlanTab] = useState<'long-term' | 'daily'>('long-term')
 
   const [allSubjects, setAllSubjects] = useState<string[]>([])
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
@@ -171,8 +173,16 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* 左侧：Long-term plan */}
+          <SegmentedControl.Root
+            value={planTab}
+            onValueChange={(v) => setPlanTab(v as 'long-term' | 'daily')}
+            className="w-full"
+          >
+            <SegmentedControl.Item value="long-term">{t('plan.longTerm')}</SegmentedControl.Item>
+            <SegmentedControl.Item value="daily">{t('plan.dailyTarget')}</SegmentedControl.Item>
+          </SegmentedControl.Root>
+
+          {planTab === 'long-term' && (
           <div className="border rounded-lg p-3">
             <div className="text-sm font-semibold mb-2 text-blue-600 dark:text-blue-400">
               {t('plan.longTerm')}
@@ -277,8 +287,9 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               )}
             </div>
           </div>
+          )}
 
-          {/* 右侧：Daily targets */}
+          {planTab === 'daily' && (
           <div className="border rounded-lg p-3">
             <div className="text-sm font-semibold mb-2 text-pink-600 dark:text-pink-400">
               {t('plan.dailyTarget')}
@@ -409,6 +420,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             })()}
           </div>
         </div>
+          )}
 
         </div>
 
