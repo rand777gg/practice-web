@@ -18,55 +18,33 @@ export function useUserAnswers() {
     return () => window.removeEventListener('online', onOnline)
   }, [])
 
+  // Always save locally first, then sync in background
   const saveAnswer = useCallback(
     async (questionId: string, selectedAnswer: unknown, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string) => {
       if (!user) return null
 
-      // Offline: queue to IndexedDB
-      if (!navigator.onLine) {
-        const localId = await addPendingAnswer({
-          user_id: user.id,
-          question_id: questionId,
-          selected_answer: selectedAnswer,
-          is_correct: isCorrect,
-          mode,
-          exam_session_id: examSessionId ?? null,
-          answered_at: new Date().toISOString(),
-        })
-        refreshPending()
-        return `local-${localId}`
-      }
-
-      // Online: direct Supabase insert
-      const { data, error } = await supabase.from('user_answers').insert({
+      const payload = {
         user_id: user.id,
         question_id: questionId,
         selected_answer: selectedAnswer,
         is_correct: isCorrect,
         mode,
         exam_session_id: examSessionId ?? null,
-      }).select('id').single()
-
-      if (error) {
-        // Fallback: save to offline queue if network error
-        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('timeout')) {
-          const localId = await addPendingAnswer({
-            user_id: user.id,
-            question_id: questionId,
-            selected_answer: selectedAnswer,
-            is_correct: isCorrect,
-            mode,
-            exam_session_id: examSessionId ?? null,
-            answered_at: new Date().toISOString(),
-          })
-          refreshPending()
-          return `local-${localId}`
-        }
-        throw error
+        answered_at: new Date().toISOString(),
       }
-      return data?.id as string | null
+
+      // Always write to IndexedDB first — instant, never blocks UI
+      const localId = await addPendingAnswer(payload)
+      refreshPending()
+
+      // Background sync — fire and forget
+      if (navigator.onLine) {
+        sync().catch(() => { /* best-effort */ })
+      }
+
+      return `local-${localId}`
     },
-    [user],
+    [user, sync],
   )
 
   const updateNote = useCallback(
