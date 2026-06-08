@@ -379,6 +379,7 @@ export function Component() {
                           { key: 'docx', label: 'DOCX' },
                           { key: 'html', label: 'HTML' },
                           { key: 'latex', label: 'LaTeX' },
+                          { key: 'json', label: 'JSON' },
                         ].map((fmt) => (
                           <DropdownMenuCheckboxItem
                             key={fmt.key}
