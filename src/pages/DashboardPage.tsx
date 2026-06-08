@@ -152,13 +152,9 @@ export function Component() {
         writeQMetaCache(questions)
       }
 
-      function normalizeSubject(s: string): string {
-        return /^\d{4}真题$/.test(s) ? '真题' : s
-      }
-
       const qMap = new Map<string, { subject: string; category: string; questionType: string }>()
       for (const q of questions ?? []) {
-        qMap.set(q.id, { subject: normalizeSubject(q.subject ?? ''), category: q.category ?? '', questionType: q.question_type ?? '' })
+        qMap.set(q.id, { subject: q.subject ?? '', category: q.category ?? '', questionType: q.question_type ?? '' })
       }
 
       let correctCount = 0
@@ -193,7 +189,7 @@ export function Component() {
 
       // Sunburst data from all questions (not just answered)
       const sunburstData = (questions ?? []).map((q) => ({
-        subject: normalizeSubject(q.subject || ''),
+        subject: q.subject || '',
         category: q.category || '',
         questionType: q.question_type || '',
       }))

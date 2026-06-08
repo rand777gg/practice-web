@@ -32,9 +32,7 @@ export function SubjectDonutCharts({ data }: Props) {
     const typeMap = new Map<string, number>()
 
     for (const d of data) {
-      const cat = d.category
-        ? /^\d{4}年真题$/.test(d.category) ? '真题' : d.category
-        : '未分类'
+      const cat = d.category || '未分类'
       const subj = d.subject || '未分类'
       const type = TYPE_LABELS[d.questionType] || d.questionType || '其他'
 
