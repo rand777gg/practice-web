@@ -24,9 +24,26 @@ async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: stri
     const mdFile = zip.file('full.md')
     if (!mdFile) throw new Error('full.md not found in zip archive')
     const markdown = await mdFile.async('text')
+
+    // Find coordinate data from various possible file names
     let jsonData: string | undefined
-    const jsonFile = zip.file('content_list.json') || zip.file('middle.json')
-    if (jsonFile) jsonData = await jsonFile.async('text')
+    const candidates = ['content_list.json', 'middle.json', 'model.json']
+    for (const name of candidates) {
+      const f = zip.file(name)
+      if (f) { jsonData = await f.async('text'); break }
+    }
+    // Also try regex match for files ending with _content_list.json or _middle.json
+    if (!jsonData) {
+      const allFiles: string[] = []
+      zip.forEach((path) => allFiles.push(path))
+      const match = allFiles.find(f => f.endsWith('_content_list.json') || f.endsWith('_middle.json'))
+      if (match) {
+        const f = zip.file(match)
+        if (f) jsonData = await f.async('text')
+      }
+      // Debug: log available files to help diagnose
+      console.log('[MinerU ZIP] Available files:', allFiles.filter(f => f.endsWith('.json')).join(', '))
+    }
     return { markdown, jsonData }
   }
 
