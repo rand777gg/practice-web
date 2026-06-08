@@ -99,6 +99,7 @@ export function Component() {
     setError('')
     setParseResult(null)
     setParsingDone(false)
+    setParsePage(0)
     setQuestions([])
 
     try {
@@ -156,6 +157,8 @@ export function Component() {
 
   const [parseResult, setParseResult] = useState<{ markdown: string; fileName: string } | null>(null)
   const [parsingDone, setParsingDone] = useState(false)
+  const [parsePage, setParsePage] = useState(0)
+  const CHARS_PER_PAGE = 3000
 
   const extractQuestions = async (markdown: string) => {
     setParseMsg('AI 正在提取题目...')
@@ -462,9 +465,31 @@ export function Component() {
                       </div>
                       <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[300px]">
                         <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
-                          {parseResult.markdown.slice(0, 5000)}{parseResult.markdown.length > 5000 ? '\n\n... (内容过长，已截断)' : ''}
+                          {(() => {
+                            const start = parsePage * CHARS_PER_PAGE
+                            return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
+                          })()}
                         </pre>
                       </ScrollArea>
+                      {(() => {
+                        const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
+                        if (totalPages <= 1) return null
+                        return (
+                          <div className="flex items-center justify-center gap-2 pt-1">
+                            <Button variant="ghost" size="sm" className="h-6 text-xs"
+                              disabled={parsePage === 0}
+                              onClick={() => setParsePage(p => p - 1)}>
+                              上一页
+                            </Button>
+                            <span className="text-xs text-muted-foreground tabular-nums">{parsePage + 1} / {totalPages}</span>
+                            <Button variant="ghost" size="sm" className="h-6 text-xs"
+                              disabled={parsePage >= totalPages - 1}
+                              onClick={() => setParsePage(p => p + 1)}>
+                              下一页
+                            </Button>
+                          </div>
+                        )
+                      })()}
                     </CardContent>
                   </Card>
                   <div className="flex justify-end gap-2">
