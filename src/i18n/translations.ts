@@ -216,6 +216,7 @@ export const zh = {
     pendingReview: '待复习 {n} 题',
     view: '查看学习建议',
     hide: '隐藏学习建议',
+    loading: '正在分析...',
   },
   questionBank: {
     allSubjects: '全部科目',
@@ -520,6 +521,7 @@ export const en = {
     pendingReview: '{n} questions to review',
     view: 'View Suggestions',
     hide: 'Hide Suggestions',
+    loading: 'Analyzing...',
   },
   questionBank: {
     allSubjects: 'All Subjects',
