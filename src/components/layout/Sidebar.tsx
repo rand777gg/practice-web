@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   LayoutDashboard, Pencil, Clock, RotateCcw, FileQuestion, Users,
-  GraduationCap, Star, BookOpen, Sparkles, Library, PanelLeftOpen,
+  GraduationCap, Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -107,10 +107,13 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
           </button>
         ) : (
           <>
-            <div className="flex items-center gap-2">
-              <GraduationCap className="h-6 w-6 text-sidebar-primary" />
-              <span className="font-semibold text-sidebar-foreground">{t('app.shortTitle')}</span>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <GraduationCap className="h-6 w-6 text-sidebar-primary shrink-0" />
+              <span className="font-semibold text-sidebar-foreground truncate">{t('app.shortTitle')}</span>
             </div>
+            <button type="button" onClick={onToggleCollapse} className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors shrink-0">
+              <PanelLeftClose className="h-5 w-5" />
+            </button>
           </>
         )}
       </div>
