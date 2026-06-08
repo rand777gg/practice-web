@@ -883,7 +883,7 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
                 {s(status.markdownUrl) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{s(status.markdownUrl)}</td></tr>}
                 {s(status.fullZipUrl) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{s(status.fullZipUrl)}</td></tr>}
                 {s(status.errMsg) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{s(status.errMsg)}</td></tr>}
-                {status.extractProgress && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>}
+                {status.extractProgress ? <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{s((status.extractProgress as Record<string, number>).extractedPages)} / {s((status.extractProgress as Record<string, number>).totalPages)}</td></tr> : null}
               </tbody>
             </table>
 
