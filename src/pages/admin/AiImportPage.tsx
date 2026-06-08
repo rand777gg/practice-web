@@ -96,6 +96,8 @@ export function Component() {
   const startParse = async () => {
     setStep('parsing')
     setError('')
+    setParseResult(null)
+    setParsingDone(false)
     setQuestions([])
 
     try {
