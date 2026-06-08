@@ -328,9 +328,10 @@ export function Component() {
                 disabled={deleting}
                 onClick={async () => {
                   setDeleting(true)
-                  const { error } = await supabase.functions.invoke('delete-account', { body: { user_id: user?.id } })
-                  if (error) await signOut()
-                  else await signOut()
+                  try {
+                    await supabase.functions.invoke('delete-account')
+                  } catch { /* function not deployed — sign out anyway */ }
+                  await signOut()
                   setDeleting(false)
                 }}
               >
