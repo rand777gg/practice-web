@@ -49,19 +49,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Cannot unlink the only login method' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Unlink via admin API
-    const { error: unlinkError } = await supabaseAdmin.auth.admin.deleteUser(user.id, { identity_id: identity.identity_id })
-    // Note: The above deletes the identity only, not the user.
-    // Actually, the correct way is to use the GoTrue admin endpoint directly.
-    // Fallback: use the REST API
+    // Unlink identity via GoTrue admin API
+    // PUT /admin/users/{id} with identity_id unlinks that specific identity
     const unlinkRes = await fetch(
-      `${SUPABASE_URL}/auth/v1/admin/users/${user.id}/identities/${identity.identity_id}`,
+      `${SUPABASE_URL}/auth/v1/admin/users/${user.id}`,
       {
-        method: 'DELETE',
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ identity_id: identity.identity_id }),
       }
     )
 
