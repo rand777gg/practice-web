@@ -506,26 +506,34 @@ export function Component() {
                           <span>MinerU 解析结果</span>
                           {parseResult.jsonData ? (() => {
                             const blocks = parseBlocks(parseResult.jsonData)
-                            return <span className="text-green-500">· 含坐标 — {blocks.length} 个块</span>
+                            const secs = matchMarkdownToPdf(parseResult.markdown, blocks)
+                            sectionsRef.current = secs
+                            const matched = secs.filter(s => s.bbox).length
+                            return (
+                              <>
+                                <span className={blocks.length > 0 ? 'text-green-500' : 'text-amber-500'}>
+                                  {blocks.length > 0 ? `· ${blocks.length} 个定位块，${matched} 个匹配` : '· JSON 已加载但无有效块'}
+                                </span>
+                                <button type="button" className="ml-auto text-[10px] underline" onClick={() => {
+                                  const win = window.open('', '_blank', 'width=600,height=400')
+                                  if (win) { win.document.write(`<pre style="font-size:11px;padding:12px">${JSON.stringify(JSON.parse(parseResult.jsonData!).slice(0, 5), null, 2)}</pre>`); win.document.title = 'content_list.json preview (first 5)' }
+                                }}>预览 JSON</button>
+                              </>
+                            )
                           })() : (
                             <span>（Markdown）</span>
                           )}
                         </div>
                         <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
-                          {parseResult.jsonData ? (() => {
-                            const blocks = parseBlocks(parseResult.jsonData)
-                            const secs = matchMarkdownToPdf(parseResult.markdown, blocks)
-                            sectionsRef.current = secs
-                            return (
-                              <div ref={mdRef}>
-                                <ClickableMarkdown
-                                  sections={secs}
-                                  activeIdx={activeMdIdx}
-                                  onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
-                                />
-                              </div>
-                            )
-                          })() : (
+                          {parseResult.jsonData ? (
+                            <div ref={mdRef}>
+                              <ClickableMarkdown
+                                sections={sectionsRef.current}
+                                activeIdx={activeMdIdx}
+                                onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
+                              />
+                            </div>
+                          ) : (
                             <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
                               {(() => {
                                 const start = parsePage * CHARS_PER_PAGE
