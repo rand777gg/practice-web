@@ -2,10 +2,12 @@ import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePrefetchPlanQuestions } from '@/hooks/use-prefetch-questions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen, ListChecks } from 'lucide-react'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
+import { DashboardEbbinghaus } from '@/components/layout/DashboardEbbinghaus'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { useT } from '@/i18n/use-t'
@@ -94,6 +96,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const navigate = useNavigate()
+  usePrefetchPlanQuestions(!!user)
 
   const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
   const cached = readCache()
@@ -482,7 +485,10 @@ export function Component() {
           </TabsList>
 
           <TabsContent value="plan">
-            <DashboardPlanCards />
+            <div className="space-y-4">
+              <DashboardPlanCards />
+              <DashboardEbbinghaus />
+            </div>
           </TabsContent>
 
           <TabsContent value="stats">

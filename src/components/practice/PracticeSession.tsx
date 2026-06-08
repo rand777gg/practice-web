@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -18,6 +18,7 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
+import { getPrefetchedQuestionIds, getPrefetchedQuestion, getQuestionStat, upsertQuestionStat } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, Profile, QuestionType } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
@@ -26,20 +27,21 @@ import { useT } from '@/i18n/use-t'
 function getGoalSubjects(profile: Profile | null): string[] {
   if (!profile) return []
   const subjects = new Set<string>()
-
   try {
     const raw = profile.daily_targets ? JSON.parse(profile.daily_targets) : []
     for (const t of normalizeDailyTargets(raw)) {
       for (const s of t.subjects) subjects.add(s.subject)
     }
-  } catch { /* ignore parse errors */ }
-
+  } catch { /* ignore */ }
   try {
     const plans = profile.plan_subjects ? JSON.parse(profile.plan_subjects) : []
     if (Array.isArray(plans)) for (const s of plans) subjects.add(s)
-  } catch { /* ignore parse errors */ }
-
+  } catch { /* ignore */ }
   return [...subjects]
+}
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]
 }
 
 export function PracticeSession() {
@@ -59,6 +61,7 @@ export function PracticeSession() {
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
+  const prefetchPromiseRef = useRef<Promise<void> | null>(null)
 
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -69,14 +72,61 @@ export function PracticeSession() {
     setSelectedCategory('')
   }, [selectedSubject, updateFilteredCategories])
 
+  const loadQuestionFromLocal = useCallback(async (pickedId: string) => {
+    const local = await getPrefetchedQuestion(pickedId)
+    if (local) {
+      // Already prefetched — set from IndexedDB instantly
+      setQuestion(local as Question)
+      // Note: skip server stats, use local stats
+      const stat = await getQuestionStat(pickedId)
+      setAttemptCount(stat?.attemptCount ?? 0)
+      setWrongCount(stat?.wrongCount ?? 0)
+      return true
+    }
+    return false
+  }, [])
+
+  const loadStatsFromServer = useCallback(async (pickedId: string) => {
+    const currentUser = useAuthStore.getState().user
+    if (!currentUser) return
+    const { data: statsData } = await supabase
+      .from('user_answers')
+      .select('is_correct, note, is_public')
+      .eq('user_id', currentUser.id)
+      .eq('question_id', pickedId)
+      .order('answered_at', { ascending: false })
+
+    if (statsData && statsData.length > 0) {
+      const total = statsData.length
+      const wrong = statsData.filter((a) => !a.is_correct).length
+      setAttemptCount(total)
+      setWrongCount(wrong)
+      const latestNote = statsData.find((a) => a.note)?.note ?? ''
+      const latestIsPublic = statsData.find((a) => a.note)?.is_public ?? false
+      setNote(latestNote)
+      setIsPublic(latestIsPublic)
+    }
+  }, [])
+
   const fetchRandomQuestion = useCallback(async () => {
     setIsLoading(true)
     setSelectedAnswer(null)
     setIsSubmitted(false)
     setAnswerId(null)
 
-    // Step 1: fetch only IDs (lightweight, ~100x smaller than fetching all columns)
+    // Step 1: get available question IDs — try local first, fallback to server
     const goalSubjects = getGoalSubjects(profile)
+    const localIds = await getPrefetchedQuestionIds()
+
+    let availableIds: string[] = []
+
+    if (localIds.length > 0) {
+      // Filter locally-prefetched IDs by the same filter criteria server-side
+      // For now, use all local IDs — the server query below acts as fallback
+      availableIds = localIds
+    }
+
+    // Always fetch server IDs for accuracy (filters, goal subjects)
     let idQuery = supabase.from('questions').select('id')
     if (goalSubjects.length > 0) {
       idQuery = selectedSubject
@@ -88,49 +138,50 @@ export function PracticeSession() {
     if (selectedCategory) idQuery = idQuery.eq('category', selectedCategory)
     if (selectedType) idQuery = idQuery.eq('question_type', selectedType)
 
-    const { data: ids, error: idsErr } = await idQuery
+    const { data: serverIds } = await idQuery
+    if (serverIds && serverIds.length > 0) {
+      availableIds = serverIds.map((r: any) => r.id)
+    }
 
-    if (idsErr || !ids || ids.length === 0) {
+    if (availableIds.length === 0) {
       setNoQuestions(true)
       setIsLoading(false)
       return
     }
 
-    // Step 2: pick random ID, fetch full question + stats in parallel
-    const pickedId = ids[Math.floor(Math.random() * ids.length)].id
-    const currentUser = useAuthStore.getState().user
+    // Step 2: pick random, try local first, fallback to server fetch
+    const pickedId = pickRandom(availableIds)
+    const fromLocal = await loadQuestionFromLocal(pickedId)
 
-    const [qRes, statsRes] = await Promise.all([
-      supabase.from('questions').select('*').eq('id', pickedId).single(),
-      currentUser
-        ? supabase.from('user_answers')
-            .select('is_correct, note, is_public')
-            .eq('user_id', currentUser.id)
-            .eq('question_id', pickedId)
-            .order('answered_at', { ascending: false })
-        : Promise.resolve(null),
-    ])
-
-    if (qRes.error || !qRes.data) {
-      setNoQuestions(true)
-      setIsLoading(false)
-      return
+    if (!fromLocal) {
+      const { data: qData, error: qErr } = await supabase
+        .from('questions').select('*').eq('id', pickedId).single()
+      if (qErr || !qData) {
+        setNoQuestions(true)
+        setIsLoading(false)
+        return
+      }
+      setQuestion(qData as unknown as Question)
     }
 
-    setQuestion(qRes.data as unknown as Question)
-
-    const statsData = statsRes?.data
-    const total = statsData?.length ?? 0
-    const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
-    setAttemptCount(total)
-    setWrongCount(wrong)
-    const latestNote = statsData?.find((a) => a.note)?.note ?? ''
-    const latestIsPublic = statsData?.find((a) => a.note)?.is_public ?? false
-    setNote(latestNote)
-    setIsPublic(latestIsPublic)
+    // Load stats from server in background
+    loadStatsFromServer(pickedId)
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory, selectedType, profile?.daily_targets, profile?.plan_subjects])
+
+    // Step 3: prefetch next question in background
+    prefetchPromiseRef.current = (async () => {
+      if (availableIds.length <= 1) return
+      const nextId = pickRandom(availableIds.filter((id) => id !== pickedId))
+      const alreadyHave = await getPrefetchedQuestion(nextId)
+      if (alreadyHave) return
+      const { data } = await supabase.from('questions').select('*').eq('id', nextId).single()
+      if (data) {
+        const { bulkPrefetchQuestions } = await import('@/lib/offline-db')
+        await bulkPrefetchQuestions([{ id: nextId, data }])
+      }
+    })()
+  }, [selectedSubject, selectedCategory, selectedType, profile?.daily_targets, profile?.plan_subjects, loadQuestionFromLocal, loadStatsFromServer])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -149,6 +200,17 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
+
+    // Update local stats
+    await upsertQuestionStat({
+      question_id: question.id,
+      attemptCount: 1,
+      wrongCount: isCorrect ? 0 : 1,
+      lastAnsweredAt: new Date().toISOString(),
+    })
+    setAttemptCount((c) => c + 1)
+    if (!isCorrect) setWrongCount((c) => c + 1)
+
     setIsSubmitted(true)
   }
 
@@ -167,6 +229,7 @@ export function PracticeSession() {
   }
 
   const handleNext = () => {
+    // Wait for background prefetch to settle if active
     fetchRandomQuestion()
   }
 
