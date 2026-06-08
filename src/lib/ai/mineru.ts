@@ -168,7 +168,7 @@ export class MinerUClient {
     })
     const data = await res.json() as { code: number; msg: string; data: { task_id: string } }
     if (data.code !== 0) throw new Error(`MinerU v4 create task failed: ${data.msg}`)
-    return { taskId: data.data.task_id, state: 'pending' }
+    return { taskId: data.data.task_id, state: 'pending', code: data.code, msg: data.msg, dataId: options.dataId }
   }
 
   // Poll a precision parsing task
@@ -190,6 +190,8 @@ export class MinerUClient {
       state: data.data.state as MinerUTaskResult['state'],
       fullZipUrl: data.data.full_zip_url,
       errMsg: data.data.err_msg,
+      code: data.code,
+      msg: data.msg,
       extractProgress: data.data.extract_progress ? {
         extractedPages: data.data.extract_progress.extracted_pages,
         totalPages: data.data.extract_progress.total_pages,
@@ -229,7 +231,7 @@ export class MinerUClient {
   }
 
   // Poll batch results
-  async pollBatch(batchId: string, token: string): Promise<MinerUBatchFileResult[]> {
+  async pollBatch(batchId: string, token: string): Promise<MinerUBatchStatus> {
     const res = await fetch(`${PROXY_BASE}/v4/extract-results/batch/${batchId}`, {
       method: 'GET',
       headers: this.getProxyHeaders(token),
@@ -246,12 +248,18 @@ export class MinerUClient {
       }
     }
     if (data.code !== 0) throw new Error(`MinerU v4 batch poll failed: ${data.msg}`)
-    return (data.data.extract_result || []).map(r => ({
-      fileName: r.file_name,
-      state: r.state as MinerUBatchFileResult['state'],
-      fullZipUrl: r.full_zip_url,
-      errMsg: r.err_msg,
-    }))
+    return {
+      batchId: data.data.batch_id,
+      code: data.code,
+      msg: data.msg,
+      files: (data.data.extract_result || []).map(r => ({
+        fileName: r.file_name,
+        state: r.state as MinerUBatchFileResult['state'],
+        fullZipUrl: r.full_zip_url,
+        errMsg: r.err_msg,
+        dataId: r.data_id,
+      })),
+    }
   }
 
   // Batch precision parsing for multiple uploaded files
@@ -259,7 +267,7 @@ export class MinerUClient {
     files: File[],
     options: MinerUPrecisionOptions,
     onProgress?: (msg: string) => void,
-    onStatus?: (batchResults: MinerUBatchFileResult[]) => void,
+    onStatus?: (status: MinerUBatchStatus) => void,
   ): Promise<DocumentParseResult[]> {
     // Upload all files to Supabase Storage first
     onProgress?.(`正在上传 ${files.length} 个文件...`)
@@ -284,15 +292,17 @@ export class MinerUClient {
         })),
         options,
       )
+      onProgress?.(`批量任务已创建，Batch ID: ${batchId}`)
 
       onProgress?.('批量精准解析中...')
       const results: DocumentParseResult[] = []
 
       for (let i = 0; i < 300; i++) {
         await new Promise(r => setTimeout(r, 3000))
-        const batchResults = await this.pollBatch(batchId, options.token)
-        onStatus?.(batchResults)
+        const batchStatus = await this.pollBatch(batchId, options.token)
+        onStatus?.(batchStatus)
 
+        const batchResults = batchStatus.files
         const done = batchResults.filter(r => r.state === 'done')
         const failed = batchResults.filter(r => r.state === 'failed')
 

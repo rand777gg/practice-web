@@ -46,6 +46,9 @@ export interface MinerUTaskResult {
   state: 'done' | 'pending' | 'running' | 'failed' | 'converting'
   fullZipUrl?: string
   errMsg?: string
+  code?: number
+  msg?: string
+  dataId?: string
   extractProgress?: {
     extractedPages: number
     totalPages: number
@@ -58,4 +61,12 @@ export interface MinerUBatchFileResult {
   state: 'done' | 'pending' | 'running' | 'failed' | 'converting' | 'waiting-file'
   fullZipUrl?: string
   errMsg?: string
+  dataId?: string
+}
+
+export interface MinerUBatchStatus {
+  batchId: string
+  code?: number
+  msg?: string
+  files: MinerUBatchFileResult[]
 }
