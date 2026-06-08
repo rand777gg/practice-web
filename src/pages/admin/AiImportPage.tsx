@@ -26,7 +26,7 @@ import {
 } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
-import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision'
@@ -61,6 +61,27 @@ export function Component() {
   const [dataId, setDataId] = useState('')
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<{ id: string; fileName: string; markdown: string; jsonData?: string; date: string; mode: string }[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ai_parse_history') || '[]') } catch { return [] }
+  })
+
+  const saveToHistory = (record: { fileName: string; markdown: string; jsonData?: string; mode: string }) => {
+    const entry = { ...record, id: Date.now().toString(), date: new Date().toLocaleString() }
+    const next = [entry, ...history].slice(0, 20)
+    setHistory(next)
+    localStorage.setItem('ai_parse_history', JSON.stringify(next))
+  }
+
+  const loadHistory = (id: string) => {
+    const entry = history.find(h => h.id === id)
+    if (entry) {
+      setParseResult({ markdown: entry.markdown, fileName: entry.fileName, jsonData: entry.jsonData })
+      setParsingDone(true)
+      setShowHistory(false)
+    }
+  }
+
   const aiConfigured = hasAiConfig()
   const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
   const canStart = parseMode === 'precision'
@@ -121,6 +142,7 @@ export function Component() {
     const result = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
     setParseResult(result)
     setParsingDone(true)
+    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight' })
   }
 
   const runPrecisionParse = async () => {
@@ -149,10 +171,12 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
+      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision' })
     } else if (file) {
       const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
+      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision' })
     }
   }
 
@@ -258,7 +282,38 @@ export function Component() {
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span><a href="https://mineru.net" target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground ml-1 hover:underline">由 MinerU 提供解析</a></h1>
+        <Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => setShowHistory(!showHistory)}>
+          <Clock className="h-3.5 w-3.5" />
+          历史记录{history.length > 0 ? ` (${history.length})` : ''}
+        </Button>
       </div>
+
+      {showHistory && (
+        <Card className="border-0 shadow-none">
+          <CardContent className="py-3 space-y-2">
+            {history.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">暂无历史记录</p>
+            ) : (
+              history.map((h) => (
+                <div key={h.id} className="flex items-center gap-2 text-xs bg-muted/30 rounded-lg p-2 group">
+                  <button type="button" className="flex-1 text-left min-w-0" onClick={() => loadHistory(h.id)}>
+                    <p className="font-medium truncate">{h.fileName}</p>
+                    <p className="text-muted-foreground">{h.date} · {h.mode === 'lightweight' ? '轻量' : '精准'}</p>
+                  </button>
+                  <button type="button" className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
+                    onClick={() => {
+                      const next = history.filter(x => x.id !== h.id)
+                      setHistory(next)
+                      localStorage.setItem('ai_parse_history', JSON.stringify(next))
+                    }}>
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!aiConfigured && (
         <Card className="border-orange-500/50 bg-orange-50/30 dark:bg-orange-950/10">
