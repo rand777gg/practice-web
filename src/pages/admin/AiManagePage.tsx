@@ -20,7 +20,7 @@ export function Component() {
   const enabledCount = providers.filter((p) => p.enabled).length
   const disabledCount = providers.filter((p) => !p.enabled).length
 
-  const cardProps = { toggleProvider, toggleModel, setApiKey, setBaseUrl }
+  const cardProps = { onToggle: toggleProvider, onToggleModel: toggleModel, onApiKeyChange: setApiKey, onBaseUrlChange: setBaseUrl }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -161,7 +161,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
             </div>
             <CardDescription className="text-xs mt-1 line-clamp-2">{provider.description}</CardDescription>
           </div>
-          <Switch checked={provider.enabled} onCheckedChange={onToggle} onClick={(e) => e.stopPropagation()} />
+          <div onClick={(e) => e.stopPropagation()}><Switch checked={provider.enabled} onCheckedChange={onToggle} /></div>
         </div>
       </CardHeader>
 
