@@ -62,25 +62,47 @@ export function Component() {
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState<{ id: string; fileName: string; markdown: string; jsonData?: string; date: string; mode: string }[]>(() => {
-    try { return JSON.parse(localStorage.getItem('ai_parse_history') || '[]') } catch { return [] }
-  })
+  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; mode: string; created_at: string }[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const user = useAuthStore((s) => s.user)
 
-  const saveToHistory = (record: { fileName: string; markdown: string; jsonData?: string; mode: string }) => {
-    const entry = { ...record, id: Date.now().toString(), date: new Date().toLocaleString() }
-    const next = [entry, ...history].slice(0, 20)
-    setHistory(next)
-    localStorage.setItem('ai_parse_history', JSON.stringify(next))
+  const loadHistoryList = async () => {
+    if (!user) return
+    setHistoryLoading(true)
+    const { data } = await supabase
+      .from('parse_history')
+      .select('id, file_name, markdown, json_data, mode, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setHistory(data ?? [])
+    setHistoryLoading(false)
   }
 
-  const loadHistory = (id: string) => {
+  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; mode: string }) => {
+    if (!user) return
+    await supabase.from('parse_history').insert({
+      user_id: user.id,
+      file_name: record.fileName,
+      markdown: record.markdown,
+      json_data: record.jsonData || null,
+      mode: record.mode,
+    })
+  }
+
+  const loadHistory = async (id: number) => {
     const entry = history.find(h => h.id === id)
     if (entry) {
-      setParseResult({ markdown: entry.markdown, fileName: entry.fileName, jsonData: entry.jsonData })
+      setParseResult({ markdown: entry.markdown, fileName: entry.file_name, jsonData: entry.json_data || undefined })
       setParsingDone(true)
       setStep('parsing')
       setShowHistory(false)
     }
+  }
+
+  const deleteHistory = async (id: number) => {
+    await supabase.from('parse_history').delete().eq('id', id)
+    setHistory(prev => prev.filter(h => h.id !== id))
   }
 
   const aiConfigured = hasAiConfig()
@@ -283,7 +305,7 @@ export function Component() {
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span><a href="https://mineru.net" target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground ml-1 hover:underline">由 MinerU 提供解析</a></h1>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => setShowHistory(!showHistory)}>
+        <Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistoryList() }}>
           <Clock className="h-3.5 w-3.5" />
           历史记录{history.length > 0 ? ` (${history.length})` : ''}
         </Button>
@@ -292,21 +314,19 @@ export function Component() {
       {showHistory && (
         <Card className="border-0 shadow-none">
           <CardContent className="py-3 space-y-2">
-            {history.length === 0 ? (
+            {historyLoading ? (
+              <p className="text-xs text-muted-foreground text-center py-2">加载中...</p>
+            ) : history.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-2">暂无历史记录</p>
             ) : (
               history.map((h) => (
                 <div key={h.id} className="flex items-center gap-2 text-xs bg-muted/30 rounded-lg p-2 group">
                   <button type="button" className="flex-1 text-left min-w-0" onClick={() => loadHistory(h.id)}>
-                    <p className="font-medium truncate">{h.fileName}</p>
-                    <p className="text-muted-foreground">{h.date} · {h.mode === 'lightweight' ? '轻量' : '精准'}</p>
+                    <p className="font-medium truncate">{h.file_name}</p>
+                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {h.mode === 'lightweight' ? '轻量' : '精准'}</p>
                   </button>
                   <button type="button" className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
-                    onClick={() => {
-                      const next = history.filter(x => x.id !== h.id)
-                      setHistory(next)
-                      localStorage.setItem('ai_parse_history', JSON.stringify(next))
-                    }}>
+                    onClick={() => deleteHistory(h.id)}>
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
