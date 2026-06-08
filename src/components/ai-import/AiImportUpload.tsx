@@ -26,12 +26,18 @@ interface Props {
   acceptFormats?: string
 }
 
-const DEFAULT_ACCEPT = '.pdf,.doc,.docx'
-const PRECISION_ACCEPT = '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp,.html'
+const IMG_EXTS = ['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp']
+const DOC_EXTS = ['pdf', 'doc', 'docx']
+const OFFICE_EXTS = ['ppt', 'pptx', 'xls', 'xlsx']
+
+const ALL_EXTS = [...DOC_EXTS, ...OFFICE_EXTS, ...IMG_EXTS, 'html']
+
+const DEFAULT_ACCEPT = '.pdf,.doc,.docx,.png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp'
+const PRECISION_ACCEPT = [DEFAULT_ACCEPT, '.ppt,.pptx,.xls,.xlsx,.html'].join(',')
 
 const ACCEPT_EXTENSIONS: Record<string, string[]> = {
-  lightweight: ['pdf', 'doc', 'docx'],
-  precision: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'html'],
+  lightweight: [...DOC_EXTS, ...IMG_EXTS],
+  precision: ALL_EXTS,
 }
 
 export function getAcceptedFormats(mode: 'lightweight' | 'precision'): string {
