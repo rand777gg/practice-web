@@ -141,7 +141,17 @@ export function Component() {
               <CardTitle className="text-sm">{t('settings.aiFeatures')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">{t('settings.aiDesc')}</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">{t('settings.aiDesc')}</p>
+                {profile?.role === 'admin' && (
+                  <Button variant="outline" size="sm" asChild className="gap-1.5 shrink-0">
+                    <Link to="/admin/ai">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">{t('settings.aiManagement')}</span>
+                    </Link>
+                  </Button>
+                )}
+              </div>
               <div className="space-y-3">
                 {aiFeatures.map((f) => (
                   <div key={f.key} className="flex items-center justify-between gap-2">
@@ -164,15 +174,6 @@ export function Component() {
               </div>
             </CardContent>
           </Card>
-
-          {profile?.role === 'admin' && (
-            <Button variant="outline" size="sm" asChild className="w-full gap-2">
-              <Link to="/admin/ai">
-                <ExternalLink className="h-4 w-4" />
-                {t('settings.aiManagement')}
-              </Link>
-            </Button>
-          )}
         </div>
       </div>
 
