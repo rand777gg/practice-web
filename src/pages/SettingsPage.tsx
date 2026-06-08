@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { AlertDialog } from '@radix-ui/themes'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -36,9 +36,11 @@ export function Component() {
   const [aiNickLoading, setAiNickLoading] = useState(false)
   const [linkingGitHub, setLinkingGitHub] = useState(false)
   const [githubLinkError, setGithubLinkError] = useState('')
+  const [unlinkingGitHub, setUnlinkingGitHub] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
+  const hasMultipleIdentities = user?.identities && user.identities.length > 1
 
   const saveNickname = async (name: string) => {
     if (!name.trim()) return
@@ -163,7 +165,27 @@ export function Component() {
                     <td className="py-1.5 pr-4 text-muted-foreground">GitHub</td>
                     <td className="py-1.5">
                       {isGitHubLinked ? (
-                        <Badge color="green" variant="soft" radius="full">{t('auth.githubBound')}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge color="green" variant="soft" radius="full">{t('auth.githubBound')}</Badge>
+                          {hasMultipleIdentities && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[10px] text-muted-foreground hover:text-destructive"
+                              disabled={unlinkingGitHub}
+                              onClick={async () => {
+                                setUnlinkingGitHub(true)
+                                const { error } = await supabase.functions.invoke('unlink-identity', { body: { provider: 'github' } })
+                                if (!error) window.location.reload()
+                                setGithubLinkError(error?.message || '')
+                                setUnlinkingGitHub(false)
+                              }}
+                            >
+                              <Unlink className="h-3 w-3 mr-0.5" />
+                              解绑
+                            </Button>
+                          )}
+                        </div>
                       ) : (
                         <div className="space-y-1">
                           <Button
