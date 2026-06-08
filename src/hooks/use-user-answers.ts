@@ -34,15 +34,26 @@ export function useUserAnswers() {
       }
 
       // Always write to IndexedDB first — instant, never blocks UI
-      const localId = await addPendingAnswer(payload)
-      refreshPending()
+      // Fallback to direct Supabase insert if IndexedDB is unavailable
+      let localId: number | null = null
+      try {
+        localId = await addPendingAnswer(payload)
+        refreshPending()
+      } catch {
+        // IndexedDB unavailable — fall through to direct insert
+      }
 
       // Background sync — fire and forget
       if (navigator.onLine) {
         sync().catch(() => { /* best-effort */ })
       }
 
-      return `local-${localId}`
+      if (localId !== null) return `local-${localId}`
+
+      // Fallback: direct Supabase insert
+      const { data, error } = await supabase.from('user_answers').insert(payload).select('id').single()
+      if (error) throw error
+      return data?.id as string | null
     },
     [user, sync],
   )
