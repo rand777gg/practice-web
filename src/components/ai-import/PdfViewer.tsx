@@ -89,7 +89,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   }, [])
 
   if (loading) {
-    return <div className="flex items-center justify-center h-[500px] text-sm text-muted-foreground">加载 PDF 中...</div>
+    return <div className="flex items-center justify-center h-full min-h-[400px] text-sm text-muted-foreground">加载 PDF 中...</div>
   }
 
   if (pages.length === 0) {

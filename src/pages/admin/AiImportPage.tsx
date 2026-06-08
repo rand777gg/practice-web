@@ -481,10 +481,10 @@ export function Component() {
                     )}
                   </div>
 
-                  <div className={`grid gap-4 ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className={`grid gap-4 items-stretch ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
                     {showSplitView && pdfUrl && (
-                      <Card className="border-0 shadow-none">
-                        <CardContent className="p-3">
+                      <Card className="border-0 shadow-none h-full">
+                        <CardContent className="p-3 h-full">
                           <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
                             activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
                             onBlockClick={(block) => {
@@ -505,8 +505,8 @@ export function Component() {
                       </Card>
                     )}
                     <Card className="border-0 shadow-none">
-                      <CardContent className="py-4 space-y-2">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <CardContent className="py-4 space-y-2 h-full">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
                           <span>MinerU 解析结果</span>
                           {parseResult.jsonData ? (() => {
                             const blocks = parseBlocks(parseResult.jsonData)
@@ -528,7 +528,7 @@ export function Component() {
                             <span>（Markdown）</span>
                           )}
                         </div>
-                        <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 flex-1 min-h-0">
                           {parseResult.jsonData ? (
                             <div ref={mdRef}>
                               <ClickableMarkdown
