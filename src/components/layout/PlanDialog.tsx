@@ -22,7 +22,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { SegmentedControl } from '@radix-ui/themes'
 import { cn } from '@/lib/utils'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
@@ -173,14 +172,23 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-3">
-          <SegmentedControl.Root
-            value={planTab}
-            onValueChange={(v) => setPlanTab(v as 'long-term' | 'daily')}
-            className="w-full"
-          >
-            <SegmentedControl.Item value="long-term">{t('plan.longTerm')}</SegmentedControl.Item>
-            <SegmentedControl.Item value="daily">{t('plan.dailyTarget')}</SegmentedControl.Item>
-          </SegmentedControl.Root>
+          <div className="inline-flex rounded-lg bg-muted p-0.5 w-full">
+            {(['long-term', 'daily'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setPlanTab(v)}
+                className={cn(
+                  'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+                  planTab === v
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {v === 'long-term' ? t('plan.longTerm') : t('plan.dailyTarget')}
+              </button>
+            ))}
+          </div>
 
           {planTab === 'long-term' && (
           <div className="border rounded-lg p-3">
