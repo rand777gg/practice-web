@@ -18,7 +18,7 @@ export function Component() {
   const { t } = useT()
   const [notes, setNotes] = useState<NoteWithQuestion[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [userEmails, setUserEmails] = useState<Record<string, string>>({})
+  const [userNicknames, setUserNicknames] = useState<Record<string, string>>({})
 
   const [subjects, setSubjects] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
@@ -81,16 +81,16 @@ export function Component() {
       setNotes(result)
     }
 
-    // Fetch user emails in batch
+    // Fetch user nicknames in batch
     const userIds = [...new Set(result.map((n) => n.user_id))]
-    const emails: Record<string, string> = {}
+    const nicknames: Record<string, string> = {}
     await Promise.all(
       userIds.map(async (uid) => {
-        const { data: email } = await supabase.rpc('get_user_email', { user_id: uid })
-        if (email) emails[uid] = email
+        const { data: prof } = await supabase.from('profiles').select('nickname').eq('id', uid).single()
+        nicknames[uid] = prof?.nickname || uid.slice(0, 8) + '...'
       }),
     )
-    setUserEmails(emails)
+    setUserNicknames(nicknames)
     setIsLoading(false)
   }, [selectedSubject])
 
@@ -176,7 +176,7 @@ export function Component() {
                   </span>
                 )}
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  {t('notes.author')}: {userEmails[ans.user_id] || ans.user_id.slice(0, 8) + '...'}
+                  {t('notes.author')}: {userNicknames[ans.user_id] || ans.user_id.slice(0, 8) + '...'}
                 </span>
               </div>
               <p className="text-sm font-medium">{ans.questions?.question_text}</p>

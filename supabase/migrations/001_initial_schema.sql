@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS plan_subjects TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_targets TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_deadline TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS nickname TEXT;
 
 -- ----------------------------------------------------------------------------
 -- 2. QUESTIONS — 题目表

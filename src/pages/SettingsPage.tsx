@@ -8,19 +8,64 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { Input } from '@/components/ui/input'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
+const ADJECTIVES = ['勤奋的', '勇敢的', '机智的', '冷静的', '乐观的', '执着的', '专注的', '敏捷的', '沉稳的', '好奇的']
+const NOUNS = ['学者', '探索者', '思考者', '求知者', '攀登者', '追光者', '行者', '旅人', '书虫', '夜猫']
+function randomNickname() {
+  return `${ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]}${NOUNS[Math.floor(Math.random() * NOUNS.length)]}${Math.floor(Math.random() * 1000)}`
+}
+
 export function Component() {
   const { t } = useT()
-  const { user, profile, signOut } = useAuthStore()
+  const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
   const { flags, setFlag, offlineMode, setOfflineMode } = useSettingsStore()
   const navigate = useNavigate()
   const [aiGlow, setAiGlow] = useState(false)
+  const [nickEditing, setNickEditing] = useState(false)
+  const [nickValue, setNickValue] = useState(profile?.nickname || '')
+  const [nickSaving, setNickSaving] = useState(false)
+  const [aiNickLoading, setAiNickLoading] = useState(false)
+
+  const saveNickname = async (name: string) => {
+    if (!name.trim()) return
+    setNickSaving(true)
+    await supabase.from('profiles').update({ nickname: name.trim() }).eq('id', user!.id)
+    await refreshProfile()
+    setNickSaving(false)
+    setNickEditing(false)
+  }
+
+  const aiNickname = async () => {
+    if (hasAiConfig()) {
+      setAiNickLoading(true)
+      try {
+        const { createDeepSeek } = await import('@ai-sdk/deepseek')
+        const { generateText } = await import('ai')
+        const model = createDeepSeek({
+          apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY,
+          baseURL: import.meta.env.VITE_DEEPSEEK_BASE_URL || undefined,
+        })
+        const result = await generateText({
+          model: model(import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'),
+          prompt: '生成一个中文学习者的昵称，2-6个字，有创意、有趣、不死板。只输出昵称，不要多余内容。',
+          temperature: 1.2,
+        })
+        const aiName = result.text?.trim()
+        if (aiName) { setNickValue(aiName); await saveNickname(aiName) }
+      } catch { setNickValue(randomNickname()) }
+      setAiNickLoading(false)
+    } else {
+      setNickValue(randomNickname())
+    }
+  }
 
   if (!user) return null
 
@@ -66,6 +111,35 @@ export function Component() {
                   <tr>
                     <td className="py-1.5 pr-4 text-muted-foreground w-[80px]">{t('auth.email')}</td>
                     <td className="py-1.5">{user.email}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 pr-4 text-muted-foreground">{t('settings.nickname')}</td>
+                    <td className="py-1.5">
+                      {nickEditing ? (
+                        <div className="flex gap-1.5">
+                          <Input
+                            value={nickValue}
+                            onChange={(e) => setNickValue(e.target.value)}
+                            className="h-7 text-xs w-32"
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveNickname(nickValue) }}
+                            autoFocus
+                          />
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => saveNickname(nickValue)} disabled={nickSaving}>
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={aiNickname} disabled={aiNickLoading} title={t('settings.nicknameRandom')}>
+                            <Dice6 className={`h-3.5 w-3.5 ${aiNickLoading ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span
+                          className="cursor-pointer hover:underline underline-offset-2"
+                          onClick={() => { setNickValue(profile?.nickname || ''); setNickEditing(true) }}
+                        >
+                          {profile?.nickname || <span className="text-muted-foreground italic">{t('settings.nicknamePlaceholder')}</span>}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                   <tr>
                     <td className="py-1.5 pr-4 text-muted-foreground">ID</td>

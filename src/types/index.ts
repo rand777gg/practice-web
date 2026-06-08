@@ -62,6 +62,7 @@ export function normalizeDailyTargets(raw: any[] | null | undefined): DailyTarge
 export interface Profile {
   id: string
   role: UserRole
+  nickname: string | null
   deadline: string | null
   plan_subjects: string | null
   daily_targets: string | null
