@@ -32,6 +32,7 @@ interface ChartData {
   totalAnswered: number
   correctCount: number
   wrongCount: number
+  checkinDays: number
   dailyAnswers: { date: string; count: number }[]
   barData: { date: string; correct: number; wrong: number }[]
   sunburstData: { subject: string; category: string; questionType: string }[]
@@ -174,6 +175,7 @@ export function Component() {
 
       const totalAnswered = (answers ?? []).length
       const wrongCount = totalAnswered - correctCount
+      const checkinDays = dailyMap.size
 
       // Daily answers for heatmap
       const dailyAnswers = Array.from(dailyMap.entries()).map(([date, v]) => ({
@@ -293,13 +295,13 @@ export function Component() {
         })
 
       setChartData({
-        totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
+        totalAnswered, correctCount, wrongCount, checkinDays, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
         knowledgeGraph: null,
       })
       writeCache({
-        totalAnswered, correctCount, wrongCount, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
+        totalAnswered, correctCount, wrongCount, checkinDays, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
         knowledgeGraph: null,
@@ -428,6 +430,14 @@ export function Component() {
           </Button>
         </div>
       ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="rounded-lg border bg-card px-4 py-3 text-center min-w-[100px]">
+              <p className="text-xs text-muted-foreground">已打卡</p>
+              <p className="text-3xl font-bold tabular-nums">{chartData.checkinDays}</p>
+              <p className="text-xs text-muted-foreground">天</p>
+            </div>
+          </div>
         <Tabs
           defaultValue="plan"
           className="w-full"
@@ -652,6 +662,7 @@ export function Component() {
             )}
           </TabsContent>
         </Tabs>
+        </>
       )}
     </div>
   )
