@@ -43,10 +43,13 @@ export function PlanProgress() {
   const [todayLongDone, setTodayLongDone] = useState(0)
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
 
+  const hasData = dailyGoal > 0 || targetProgress.length > 0
+
   useEffect(() => {
     if (!user) return
     const uid = user.id
-    setIsLoading(true)
+    // Only show skeleton on first load — keep current values visible during refresh
+    if (!hasData) setIsLoading(true)
     async function load() {
       // Long-term goal
       if (deadline) {
