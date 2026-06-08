@@ -70,3 +70,12 @@ export interface MinerUBatchStatus {
   msg?: string
   files: MinerUBatchFileResult[]
 }
+
+export interface MinerULightweightStatus {
+  taskId: string
+  state: string
+  code?: number
+  msg?: string
+  markdownUrl?: string
+  errMsg?: string
+}

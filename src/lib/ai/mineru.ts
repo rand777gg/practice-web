@@ -43,7 +43,12 @@ export class MinerUClient {
   }
 
   // Lightweight parsing — v1 agent API, no token required
-  async uploadAndParse(file: File, options?: { pageRanges?: string }, onProgress?: (msg: string) => void): Promise<DocumentParseResult> {
+  async uploadAndParse(
+    file: File,
+    options?: { pageRanges?: string },
+    onProgress?: (msg: string) => void,
+    onStatus?: (status: MinerULightweightStatus) => void,
+  ): Promise<DocumentParseResult> {
     onProgress?.('正在上传文档...')
     const filePath = `mineru-temp/${Date.now()}-${file.name}`
     const { error: uploadErr } = await supabase.storage
@@ -67,14 +72,16 @@ export class MinerUClient {
     const data = await res.json() as { code: number; msg: string; data: { task_id: string } }
     if (data.code !== 0) throw new Error(`MinerU init failed: ${data.msg}`)
     const { task_id } = data.data
+    onStatus?.({ taskId: task_id, state: 'pending', code: data.code, msg: data.msg })
 
     onProgress?.('文档解析中 (MinerU)...')
     for (let i = 0; i < 150; i++) {
       await new Promise(r => setTimeout(r, 2000))
       const pollRes = await fetch(`${PROXY_BASE}/parse/${task_id}`, { headers: { ...AUTH_HEADER } })
       const pollData = await pollRes.json() as {
-        code: number; data: { state: string; markdown_url?: string; err_msg?: string }
+        code: number; msg?: string; data: { state: string; markdown_url?: string; err_msg?: string }
       }
+      onStatus?.({ taskId: task_id, state: pollData.data.state, code: pollData.code, msg: pollData.msg, markdownUrl: pollData.data.markdown_url, errMsg: pollData.data.err_msg })
 
       if (pollData.data.state === 'done' && pollData.data.markdown_url) {
         const mdRes = await fetch(`${PROXY_BASE}/download?url=${encodeURIComponent(pollData.data.markdown_url)}`, { headers: { ...AUTH_HEADER } })

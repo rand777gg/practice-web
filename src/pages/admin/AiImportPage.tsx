@@ -113,7 +113,7 @@ export function Component() {
   const runLightweightParse = async () => {
     if (!file) return
     const mineru = new MinerUClient()
-    const { markdown } = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg))
+    const { markdown } = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
     await extractQuestions(markdown)
   }
 
@@ -149,16 +149,13 @@ export function Component() {
     }
   }
 
+  const [parseMarkdown, setParseMarkdown] = useState('')
+
   const extractQuestions = async (markdown: string) => {
+    setParseMarkdown(markdown)
     setParseMsg('AI 正在提取题目...')
     const parser = new DeepSeekParser(getAiConfig())
     const result = await parser.parseDocument(markdown)
-
-    if (result.questions.length === 0) {
-      setError('文档中未发现有效题目')
-      setStep('upload')
-      return
-    }
 
     setQuestions(result.questions)
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
@@ -535,89 +532,102 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
   ]
 
   let activeIdx = -1
-  if (msg.includes('上传')) activeIdx = 0
-  else if (msg.includes('MinerU') || msg.includes('解析')) activeIdx = 1
+  if (msg.includes('上传') || msg.includes('批量任务')) activeIdx = 0
+  else if (msg.includes('MinerU') || msg.includes('解析') || msg.includes('Batch')) activeIdx = 1
   else if (msg.includes('AI') || msg.includes('提取')) activeIdx = 2
 
+  const stateLabel = (s: unknown) => {
+    if (s === 'done') return '已完成'
+    if (s === 'failed') return '失败'
+    if (s === 'running') return '处理中'
+    if (s === 'pending') return '排队中'
+    if (s === 'converting') return '转换中'
+    return String(s)
+  }
+  const stateColor = (s: unknown) => {
+    if (s === 'done') return 'text-green-600 bg-green-100 dark:bg-green-900/30'
+    if (s === 'failed') return 'text-red-500 bg-red-100 dark:bg-red-900/30'
+    return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30'
+  }
+
   return (
-    <div className="flex flex-col items-center gap-6 py-8">
-      <div className="flex items-center w-full max-w-xs">
-        {steps.map((s, i) => (
-          <div key={s.key} className="flex items-center flex-1 last:flex-[0]">
-            <div className="flex flex-col items-center gap-1.5">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500
-                ${i <= activeIdx
-                  ? 'bg-primary text-primary-foreground scale-110 shadow-md'
-                  : 'bg-muted text-muted-foreground'}`}
-              >
-                {i < activeIdx ? '✓' : i + 1}
-              </div>
-              <span className={`text-[10px] whitespace-nowrap transition-colors duration-500
-                ${i <= activeIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}
-              >
-                {s.label}
-              </span>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Left: Progress card */}
+      <Card className="border-0 shadow-none">
+        <CardContent className="py-6">
+          <div className="flex flex-col items-center gap-6">
+            <div className="flex items-center w-full max-w-xs">
+              {steps.map((s, i) => (
+                <div key={s.key} className="flex items-center flex-1 last:flex-[0]">
+                  <div className="flex flex-col items-center gap-1.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500
+                      ${i <= activeIdx ? 'bg-primary text-primary-foreground scale-110 shadow-md' : 'bg-muted text-muted-foreground'}`}>
+                      {i < activeIdx ? '✓' : i + 1}
+                    </div>
+                    <span className={`text-[10px] whitespace-nowrap transition-colors duration-500
+                      ${i <= activeIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                      {s.label}
+                    </span>
+                  </div>
+                  {i < steps.length - 1 && (
+                    <div className="flex-1 h-0.5 mx-2 mt-[-12px] rounded bg-muted transition-all duration-700">
+                      <div className="h-full rounded bg-primary transition-all duration-700 ease-out"
+                        style={{ width: i < activeIdx ? '100%' : i === activeIdx ? '50%' : '0%' }} />
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-            {i < steps.length - 1 && (
-              <div className="flex-1 h-0.5 mx-2 mt-[-12px] rounded bg-muted transition-all duration-700">
-                <div
-                  className="h-full rounded bg-primary transition-all duration-700 ease-out"
-                  style={{ width: i < activeIdx ? '100%' : i === activeIdx ? '50%' : '0%' }}
-                />
+            <p className="text-sm font-medium shimmer-text">{msg || '正在解析...'}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Right: Response data card */}
+      {status && (
+        <Card className="border-0 shadow-none">
+          <CardContent className="py-6 space-y-3 text-[11px]">
+            <p className="font-medium text-muted-foreground">MinerU API 响应</p>
+
+            {/* Basic info table */}
+            <table className="w-full border-collapse">
+              <tbody>
+                {status.taskId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{status.taskId as string}</td></tr>}
+                {status.batchId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{status.batchId as string}</td></tr>}
+                {status.dataId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{status.dataId as string}</td></tr>}
+                {status.code !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${status.code === 0 ? 'text-green-600' : 'text-red-500'}`}>{String(status.code)}{status.msg ? ` — ${status.msg}` : ''}</td></tr>}
+                {status.state !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr>}
+                {status.markdownUrl && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{status.markdownUrl as string}</td></tr>}
+                {status.fullZipUrl && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Full ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{status.fullZipUrl as string}</td></tr>}
+                {status.errMsg && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{status.errMsg as string}</td></tr>}
+                {status.extractProgress && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>}
+              </tbody>
+            </table>
+
+            {/* File list for batch */}
+            {status.files && (status.files as Array<Record<string, unknown>>).length > 0 && (
+              <div>
+                <p className="text-muted-foreground mb-1.5">文件列表</p>
+                <table className="w-full border-collapse text-[10px]">
+                  <thead><tr className="text-muted-foreground text-left"><th className="py-0.5 pr-2 font-normal">文件</th><th className="py-0.5 pr-2 font-normal">状态</th><th className="py-0.5 font-normal">Data ID</th></tr></thead>
+                  <tbody>
+                    {(status.files as Array<Record<string, unknown>>).map((f: Record<string, unknown>, i: number) => (
+                      <tr key={i} className="border-t border-border/50">
+                        <td className="py-1 pr-2 max-w-[120px] truncate">{f.fileName as string}</td>
+                        <td className="py-1 pr-2"><span className={`px-1 py-0.5 rounded text-[10px] ${stateColor(f.state)}`}>{stateLabel(f.state)}</span></td>
+                        <td className="py-1 font-mono text-[10px] text-muted-foreground">{f.dataId ? String(f.dataId) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-          </div>
-        ))}
-      </div>
-      <p className="text-sm font-medium shimmer-text">
-        {msg || '正在解析...'}
-      </p>
-
-      {/* MinerU API response status */}
-      {status && (
-        <div className="w-full max-w-lg mt-2 space-y-2">
-          <div className="text-[11px] font-medium text-muted-foreground">MinerU 响应</div>
-
-          {/* Single task status */}
-          {status.taskId && (
-            <div className="bg-muted/50 rounded-lg p-3 space-y-1.5 text-[11px]">
-              <div className="flex gap-2"><span className="text-muted-foreground">Task ID</span><span className="font-mono">{status.taskId as string}</span></div>
-              {status.dataId && <div className="flex gap-2"><span className="text-muted-foreground">Data ID</span><span className="font-mono">{status.dataId as string}</span></div>}
-              {status.code !== undefined && <div className="flex gap-2"><span className="text-muted-foreground">Code</span><span className={status.code === 0 ? 'text-green-600' : 'text-red-500'}>{status.code as number}{status.msg ? ` — ${status.msg}` : ''}</span></div>}
-              <div className="flex gap-2"><span className="text-muted-foreground">State</span><span className={`font-medium ${status.state === 'done' ? 'text-green-600' : status.state === 'failed' ? 'text-red-500' : 'text-amber-500'}`}>{status.state as string}</span></div>
-              {status.extractProgress && (
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground">Pages</span>
-                  <span>{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</span>
-                </div>
-              )}
-              {status.fullZipUrl && <div className="text-xs text-muted-foreground truncate">ZIP: {status.fullZipUrl as string}</div>}
-              {status.errMsg && <div className="text-xs text-red-500">{status.errMsg as string}</div>}
-            </div>
-          )}
-
-          {/* Batch status */}
-          {status.batchId && (
-            <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-[11px]">
-              <div className="flex gap-2"><span className="text-muted-foreground">Batch ID</span><span className="font-mono">{status.batchId as string}</span></div>
-              {status.code !== undefined && <div className="flex gap-2"><span className="text-muted-foreground">Code</span><span className={status.code === 0 ? 'text-green-600' : 'text-red-500'}>{status.code as number}{status.msg ? ` — ${status.msg}` : ''}</span></div>}
-              {status.files && (status.files as Array<Record<string, unknown>>).length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-muted-foreground">文件状态</span>
-                  {(status.files as Array<Record<string, unknown>>).map((f: Record<string, unknown>, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-xs pl-2">
-                      <span className={`w-1.5 h-1.5 rounded-full ${f.state === 'done' ? 'bg-green-500' : f.state === 'failed' ? 'bg-red-500' : 'bg-amber-500'}`} />
-                      <span className="truncate">{f.fileName as string}</span>
-                      <span className="text-muted-foreground shrink-0">{f.state as string}</span>
-                      {f.dataId && <span className="text-muted-foreground font-mono text-[10px]">{f.dataId as string}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       )}
+    </div>
+  )
+}
     </div>
   )
 }
