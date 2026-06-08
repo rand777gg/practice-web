@@ -628,6 +628,3 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
     </div>
   )
 }
-    </div>
-  )
-}
