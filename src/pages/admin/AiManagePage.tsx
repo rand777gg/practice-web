@@ -112,21 +112,25 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
 }) {
   const { t } = useT()
   const enabledCount = provider.models.filter((m) => m.enabled).length
-  const hasEnvKey = !!(import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`]
-  const hasKey = hasEnvKey || !!provider.apiKey
+  const envKey = (import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`]
+  const effectiveKey = provider.apiKey || envKey || ''
+  const hasKey = !!effectiveKey
+  const hasEnvKey = !!envKey
   const [expanded, setExpanded] = useState(provider.enabled && hasKey)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testing, setTesting] = useState(false)
 
+  const effectiveKey = provider.apiKey || (import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`] || ''
+
   const runTest = useCallback(async () => {
-    if (!provider.apiKey) return
+    if (!effectiveKey) return
     setTesting(true)
     setTestResult(null)
     try {
       const model = provider.models.find(m => m.enabled)?.id ?? provider.models[0].id
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${effectiveKey}` },
         body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
         signal: AbortSignal.timeout(10000),
       })
@@ -140,7 +144,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
       setTestResult({ ok: false, msg: e instanceof Error ? e.message : '连接失败' })
     }
     setTesting(false)
-  }, [provider.apiKey, provider.baseUrl, provider.models])
+  }, [effectiveKey, provider.baseUrl, provider.models])
 
   return (
     <Card
@@ -212,7 +216,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
           {hasKey && (
             <CardContent className="pt-0 space-y-2">
               <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs"
-                onClick={(e) => { e.stopPropagation(); runTest() }} disabled={testing}>
+                onClick={(e) => { e.stopPropagation(); runTest() }} disabled={testing || !effectiveKey}>
                 {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
                 连通性测试
               </Button>
