@@ -2,7 +2,6 @@ import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { usePrefetchPlanQuestions } from '@/hooks/use-prefetch-questions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen, ListChecks } from 'lucide-react'
@@ -94,7 +93,6 @@ export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const navigate = useNavigate()
-  usePrefetchPlanQuestions(!!user)
 
   const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
   const cached = readCache()

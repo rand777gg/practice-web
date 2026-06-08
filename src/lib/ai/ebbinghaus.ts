@@ -36,7 +36,6 @@ export interface EbbinghausData {
   curve: ForgettingCurvePoint[]
   urgency: SubjectUrgency[]
   totalReviewQueue: number
-  reviewItems: ReviewItem[]
 }
 
 /** Ebbinghaus 遗忘曲线：R = e^(-t/S)，S 为记忆强度系数 */
@@ -59,7 +58,7 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
     .limit(2000)
 
   if (!answers?.length) {
-    return { curve: [], urgency: [], totalReviewQueue: 0, reviewItems: [] }
+    return { curve: [], urgency: [], totalReviewQueue: 0 }
   }
 
   // 2. Group by question: track wrong count, last answer time
@@ -86,7 +85,7 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
     questionMap.set(a.question_id, entry)
   }
 
-  // 3. Compute per-subject urgency and collect at-risk questions
+  // 3. Compute per-subject urgency
   const subjData = new Map<string, {
     wrongCount: number
     totalAttempts: number
@@ -94,9 +93,8 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
     totalQuestions: number
     reviewQueue: number
   }>()
-  const reviewItems: ReviewItem[] = []
 
-  for (const [qId, q] of questionMap) {
+  for (const [, q] of questionMap) {
     const s = q.subject
     const entry = subjData.get(s) || { wrongCount: 0, totalAttempts: 0, lastReviewAt: q.lastAnswerAt, totalQuestions: 0, reviewQueue: 0 }
     entry.wrongCount += q.wrongCount
@@ -105,14 +103,6 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
     // A question is "at risk" if last wrong + retention < 0.5
     if (q.wrongCount > 0 && retention(daysAgo(q.lastAnswerAt), 0.8 ** (q.wrongCount - 1)) < 0.5) {
       entry.reviewQueue++
-      reviewItems.push({
-        questionId: qId,
-        subject: q.subject,
-        category: q.category,
-        lastAnswerAt: q.lastAnswerAt,
-        wrongCount: q.wrongCount,
-        totalAttempts: q.totalAttempts,
-      })
     }
     entry.totalQuestions++
     subjData.set(s, entry)
@@ -172,44 +162,5 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
 
   const totalReviewQueue = [...subjData.values()].reduce((sum, d) => sum + d.reviewQueue, 0)
 
-  return { curve, urgency, totalReviewQueue, reviewItems }
-}
-
-// Lightweight: only returns review queue question IDs, sorted by urgency (most at-risk first)
-export async function getReviewQueueIds(userId: string): Promise<ReviewItem[]> {
-  const { data: answers } = await supabase
-    .from('user_answers')
-    .select('question_id, is_correct, answered_at, questions(subject, category)')
-    .eq('user_id', userId)
-    .order('answered_at', { ascending: false })
-    .limit(2000)
-
-  if (!answers?.length) return []
-
-  const qMap = new Map<string, { subject: string; category: string; lastAnswerAt: string; wrongCount: number; totalAttempts: number }>()
-  for (const a of answers) {
-    const q = (a as any).questions as { subject?: string; category?: string } | null
-    const e = qMap.get(a.question_id)
-    qMap.set(a.question_id, {
-      subject: q?.subject || 'Other',
-      category: q?.category || 'Other',
-      lastAnswerAt: e?.lastAnswerAt || a.answered_at,
-      wrongCount: (e?.wrongCount ?? 0) + (a.is_correct ? 0 : 1),
-      totalAttempts: (e?.totalAttempts ?? 0) + 1,
-    })
-  }
-
-  const items: ReviewItem[] = []
-  for (const [qId, q] of qMap) {
-    if (q.wrongCount > 0 && retention(daysAgo(q.lastAnswerAt), 0.8 ** (q.wrongCount - 1)) < 0.5) {
-      items.push({ questionId: qId, subject: q.subject, category: q.category, lastAnswerAt: q.lastAnswerAt, wrongCount: q.wrongCount, totalAttempts: q.totalAttempts })
-    }
-  }
-  // Sort by most at-risk first (lowest retention = most urgent)
-  items.sort((a, b) => {
-    const ra = retention(daysAgo(a.lastAnswerAt), 0.8 ** (a.wrongCount - 1))
-    const rb = retention(daysAgo(b.lastAnswerAt), 0.8 ** (b.wrongCount - 1))
-    return ra - rb
-  })
-  return items
+  return { curve, urgency, totalReviewQueue }
 }

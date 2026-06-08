@@ -2,7 +2,6 @@ import { useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSyncStore } from '@/stores/sync-store'
-import { useSettingsStore } from '@/stores/settings-store'
 import { addPendingAnswer } from '@/lib/offline-db'
 
 export function useUserAnswers() {
@@ -19,44 +18,55 @@ export function useUserAnswers() {
     return () => window.removeEventListener('online', onOnline)
   }, [])
 
-  // Always save locally first, then sync in background
   const saveAnswer = useCallback(
     async (questionId: string, selectedAnswer: unknown, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string) => {
       if (!user) return null
 
-      const payload = {
+      // Offline: queue to IndexedDB
+      if (!navigator.onLine) {
+        const localId = await addPendingAnswer({
+          user_id: user.id,
+          question_id: questionId,
+          selected_answer: selectedAnswer,
+          is_correct: isCorrect,
+          mode,
+          exam_session_id: examSessionId ?? null,
+          answered_at: new Date().toISOString(),
+        })
+        refreshPending()
+        return `local-${localId}`
+      }
+
+      // Online: direct Supabase insert
+      const { data, error } = await supabase.from('user_answers').insert({
         user_id: user.id,
         question_id: questionId,
         selected_answer: selectedAnswer,
         is_correct: isCorrect,
         mode,
         exam_session_id: examSessionId ?? null,
-        answered_at: new Date().toISOString(),
+      }).select('id').single()
+
+      if (error) {
+        // Fallback: save to offline queue if network error
+        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('timeout')) {
+          const localId = await addPendingAnswer({
+            user_id: user.id,
+            question_id: questionId,
+            selected_answer: selectedAnswer,
+            is_correct: isCorrect,
+            mode,
+            exam_session_id: examSessionId ?? null,
+            answered_at: new Date().toISOString(),
+          })
+          refreshPending()
+          return `local-${localId}`
+        }
+        throw error
       }
-
-      // Always write to IndexedDB first — instant, never blocks UI
-      let localId: number | null = null
-      try {
-        localId = await addPendingAnswer(payload)
-        refreshPending()
-      } catch {
-        // IndexedDB unavailable — fall through to direct insert
-      }
-
-      // Background sync — only if online and offline mode is off
-      const offlineMode = useSettingsStore.getState().offlineMode
-      if (navigator.onLine && !offlineMode) {
-        sync().catch(() => { /* best-effort */ })
-      }
-
-      if (localId !== null) return `local-${localId}`
-
-      // Fallback: direct Supabase insert
-      const { data, error } = await supabase.from('user_answers').insert(payload).select('id').single()
-      if (error) throw error
       return data?.id as string | null
     },
-    [user, sync],
+    [user],
   )
 
   const updateNote = useCallback(
