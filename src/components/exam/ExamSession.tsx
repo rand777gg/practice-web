@@ -29,7 +29,6 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
 import { useSwipe } from '@/hooks/use-swipe'
 import {
@@ -213,73 +212,66 @@ export function ExamSession() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
               {hasAiConfig() && (
-                <HoverCard openDelay={300}>
-                  <HoverCardTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-xs"
-                      disabled={aiLoading}
-                      onClick={async () => {
-                        if (!user) return
-                        setAiLoading(true)
-                        setAiGlow(true)
-                        try {
-                          const { data: history } = await supabase
-                            .from('user_answers')
-                            .select('is_correct, questions(subject, category, question_type)')
-                            .eq('user_id', user.id)
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  disabled={aiLoading}
+                  onClick={async () => {
+                    if (!user) return
+                    setAiLoading(true)
+                    setAiGlow(true)
+                    try {
+                      const { data: history } = await supabase
+                        .from('user_answers')
+                        .select('is_correct, questions(subject, category, question_type)')
+                        .eq('user_id', user.id)
 
-                          const wrongBySubject = new Map<string, { wrong: number; total: number }>()
-                          const wrongByCategory = new Map<string, number>()
-                          const wrongByType = new Map<string, number>()
-                          for (const r of (history ?? [])) {
-                            const q = (r.questions as any)
-                            if (!q) continue
-                            const s = q.subject || 'Other'
-                            const c = q.category || 'Other'
-                            const t = q.question_type || 'single_choice'
-                            const se = wrongBySubject.get(s) || { wrong: 0, total: 0 }
-                            se.total++
-                            if (!r.is_correct) { se.wrong++; wrongByCategory.set(c, (wrongByCategory.get(c) ?? 0) + 1); wrongByType.set(t, (wrongByType.get(t) ?? 0) + 1) }
-                            wrongBySubject.set(s, se)
-                          }
+                      const wrongBySubject = new Map<string, { wrong: number; total: number }>()
+                      const wrongByCategory = new Map<string, number>()
+                      const wrongByType = new Map<string, number>()
+                      for (const r of (history ?? [])) {
+                        const q = (r.questions as any)
+                        if (!q) continue
+                        const s = q.subject || 'Other'
+                        const c = q.category || 'Other'
+                        const t = q.question_type || 'single_choice'
+                        const se = wrongBySubject.get(s) || { wrong: 0, total: 0 }
+                        se.total++
+                        if (!r.is_correct) { se.wrong++; wrongByCategory.set(c, (wrongByCategory.get(c) ?? 0) + 1); wrongByType.set(t, (wrongByType.get(t) ?? 0) + 1) }
+                        wrongBySubject.set(s, se)
+                      }
 
-                          const result = await suggestExamConfig({
-                            totalPractice: (history ?? []).length,
-                            wrongBySubject: [...wrongBySubject.entries()].map(([subject, v]) => ({ subject, ...v })),
-                            wrongByCategory: [...wrongByCategory.entries()].map(([category, wrong]) => ({ category, wrong })),
-                            wrongByType: [...wrongByType.entries()].map(([type, wrong]) => ({ type, wrong })),
-                            availableSubjects: subjects,
-                            availableCategories: categories,
-                            availableTypes: QUESTION_TYPE_OPTIONS.map(o => o.value),
-                          })
+                      const result = await suggestExamConfig({
+                        totalPractice: (history ?? []).length,
+                        wrongBySubject: [...wrongBySubject.entries()].map(([subject, v]) => ({ subject, ...v })),
+                        wrongByCategory: [...wrongByCategory.entries()].map(([category, wrong]) => ({ category, wrong })),
+                        wrongByType: [...wrongByType.entries()].map(([type, wrong]) => ({ type, wrong })),
+                        availableSubjects: subjects,
+                        availableCategories: categories,
+                        availableTypes: QUESTION_TYPE_OPTIONS.map(o => o.value),
+                      })
 
-                          setSelectedSubjects(result.subjects.filter(s => subjects.includes(s)))
-                          setSelectedCategories(result.categories.filter(c => categories.includes(c)))
-                          setSelectedTypes(result.types.filter(t => QUESTION_TYPE_OPTIONS.some(o => o.value === t)) as QuestionType[])
-                          setQuestionCount(Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, result.questionCount)))
-                          setDurationMin(Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, result.durationMin)))
-                          setAiReason(result.reason)
-                        } catch { /* ignore */ }
-                        setAiLoading(false)
-                        setTimeout(() => {
-                          setAiFade(true)
-                          requestAnimationFrame(() => {
-                            setAiGlow(false)
-                            setTimeout(() => setAiFade(false), 1500)
-                          })
-                        }, 500)
-                      }}
-                    >
-                      <Sparkles className={`h-3.5 w-3.5 ${aiLoading ? 'animate-pulse' : ''}`} />
-                      AI 智能出题
-                    </Button>
-                  </HoverCardTrigger>
-                  <HoverCardContent side="bottom" className="text-xs max-w-[220px]">
-                    根据您的历史做题记录智能出题，结合练习数据自动给出题目数量和考试时间
-                  </HoverCardContent>
-                </HoverCard>
+                      setSelectedSubjects(result.subjects.filter(s => subjects.includes(s)))
+                      setSelectedCategories(result.categories.filter(c => categories.includes(c)))
+                      setSelectedTypes(result.types.filter(t => QUESTION_TYPE_OPTIONS.some(o => o.value === t)) as QuestionType[])
+                      setQuestionCount(Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, result.questionCount)))
+                      setDurationMin(Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, result.durationMin)))
+                      setAiReason(result.reason)
+                    } catch { /* ignore */ }
+                    setAiLoading(false)
+                    setTimeout(() => {
+                      setAiFade(true)
+                      requestAnimationFrame(() => {
+                        setAiGlow(false)
+                        setTimeout(() => setAiFade(false), 1500)
+                      })
+                    }, 500)
+                  }}
+                >
+                  <Sparkles className={`h-3.5 w-3.5 ${aiLoading ? 'animate-pulse' : ''}`} />
+                  AI 智能出题
+                </Button>
               )}
             </div>
             <div className="space-y-4">
