@@ -21,6 +21,7 @@ const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDis
 const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/AnswerTimeScatterHistogram').then(m => ({ default: m.AnswerTimeScatterHistogram })))
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
 const KnowledgeGraph = lazy(() => import('@/components/charts/KnowledgeGraph').then(m => ({ default: m.KnowledgeGraph })))
+const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').then(m => ({ default: m.AiChartInsight })))
 
 const ChartFallback = () => (
   <div className="flex items-center justify-center py-12">
@@ -512,6 +513,12 @@ export function Component() {
                         barData={chartData.barData}
                       />
                     </Suspense>
+                    <Suspense fallback={null}>
+                      <AiChartInsight
+                        title="每日答题分布"
+                        dataDesc={`最近15天每日各学科答题量。学科：${chartData.dailySubjectData.subjects.join('、')}。总答题${chartData.totalAnswered}道，正确${chartData.correctCount}道，错误${chartData.wrongCount}道。`}
+                      />
+                    </Suspense>
                   </CardContent>
                 </Card>
                 <Card className="border-0 shadow-none">
@@ -523,6 +530,12 @@ export function Component() {
                       <SubjectAccuracyCharts
                         subjectAccuracy={chartData.subjectAccuracy}
                         heatmapData={chartData.heatmapData}
+                      />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <AiChartInsight
+                        title="正确率分析"
+                        dataDesc={`各学科正确率：${chartData.subjectAccuracy.map(s => `${s.subject} ${Math.round((s.correct/s.total)*100)}%(${s.total}题)`).join('、')}`}
                       />
                     </Suspense>
                   </CardContent>
@@ -545,9 +558,17 @@ export function Component() {
                   </CardHeader>
                   <CardContent>
                     {chartData.sunburstData.length > 0 ? (
-                      <Suspense fallback={<ChartFallback />}>
-                        <SubjectCategorySunburst data={chartData.sunburstData} />
-                      </Suspense>
+                      <>
+                        <Suspense fallback={<ChartFallback />}>
+                          <SubjectCategorySunburst data={chartData.sunburstData} />
+                        </Suspense>
+                        <Suspense fallback={null}>
+                          <AiChartInsight
+                            title={t('dashboard.subjectCategory')}
+                            dataDesc={`${chartData.sunburstData.length}道题目的学科分类分布。`}
+                          />
+                        </Suspense>
+                      </>
                     ) : (
                       <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
                     )}
@@ -566,6 +587,12 @@ export function Component() {
                         <SubjectRankChart data={chartData.sunburstData} />
                       </Suspense>
                     </div>
+                    <Suspense fallback={null}>
+                      <AiChartInsight
+                        title={t('dashboard.subjectBreakdown')}
+                        dataDesc={`${chartData.sunburstData.length}道题目的类型和分类分布。`}
+                      />
+                    </Suspense>
                   </CardContent>
                 </Card>
               </div>
@@ -596,6 +623,12 @@ export function Component() {
                       <Suspense fallback={<ChartFallback />}>
                         <TimeDistributionHistogram data={chartData.hourlyDistribution} />
                       </Suspense>
+                      <Suspense fallback={null}>
+                        <AiChartInsight
+                          title="做题时间分布"
+                          dataDesc={`一周7天×24小时答题热力分布，总计${chartData.totalAnswered}次答题。`}
+                        />
+                      </Suspense>
                     </CardContent>
                   </Card>
                   <Card className="border-0 shadow-none flex flex-col">
@@ -605,6 +638,12 @@ export function Component() {
                     <CardContent>
                       <Suspense fallback={<ChartFallback />}>
                         <TimeScatterChart data={chartData.todayHourlyData} />
+                      </Suspense>
+                      <Suspense fallback={null}>
+                        <AiChartInsight
+                          title="做题时间散点"
+                          dataDesc={`今日24小时各时段答题数量分布。`}
+                        />
                       </Suspense>
                     </CardContent>
                   </Card>
@@ -616,6 +655,12 @@ export function Component() {
                   <CardContent>
                     <Suspense fallback={<ChartFallback />}>
                       <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <AiChartInsight
+                        title="每日学习热力图"
+                        dataDesc={`全年每日答题热力图，共${chartData.dailyAnswers.length}天有记录，每日目标${chartData.dailyGoal}题。`}
+                      />
                     </Suspense>
                   </CardContent>
                 </Card>
