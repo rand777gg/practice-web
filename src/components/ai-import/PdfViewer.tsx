@@ -121,12 +121,14 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
       <div className="relative mx-auto" style={{ width: displayWidth, height: page.height * scale }} ref={containerRef}>
         <div className="overflow-auto max-h-[calc(100vh-280px)]">
         <canvas ref={setCanvasRef(currentPage)} className="absolute inset-0 w-full h-full rounded border" />
-        {/* content_list.json bbox is in 0-1000 range; scale to canvas size */}
+        {/* content_list.json bbox: try raw coordinates first, fallback to 0-1000 */}
         {pageBlocks.map((block, i) => {
           const [x0, y0, x1, y1] = block.bbox
           const isActive = activeBbox && activeBbox[0] === x0 && activeBbox[1] === y0
-          const sx = displayWidth / 1000
-          const sy = (page.height * scale) / 1000
+          // Detect if bbox is 0-1000 range (> 1 means likely raw, <= 1 means 0-1 normalized)
+          const use1000 = x1 > 1 // if > 1, assume 0-1000 range
+          const sx = use1000 ? displayWidth / 1000 : displayWidth
+          const sy = use1000 ? (page.height * scale) / 1000 : page.height * scale
           return (
             <div
               key={i}
