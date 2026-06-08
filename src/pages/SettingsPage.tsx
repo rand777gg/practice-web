@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Languages, LogOut } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, ExternalLink, Languages, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
@@ -28,6 +29,7 @@ export function Component() {
     { key: 'exam' as const, label: t('settings.aiExam'), desc: t('settings.aiExamDesc'), available: aiConfigured },
     { key: 'summary' as const, label: t('settings.aiSummary'), desc: t('settings.aiSummaryDesc'), available: aiConfigured },
     { key: 'suggestions' as const, label: t('settings.aiSuggestions'), desc: t('settings.aiSuggestionsDesc'), available: aiConfigured },
+    { key: 'keypoints' as const, label: t('settings.aiKeypoints'), desc: t('settings.aiKeypointsDesc'), available: aiConfigured },
     { key: 'mineru' as const, label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), available: mineruConfigured },
   ]
 
@@ -108,6 +110,17 @@ export function Component() {
         </CardContent>
       </Card>
 
+      {profile?.role === 'admin' && (
+        <>
+          <Separator />
+          <Button variant="outline" size="sm" asChild className="w-full gap-2">
+            <Link to="/admin/ai">
+              <ExternalLink className="h-4 w-4" />
+              {t('settings.aiManagement')}
+            </Link>
+          </Button>
+        </>
+      )}
       <Separator />
 
       <Button variant="outline" size="sm" onClick={signOut} className="w-full">

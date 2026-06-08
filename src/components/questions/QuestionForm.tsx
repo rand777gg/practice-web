@@ -14,6 +14,7 @@ import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/li
 import { getDefaultAnswer } from '@/lib/answer-utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
 
 export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const { t } = useT()
+  const { isEnabled } = useSettingsStore()
   const [questionType, setQuestionType] = useState<QuestionType>(initialData?.question_type ?? 'single_choice')
   const [questionText, setQuestionText] = useState(initialData?.question_text ?? '')
   const [options, setOptions] = useState<string[]>(initialData?.options ?? ['', ''])
@@ -304,7 +306,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </span>
             </div>
           )}
-          {hasAiConfig() && (
+          {hasAiConfig() && isEnabled('keypoints') && (
             <button
               type="button"
               className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer disabled:opacity-50"

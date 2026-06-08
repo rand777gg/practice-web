@@ -129,6 +129,9 @@ export const zh = {
     aiSuggestionsDesc: '基于艾宾浩斯遗忘曲线的复习建议',
     aiMineru: 'MinerU 精准解析',
     aiMineruDesc: 'AI 文档题目导入 ({model} 模型)',
+    aiKeypoints: 'AI 生成知识点',
+    aiKeypointsDesc: '创建题目时自动生成知识点标签',
+    aiManagement: 'AI 模型管理',
   },
   questions: {
     questionType: '类型',
@@ -449,6 +452,9 @@ export const en = {
     aiSuggestionsDesc: 'Ebbinghaus-based review recommendations',
     aiMineru: 'MinerU Precision Parsing',
     aiMineruDesc: 'AI document question import ({model} model)',
+    aiKeypoints: 'AI Key Points Generation',
+    aiKeypointsDesc: 'Auto-generate knowledge point tags when creating questions',
+    aiManagement: 'AI Model Management',
   },
   questions: {
     questionType: 'Type',

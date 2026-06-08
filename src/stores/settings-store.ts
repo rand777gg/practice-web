@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 
 export interface AiFeatureFlags {
-  exam: boolean       // AI 智能出题
-  summary: boolean    // AI 学习总结
+  exam: boolean        // AI 智能出题
+  summary: boolean     // AI 学习总结
   suggestions: boolean // AI 学习建议
-  mineru: boolean     // MinerU 精准解析
+  mineru: boolean      // MinerU 精准解析
+  keypoints: boolean   // AI 生成知识点
 }
 
 const STORAGE_KEY = 'ai_feature_flags'
@@ -14,7 +15,7 @@ function loadFlags(): AiFeatureFlags {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw) as AiFeatureFlags
   } catch { /* ignore */ }
-  return { exam: true, summary: true, suggestions: true, mineru: true }
+  return { exam: true, summary: true, suggestions: true, mineru: true, keypoints: true }
 }
 
 function saveFlags(flags: AiFeatureFlags) {
