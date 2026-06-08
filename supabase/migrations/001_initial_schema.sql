@@ -87,16 +87,32 @@ CREATE TABLE IF NOT EXISTS public.favorites (
 -- ----------------------------------------------------------------------------
 -- 6. INDEXES — 查询性能优化
 -- ----------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_questions_category   ON public.questions(category);
-CREATE INDEX IF NOT EXISTS idx_questions_subject    ON public.questions(subject);
-CREATE INDEX IF NOT EXISTS idx_user_answers_user    ON public.user_answers(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_answers_question ON public.user_answers(question_id);
-CREATE INDEX IF NOT EXISTS idx_user_answers_exam    ON public.user_answers(exam_session_id);
-CREATE INDEX IF NOT EXISTS idx_user_answers_wrong   ON public.user_answers(user_id, is_correct) WHERE is_correct = false;
-CREATE INDEX IF NOT EXISTS idx_user_answers_public  ON public.user_answers(user_id, answered_at DESC) WHERE is_public = true;
-CREATE INDEX IF NOT EXISTS idx_exam_sessions_user   ON public.exam_sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_favorites_user       ON public.favorites(user_id);
-CREATE INDEX IF NOT EXISTS idx_favorites_question   ON public.favorites(question_id);
+-- questions: filter dropdowns, random pick, dashboard metadata
+CREATE INDEX IF NOT EXISTS idx_questions_category       ON public.questions(category);
+CREATE INDEX IF NOT EXISTS idx_questions_subject        ON public.questions(subject);
+CREATE INDEX IF NOT EXISTS idx_questions_subj_cat       ON public.questions(subject, category);
+CREATE INDEX IF NOT EXISTS idx_questions_type           ON public.questions(question_type);
+CREATE INDEX IF NOT EXISTS idx_questions_filter         ON public.questions(subject, category, question_type);
+
+-- user_answers: dashboard time-range, per-question stats, review
+CREATE INDEX IF NOT EXISTS idx_ua_user                ON public.user_answers(user_id);
+CREATE INDEX IF NOT EXISTS idx_ua_question             ON public.user_answers(question_id);
+CREATE INDEX IF NOT EXISTS idx_ua_user_answered        ON public.user_answers(user_id, answered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ua_user_question        ON public.user_answers(user_id, question_id);
+CREATE INDEX IF NOT EXISTS idx_ua_question_correct     ON public.user_answers(question_id, is_correct);
+CREATE INDEX IF NOT EXISTS idx_ua_exam                 ON public.user_answers(exam_session_id);
+CREATE INDEX IF NOT EXISTS idx_ua_wrong                ON public.user_answers(user_id, is_correct) WHERE is_correct = false;
+CREATE INDEX IF NOT EXISTS idx_ua_public               ON public.user_answers(user_id, answered_at DESC) WHERE is_public = true;
+
+-- exam_sessions
+CREATE INDEX IF NOT EXISTS idx_exam_sessions_user      ON public.exam_sessions(user_id);
+
+-- favorites
+CREATE INDEX IF NOT EXISTS idx_favorites_user          ON public.favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_question      ON public.favorites(question_id);
+
+-- profiles: auth lookup on every page load
+CREATE INDEX IF NOT EXISTS idx_profiles_id             ON public.profiles(id);
 
 -- ----------------------------------------------------------------------------
 -- 7. TRIGGER & HELPER FUNCTIONS
