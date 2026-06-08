@@ -412,21 +412,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
+        <DialogFooter className="flex-row gap-2">
           <DialogClose asChild>
             <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
           </DialogClose>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? t('questions.saving') : t('plan.save')}
-            </Button>
-            <Button size="sm" asChild>
-              <Link to="/practice">
-                <Play className="h-3.5 w-3.5" />
-                开始学习
-              </Link>
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? t('questions.saving') : t('plan.save')}
+          </Button>
+          <Button size="sm" asChild>
+            <Link to="/practice">
+              <Play className="h-3.5 w-3.5" />
+              开始学习
+            </Link>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
