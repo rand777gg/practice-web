@@ -12,8 +12,12 @@ async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: stri
   })
   if (!res.ok) throw new Error(`Failed to download zip: ${res.status}`)
 
-  const { text } = await res.json() as { text: string }
+  const { text, jsonData: serverJsonData } = await res.json() as { text: string; jsonData?: string }
 
+  // Server-side extraction already got JSON
+  if (serverJsonData) return { markdown: text, jsonData: serverJsonData }
+
+  // Fallback: server returned base64 zip for client-side extraction
   if (text.startsWith('__B64ZIP__')) {
     const b64 = text.slice('__B64ZIP__'.length)
     const binary = atob(b64)

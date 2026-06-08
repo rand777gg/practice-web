@@ -47,9 +47,9 @@ Deno.serve(async (req: Request) => {
       }
       const zipBytes = new Uint8Array(await res.arrayBuffer())
 
-      // Find and extract full.md from the zip
-      const markdown = await extractFullMd(zipBytes)
-      return new Response(JSON.stringify({ text: markdown }), {
+      // Find and extract full.md and content_list.json from the zip
+      const { markdown, jsonData } = await extractZipFiles(zipBytes)
+      return new Response(JSON.stringify({ text: markdown, jsonData }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -106,9 +106,12 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-async function extractFullMd(zipBytes: Uint8Array): Promise<string> {
+async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string; jsonData?: string }> {
   const decoder = new TextDecoder()
   const view = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength)
+
+  let markdown = ''
+  let jsonData: string | undefined
 
   let offset = 0
   while (offset < zipBytes.length - 30) {
@@ -127,34 +130,42 @@ async function extractFullMd(zipBytes: Uint8Array): Promise<string> {
     const dataStart = offset + 30 + fileNameLen + extraLen
     const dataEnd = dataStart + compressedSize
 
-    if (fileName === 'full.md' && dataEnd <= zipBytes.length) {
+    if (dataEnd <= zipBytes.length) {
       const compressed = zipBytes.slice(dataStart, dataEnd)
 
-      if (compression === 0) {
-        return decoder.decode(compressed)
+      const tryDecompress = async (): Promise<string | null> => {
+        if (compression === 0) return decoder.decode(compressed)
+        if (compression === 8) {
+          const inflated = await inflateAsync(compressed)
+          if (inflated) return decoder.decode(inflated)
+        }
+        return null
       }
 
-      if (compression === 8) {
-        const inflated = await inflateAsync(compressed)
-        if (inflated) {
-          return decoder.decode(inflated)
-        }
-        // Fallback: return base64-encoded zip for frontend extraction
-        let binary = ''
-        for (let i = 0; i < zipBytes.length; i++) {
-          binary += String.fromCharCode(zipBytes[i])
-        }
-        return `__B64ZIP__${btoa(binary)}`
+      if (fileName === 'full.md') {
+        const text = await tryDecompress()
+        if (text) { markdown = text; if (jsonData) break }
       }
-
-      return `[full.md uses unsupported compression: ${compression}]`
+      if (!jsonData && (fileName === 'content_list.json' || fileName.endsWith('_content_list.json') || fileName === 'middle.json' || fileName.endsWith('_middle.json'))) {
+        const text = await tryDecompress()
+        if (text) { jsonData = text; if (markdown) break }
+      }
     }
 
     offset = dataEnd
   }
 
-  return '[Could not find full.md in zip archive]'
+  if (!markdown) {
+    // Fallback: return base64-encoded zip for frontend extraction
+    let binary = ''
+    for (let i = 0; i < zipBytes.length; i++) binary += String.fromCharCode(zipBytes[i])
+    return { markdown: `__B64ZIP__${btoa(binary)}`, jsonData }
+  }
+
+  return { markdown, jsonData }
 }
+
+async function inflateAsync(data: Uint8Array): Promise<Uint8Array | null> {
 
 async function inflateAsync(data: Uint8Array): Promise<Uint8Array | null> {
   try {
