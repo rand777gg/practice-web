@@ -16,9 +16,10 @@ interface Props {
   activePage?: number
   activeBbox?: [number, number, number, number] | null
   onPageChange?: (page: number) => void
+  onBlockClick?: (block: PdfBlock) => void
 }
 
-export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChange }: Props) {
+export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChange, onBlockClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [pages, setPages] = useState<{ width: number; height: number }[]>([])
   const [loading, setLoading] = useState(true)
@@ -126,13 +127,9 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
             <div
               key={i}
               className={`absolute border transition-colors cursor-pointer ${isActive ? 'border-blue-500 bg-blue-500/20' : 'border-transparent hover:border-amber-400/50 hover:bg-amber-400/10'}`}
-              style={{
-                left: x0 * scale,
-                top: y0 * scale,
-                width: (x1 - x0) * scale,
-                height: (y1 - y0) * scale,
-              }}
-              title={block.content?.slice(0, 100)}
+              style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }}
+              title={`${block.content?.slice(0, 100) || ''} — 点击定位`}
+              onClick={() => onBlockClick?.(block)}
             />
           )
         })}

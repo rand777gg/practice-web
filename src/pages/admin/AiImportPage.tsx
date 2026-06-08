@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -162,6 +162,8 @@ export function Component() {
   const [showSplitView, setShowSplitView] = useState(false)
   const [activePage, setActivePage] = useState(1)
   const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
+  const [activeMdIdx, setActiveMdIdx] = useState<number | null>(null)
+  const mdRef = useRef<HTMLDivElement>(null)
   const CHARS_PER_PAGE = 3000
   const pdfUrl = file ? URL.createObjectURL(file) : files.length > 0 ? URL.createObjectURL(files[0]) : null
 
@@ -480,7 +482,22 @@ export function Component() {
                       <Card className="border-0 shadow-none">
                         <CardContent className="p-3">
                           <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
-                            activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage} />
+                            activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
+                            onBlockClick={(block) => {
+                              const blocks = parseBlocks(parseResult.jsonData!)
+                              const idx = matchMarkdownToPdf(parseResult.markdown, blocks).findIndex(
+                                s => s.bbox && s.bbox[0] === block.bbox[0] && s.bbox[1] === block.bbox[1]
+                              )
+                              if (idx >= 0) {
+                                setActiveMdIdx(idx)
+                                setActivePage(block.page_num + 1)
+                                setActiveBbox(block.bbox)
+                                setTimeout(() => {
+                                  mdRef.current?.querySelector(`[data-md-idx="${idx}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                }, 50)
+                              }
+                            }}
+                          />
                         </CardContent>
                       </Card>
                     )}
@@ -488,11 +505,14 @@ export function Component() {
                       <CardContent className="py-4 space-y-2">
                         <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
                           {showSplitView && parseResult.jsonData ? (
-                            <ClickableMarkdown
-                              markdown={parseResult.markdown}
-                              jsonData={parseResult.jsonData}
-                              onNavigate={(page, bbox) => { setActivePage(page); setActiveBbox(bbox) }}
-                            />
+                            <div ref={mdRef}>
+                              <ClickableMarkdown
+                                markdown={parseResult.markdown}
+                                jsonData={parseResult.jsonData}
+                                activeIdx={activeMdIdx}
+                                onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
+                              />
+                            </div>
                           ) : (
                             <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
                               {(() => {
@@ -659,7 +679,7 @@ function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): { text: string; pag
   })
 }
 
-function ClickableMarkdown({ markdown, jsonData, onNavigate }: { markdown: string; jsonData: string; onNavigate: (page: number, bbox: [number, number, number, number] | null) => void }) {
+function ClickableMarkdown({ markdown, jsonData, activeIdx, onNavigate }: { markdown: string; jsonData: string; activeIdx: number | null; onNavigate: (page: number, bbox: [number, number, number, number] | null, idx: number) => void }) {
   const blocks = parseBlocks(jsonData)
   const sections = matchMarkdownToPdf(markdown, blocks)
 
@@ -668,8 +688,9 @@ function ClickableMarkdown({ markdown, jsonData, onNavigate }: { markdown: strin
       {sections.map((sec, i) => (
         <span
           key={i}
-          className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${sec.bbox ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20' : ''}`}
-          onClick={() => { if (sec.bbox) onNavigate(sec.page, sec.bbox) }}
+          data-md-idx={i}
+          className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${sec.bbox ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20' : ''} ${activeIdx === i ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' : ''}`}
+          onClick={() => { if (sec.bbox) onNavigate(sec.page, sec.bbox, i) }}
           title={sec.bbox ? `第 ${sec.page} 页 — 点击定位` : undefined}
         >
           {sec.text}
