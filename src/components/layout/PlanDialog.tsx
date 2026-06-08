@@ -414,15 +414,25 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
         <DialogFooter className="flex-row gap-2">
           <DialogClose asChild>
-            <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
+            <Button variant="outline" size="sm" className="gap-1 px-2.5 sm:px-3">
+              <X className="h-3.5 w-3.5 sm:hidden" />
+              <span className="hidden sm:inline">{t('plan.cancel')}</span>
+            </Button>
           </DialogClose>
-          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? t('questions.saving') : t('plan.save')}
+          <Button variant="outline" size="sm" className="gap-1 px-2.5 sm:px-3" onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <span className="hidden sm:inline">{t('questions.saving')}</span>
+            ) : (
+              <>
+                <Check className="h-3.5 w-3.5 sm:hidden" />
+                <span className="hidden sm:inline">{t('plan.save')}</span>
+              </>
+            )}
           </Button>
-          <Button size="sm" asChild>
+          <Button size="sm" asChild className="gap-1 px-2.5 sm:px-3">
             <Link to="/practice">
               <Play className="h-3.5 w-3.5" />
-              开始学习
+              <span className="hidden sm:inline">开始学习</span>
             </Link>
           </Button>
         </DialogFooter>
