@@ -160,6 +160,8 @@ export function Component() {
   const [parsingDone, setParsingDone] = useState(false)
   const [parsePage, setParsePage] = useState(0)
   const [showSplitView, setShowSplitView] = useState(false)
+  const [activePage, setActivePage] = useState(1)
+  const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
   const CHARS_PER_PAGE = 3000
   const pdfUrl = file ? URL.createObjectURL(file) : files.length > 0 ? URL.createObjectURL(files[0]) : null
 
@@ -477,21 +479,30 @@ export function Component() {
                     {showSplitView && pdfUrl && (
                       <Card className="border-0 shadow-none">
                         <CardContent className="p-3">
-                          <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} />
+                          <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
+                            activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage} />
                         </CardContent>
                       </Card>
                     )}
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
                         <ScrollArea className="bg-muted/50 rounded-lg p-3 max-h-[500px]">
-                          <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
-                            {(() => {
-                              const start = parsePage * CHARS_PER_PAGE
-                              return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
-                            })()}
-                          </pre>
+                          {showSplitView && parseResult.jsonData ? (
+                            <ClickableMarkdown
+                              markdown={parseResult.markdown}
+                              jsonData={parseResult.jsonData}
+                              onNavigate={(page, bbox) => { setActivePage(page); setActiveBbox(bbox) }}
+                            />
+                          ) : (
+                            <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
+                              {(() => {
+                                const start = parsePage * CHARS_PER_PAGE
+                                return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
+                              })()}
+                            </pre>
+                          )}
                         </ScrollArea>
-                        {(() => {
+                        {!showSplitView && (() => {
                           const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
                           if (totalPages <= 1) return null
                           return (
@@ -604,6 +615,66 @@ export function Component() {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+type PdfBlock = { page_num: number; bbox: [number, number, number, number]; content?: string; type?: string }
+
+function parseBlocks(jsonData: string): PdfBlock[] {
+  try {
+    const data = JSON.parse(jsonData)
+    const extract = (arr: unknown[]): PdfBlock[] => {
+      const result: PdfBlock[] = []
+      for (const item of arr) {
+        if (!item || typeof item !== 'object') continue
+        const obj = item as Record<string, unknown>
+        if (obj.page_num !== undefined && obj.bbox) {
+          result.push({ page_num: obj.page_num as number, bbox: obj.bbox as [number, number, number, number], content: obj.content as string | undefined, type: obj.type as string | undefined })
+        }
+        if (Array.isArray(obj.children)) result.push(...extract(obj.children as unknown[]))
+      }
+      return result
+    }
+    return Array.isArray(data) ? extract(data) : []
+  } catch { return [] }
+}
+
+function normalize(s: string) { return s.replace(/[#*\s\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase() }
+
+function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): { text: string; page: number; bbox: [number, number, number, number] | null }[] {
+  const paragraphs = md.split(/\n\n+/).filter(p => p.trim())
+  return paragraphs.map(para => {
+    const norm = normalize(para)
+    let best: PdfBlock | null = null; let bestScore = 0
+    for (const b of blocks) {
+      if (!b.content) continue
+      const bNorm = normalize(b.content)
+      if (bNorm.length < 3) continue
+      const overlap = bNorm.split(' ').filter(w => norm.includes(w)).length
+      const score = overlap / Math.max(bNorm.split(' ').length, 1)
+      if (score > bestScore && score > 0.3) { bestScore = score; best = b }
+    }
+    return { text: para, page: (best?.page_num ?? 0) + 1, bbox: best?.bbox ?? null }
+  })
+}
+
+function ClickableMarkdown({ markdown, jsonData, onNavigate }: { markdown: string; jsonData: string; onNavigate: (page: number, bbox: [number, number, number, number] | null) => void }) {
+  const blocks = parseBlocks(jsonData)
+  const sections = matchMarkdownToPdf(markdown, blocks)
+
+  return (
+    <div className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
+      {sections.map((sec, i) => (
+        <span
+          key={i}
+          className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${sec.bbox ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20' : ''}`}
+          onClick={() => { if (sec.bbox) onNavigate(sec.page, sec.bbox) }}
+          title={sec.bbox ? `第 ${sec.page} 页 — 点击定位` : undefined}
+        >
+          {sec.text}
+        </span>
+      ))}
     </div>
   )
 }
