@@ -120,8 +120,6 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testing, setTesting] = useState(false)
 
-  const effectiveKey = provider.apiKey || (import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`] || ''
-
   const runTest = useCallback(async () => {
     if (!effectiveKey) return
     setTesting(true)
