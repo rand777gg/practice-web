@@ -244,7 +244,7 @@ export function Component() {
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span></h1>
+        <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span><span className="text-[10px] text-muted-foreground ml-1">由 MinerU 提供解析</span></h1>
       </div>
 
       {!aiConfigured && (
@@ -273,7 +273,7 @@ export function Component() {
 
               {parseMode === 'lightweight' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground">支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx，单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
+                  <p className="text-xs text-muted-foreground">单文件 ≤ 10MB、≤ 20 页，无需 Token。</p>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
                     <Input
@@ -286,7 +286,7 @@ export function Component() {
                 </div>
               )}
               {parseMode === 'precision' && (
-                <p className="text-xs text-muted-foreground">支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx、PPTx、Xlsx，单文件 ≤ 200MB、≤ 200 页，批量最多 200 个文件。需配置 MinerU Token。</p>
+                <p className="text-xs text-muted-foreground">单文件 ≤ 200MB、≤ 200 页，批量最多 200 个文件。需配置 MinerU Token。</p>
               )}
 
               {/* Precision mode settings */}

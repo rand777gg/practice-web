@@ -91,8 +91,8 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
   }
 
   const formatLabel = multiple
-    ? '支持 PDF、DOC(X)、PPT(X)、XLS(X)、图片、HTML 格式'
-    : '支持 PDF、DOCX 格式'
+    ? '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx、PPTx、Xlsx'
+    : '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx'
 
   const acceptAttr = multiple ? PRECISION_ACCEPT : DEFAULT_ACCEPT
 
