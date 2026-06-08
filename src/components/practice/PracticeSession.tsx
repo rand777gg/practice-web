@@ -69,6 +69,8 @@ export function PracticeSession() {
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const { reviewItems, reviewCount, loading: reviewLoading } = useEbbinghausReview()
+  const reviewItemsRef = useRef(reviewItems)
+  reviewItemsRef.current = reviewItems // always current, no dep needed
   const [ebbinghausMode, setEbbinghausMode] = useState(false)
   const prefetchPromiseRef = useRef<Promise<void> | null>(null)
 
@@ -152,9 +154,10 @@ export function PracticeSession() {
       availableIds = serverIds.map((r: any) => r.id)
     }
 
-    // Ebbinghaus review mode: prioritize at-risk questions
-    if (ebbinghausMode && reviewItems.length > 0) {
-      const reviewIdSet = new Set(reviewItems.map((r) => r.questionId))
+    // Ebbinghaus review mode: prioritize at-risk questions (read from ref to avoid dep churn)
+    const currentReviewItems = reviewItemsRef.current
+    if (ebbinghausMode && currentReviewItems.length > 0) {
+      const reviewIdSet = new Set(currentReviewItems.map((r) => r.questionId))
       const reviewPool = availableIds.filter((id) => reviewIdSet.has(id))
       const nonReviewPool = availableIds.filter((id) => !reviewIdSet.has(id))
       // Mix: 80% review + 20% fresh for variety
@@ -201,7 +204,7 @@ export function PracticeSession() {
         await bulkPrefetchQuestions([{ id: nextId, data }])
       }
     })()
-  }, [selectedSubject, selectedCategory, selectedType, ebbinghausMode, reviewItems, profile?.daily_targets, profile?.plan_subjects, loadQuestionFromLocal, loadStatsFromServer])
+  }, [selectedSubject, selectedCategory, selectedType, ebbinghausMode, profile?.daily_targets, profile?.plan_subjects, loadQuestionFromLocal, loadStatsFromServer])
 
   useEffect(() => {
     fetchRandomQuestion()
