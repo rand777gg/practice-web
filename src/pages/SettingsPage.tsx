@@ -109,11 +109,7 @@ export function Component() {
               <table className="w-full text-sm">
                 <tbody>
                   <tr>
-                    <td className="py-1.5 pr-4 text-muted-foreground w-[80px]">{t('auth.email')}</td>
-                    <td className="py-1.5">{user.email}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1.5 pr-4 text-muted-foreground">{t('settings.nickname')}</td>
+                    <td className="py-1.5 pr-4 text-muted-foreground w-[80px]">{t('settings.nickname')}</td>
                     <td className="py-1.5">
                       {nickEditing ? (
                         <div className="flex gap-1.5">
@@ -140,6 +136,10 @@ export function Component() {
                         </span>
                       )}
                     </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 pr-4 text-muted-foreground">{t('auth.email')}</td>
+                    <td className="py-1.5">{user.email}</td>
                   </tr>
                   <tr>
                     <td className="py-1.5 pr-4 text-muted-foreground">ID</td>
