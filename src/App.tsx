@@ -77,6 +77,14 @@ function AuthInitializer({ children }: { children: ReactNode }) {
       }
       if (!cancelled) {
         setProfile(profile)
+        // Auto-assign nickname if not set
+        if (profile && !profile.nickname) {
+          const rand = Math.random().toString(36).slice(2, 10)
+          const nickname = `刷题网用户${rand}`
+          supabase.from('profiles').update({ nickname }).eq('id', userId).then(() => {
+            setProfile({ ...profile, nickname })
+          })
+        }
       }
     }
 

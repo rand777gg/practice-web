@@ -3,7 +3,6 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { OnlinePresenceTracker } from './OnlinePresenceTracker'
-import { NicknameDialog } from './NicknameDialog'
 import { useSettingsStore } from '@/stores/settings-store'
 
 export function AppLayout() {
@@ -15,7 +14,6 @@ export function AppLayout() {
   return (
     <div className="min-h-screen flex">
       <OnlinePresenceTracker />
-      <NicknameDialog />
       <Sidebar className="hidden lg:flex" collapsed={sidebarCollapsed} onToggleCollapse={handleToggle} />
       <Sidebar
         className="flex lg:hidden"
