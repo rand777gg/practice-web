@@ -87,7 +87,7 @@ export function Component() {
     await Promise.all(
       userIds.map(async (uid) => {
         const { data: prof } = await supabase.from('profiles').select('nickname').eq('id', uid).single()
-        nicknames[uid] = prof?.nickname || uid.slice(0, 8) + '...'
+        nicknames[uid] = prof?.nickname || `用户${uid.slice(0, 6)}`
       }),
     )
     setUserNicknames(nicknames)
