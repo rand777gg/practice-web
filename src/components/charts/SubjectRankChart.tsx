@@ -61,7 +61,8 @@ export function SubjectRankChart({ data }: Props) {
             borderRadius: [0, 4, 4, 0],
           },
         })),
-        barMaxWidth: 24,
+        barMaxWidth: 20,
+        barCategoryGap: '15%',
         label: {
           show: true,
           position: 'right' as const,
@@ -75,7 +76,7 @@ export function SubjectRankChart({ data }: Props) {
   return (
     <div className="overflow-x-auto">
       <p className="text-xs text-muted-foreground text-center mb-1">学科题目排行</p>
-      <ReactECharts option={option} style={{ height: 480, minWidth: 320 }} />
+      <ReactECharts option={option} style={{ height: Math.max(200, new Set(data.map(d => d.subject)).size * 36), minWidth: 320 }} />
     </div>
   )
 }
