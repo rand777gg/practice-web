@@ -166,8 +166,6 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
 }
 
 async function inflateAsync(data: Uint8Array): Promise<Uint8Array | null> {
-
-async function inflateAsync(data: Uint8Array): Promise<Uint8Array | null> {
   try {
     const ds = new DecompressionStream('deflate-raw')
     const writer = ds.writable.getWriter()
