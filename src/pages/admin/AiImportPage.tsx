@@ -725,6 +725,8 @@ function ClickableMarkdown({ sections, activeIdx, onNavigate }: { sections: Retu
   )
 }
 
+type StatusField = string | number | undefined | null | boolean | Record<string, unknown> | unknown[]
+
 function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
   const steps = [
     { label: '上传文档', key: 'upload' },
@@ -793,15 +795,15 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
             {/* Basic info table */}
             <table className="w-full border-collapse">
               <tbody>
-                {status.taskId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{status.taskId as string}</td></tr>}
-                {status.batchId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{status.batchId as string}</td></tr>}
-                {status.dataId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{status.dataId as string}</td></tr>}
+                {!!status.taskId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{status.taskId as string}</td></tr>}
+                {!!status.batchId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{status.batchId as string}</td></tr>}
+                {!!status.dataId && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{status.dataId as string}</td></tr>}
                 {status.code !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${status.code === 0 ? 'text-green-600' : 'text-red-500'}`}>{String(status.code)}{status.msg ? ` — ${status.msg}` : ''}</td></tr>}
                 {status.state !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr>}
-                {status.markdownUrl && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{status.markdownUrl as string}</td></tr>}
-                {status.fullZipUrl && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Full ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{status.fullZipUrl as string}</td></tr>}
-                {status.errMsg && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{status.errMsg as string}</td></tr>}
-                {status.extractProgress && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>}
+                {!!status.markdownUrl && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{status.markdownUrl as string}</td></tr>}
+                {!!status.fullZipUrl && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Full ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{status.fullZipUrl as string}</td></tr>}
+                {!!status.errMsg && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{status.errMsg as string}</td></tr>}
+                {!!status.extractProgress && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{(status.extractProgress as Record<string, number>).extractedPages} / {(status.extractProgress as Record<string, number>).totalPages}</td></tr>}
               </tbody>
             </table>
 

@@ -27,7 +27,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map())
 
   const blocks = jsonData ? parseBlocks(jsonData) : []
-  const totalPages = Math.max(pages.length, blocks.length > 0 ? Math.max(...blocks.map(b => b.page_num)) + 1 : 0)
+  const totalPages = Math.max(pages.length, blocks.length > 0 ? Math.max(...blocks.map(b => b.page_idx)) + 1 : 0)
 
   useEffect(() => {
     let cancelled = false

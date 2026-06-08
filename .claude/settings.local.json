@@ -30,7 +30,11 @@
       "Bash(npm uninstall *)",
       "Bash(curl -sL \"https://raw.githubusercontent.com/sparanoid/chinese-copywriting-guidelines/master/README.md\")",
       "Bash(git revert *)",
-      "Bash(curl -sL \"https://mineru.net/apiManage/docs\")"
+      "Bash(curl -sL \"https://mineru.net/apiManage/docs\")",
+      "Bash(curl -sL \"https://opendatalab.github.io/MinerU/reference/output_files/\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/opendatalab/MinerU/master/docs/reference/output_files.md\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/opendatalab/MinerU/master/docs/output_file_format.md\")",
+      "Bash(curl -sL \"https://opendatalab.github.io/MinerU/zh/reference/output_files/\")"
     ]
   }
 }

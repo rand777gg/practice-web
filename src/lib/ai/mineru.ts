@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { DocumentParseResult, MinerUPrecisionOptions, MinerUTaskResult, MinerUBatchFileResult } from './types'
+import type { DocumentParseResult, MinerUPrecisionOptions, MinerUTaskResult, MinerUBatchFileResult, MinerUBatchStatus, MinerULightweightStatus } from './types'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
@@ -331,8 +331,8 @@ export class MinerUClient {
         onStatus?.(batchStatus)
 
         const batchResults = batchStatus.files
-        const done = batchResults.filter(r => r.state === 'done')
-        const failed = batchResults.filter(r => r.state === 'failed')
+        const done = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'done')
+        const failed = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'failed')
 
         if (done.length + failed.length === batchResults.length) {
           // All completed
@@ -344,13 +344,13 @@ export class MinerUClient {
             }
           }
           if (failed.length > 0) {
-            const names = failed.map(r => r.fileName).join(', ')
+            const names = failed.map((r: MinerUBatchFileResult) => r.fileName).join(', ')
             onProgress?.(`部分文件解析失败: ${names}`)
           }
           break
         }
 
-        const running = batchResults.filter(r => r.state === 'running').length
+        const running = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'running').length
         onProgress?.(`批量解析中... 完成 ${done.length}, 进行中 ${running}, 失败 ${failed.length}`)
       }
 
