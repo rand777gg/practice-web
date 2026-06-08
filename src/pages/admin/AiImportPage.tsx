@@ -19,6 +19,7 @@ import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PdfViewer } from '@/components/ai-import/PdfViewer'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
@@ -246,7 +247,7 @@ export function Component() {
   }
 
   return (
-    <div className="max-w-5xl space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
@@ -475,8 +476,8 @@ export function Component() {
                   <div className={`grid gap-4 ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
                     {showSplitView && pdfUrl && (
                       <Card className="border-0 shadow-none">
-                        <CardContent className="p-0">
-                          <iframe src={pdfUrl} className="w-full h-[500px] rounded-lg border" title="PDF Preview" />
+                        <CardContent className="p-3">
+                          <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} />
                         </CardContent>
                       </Card>
                     )}
