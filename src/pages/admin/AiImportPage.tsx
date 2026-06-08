@@ -16,7 +16,6 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
-import { AiImportMetadata } from '@/components/ai-import/AiImportMetadata'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -27,7 +26,7 @@ import {
 } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
-import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
+import { ArrowLeft, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision'
@@ -225,8 +224,6 @@ export function Component() {
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
     setStep('preview')
   }
-
-  const goPreview = () => setStep('preview')
 
   const startImport = async () => {
     setStep('importing')
@@ -661,36 +658,18 @@ export function Component() {
             </div>
           )}
 
-          {/* Step 3: Metadata */}
-          {step === 'metadata' && (
-            <>
-              <AiImportMetadata
-                subject={subject}
-                category={category}
-                existingSubjects={existingSubjects}
-                existingCategories={existingCategories}
-                onChange={(f, v) => {
-                  if (f === 'subject') setSubject(v)
-                  else setCategory(v)
-                }}
-              />
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => setStep('preview')}>
-                  <ArrowLeft className="h-4 w-4" /> 返回
-                </Button>
-                <Button onClick={() => { goPreview() }}>
-                  下一步 <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </>
-          )}
-
           {/* Step 4: Preview */}
           {step === 'preview' && (
             <>
               <AiImportPreview
                 questions={questions}
                 selectedIds={selectedIds}
+                subject={subject}
+                category={category}
+                existingSubjects={existingSubjects}
+                existingCategories={existingCategories}
+                onSubjectChange={setSubject}
+                onCategoryChange={setCategory}
                 onToggleSelect={toggleSelect}
                 onToggleAll={toggleAll}
                 onChangeQuestion={changeQuestion}
@@ -698,7 +677,7 @@ export function Component() {
               />
               {error && <p className="text-sm text-destructive">{error}</p>}
               <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => setStep('metadata')}>
+                <Button variant="outline" onClick={() => setStep('upload')}>
                   <ArrowLeft className="h-4 w-4" /> 返回
                 </Button>
                 <Button onClick={startImport} disabled={selectedIds.size === 0}>
