@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -67,10 +66,9 @@ export function NicknameDialog() {
 
   return (
     <Dialog open modal>
-      <DialogContent className="sm:max-w-sm" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-sm [&>button:first-child]:hidden" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{t('settings.nicknameRequired')}</DialogTitle>
-          <DialogDescription>{t('settings.nicknameRequiredDesc')}</DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
           <Input
