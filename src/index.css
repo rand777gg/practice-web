@@ -76,6 +76,38 @@
   --sidebar-ring: 217.2 91.2% 59.8%;
 }
 
+/* Eye-care light mode — Chinese traditional colors (zhongguose.com) */
+.eye-care {
+  --color-background: #F4EDE4;
+  --background: 36 25% 93%;
+  --foreground: 30 6% 26%;
+  --card: 34 40% 96%;
+  --card-foreground: 30 6% 26%;
+  --popover: 34 40% 96%;
+  --popover-foreground: 30 6% 26%;
+  --primary: 200 15% 40%;
+  --primary-foreground: 36 30% 96%;
+  --secondary: 36 18% 90%;
+  --secondary-foreground: 30 6% 28%;
+  --muted: 36 18% 90%;
+  --muted-foreground: 30 4% 46%;
+  --accent: 35 22% 87%;
+  --accent-foreground: 30 6% 28%;
+  --destructive: 0 40% 52%;
+  --destructive-foreground: 36 30% 96%;
+  --border: 34 14% 82%;
+  --input: 34 14% 82%;
+  --ring: 200 15% 40%;
+  --sidebar-background: 34 30% 94%;
+  --sidebar-foreground: 30 6% 26%;
+  --sidebar-primary: 200 15% 40%;
+  --sidebar-primary-foreground: 36 30% 96%;
+  --sidebar-accent: 36 18% 90%;
+  --sidebar-accent-foreground: 30 6% 26%;
+  --sidebar-border: 34 14% 82%;
+  --sidebar-ring: 200 15% 40%;
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));

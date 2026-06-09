@@ -41,7 +41,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode, darkCodeTheme, lightCodeTheme, setCodeTheme } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme } = useSettingsStore()
   const siteTheme = useThemeStore((s) => s.theme)
   const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
   const navigate = useNavigate()
@@ -427,6 +427,13 @@ export function Component() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm">{t('settings.eyeCare')}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.eyeCareDesc')}</p>
+                </div>
+                <Switch checked={eyeCare} onCheckedChange={setEyeCare} disabled={siteTheme === 'dark'} />
               </div>
               <div className="flex items-center justify-between">
                 <div>

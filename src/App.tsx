@@ -4,6 +4,7 @@ import { router } from '@/router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import type { Profile } from '@/types'
 import { LoadingScreen } from '@/components/layout/LoadingScreen'
 
@@ -143,12 +144,30 @@ function AuthInitializer({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+function EyeCareInitializer({ children }: { children: ReactNode }) {
+  const eyeCare = useSettingsStore((s) => s.eyeCare)
+  const theme = useThemeStore((s) => s.theme)
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (eyeCare && theme !== 'dark') {
+      root.classList.add('eye-care')
+    } else {
+      root.classList.remove('eye-care')
+    }
+  }, [eyeCare, theme])
+
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <ThemeInitializer>
-      <AuthInitializer>
-        <RouterProvider router={router} />
-      </AuthInitializer>
+      <EyeCareInitializer>
+        <AuthInitializer>
+          <RouterProvider router={router} />
+        </AuthInitializer>
+      </EyeCareInitializer>
     </ThemeInitializer>
   )
 }

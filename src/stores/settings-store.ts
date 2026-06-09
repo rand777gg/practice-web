@@ -10,6 +10,7 @@ export interface AiFeatureFlags {
 
 const FLAGS_KEY = 'ai_feature_flags'
 const OFFLINE_KEY = 'offline_mode'
+const EYE_CARE_KEY = 'eye_care'
 const DARK_CODE_THEME_KEY = 'dark_code_theme'
 const LIGHT_CODE_THEME_KEY = 'light_code_theme'
 
@@ -36,11 +37,13 @@ function loadLightCodeTheme(): string {
 interface SettingsState {
   flags: AiFeatureFlags
   offlineMode: boolean
+  eyeCare: boolean
   sidebarCollapsed: boolean
   darkCodeTheme: string
   lightCodeTheme: string
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
+  setEyeCare: (value: boolean) => void
   setSidebarCollapsed: (value: boolean) => void
   setCodeTheme: (theme: string) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
@@ -49,6 +52,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   flags: loadFlags(),
   offlineMode: loadOfflineMode(),
+  eyeCare: localStorage.getItem(EYE_CARE_KEY) === 'true',
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
   darkCodeTheme: loadDarkCodeTheme(),
   lightCodeTheme: loadLightCodeTheme(),
@@ -62,6 +66,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setOfflineMode: (value) => {
     localStorage.setItem(OFFLINE_KEY, String(value))
     set({ offlineMode: value })
+  },
+  setEyeCare: (value) => {
+    localStorage.setItem(EYE_CARE_KEY, String(value))
+    set({ eyeCare: value })
   },
   setSidebarCollapsed: (value) => {
     localStorage.setItem('sidebar_collapsed', String(value))
