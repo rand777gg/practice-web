@@ -10,7 +10,7 @@ export async function extractPdfText(file: File): Promise<string> {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
     const pageText = content.items
-      .map((item: { str?: string }) => ('str' in item ? item.str : ''))
+      .map((item) => ('str' in item ? (item as { str: string }).str : ''))
       .join(' ')
     parts.push(pageText)
   }
