@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
@@ -11,6 +11,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { Pagination } from '@/components/ui/pagination'
 import { LoadingTips } from '@/components/layout/LoadingTips'
@@ -30,6 +34,19 @@ export function Component() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const sortedSubjects = useMemo(
+    () => [...subjects].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    [subjects],
+  )
+  const yearCategories = useMemo(
+    () => filteredCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a)),
+    [filteredCategories],
+  )
+  const nonYearCategories = useMemo(
+    () => filteredCategories.filter((c) => !/^\d{4}年真题$/.test(c)),
+    [filteredCategories],
+  )
 
   // Trigger fetch when filters or search change
   useEffect(() => {
@@ -89,10 +106,10 @@ export function Component() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
             <DropdownMenuItem onClick={() => setSelectedSubject('')}>
-              <span className="text-muted-foreground">{t('questions.subject')}</span>
+              <span className="text-muted-foreground">学科（A-Z）</span>
               {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            {subjects.map((s) => (
+            {sortedSubjects.map((s) => (
               <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
                 {s}
                 {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
@@ -112,12 +129,35 @@ export function Component() {
               <span className="text-muted-foreground">{t('questions.category')}</span>
               {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            {filteredCategories.map((c) => (
-              <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                {c}
-                {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-            ))}
+            {yearCategories.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    历年真题
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                    {yearCategories.map((c) => (
+                      <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                        {c}
+                        {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
+            )}
+            {nonYearCategories.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                {nonYearCategories.map((c) => (
+                  <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                    {c}
+                    {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <DropdownMenu>
