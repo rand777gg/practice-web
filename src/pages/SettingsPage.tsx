@@ -24,7 +24,7 @@ import {
   DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@iconify/react'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, RotateCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -59,6 +59,8 @@ export function Component() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
+  const [resetDataOpen, setResetDataOpen] = useState(false)
+  const [resettingData, setResettingData] = useState(false)
   const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
   const hasMultipleIdentities = user?.identities && user.identities.length > 1
 

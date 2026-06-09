@@ -3,12 +3,12 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs`
 
-interface PdfBlock {
+interface LayoutBlock {
   page_idx: number
   bbox: [number, number, number, number]
   text?: string
+  category?: string
   type?: string
-  level?: number
 }
 
 interface Props {
@@ -17,158 +17,149 @@ interface Props {
   activePage?: number
   activeBbox?: [number, number, number, number] | null
   onPageChange?: (page: number) => void
-  onBlockClick?: (block: PdfBlock) => void
-}
-
-interface RenderedPage {
-  pageNum: number
-  width: number
-  height: number
-  url: string
+  onBlockClick?: (block: LayoutBlock) => void
 }
 
 export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChange, onBlockClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-  const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([])
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [totalPages, setTotalPages] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [hasError, setHasError] = useState(false)
-  const renderingRef = useRef(false)
 
-  const blocks = jsonData ? parseBlocksDeep(jsonData) : []
+  const blocks = jsonData ? parseLayoutBlocks(jsonData) : []
 
-  // Load PDF metadata and pre-render all pages as images (lighter than canvas)
+  // Sync activePage
+  useEffect(() => {
+    if (activePage && activePage >= 1 && activePage <= totalPages) {
+      setCurrentPage(activePage)
+    }
+  }, [activePage, totalPages])
+
+  // Render current page
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      setLoading(true)
-      setHasError(false)
+    async function render() {
       try {
         const pdf = await pdfjsLib.getDocument(pdfUrl).promise
         if (cancelled) return
-        setTotalPages(pdf.numPages)
+        const page = await pdf.getPage(currentPage)
+        const scale = 1.2
+        const vp = page.getViewport({ scale })
+        const cvs = canvasRef.current
+        if (!cvs || cancelled) { page.cleanup(); pdf.destroy(); return }
 
-        const scale = 1.5
-        const pages: RenderedPage[] = []
-        for (let i = 1; i <= pdf.numPages; i++) {
-          if (cancelled) return
-          const page = await pdf.getPage(i)
-          const vp = page.getViewport({ scale })
-          const oc = document.createElement('canvas')
-          oc.width = vp.width
-          oc.height = vp.height
-          const ctx = oc.getContext('2d')!
-          await page.render({ canvasContext: ctx, viewport: vp }).promise
-          pages.push({ pageNum: i, width: vp.width, height: vp.height, url: oc.toDataURL() })
-          page.cleanup()
-        }
+        cvs.width = vp.width
+        cvs.height = vp.height
+        setPageSize({ width: vp.width, height: vp.height })
+
+        const ctx = cvs.getContext('2d')!
+        await page.render({ canvasContext: ctx, viewport: vp }).promise
+        page.cleanup()
         pdf.destroy()
-        if (!cancelled) setRenderedPages(pages)
       } catch {
-        if (!cancelled) setHasError(true)
+        // silent fail, iframe fallback already handled above
       }
       if (!cancelled) setLoading(false)
+    }
+    setLoading(true)
+    render()
+    return () => { cancelled = true }
+  }, [pdfUrl, currentPage])
+
+  // Load PDF metadata
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const pdf = await pdfjsLib.getDocument(pdfUrl).promise
+        if (!cancelled) setTotalPages(pdf.numPages)
+        pdf.destroy()
+      } catch { /* ignore */ }
     }
     load()
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // Auto-scroll to active page
-  useEffect(() => {
-    if (!activePage || activePage < 1) return
-    const el = pageRefs.current.get(activePage)
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [activePage, renderedPages])
+  const goPage = useCallback((p: number) => {
+    const next = Math.max(1, Math.min(p, totalPages))
+    setCurrentPage(next)
+    onPageChange?.(next)
+  }, [totalPages, onPageChange])
 
-  const setPageRef = useCallback((pageNum: number) => (el: HTMLDivElement | null) => {
-    if (el) pageRefs.current.set(pageNum, el)
-    else pageRefs.current.delete(pageNum)
-  }, [])
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-full min-h-[400px] text-sm text-muted-foreground">加载 PDF 中...</div>
+  if (totalPages === 0 && !loading) {
+    return <iframe src={pdfUrl} className="w-full h-full min-h-[400px] rounded-lg border" title="PDF" />
   }
 
-  if (hasError || renderedPages.length === 0) {
-    return (
-      <iframe src={pdfUrl} className="w-full h-full min-h-[400px] rounded-lg border" title="PDF" />
-    )
-  }
+  // Layout.json blocks use absolute PDF coordinates (points), convert to display
+  const pageBlocks = blocks.filter(b => b.page_idx === currentPage - 1)
+  const displayWidth = Math.min(pageSize?.width || 700, 700)
+  const displayScale = pageSize ? displayWidth / pageSize.width : 1
 
   return (
-    <div ref={containerRef} className="overflow-auto max-h-[calc(100vh-280px)] space-y-3 pr-1">
-      {renderedPages.map((rp) => {
-        const displayWidth = Math.min(rp.width / 1.5, 700)
-        const scale = displayWidth / rp.width
-        const pageBlocks = blocks.filter(b => b.page_idx === rp.pageNum - 1)
+    <div className="space-y-3">
+      <div className="flex items-center justify-center gap-2">
+        <button type="button" className="px-2 py-1 text-xs rounded border hover:bg-accent disabled:opacity-30"
+          disabled={currentPage <= 1} onClick={() => goPage(currentPage - 1)}>
+          ‹ 上一页
+        </button>
+        <span className="text-xs text-muted-foreground tabular-nums">{currentPage} / {totalPages || '?'}</span>
+        <button type="button" className="px-2 py-1 text-xs rounded border hover:bg-accent disabled:opacity-30"
+          disabled={currentPage >= totalPages} onClick={() => goPage(currentPage + 1)}>
+          下一页 ›
+        </button>
+      </div>
+      <div ref={containerRef} className="relative mx-auto" style={{ width: displayWidth, height: (pageSize?.height || 0) * displayScale }}>
+        <canvas ref={canvasRef} className="w-full h-full rounded border" />
+        {/* bbox overlay — layout.json coords are absolute PDF points */}
+        {pageSize && pageBlocks.map((block, i) => {
+          const [x0, y0, x1, y1] = block.bbox
+          const isActive = activeBbox &&
+            Math.abs(activeBbox[0] - x0) < 5 && Math.abs(activeBbox[1] - y0) < 5
+          // PDF y: bottom→top, CSS y: top→bottom
+          const cssTop = (pageSize.height - y1) * displayScale
+          const cssH = Math.max((y1 - y0) * displayScale, 2)
+          const cssLeft = x0 * displayScale
+          const cssW = Math.max((x1 - x0) * displayScale, 2)
 
-        return (
-          <div
-            key={rp.pageNum}
-            ref={setPageRef(rp.pageNum)}
-            className="relative mx-auto"
-            style={{ width: displayWidth, height: rp.height * scale }}
-          >
-            <img
-              src={rp.url}
-              alt={`Page ${rp.pageNum}`}
-              className="w-full h-full rounded border"
-              style={{ width: displayWidth, height: rp.height * scale }}
+          return (
+            <div
+              key={i}
+              className={`absolute border transition-colors cursor-pointer ${
+                isActive
+                  ? 'border-blue-500 bg-blue-500/25 z-10 ring-1 ring-blue-400'
+                  : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
+              }`}
+              style={{ left: cssLeft, top: cssTop, width: cssW, height: cssH }}
+              title={(block.text || block.category || 'Block').slice(0, 120)}
+              onClick={() => onBlockClick?.(block)}
             />
-            {/* bbox overlay */}
-            {pageBlocks.map((block, i) => {
-              const [x0, y0, x1, y1] = block.bbox
-              const isActiveBbox = activeBbox &&
-                Math.abs(activeBbox[0] - x0) < 2 && Math.abs(activeBbox[1] - y0) < 2
-              const containerH = rp.height * scale
-              const sx = displayWidth / 1000
-              const sy = containerH / 1000
-              const cssTop = containerH - y1 * sy
-              const cssH = Math.max((y1 - y0) * sy, 1)
-
-              return (
-                <div
-                  key={i}
-                  className={`absolute border transition-colors cursor-pointer ${
-                    isActiveBbox
-                      ? 'border-blue-500 bg-blue-500/30 z-10 ring-1 ring-blue-400'
-                      : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
-                  }`}
-                  style={{ left: x0 * sx, top: cssTop, width: (x1 - x0) * sx, height: cssH }}
-                  title={block.text?.slice(0, 120) || `Block ${i}`}
-                  onClick={() => onBlockClick?.(block)}
-                />
-              )
-            })}
-            {/* Page number label */}
-            <span className="absolute bottom-2 right-2 text-[10px] text-muted-foreground/50 bg-background/80 px-1.5 py-0.5 rounded">
-              {rp.pageNum} / {totalPages}
-            </span>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-// Recursive block parser — flattens content_list.json tree
-function parseBlocksDeep(jsonData: string): PdfBlock[] {
-  const result: PdfBlock[] = []
+// Parse layout.json or content_list.json (handles both formats)
+function parseLayoutBlocks(jsonData: string): LayoutBlock[] {
+  const result: LayoutBlock[] = []
   try {
     const data = JSON.parse(jsonData)
     if (!Array.isArray(data)) return result
     function walk(items: Record<string, unknown>[], level: number) {
       for (const item of items) {
-        if (item.page_idx !== undefined && item.bbox) {
+        if ((item.page_idx !== undefined || item.page_index !== undefined) && item.bbox) {
+          const pageIdx = (item.page_idx ?? item.page_index) as number
+          const bbox = item.bbox as [number, number, number, number]
+          // Only include blocks with meaningful text content
           result.push({
-            page_idx: item.page_idx as number,
-            bbox: item.bbox as [number, number, number, number],
+            page_idx: pageIdx,
+            bbox,
             text: item.text as string | undefined,
+            category: item.category as string | undefined,
             type: item.type as string | undefined,
-            level,
           })
         }
         if (Array.isArray(item.children)) {
