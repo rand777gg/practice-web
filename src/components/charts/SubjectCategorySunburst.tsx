@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
 interface Props {
@@ -66,8 +67,8 @@ export function SubjectCategorySunburst({ data }: Props) {
   }, [data, theme])
 
   return (
-    <div className="overflow-x-auto -mx-4 px-4">
+    <ScrollArea scrollbars="horizontal">
       <ReactECharts option={option} style={{ height: 440, minWidth: 500 }} />
-    </div>
+    </ScrollArea>
   )
 }

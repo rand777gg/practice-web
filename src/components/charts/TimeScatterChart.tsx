@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
 interface Props {
@@ -47,7 +48,7 @@ export function TimeScatterChart({ data }: Props) {
       xAxis: {
         type: 'value' as const,
         min: 0,
-        max: 24,
+        max: 25,
         splitNumber: 5,
         axisLabel: { color: textColor, fontSize: 10, formatter: (v: number) => `${String(v).padStart(2, '0')}:00` },
         splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#f1f5f9', type: 'dashed' as const } },
@@ -83,8 +84,8 @@ export function TimeScatterChart({ data }: Props) {
   }, [data, isDark, textColor])
 
   return (
-    <div className="overflow-x-auto">
+    <ScrollArea scrollbars="horizontal">
       <ReactECharts option={option} style={{ height: 400, minWidth: 320 }} />
-    </div>
+    </ScrollArea>
   )
 }

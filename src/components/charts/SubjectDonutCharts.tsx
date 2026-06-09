@@ -11,12 +11,15 @@ const TYPE_LABELS: Record<string, string> = {
   fill_blank: '填空', short_answer: '简答',
 }
 
-const INNER_COLORS = ['#f59e0b', '#ef4444', '#f97316', '#ec4899', '#eab308', '#dc2626', '#ea580c', '#db2777']
+// 中国色 — 内层：赤/暖色系
+const INNER_COLORS = ['#c8514a', '#e47a53', '#d96754', '#ba504e', '#ed8457', '#cf6359', '#da7e67', '#c23b35']
+// 中国色 — 中层：青/蓝色系
 const MIDDLE_COLORS = [
-  '#3b82f6', '#6366f1', '#06b6d4', '#8b5cf6', '#0ea5e9', '#7c3aed', '#0891b2', '#4f46e5',
-  '#60a5fa', '#818cf8', '#22d3ee', '#a78bfa', '#38bdf8', '#8b5cf6', '#2dd4bf', '#6366f1',
+  '#3b6fa0', '#4b7eb5', '#5a8fbf', '#2e5c8a', '#6599c7', '#3d72a8',
+  '#5285b7', '#42709e', '#6ba3d1', '#376695', '#4f80b2', '#5892be',
 ]
-const OUTER_COLORS = ['#84cc16', '#a3e635', '#65a30d', '#4ade80', '#22c55e', '#16a34a']
+// 中国色 — 外层：绿/碧色系
+const OUTER_COLORS = ['#729f6a', '#8cb882', '#5f8b55', '#a0cc96', '#78a870', '#94bf8a']
 
 export function SubjectDonutCharts({ data }: Props) {
   const theme = useThemeStore((s) => s.theme)
@@ -32,7 +35,9 @@ export function SubjectDonutCharts({ data }: Props) {
     const typeMap = new Map<string, number>()
 
     for (const d of data) {
-      const cat = d.category || '未分类'
+      const cat = d.category
+        ? /^\d{4}年真题$/.test(d.category) ? '真题' : d.category
+        : '未分类'
       const subj = d.subject || '未分类'
       const type = TYPE_LABELS[d.questionType] || d.questionType || '其他'
 

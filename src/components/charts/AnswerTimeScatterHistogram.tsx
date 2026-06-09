@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
 interface Props {
@@ -10,8 +11,8 @@ interface Props {
 }
 
 const SUBJECT_COLORS = [
-  '#f0a5b5', '#a8d8ea', '#c3b1e1', '#ffe5b4', '#b5ead7',
-  '#ffccd5', '#b8e0f7', '#d5c6e0', '#fff0c8', '#c7f0d8',
+  '#c8514a', '#e8a660', '#6b8e6b', '#a38d6d', '#d4915c',
+  '#8b5e3c', '#c27a5c', '#5a7a6e', '#d4a76e', '#b55a4e',
 ]
 
 export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: Props) {
@@ -19,7 +20,6 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
   const isDark = theme === 'dark'
   const textColor = isDark ? '#d1d5db' : '#374151'
   const mutedColor = isDark ? '#9ca3af' : '#6b7280'
-
   const option = useMemo(() => {
     const dateLabels = dates.map((d) => {
       const parts = d.split('-')
@@ -88,53 +88,34 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
           name: subject,
           type: 'bar' as const,
           stack: 'subjects',
-          barWidth: '25%',
+          barCategoryGap: '0%',
+          barGap: '0%',
           emphasis: { focus: 'series' as const },
           data: data.map((d) => d[subject] ?? 0),
           itemStyle: { color: SUBJECT_COLORS[i % SUBJECT_COLORS.length] },
         })),
         {
-          name: '正确',
-          type: 'bar' as const,
-          stack: 'cw',
-          barWidth: '25%',
-          data: dates.map((d) => barData.find((b) => b.date === d)?.correct ?? 0),
-          itemStyle: { color: '#22c55e' },
-          emphasis: { focus: 'series' as const },
-        },
-        {
-          name: '错误',
-          type: 'bar' as const,
-          stack: 'cw',
-          barWidth: '25%',
-          data: dates.map((d) => barData.find((b) => b.date === d)?.wrong ?? 0),
-          itemStyle: { color: '#ef4444' },
-          emphasis: { focus: 'series' as const },
-        },
-        {
           name: '正确率',
-          type: 'line' as const,
+          type: 'bar' as const,
           yAxisIndex: 1,
+          barCategoryGap: '0%',
+          barGap: '0%',
           data: dates.map((d) => {
             const b = barData.find((x) => x.date === d)
             if (!b) return null
             const total = b.correct + b.wrong
             return total > 0 ? Math.round((b.correct / total) * 100) : null
           }),
-          smooth: true,
-          lineStyle: { color: '#06b6d4', type: 'solid' as const, width: 2 },
           itemStyle: { color: '#06b6d4' },
-          symbol: 'circle',
-          symbolSize: 4,
-          z: 10,
+          emphasis: { focus: 'series' as const },
         },
       ],
     }
   }, [dates, subjects, data, barData, isDark, textColor, mutedColor])
 
   return (
-    <div className="overflow-x-auto">
+    <ScrollArea scrollbars="horizontal">
       <ReactECharts option={option} style={{ height: 420, minWidth: 600 }} />
-    </div>
+    </ScrollArea>
   )
 }

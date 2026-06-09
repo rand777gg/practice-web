@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ScrollArea } from '@radix-ui/themes'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
@@ -391,7 +392,7 @@ export function Component() {
   }, [chartData?.totalAnswered, user])
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 w-full">
       <div className="flex items-center gap-2 pb-1">
         <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
         {isRefreshing && (
@@ -432,28 +433,30 @@ export function Component() {
           className="w-full"
           onValueChange={(v) => setVisitedTabs((prev) => new Set(prev).add(v))}
         >
-          <TabsList className="justify-center">
-            <TabsTrigger value="plan" className="gap-1.5">
-              <ListChecks className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('dashboard.tabPlan')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="stats" className="gap-1.5">
-              <Target className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('dashboard.tabStats')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="subjects" className="gap-1.5">
-              <PieChart className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('dashboard.tabSubjects')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="journey" className="gap-1.5">
-              <CalendarDays className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('dashboard.tabJourney')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="knowledge" className="gap-1.5">
-              <GitBranch className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('dashboard.tabKnowledge')}</span>
-            </TabsTrigger>
-          </TabsList>
+          <ScrollArea scrollbars="horizontal">
+            <TabsList className="justify-center">
+              <TabsTrigger value="plan" className="gap-1.5">
+                <ListChecks className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('dashboard.tabPlan')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="gap-1.5">
+                <Target className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('dashboard.tabStats')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="subjects" className="gap-1.5">
+                <PieChart className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('dashboard.tabSubjects')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="journey" className="gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('dashboard.tabJourney')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="knowledge" className="gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('dashboard.tabKnowledge')}</span>
+              </TabsTrigger>
+            </TabsList>
+          </ScrollArea>
 
           <TabsContent value="plan">
             <div className="space-y-4">

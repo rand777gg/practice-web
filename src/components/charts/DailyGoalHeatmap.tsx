@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
 interface Props {
@@ -116,8 +117,8 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
   }, [data, theme, dailyGoal])
 
   return (
-    <div className="-mx-4 lg:mx-0 overflow-x-auto">
+    <ScrollArea scrollbars="horizontal">
       <ReactECharts option={option} style={{ height: 175, minWidth: 750 }} />
-    </div>
+    </ScrollArea>
   )
 }

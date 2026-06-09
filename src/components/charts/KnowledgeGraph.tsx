@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
 interface KnowledgeNode {
@@ -160,7 +161,7 @@ export function KnowledgeGraph({ nodes, edges }: Props) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <ScrollArea scrollbars="horizontal">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-muted-foreground">
           {nodes.length} 个知识点 · {edges.length} 条关联
@@ -173,6 +174,6 @@ export function KnowledgeGraph({ nodes, edges }: Props) {
         </button>
       </div>
       <ReactECharts option={option} style={{ height: 480, minWidth: 360 }} />
-    </div>
+    </ScrollArea>
   )
 }
