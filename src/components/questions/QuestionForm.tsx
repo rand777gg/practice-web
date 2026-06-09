@@ -4,7 +4,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
   DropdownMenu,
@@ -12,8 +11,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
+import { supabase } from '@/lib/supabase'
 import {
-  Plus, Trash2, Check, ChevronDown, Sparkles, Save,
+  Plus, Trash2, Check, ChevronDown, Sparkles, Save, X,
 } from 'lucide-react'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
@@ -48,13 +48,33 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [keyPointsLoading, setKeyPointsLoading] = useState(false)
   const typewriterRef = useRef<{ text: string; timer: ReturnType<typeof setInterval> | null }>({ text: '', timer: null })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  // Existing subjects/categories for autocomplete
+  const [existingSubjects, setExistingSubjects] = useState<string[]>([])
+  const [existingCategories, setExistingCategories] = useState<string[]>([])
+  const [subjectOpen, setSubjectOpen] = useState(false)
+  const [categoryOpen, setCategoryOpen] = useState(false)
+  const subjectFiltered = existingSubjects.filter((s) => !subject || s.includes(subject)).slice(0, 8)
+  const categoryFiltered = existingCategories.filter((c) => !category || c.includes(category)).slice(0, 8)
+
+  useEffect(() => {
+    supabase.from('questions').select('subject, category').then(({ data }) => {
+      const subs = new Set<string>(); const cats = new Set<string>()
+      for (const row of data ?? []) {
+        if (row.subject) subs.add(row.subject)
+        if (row.category) cats.add(row.category)
+      }
+      setExistingSubjects([...subs].sort())
+      setExistingCategories([...cats].sort())
+    })
+  }, [])
 
   useEffect(() => {
     return () => {
       if (typewriterRef.current.timer) clearInterval(typewriterRef.current.timer)
     }
   }, [])
-  const [error, setError] = useState('')
 
   const needsOptions = questionType === 'single_choice' || questionType === 'multi_select'
   const isChoiceType = needsOptions
@@ -64,6 +84,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const isJudgeCorrect = questionType === 'judge_correct'
   const isFillBlank = questionType === 'fill_blank'
   const isShortAnswer = questionType === 'short_answer'
+  const isAnalysis = questionType === 'analysis'
 
   const handleTypeChange = (t: QuestionType) => {
     setQuestionType(t)
@@ -120,6 +141,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
       }
     }
 
+    if (isJudgeCorrect && correctAnswer !== true && !String(correctAnswer).trim()) {
+      setError('请填写修正后的正确表述'); return
+    }
+
     setIsSubmitting(true)
     try {
       await onSubmit({
@@ -138,9 +163,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
       setIsSubmitting(false)
     }
   }
-
-  const radioInputClass = 'h-4 w-4 shrink-0 cursor-pointer accent-primary'
-  const checkboxInputClass = 'h-4 w-4 shrink-0 cursor-pointer rounded accent-primary'
 
   return (
     <form onSubmit={handleSubmit}>
@@ -170,43 +192,57 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm">{t('questions.optionLabel')}</CardTitle>
+                  <div>
+                    <CardTitle className="text-sm">{t('questions.optionLabel')}</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {isSingle ? t('questions.correctHint') : '勾选所有正确答案'}
+                    </p>
+                  </div>
                   <Button type="button" variant="outline" size="sm" onClick={addOption}>
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    添加选项
+                    <Plus className="h-3.5 w-3.5 mr-1" />添加选项
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                <p className="text-xs text-muted-foreground mb-1">{isSingle ? t('questions.correctHint') : '勾选所有正确答案'}</p>
-                {options.map((opt, index) => (
-                  <div key={index} className="flex items-center gap-3 group">
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isSingle ? (
-                        <input type="radio" name="correctAnswer" checked={correctAnswer === index} onChange={() => setCorrectAnswer(index)} className={radioInputClass} />
-                      ) : (
-                        <input type="checkbox" checked={Array.isArray(correctAnswer) && (correctAnswer as number[]).includes(index)} onChange={() => toggleMultiAnswer(index)} className={checkboxInputClass} />
-                      )}
-                      <span className="text-xs font-semibold text-muted-foreground w-5 text-center">{OPTION_LABELS[index]}</span>
+                {options.map((opt, index) => {
+                  const isChecked = isSingle
+                    ? correctAnswer === index
+                    : Array.isArray(correctAnswer) && (correctAnswer as number[]).includes(index)
+                  return (
+                    <div key={index} className="flex items-center gap-3 group">
+                      <button
+                        type="button"
+                        onClick={() => isSingle ? setCorrectAnswer(index) : toggleMultiAnswer(index)}
+                        className={cn(
+                          'shrink-0 w-8 h-8 rounded-md border-2 flex items-center justify-center transition-colors',
+                          isChecked
+                            ? 'bg-primary border-primary text-primary-foreground'
+                            : 'border-muted-foreground/30 hover:border-primary/50',
+                          isSingle && 'rounded-full',
+                        )}
+                      >
+                        {isChecked && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                      <span className="text-xs font-semibold text-muted-foreground w-5 text-center shrink-0">
+                        {OPTION_LABELS[index]}
+                      </span>
+                      <Input
+                        value={opt}
+                        onChange={(e) => updateOption(index, e.target.value)}
+                        placeholder={`选项 ${OPTION_LABELS[index]}`}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button" variant="ghost" size="icon"
+                        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        disabled={options.length <= 2}
+                        onClick={() => removeOption(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                      </Button>
                     </div>
-                    <Input
-                      value={opt}
-                      onChange={(e) => updateOption(index, e.target.value)}
-                      placeholder={`选项 ${OPTION_LABELS[index]}`}
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      disabled={options.length <= 2}
-                      onClick={() => removeOption(index)}
-                    >
-                      <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                    </Button>
-                  </div>
-                ))}
+                  )
+                })}
               </CardContent>
             </Card>
           )}
@@ -214,9 +250,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
           {/* True/False */}
           {isTrueFalse && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">正确答案</CardTitle>
-              </CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">正确答案</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
                   <Button type="button" variant={correctAnswer === true ? 'default' : 'outline'}
@@ -235,9 +269,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
           {/* Judge Correct */}
           {isJudgeCorrect && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">正确答案</CardTitle>
-              </CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">判断对错</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <Button type="button" variant={correctAnswer === true ? 'default' : 'outline'}
@@ -250,10 +282,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                     onClick={() => setCorrectAnswer('')}>错误</Button>
                 </div>
                 {correctAnswer !== true && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="correction">修正后的正确表述</Label>
+                  <div className="space-y-1.5 rounded-md border border-destructive/30 bg-destructive/5 p-4">
+                    <Label htmlFor="correction" className="text-destructive">修正后的正确表述</Label>
                     <Input id="correction" value={typeof correctAnswer === 'string' ? correctAnswer : ''}
-                      onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="输入修正后的正确表述" />
+                      onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="输入修正后的正确表述，例如：将XX改为YY" />
                   </div>
                 )}
               </CardContent>
@@ -272,11 +304,27 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                     onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="预期的正确答案" />
                 )}
                 {isShortAnswer && (
-                  <Textarea
-                    value={Array.isArray(correctAnswer) ? correctAnswer.join('\n') : typeof correctAnswer === 'string' ? correctAnswer : ''}
+                  <Textarea value={Array.isArray(correctAnswer) ? correctAnswer.join('\n') : typeof correctAnswer === 'string' ? correctAnswer : ''}
                     onChange={(e) => setCorrectAnswer(e.target.value.split('\n').filter(Boolean))}
                     placeholder="每行一个可接受的答案（关键词匹配）" rows={4} />
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Analysis question — reference answer */}
+          {isAnalysis && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">参考解析</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={answerExplanation}
+                  onChange={(e) => setAnswerExplanation(e.target.value)}
+                  placeholder="输入参考答案或解析思路..."
+                  rows={5}
+                />
               </CardContent>
             </Card>
           )}
@@ -308,34 +356,79 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+
+              {/* Subject with autocomplete */}
               <div className="space-y-2">
-                <Label htmlFor="subject">{t('questions.subject')}</Label>
-                <Input id="subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t('questions.subjectPlaceholder')} />
+                <Label htmlFor="subject">{t('questions.subject')}{' '}<span className="text-muted-foreground font-normal">(选填)</span></Label>
+                <div className="relative">
+                  <Input id="subject" value={subject} onChange={(e) => { setSubject(e.target.value); setSubjectOpen(true) }}
+                    onFocus={() => setSubjectOpen(true)} onBlur={() => setTimeout(() => setSubjectOpen(false), 150)}
+                    placeholder={t('questions.subjectPlaceholder')} autoComplete="off" />
+                  {subject && (
+                    <button type="button" onClick={() => setSubject('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {subjectOpen && subjectFiltered.length > 0 && (
+                    <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
+                      {subjectFiltered.map((s) => (
+                        <button key={s} type="button"
+                          className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
+                          onMouseDown={() => { setSubject(s); setSubjectOpen(false) }}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Category with autocomplete */}
               <div className="space-y-2">
-                <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
-                <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t('questions.categoryPlaceholder')} />
+                <Label htmlFor="category">{t('questions.categoryLabel')}{' '}<span className="text-muted-foreground font-normal">(选填)</span></Label>
+                <div className="relative">
+                  <Input id="category" value={category} onChange={(e) => { setCategory(e.target.value); setCategoryOpen(true) }}
+                    onFocus={() => setCategoryOpen(true)} onBlur={() => setTimeout(() => setCategoryOpen(false), 150)}
+                    placeholder={t('questions.categoryPlaceholder')} autoComplete="off" />
+                  {category && (
+                    <button type="button" onClick={() => setCategory('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {categoryOpen && categoryFiltered.length > 0 && (
+                    <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
+                      {categoryFiltered.map((c) => (
+                        <button key={c} type="button"
+                          className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
+                          onMouseDown={() => { setCategory(c); setCategoryOpen(false) }}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Answer explanation (for fill_blank/short_answer) */}
-          {['fill_blank', 'short_answer'].includes(questionType) && (
+          {/* Answer explanation (for non-choice types) */}
+          {['fill_blank', 'short_answer', 'true_false', 'judge_correct'].includes(questionType) && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">答案解析</CardTitle>
+                <CardTitle className="text-sm">答案解析 <span className="text-muted-foreground font-normal text-xs">(选填)</span></CardTitle>
               </CardHeader>
               <CardContent>
-                <Textarea value={answerExplanation}
-                  onChange={(e) => setAnswerExplanation(e.target.value)}
-                  placeholder="解释为什么这是正确答案..." rows={2} />
+                <Textarea value={answerExplanation} onChange={(e) => setAnswerExplanation(e.target.value)}
+                  placeholder="解释为什么这是正确答案..." rows={3} />
               </CardContent>
             </Card>
           )}
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">{t('questions.analysis')}</CardTitle>
+              <CardTitle className="text-sm">{t('questions.analysis')}{' '}<span className="text-muted-foreground font-normal text-xs">(选填)</span></CardTitle>
             </CardHeader>
             <CardContent>
               <Textarea id="analysis" value={analysis} onChange={(e) => setAnalysis(e.target.value)}
@@ -345,23 +438,19 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">{t('questions.keyPoints')}</CardTitle>
+              <CardTitle className="text-sm">{t('questions.keyPoints')}{' '}<span className="text-muted-foreground font-normal text-xs">(选填)</span></CardTitle>
             </CardHeader>
             <CardContent>
               <div className="relative">
-                <Input
-                  id="keyPoints"
-                  value={keyPoints}
+                <Input id="keyPoints" value={keyPoints}
                   onChange={(e) => { setKeyPoints(e.target.value); setKeyPointsOpacity(1); setKeyPointsAnimating(false) }}
                   placeholder={t('questions.keyPointsPlaceholder')}
-                  className={cn(
-                    'pr-10 transition-all duration-500',
+                  className={cn('pr-10 transition-all duration-500',
                     keyPointsGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
                     keyPointsFade && 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
                     keyPointsAnimating && 'text-transparent select-none',
                   )}
-                  style={keyPointsAnimating ? undefined : { opacity: keyPointsOpacity }}
-                />
+                  style={keyPointsAnimating ? undefined : { opacity: keyPointsOpacity }} />
                 {keyPointsAnimating && (
                   <div className="absolute inset-0 flex items-center px-3 pr-10 pointer-events-none overflow-hidden text-sm" aria-hidden="true">
                     <span className="whitespace-pre">
@@ -401,11 +490,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                         const tick = () => {
                           i++; const progress = Math.min(i / Math.max(len, 1), 1)
                           setKeyPoints(result.slice(0, i)); setKeyPointsOpacity(0.3 + progress * 0.7)
-                          if (i >= len) {
-                            typewriterRef.current.timer = null; setKeyPointsOpacity(1)
-                            setTimeout(() => { setKeyPointsFade(true); requestAnimationFrame(() => { setKeyPointsGlow(false); setTimeout(() => { setKeyPointsFade(false); setKeyPointsAnimating(false) }, 1500) }) }, 500)
-                            return
-                          }
+                          if (i >= len) { typewriterRef.current.timer = null; setKeyPointsOpacity(1); setTimeout(() => { setKeyPointsFade(true); requestAnimationFrame(() => { setKeyPointsGlow(false); setTimeout(() => { setKeyPointsFade(false); setKeyPointsAnimating(false) }, 1500) }) }, 500); return }
                           const ch = result[i]; const baseDelay = 25; const randomDelay = Math.random() * 55; const punctDelay = /[，,。；;、]/.test(ch) ? 80 : 0
                           typewriterRef.current.timer = setTimeout(tick, baseDelay + randomDelay + punctDelay)
                         }
@@ -423,9 +508,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
           {/* Actions */}
           <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={onCancel}>
-              {t('questions.cancel')}
-            </Button>
+            <Button type="button" variant="outline" onClick={onCancel}>{t('questions.cancel')}</Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? <><span className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />{t('questions.saving')}</> : <><Save className="h-4 w-4 mr-1.5" />{initialData ? t('questions.update') : t('questions.create')}</>}
             </Button>
