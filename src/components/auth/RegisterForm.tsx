@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { MailCheck } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
 export function RegisterForm() {
@@ -47,21 +49,7 @@ export function RegisterForm() {
   }
 
   if (success) {
-    return (
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>{t('auth.register')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-md bg-green-50 dark:bg-green-950 p-4 text-sm text-green-700 dark:text-green-300">
-            {success}
-          </div>
-          <Button asChild className="w-full" variant="outline">
-            <Link to="/login">{t('auth.login')}</Link>
-          </Button>
-        </CardContent>
-      </Card>
-    )
+    return <SuccessCard message={success} />
   }
 
   return (
@@ -122,6 +110,39 @@ export function RegisterForm() {
           </p>
         </CardFooter>
       </form>
+    </Card>
+  )
+}
+
+function SuccessCard({ message }: { message: string }) {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setVisible(true), 50); return () => clearTimeout(t) }, [])
+
+  return (
+    <Card className={cn(
+      'w-full max-w-sm transition-all duration-500 ease-out',
+      visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6',
+    )}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100 dark:bg-green-900 transition-all duration-500 delay-200',
+            visible ? 'scale-100' : 'scale-0',
+          )}>
+            <MailCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
+          </span>
+          注册成功
+        </CardTitle>
+        <CardDescription>请查收验证邮件</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className={cn(
+          'rounded-md bg-green-50 dark:bg-green-950 p-4 text-sm text-green-700 dark:text-green-300 leading-relaxed transition-all duration-500 delay-300',
+          visible ? 'opacity-100' : 'opacity-0',
+        )}>
+          {message}
+        </div>
+      </CardContent>
     </Card>
   )
 }

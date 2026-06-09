@@ -27,7 +27,7 @@ export const zh = {
     noAccount: '还没有账号？',
     hasAccount: '已有账号？',
     logout: '退出',
-    checkEmail: '注册成功！请查收验证邮件，点击邮件中的链接完成注册。',
+    checkEmail: '注册成功！请查收来自 Supabase Auth <noreply@mail.app.supabase.io> 的验证邮件，点击链接完成注册。若无此邮件，请检查垃圾箱。',
     welcome: {
       title: '欢迎来到刷题网！',
       subtitle: '邮箱验证成功，你的账号已创建完成。开始你的刷题之旅吧！',
@@ -391,7 +391,7 @@ export const en = {
     noAccount: "Don't have an account?",
     hasAccount: 'Already have an account?',
     logout: 'Logout',
-    checkEmail: 'Registration successful! Please check your email and click the confirmation link to complete registration.',
+    checkEmail: 'Registration successful! Please check your email from Supabase Auth <noreply@mail.app.supabase.io> and click the confirmation link. Check your spam folder if not found.',
     welcome: {
       title: 'Welcome to Practice Web!',
       subtitle: 'Email verified — your account is ready. Start your practice journey!',
