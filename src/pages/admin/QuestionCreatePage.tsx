@@ -17,7 +17,7 @@ export function Component() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-6xl space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/admin/questions')}>
           <ArrowLeft className="h-4 w-4" />

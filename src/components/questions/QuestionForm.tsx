@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import {
-  Plus, Trash2, Check, ChevronDown, Sparkles,
+  Plus, Trash2, Check, ChevronDown, Sparkles, Save,
 } from 'lucide-react'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
@@ -143,334 +143,294 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const checkboxInputClass = 'h-4 w-4 shrink-0 cursor-pointer rounded accent-primary'
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit}>
       {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive mb-4">{error}</div>
       )}
 
-      {/* Basic info */}
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          <div className="space-y-2">
-            <Label>题目类型</Label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-between text-sm font-normal">
-                  {QUESTION_TYPE_LABELS[questionType]}
-                  <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                {QUESTION_TYPE_OPTIONS.map((o) => (
-                  <DropdownMenuItem key={o.value} onClick={() => handleTypeChange(o.value)}>
-                    {QUESTION_TYPE_LABELS[o.value]}
-                    {questionType === o.value && <Check className="h-4 w-4 ml-auto" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Left column — question content */}
+        <div className="lg:col-span-3 space-y-6">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{t('questions.questionText')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MarkdownEditor
+                value={questionText}
+                onChange={setQuestionText}
+                placeholder={t('questions.questionPlaceholder')}
+                minHeight="160px"
+              />
+            </CardContent>
+          </Card>
 
-          <div className="space-y-2">
-            <Label>{t('questions.questionText')}</Label>
-            <MarkdownEditor
-              value={questionText}
-              onChange={setQuestionText}
-              placeholder={t('questions.questionPlaceholder')}
-              minHeight="120px"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="subject">{t('questions.subject')}</Label>
-              <Input id="subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t('questions.subjectPlaceholder')} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
-              <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t('questions.categoryPlaceholder')} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Options section (choice types only) */}
-      {isChoiceType && (
-        <Card>
-          <CardContent className="pt-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-medium">{t('questions.optionLabel')}</Label>
-                <p className="text-xs text-muted-foreground">{isSingle ? t('questions.correctHint') : '勾选所有正确答案'}</p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={addOption}>
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                添加选项
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {options.map((opt, index) => (
-                <div key={index} className="flex items-center gap-3 group">
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isSingle ? (
-                      <input type="radio" name="correctAnswer" checked={correctAnswer === index} onChange={() => setCorrectAnswer(index)} className={radioInputClass} />
-                    ) : (
-                      <input type="checkbox" checked={Array.isArray(correctAnswer) && (correctAnswer as number[]).includes(index)} onChange={() => toggleMultiAnswer(index)} className={checkboxInputClass} />
-                    )}
-                    <span className="text-xs font-semibold text-muted-foreground w-5 text-center">{OPTION_LABELS[index]}</span>
-                  </div>
-                  <Input
-                    value={opt}
-                    onChange={(e) => updateOption(index, e.target.value)}
-                    placeholder={`选项 ${OPTION_LABELS[index]}`}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    disabled={options.length <= 2}
-                    onClick={() => removeOption(index)}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+          {/* Options (choice types) */}
+          {isChoiceType && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">{t('questions.optionLabel')}</CardTitle>
+                  <Button type="button" variant="outline" size="sm" onClick={addOption}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    添加选项
                   </Button>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-xs text-muted-foreground mb-1">{isSingle ? t('questions.correctHint') : '勾选所有正确答案'}</p>
+                {options.map((opt, index) => (
+                  <div key={index} className="flex items-center gap-3 group">
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isSingle ? (
+                        <input type="radio" name="correctAnswer" checked={correctAnswer === index} onChange={() => setCorrectAnswer(index)} className={radioInputClass} />
+                      ) : (
+                        <input type="checkbox" checked={Array.isArray(correctAnswer) && (correctAnswer as number[]).includes(index)} onChange={() => toggleMultiAnswer(index)} className={checkboxInputClass} />
+                      )}
+                      <span className="text-xs font-semibold text-muted-foreground w-5 text-center">{OPTION_LABELS[index]}</span>
+                    </div>
+                    <Input
+                      value={opt}
+                      onChange={(e) => updateOption(index, e.target.value)}
+                      placeholder={`选项 ${OPTION_LABELS[index]}`}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={options.length <= 2}
+                      onClick={() => removeOption(index)}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
-      {/* True/False answer */}
-      {isTrueFalse && (
-        <Card>
-          <CardContent className="pt-6 space-y-3">
-            <Label className="text-sm font-medium">正确答案</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                type="button"
-                variant={correctAnswer === true ? 'default' : 'outline'}
-                className={cn('h-12 text-sm font-medium', correctAnswer === true && 'bg-green-600 hover:bg-green-700')}
-                onClick={() => setCorrectAnswer(true)}
-              >
-                <Check className="h-4 w-4 mr-1.5" />
-                正确
-              </Button>
-              <Button
-                type="button"
-                variant={correctAnswer === false ? 'default' : 'outline'}
-                className={cn('h-12 text-sm font-medium', correctAnswer === false && 'bg-red-600 hover:bg-red-700')}
-                onClick={() => setCorrectAnswer(false)}
-              >
-                错误
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Judge & Correct answer */}
-      {isJudgeCorrect && (
-        <Card>
-          <CardContent className="pt-6 space-y-4">
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">正确答案</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  type="button"
-                  variant={correctAnswer === true ? 'default' : 'outline'}
-                  className={cn('h-12 text-sm font-medium', correctAnswer === true && 'bg-green-600 hover:bg-green-700')}
-                  onClick={() => setCorrectAnswer(true)}
-                >
-                  <Check className="h-4 w-4 mr-1.5" />
-                  正确
-                </Button>
-                <Button
-                  type="button"
-                  variant={correctAnswer !== true ? 'default' : 'outline'}
-                  className={cn('h-12 text-sm font-medium', correctAnswer !== true && 'bg-red-600 hover:bg-red-700')}
-                  onClick={() => setCorrectAnswer('')}
-                >
-                  错误
-                </Button>
-              </div>
-            </div>
-            {correctAnswer !== true && (
-              <div className="space-y-1.5">
-                <Label htmlFor="correction">修正后的正确表述</Label>
-                <Input
-                  id="correction"
-                  value={typeof correctAnswer === 'string' ? correctAnswer : ''}
-                  onChange={(e) => setCorrectAnswer(e.target.value)}
-                  placeholder="输入修正后的正确表述"
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Fill blank / Short answer */}
-      {(isFillBlank || isShortAnswer) && (
-        <Card>
-          <CardContent className="pt-6 space-y-4">
-            {isFillBlank && (
-              <div className="space-y-2">
-                <Label htmlFor="expectedAnswer">预期答案</Label>
-                <Input
-                  id="expectedAnswer"
-                  value={typeof correctAnswer === 'string' ? correctAnswer : ''}
-                  onChange={(e) => setCorrectAnswer(e.target.value)}
-                  placeholder="预期的正确答案"
-                />
-              </div>
-            )}
-            {isShortAnswer && (
-              <div className="space-y-2">
-                <Label htmlFor="acceptableAnswers">可接受答案</Label>
-                <Textarea
-                  id="acceptableAnswers"
-                  value={Array.isArray(correctAnswer) ? correctAnswer.join('\n') : typeof correctAnswer === 'string' ? correctAnswer : ''}
-                  onChange={(e) => setCorrectAnswer(e.target.value.split('\n').filter(Boolean))}
-                  placeholder="每行一个可接受的答案（关键词匹配）"
-                  rows={3}
-                />
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="answerExplanation">答案解析</Label>
-              <Textarea
-                id="answerExplanation"
-                value={answerExplanation}
-                onChange={(e) => setAnswerExplanation(e.target.value)}
-                placeholder="解释为什么这是正确答案..."
-                rows={2}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Analysis & Key Points */}
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="analysis">{t('questions.analysis')}</Label>
-            <Textarea id="analysis" value={analysis} onChange={(e) => setAnalysis(e.target.value)} placeholder={t('questions.analysisPlaceholder')} rows={3} />
-          </div>
-
-          <Separator />
-
-          <div className="space-y-2">
-            <Label htmlFor="keyPoints">{t('questions.keyPoints')}</Label>
-            <div className="relative">
-              <Input
-                id="keyPoints"
-                value={keyPoints}
-                onChange={(e) => { setKeyPoints(e.target.value); setKeyPointsOpacity(1); setKeyPointsAnimating(false) }}
-                placeholder={t('questions.keyPointsPlaceholder')}
-                className={cn(
-                  'pr-10 transition-all duration-500',
-                  keyPointsGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
-                  keyPointsFade && 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
-                  keyPointsAnimating && 'text-transparent select-none',
-                )}
-                style={keyPointsAnimating ? undefined : { opacity: keyPointsOpacity }}
-              />
-              {keyPointsAnimating && (
-                <div className="absolute inset-0 flex items-center px-3 pr-10 pointer-events-none overflow-hidden text-sm" aria-hidden="true">
-                  <span className="whitespace-pre">
-                    {[...keyPoints].map((ch, i) => (
-                      <span key={i} className="animate-[charReveal_0.3s_ease-out_both]" style={{ animationDelay: `${i * 0.03}s` }}>
-                        {ch}
-                      </span>
-                    ))}
-                  </span>
+          {/* True/False */}
+          {isTrueFalse && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">正确答案</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button type="button" variant={correctAnswer === true ? 'default' : 'outline'}
+                    className={cn('h-12 text-sm font-medium', correctAnswer === true && 'bg-green-600 hover:bg-green-700')}
+                    onClick={() => setCorrectAnswer(true)}>
+                    <Check className="h-4 w-4 mr-1.5" />正确
+                  </Button>
+                  <Button type="button" variant={correctAnswer === false ? 'default' : 'outline'}
+                    className={cn('h-12 text-sm font-medium', correctAnswer === false && 'bg-red-600 hover:bg-red-700')}
+                    onClick={() => setCorrectAnswer(false)}>错误</Button>
                 </div>
-              )}
-              {hasAiConfig() && isEnabled('keypoints') && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7"
-                  disabled={keyPointsLoading}
-                  onClick={async () => {
-                    if (!questionText.trim()) return
-                    setKeyPointsGlow(true)
-                    setKeyPointsLoading(true)
-                    setKeyPointsAnimating(true)
-                    setKeyPoints('')
-                    try {
-                      let answerStr = ''
-                      if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
-                      else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = (correctAnswer as number[]).map(i => options[i]).join('、')
-                      else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
-                      else if (isJudgeCorrect) answerStr = correctAnswer === true ? '正确' : `修正：${correctAnswer}`
-                      else if (typeof correctAnswer === 'string') answerStr = correctAnswer
-                      else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')
+              </CardContent>
+            </Card>
+          )}
 
-                      const result = await generateKeyPoints({
-                        questionText: questionText.trim(),
-                        questionType: QUESTION_TYPE_LABELS[questionType] || questionType,
-                        options: isChoiceType ? options.filter(o => o.trim()) : undefined,
-                        correctAnswer: answerStr || undefined,
-                        analysis: analysis.trim() || undefined,
-                        answerExplanation: answerExplanation.trim() || undefined,
-                      })
+          {/* Judge Correct */}
+          {isJudgeCorrect && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">正确答案</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <Button type="button" variant={correctAnswer === true ? 'default' : 'outline'}
+                    className={cn('h-12 text-sm font-medium', correctAnswer === true && 'bg-green-600 hover:bg-green-700')}
+                    onClick={() => setCorrectAnswer(true)}>
+                    <Check className="h-4 w-4 mr-1.5" />正确
+                  </Button>
+                  <Button type="button" variant={correctAnswer !== true ? 'default' : 'outline'}
+                    className={cn('h-12 text-sm font-medium', correctAnswer !== true && 'bg-red-600 hover:bg-red-700')}
+                    onClick={() => setCorrectAnswer('')}>错误</Button>
+                </div>
+                {correctAnswer !== true && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="correction">修正后的正确表述</Label>
+                    <Input id="correction" value={typeof correctAnswer === 'string' ? correctAnswer : ''}
+                      onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="输入修正后的正确表述" />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-                      if (typewriterRef.current.timer) clearTimeout(typewriterRef.current.timer)
-                      const len = result.length
-                      setKeyPointsOpacity(0.3)
-                      let i = 0
-                      const tick = () => {
-                        i++
-                        const progress = Math.min(i / Math.max(len, 1), 1)
-                        setKeyPoints(result.slice(0, i))
-                        setKeyPointsOpacity(0.3 + progress * 0.7)
-                        if (i >= len) {
-                          typewriterRef.current.timer = null
-                          setKeyPointsOpacity(1)
-                          setTimeout(() => {
-                            setKeyPointsFade(true)
-                            requestAnimationFrame(() => {
-                              setKeyPointsGlow(false)
-                              setTimeout(() => {
-                                setKeyPointsFade(false)
-                                setKeyPointsAnimating(false)
-                              }, 1500)
-                            })
-                          }, 500)
-                          return
+          {/* Fill blank / Short answer */}
+          {(isFillBlank || isShortAnswer) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">{isFillBlank ? '预期答案' : '可接受答案'}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isFillBlank && (
+                  <Input value={typeof correctAnswer === 'string' ? correctAnswer : ''}
+                    onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="预期的正确答案" />
+                )}
+                {isShortAnswer && (
+                  <Textarea
+                    value={Array.isArray(correctAnswer) ? correctAnswer.join('\n') : typeof correctAnswer === 'string' ? correctAnswer : ''}
+                    onChange={(e) => setCorrectAnswer(e.target.value.split('\n').filter(Boolean))}
+                    placeholder="每行一个可接受的答案（关键词匹配）" rows={4} />
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Right column — metadata & analysis */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">基本信息</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>题目类型</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                      {QUESTION_TYPE_LABELS[questionType]}
+                      <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                    {QUESTION_TYPE_OPTIONS.map((o) => (
+                      <DropdownMenuItem key={o.value} onClick={() => handleTypeChange(o.value)}>
+                        {QUESTION_TYPE_LABELS[o.value]}
+                        {questionType === o.value && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="subject">{t('questions.subject')}</Label>
+                <Input id="subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t('questions.subjectPlaceholder')} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
+                <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t('questions.categoryPlaceholder')} />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Answer explanation (for fill_blank/short_answer) */}
+          {['fill_blank', 'short_answer'].includes(questionType) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">答案解析</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Textarea value={answerExplanation}
+                  onChange={(e) => setAnswerExplanation(e.target.value)}
+                  placeholder="解释为什么这是正确答案..." rows={2} />
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{t('questions.analysis')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Textarea id="analysis" value={analysis} onChange={(e) => setAnalysis(e.target.value)}
+                placeholder={t('questions.analysisPlaceholder')} rows={4} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{t('questions.keyPoints')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="relative">
+                <Input
+                  id="keyPoints"
+                  value={keyPoints}
+                  onChange={(e) => { setKeyPoints(e.target.value); setKeyPointsOpacity(1); setKeyPointsAnimating(false) }}
+                  placeholder={t('questions.keyPointsPlaceholder')}
+                  className={cn(
+                    'pr-10 transition-all duration-500',
+                    keyPointsGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
+                    keyPointsFade && 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
+                    keyPointsAnimating && 'text-transparent select-none',
+                  )}
+                  style={keyPointsAnimating ? undefined : { opacity: keyPointsOpacity }}
+                />
+                {keyPointsAnimating && (
+                  <div className="absolute inset-0 flex items-center px-3 pr-10 pointer-events-none overflow-hidden text-sm" aria-hidden="true">
+                    <span className="whitespace-pre">
+                      {[...keyPoints].map((ch, i) => (
+                        <span key={i} className="animate-[charReveal_0.3s_ease-out_both]" style={{ animationDelay: `${i * 0.03}s` }}>{ch}</span>
+                      ))}
+                    </span>
+                  </div>
+                )}
+                {hasAiConfig() && isEnabled('keypoints') && (
+                  <Button type="button" variant="ghost" size="icon"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7"
+                    disabled={keyPointsLoading}
+                    onClick={async () => {
+                      if (!questionText.trim()) return
+                      setKeyPointsGlow(true); setKeyPointsLoading(true); setKeyPointsAnimating(true); setKeyPoints('')
+                      try {
+                        let answerStr = ''
+                        if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
+                        else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = (correctAnswer as number[]).map(i => options[i]).join('、')
+                        else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
+                        else if (isJudgeCorrect) answerStr = correctAnswer === true ? '正确' : `修正：${correctAnswer}`
+                        else if (typeof correctAnswer === 'string') answerStr = correctAnswer
+                        else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')
+
+                        const result = await generateKeyPoints({
+                          questionText: questionText.trim(),
+                          questionType: QUESTION_TYPE_LABELS[questionType] || questionType,
+                          options: isChoiceType ? options.filter(o => o.trim()) : undefined,
+                          correctAnswer: answerStr || undefined,
+                          analysis: analysis.trim() || undefined,
+                          answerExplanation: answerExplanation.trim() || undefined,
+                        })
+
+                        if (typewriterRef.current.timer) clearTimeout(typewriterRef.current.timer)
+                        const len = result.length; setKeyPointsOpacity(0.3); let i = 0
+                        const tick = () => {
+                          i++; const progress = Math.min(i / Math.max(len, 1), 1)
+                          setKeyPoints(result.slice(0, i)); setKeyPointsOpacity(0.3 + progress * 0.7)
+                          if (i >= len) {
+                            typewriterRef.current.timer = null; setKeyPointsOpacity(1)
+                            setTimeout(() => { setKeyPointsFade(true); requestAnimationFrame(() => { setKeyPointsGlow(false); setTimeout(() => { setKeyPointsFade(false); setKeyPointsAnimating(false) }, 1500) }) }, 500)
+                            return
+                          }
+                          const ch = result[i]; const baseDelay = 25; const randomDelay = Math.random() * 55; const punctDelay = /[，,。；;、]/.test(ch) ? 80 : 0
+                          typewriterRef.current.timer = setTimeout(tick, baseDelay + randomDelay + punctDelay)
                         }
-                        const ch = result[i]
-                        const baseDelay = 25
-                        const randomDelay = Math.random() * 55
-                        const punctDelay = /[，,。；;、]/.test(ch) ? 80 : 0
-                        typewriterRef.current.timer = setTimeout(tick, baseDelay + randomDelay + punctDelay)
-                      }
-                      typewriterRef.current.timer = setTimeout(tick, 60)
-                    } catch { /* ignore */ }
-                    setKeyPointsLoading(false)
-                  }}
-                  title="AI 生成知识点"
-                >
-                  <Sparkles className={cn('h-4 w-4', keyPointsLoading && 'animate-pulse')} />
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                        typewriterRef.current.timer = setTimeout(tick, 60)
+                      } catch { /* ignore */ }
+                      setKeyPointsLoading(false)
+                    }}
+                    title="AI 生成知识点">
+                    <Sparkles className={cn('h-4 w-4', keyPointsLoading && 'animate-pulse')} />
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          {t('questions.cancel')}
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? t('questions.saving') : initialData ? t('questions.update') : t('questions.create')}
-        </Button>
+          {/* Actions */}
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              {t('questions.cancel')}
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? <><span className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />{t('questions.saving')}</> : <><Save className="h-4 w-4 mr-1.5" />{initialData ? t('questions.update') : t('questions.create')}</>}
+            </Button>
+          </div>
+        </div>
       </div>
     </form>
   )
