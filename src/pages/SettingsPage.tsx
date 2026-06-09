@@ -544,7 +544,7 @@ function CodePreview({ theme }: { theme: string }) {
         if (!loaded.includes(theme)) {
           await hl.loadTheme(theme)
         }
-        const h = hl.codeToHtml(SAMPLE_CODE, { lang: 'javascript', theme })
+        const h = hl.codeToHtml(SAMPLE_CODE, { lang: 'python', theme })
         setHtml(h)
       } catch {
         setHtml(`<pre><code>${SAMPLE_CODE}</code></pre>`)
@@ -556,7 +556,7 @@ function CodePreview({ theme }: { theme: string }) {
   return (
     <div className="relative rounded-lg overflow-hidden text-[11px] leading-relaxed [&_pre]:!bg-muted/50 [&_pre]:p-2.5 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_pre]:!border [&_pre]:!rounded-lg [&_code]:!text-[11px]">
       <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
-        javascript
+        python
       </span>
       {html ? (
         <div dangerouslySetInnerHTML={{ __html: html }} />
@@ -567,9 +567,5 @@ function CodePreview({ theme }: { theme: string }) {
   )
 }
 
-const SAMPLE_CODE = `function fibonacci(n) {
-  if (n <= 1) return n
-  return fibonacci(n - 1) + fibonacci(n - 2)
-}
-
-console.log(fibonacci(10)) // 55`
+const SAMPLE_CODE = `def function(x):
+return x * 2`
