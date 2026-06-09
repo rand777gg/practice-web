@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null
-    const folder = (formData.get('folder') as string) || 'questions'
+    const folder = (formData.get('folder') as string) || 'images'
 
     if (!file) {
       return new Response(JSON.stringify({ error: 'No file provided' }), {

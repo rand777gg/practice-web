@@ -28,7 +28,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('folder', 'questions')
+      formData.append('folder', 'images')
 
       const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
       if (error || !data?.url) {
