@@ -284,18 +284,25 @@
   box-shadow: none;
 }
 
-/* Theme-matching scrollbar for dropdown menus */
-.dropdown-scrollbar {
+/* Theme-matching scrollbar globally */
+* {
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--border)) transparent;
 }
-.dropdown-scrollbar::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
-.dropdown-scrollbar::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
-.dropdown-scrollbar::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: hsl(var(--border));
   border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.3);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
