@@ -289,13 +289,13 @@ CREATE POLICY parse_history_own ON public.parse_history FOR ALL
 -- ----------------------------------------------------------------------------
 -- 11. UNLINK IDENTITY — 解绑 OAuth 身份
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.unlink_oauth_identity(p_identity_id TEXT, p_user_id TEXT)
+CREATE OR REPLACE FUNCTION public.unlink_oauth_identity(p_provider TEXT, p_user_id TEXT)
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-  DELETE FROM auth.identities WHERE id::text = p_identity_id AND user_id::text = p_user_id;
+  DELETE FROM auth.identities WHERE provider = p_provider AND user_id::text = p_user_id;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.unlink_oauth_identity TO authenticated;

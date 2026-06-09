@@ -260,14 +260,8 @@ export function Component() {
                               onClick={async () => {
                                 setUnlinkingGitHub(true)
                                 setGithubLinkError('')
-                                const ghIdentity = user?.identities?.find((i: any) => i.provider === 'github')
-                                if (!ghIdentity) {
-                                  setGithubLinkError('未找到 GitHub 身份')
-                                  setUnlinkingGitHub(false)
-                                  return
-                                }
                                 const { error } = await supabase.rpc('unlink_oauth_identity', {
-                                  p_identity_id: ghIdentity.id,
+                                  p_provider: 'github',
                                   p_user_id: user!.id,
                                 })
                                 if (error) {
