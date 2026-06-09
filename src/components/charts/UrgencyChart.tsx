@@ -31,7 +31,7 @@ export function UrgencyChart({ urgency }: Props) {
   const option = {
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: isDark ? '#1e293b' : '#fff',
+      backgroundColor: isDark ? '#1e293b' : '#faf8f5',
       borderColor: isDark ? '#334155' : '#e2e8f0',
       textStyle: { color: textColor, fontSize: 11 },
       formatter: (params: { name: string; value: number }[]) => {

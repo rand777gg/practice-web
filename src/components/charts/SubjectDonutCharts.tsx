@@ -74,7 +74,7 @@ export function SubjectDonutCharts({ data }: Props) {
     return {
       tooltip: {
         trigger: 'item' as const,
-        backgroundColor: isDark ? '#1e293b' : '#fff',
+        backgroundColor: isDark ? '#1e293b' : '#faf8f5',
         borderColor: isDark ? '#334155' : '#e2e8f0',
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { seriesName: string; name: string; value: number; percent: number }) =>
@@ -91,7 +91,7 @@ export function SubjectDonutCharts({ data }: Props) {
           type: 'pie' as const,
           radius: ['18%', '34%'],
           center: ['50%', '48%'],
-          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 2 },
+          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#faf8f5', borderWidth: 2 },
           label: { show: true, position: 'inside' as const, fontSize: 9, color: isDark ? '#e2e8f0' : '#1e293b' },
           data: catEntries.map(([name, value], i) => ({
             name, value,
@@ -103,7 +103,7 @@ export function SubjectDonutCharts({ data }: Props) {
           type: 'pie' as const,
           radius: ['37%', '55%'],
           center: ['50%', '48%'],
-          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 1.5 },
+          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#faf8f5', borderWidth: 1.5 },
           label: { show: false },
           emphasis: { label: { show: true, fontSize: 12, fontWeight: 'bold' } },
           data: middleData,
@@ -113,7 +113,7 @@ export function SubjectDonutCharts({ data }: Props) {
           type: 'pie' as const,
           radius: ['58%', '75%'],
           center: ['50%', '48%'],
-          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 1.5 },
+          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#faf8f5', borderWidth: 1.5 },
           label: {
             show: true,
             position: 'outside' as const,

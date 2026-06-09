@@ -30,7 +30,7 @@ export function TimeScatterChart({ data }: Props) {
     return {
       tooltip: {
         trigger: 'item' as const,
-        backgroundColor: isDark ? '#1e293b' : '#fff',
+        backgroundColor: isDark ? '#1e293b' : '#faf8f5',
         borderColor: isDark ? '#334155' : '#e2e8f0',
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { value: number[] }) => {

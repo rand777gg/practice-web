@@ -32,7 +32,7 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
     const maxVal = Math.max(...seriesData.map((d) => d[1]), 1)
     const isDark = theme === 'dark'
     const colors = isDark ? COLORS_DARK : COLORS_LIGHT
-    const bgColor = isDark ? 'transparent' : '#ffffff'
+    const bgColor = isDark ? 'transparent' : '#faf8f5'
     const textColor = isDark ? '#9ca3af' : '#57606a'
     const monthColor = isDark ? '#9ca3af' : '#57606a'
 
@@ -49,7 +49,7 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
       tooltip: {
         position: 'top',
         borderColor: isDark ? '#30363d' : '#d0d7de',
-        backgroundColor: isDark ? '#161b22' : '#ffffff',
+        backgroundColor: isDark ? '#161b22' : '#faf8f5',
         textStyle: { color: textColor, fontSize: 12 },
         formatter: (p: { value: [string, number] }) => {
           const d = p.value
