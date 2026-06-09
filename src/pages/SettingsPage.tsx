@@ -18,7 +18,11 @@ import {
   AlertDialogDescription,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X } from 'lucide-react'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -361,24 +365,42 @@ export function Component() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-2">代码高亮主题</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-3">
-                  {CODE_THEMES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className={`text-xs px-2 py-1.5 rounded-md border transition-colors text-left truncate ${
-                        codeTheme === t.id
-                          ? 'border-primary bg-primary/10 text-primary font-medium'
-                          : 'border-border hover:border-primary/30'
-                      }`}
-                      onClick={() => setCodeTheme(t.id)}
-                    >
-                      <span className="mr-0.5">{t.type === 'dark' ? '◼' : '◻'}</span>
-                      {t.name}
-                    </button>
-                  ))}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                      <Code2 className="h-3.5 w-3.5" />
+                      {codeTheme}
+                      <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>◼ 深色主题</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
+                        {DARK_THEMES.map((id) => (
+                          <DropdownMenuItem key={id} onClick={() => setCodeTheme(id)}>
+                            {id}
+                            {codeTheme === id && <Check className="h-4 w-4 ml-auto" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>◻ 浅色主题</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
+                        {LIGHT_THEMES.map((id) => (
+                          <DropdownMenuItem key={id} onClick={() => setCodeTheme(id)}>
+                            {id}
+                            {codeTheme === id && <Check className="h-4 w-4 ml-auto" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="mt-2">
+                  <CodePreview theme={codeTheme} />
                 </div>
-                <CodePreview theme={codeTheme} />
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -485,25 +507,25 @@ export function Component() {
   )
 }
 
-const CODE_THEMES = [
-  { id: 'github-dark', name: 'GitHub Dark', type: 'dark' },
-  { id: 'github-light', name: 'GitHub Light', type: 'light' },
-  { id: 'dracula', name: 'Dracula', type: 'dark' },
-  { id: 'monokai', name: 'Monokai', type: 'dark' },
-  { id: 'nord', name: 'Nord', type: 'dark' },
-  { id: 'one-dark-pro', name: 'One Dark Pro', type: 'dark' },
-  { id: 'one-light', name: 'One Light', type: 'light' },
-  { id: 'tokyo-night', name: 'Tokyo Night', type: 'dark' },
-  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', type: 'dark' },
-  { id: 'catppuccin-latte', name: 'Catppuccin Latte', type: 'light' },
-  { id: 'night-owl', name: 'Night Owl', type: 'dark' },
-  { id: 'min-light', name: 'Min Light', type: 'light' },
-  { id: 'material-theme-palenight', name: 'Material Palenight', type: 'dark' },
-  { id: 'ayu-dark', name: 'Ayu Dark', type: 'dark' },
-  { id: 'everforest-dark', name: 'Everforest Dark', type: 'dark' },
-  { id: 'everforest-light', name: 'Everforest Light', type: 'light' },
-  { id: 'vitesse-dark', name: 'Vitesse Dark', type: 'dark' },
-  { id: 'vitesse-light', name: 'Vitesse Light', type: 'light' },
+const DARK_THEMES = [
+  'andromeeda', 'aurora-x', 'ayu-dark', 'ayu-mirage', 'catppuccin-frappe',
+  'catppuccin-macchiato', 'catppuccin-mocha', 'dark-plus', 'dracula', 'dracula-soft',
+  'everforest-dark', 'github-dark', 'github-dark-default', 'github-dark-dimmed',
+  'github-dark-high-contrast', 'gruvbox-dark-hard', 'gruvbox-dark-medium',
+  'gruvbox-dark-soft', 'horizon', 'horizon-bright', 'houston', 'kanagawa-dragon',
+  'kanagawa-wave', 'laserwave', 'material-theme', 'material-theme-darker',
+  'material-theme-ocean', 'material-theme-palenight', 'min-dark', 'monokai',
+  'night-owl', 'nord', 'one-dark-pro', 'plastic', 'poimandres', 'red',
+  'rose-pine', 'rose-pine-moon', 'slack-dark', 'slack-ochin', 'solarized-dark',
+  'synthwave-84', 'tokyo-night', 'vesper', 'vitesse-black', 'vitesse-dark',
+]
+
+const LIGHT_THEMES = [
+  'ayu-light', 'catppuccin-latte', 'everforest-light', 'github-light',
+  'github-light-default', 'github-light-high-contrast', 'gruvbox-light-hard',
+  'gruvbox-light-medium', 'gruvbox-light-soft', 'kanagawa-lotus', 'light-plus',
+  'material-theme-lighter', 'min-light', 'night-owl-light', 'one-light',
+  'rose-pine-dawn', 'snazzy-light', 'solarized-light', 'vitesse-light',
 ]
 
 function CodePreview({ theme }: { theme: string }) {
