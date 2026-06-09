@@ -35,8 +35,8 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing provider' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const targetIdentity = user.identities?.find((i: any) => i.provider === provider)
-    if (!targetIdentity) {
+    const target = user.identities?.find((i: any) => i.provider === provider)
+    if (!target) {
       return new Response(JSON.stringify({ error: 'Identity not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
@@ -44,43 +44,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Cannot unlink the only login method' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Delete the identity directly
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${user.id}/identities/${targetIdentity.id}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
+    const { error: rpcError } = await supabaseAdmin.rpc('unlink_oauth_identity', {
+      p_identity_id: target.id,
+      p_user_id: user.id,
     })
 
-    if (!res.ok) {
-      // Fallback: try PUT with remaining identities
-      const remainingIdentities = user.identities
-        .filter((i: any) => i.provider !== provider)
-        .map((i: any) => ({
-          id: i.id,
-          identity_id: i.id,
-          user_id: user.id,
-          identity_data: i.identity_data || {},
-          provider: i.provider,
-          email: i.identity_data?.email || user.email || '',
-          last_sign_in_at: i.last_sign_in_at || new Date().toISOString(),
-          created_at: i.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }))
-
-      const putRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${user.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ identities: remainingIdentities }),
-      })
-
-      if (!putRes.ok) {
-        const err = await putRes.text()
-        return new Response(JSON.stringify({ error: `DELETE failed, PUT also failed: ${err}` }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      }
+    if (rpcError) {
+      return new Response(JSON.stringify({ error: rpcError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     return new Response(JSON.stringify({ success: true }), {

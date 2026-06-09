@@ -285,3 +285,17 @@ ALTER TABLE public.parse_history ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS parse_history_own ON public.parse_history;
 CREATE POLICY parse_history_own ON public.parse_history FOR ALL
   USING (user_id = auth.uid() OR public.is_admin());
+
+-- ----------------------------------------------------------------------------
+-- 11. UNLINK IDENTITY — 解绑 OAuth 身份
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.unlink_oauth_identity(p_identity_id UUID, p_user_id UUID)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  DELETE FROM auth.identities WHERE id = p_identity_id AND user_id = p_user_id;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.unlink_oauth_identity FROM anon, authenticated;
