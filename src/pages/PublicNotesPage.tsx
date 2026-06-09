@@ -21,7 +21,9 @@ import {
 import {
   Check, ChevronDown, Globe, Lock, Pencil, Trash2, X,
 } from 'lucide-react'
-import type { UserAnswer, Question } from '@/types'
+import { cn } from '@/lib/utils'
+import type { UserAnswer, Question, QuestionType } from '@/types'
+import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
 type NoteWithQuestion = UserAnswer & { questions: Question }
@@ -31,12 +33,14 @@ export function Component() {
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState('my')
 
-  // Filters (public tab only)
+  // Shared filter metadata
   const [subjects, setSubjects] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
-  const [filteredCategories, setFilteredCategories] = useState<string[]>([])
-  const [selectedSubject, setSelectedSubject] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('')
+
+  // Public tab filters
+  const [pubFilteredCategories, setPubFilteredCategories] = useState<string[]>([])
+  const [pubSubject, setPubSubject] = useState('')
+  const [pubCategory, setPubCategory] = useState('')
 
   // My notes state
   const [myNotes, setMyNotes] = useState<NoteWithQuestion[]>([])
@@ -44,6 +48,13 @@ export function Component() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null)
+
+  // My notes filters
+  const [myVisibility, setMyVisibility] = useState<'all' | 'public' | 'private'>('all')
+  const [mySubject, setMySubject] = useState('')
+  const [myCategory, setMyCategory] = useState('')
+  const [myType, setMyType] = useState<QuestionType | ''>('')
+  const [myFilteredCategories, setMyFilteredCategories] = useState<string[]>([])
 
   // Public notes state
   const [publicNotes, setPublicNotes] = useState<NoteWithQuestion[]>([])
@@ -61,33 +72,59 @@ export function Component() {
       }
       setSubjects([...subs].sort())
       setCategories([...cats].sort())
-      setFilteredCategories([...cats].sort())
+      setPubFilteredCategories([...cats].sort())
+      setMyFilteredCategories([...cats].sort())
     }
     loadFilters()
   }, [])
 
+  // Public tab category filter
   useEffect(() => {
     let cancelled = false
-    if (!selectedSubject) {
-      setFilteredCategories(categories)
+    if (!pubSubject) {
+      setPubFilteredCategories(categories)
     } else {
       async function loadCats() {
         const { data } = await supabase
           .from('questions')
           .select('category')
-          .eq('subject', selectedSubject)
+          .eq('subject', pubSubject)
         if (cancelled) return
         const cats = new Set<string>()
         for (const row of data ?? []) {
           if (row.category) cats.add(row.category)
         }
-        setFilteredCategories([...cats].sort())
+        setPubFilteredCategories([...cats].sort())
       }
       loadCats()
     }
-    setSelectedCategory('')
+    setPubCategory('')
     return () => { cancelled = true }
-  }, [selectedSubject, categories])
+  }, [pubSubject, categories])
+
+  // My notes tab category filter
+  useEffect(() => {
+    let cancelled = false
+    if (!mySubject) {
+      setMyFilteredCategories(categories)
+    } else {
+      async function loadCats() {
+        const { data } = await supabase
+          .from('questions')
+          .select('category')
+          .eq('subject', mySubject)
+        if (cancelled) return
+        const cats = new Set<string>()
+        for (const row of data ?? []) {
+          if (row.category) cats.add(row.category)
+        }
+        setMyFilteredCategories([...cats].sort())
+      }
+      loadCats()
+    }
+    setMyCategory('')
+    return () => { cancelled = true }
+  }, [mySubject, categories])
 
   // ---- My Notes ----
   const myGenRef = useRef(0)
@@ -157,8 +194,8 @@ export function Component() {
     if (publicGenRef.current !== myGen) return
     const result = (data ?? []) as NoteWithQuestion[]
 
-    if (selectedSubject) {
-      const filtered = result.filter((n) => n.questions?.subject === selectedSubject)
+    if (pubSubject) {
+      const filtered = result.filter((n) => n.questions?.subject === pubSubject)
       setPublicNotes(filtered)
     } else {
       setPublicNotes(result)
@@ -179,7 +216,7 @@ export function Component() {
     if (publicGenRef.current !== myGen) return
     setUserNicknames(nicknames)
     setPublicNotesLoading(false)
-  }, [selectedSubject])
+  }, [pubSubject])
 
   useEffect(() => {
     if (activeTab === 'public') fetchPublicNotes()
@@ -253,7 +290,7 @@ export function Component() {
           <div className="flex gap-1 justify-end">
             <Button variant="ghost" size="sm" onClick={() => handleTogglePublic(note)} className="text-xs h-7">
               {note.is_public ? <Lock className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}
-              {note.is_public ? '设为私有' : '设为公开'}
+              {note.is_public ? t('notes.setPrivate') : t('notes.setPublic')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => handleStartEdit(note)} className="text-xs h-7">
               <Pencil className="h-3 w-3 mr-1" />
@@ -292,19 +329,19 @@ export function Component() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1 text-xs">
-                  {selectedSubject || t('questions.subject')}
+                  {pubSubject || t('questions.subject')}
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                <DropdownMenuItem onClick={() => setSelectedSubject('')}>
+                <DropdownMenuItem onClick={() => setPubSubject('')}>
                   <span className="text-muted-foreground">{t('questions.subject')}</span>
-                  {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
+                  {!pubSubject && <Check className="h-4 w-4 ml-auto" />}
                 </DropdownMenuItem>
                 {subjects.map((s) => (
-                  <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                  <DropdownMenuItem key={s} onClick={() => setPubSubject(s)}>
                     {s}
-                    {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                    {pubSubject === s && <Check className="h-4 w-4 ml-auto" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -313,19 +350,19 @@ export function Component() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1 text-xs">
-                  {selectedCategory || t('questions.category')}
+                  {pubCategory || t('questions.category')}
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                <DropdownMenuItem onClick={() => setSelectedCategory('')}>
+                <DropdownMenuItem onClick={() => setPubCategory('')}>
                   <span className="text-muted-foreground">{t('questions.category')}</span>
-                  {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
+                  {!pubCategory && <Check className="h-4 w-4 ml-auto" />}
                 </DropdownMenuItem>
-                {filteredCategories.map((c) => (
-                  <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                {pubFilteredCategories.map((c) => (
+                  <DropdownMenuItem key={c} onClick={() => setPubCategory(c)}>
                     {c}
-                    {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                    {pubCategory === c && <Check className="h-4 w-4 ml-auto" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -344,7 +381,7 @@ export function Component() {
               ) : (
                 <div className="space-y-3">
                   {publicNotes
-                    .filter((n) => !selectedCategory || n.questions?.category === selectedCategory)
+                    .filter((n) => !pubCategory || n.questions?.category === pubCategory)
                     .map((note) => (
                       <NoteCard key={note.id} note={note} showAuthor style="public" />
                     ))}
@@ -356,6 +393,89 @@ export function Component() {
 
         {/* My Notes */}
         <TabsContent value="my" className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-md border border-input bg-background">
+              {(['all', 'public', 'private'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setMyVisibility(v)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-md last:rounded-r-md',
+                    myVisibility === v
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {v === 'all' ? t('notes.visibilityAll') : v === 'public' ? t('notes.visibilityPublic') : t('notes.visibilityPrivate')}
+                </button>
+              ))}
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1 text-xs">
+                  {mySubject || t('questions.subject')}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                <DropdownMenuItem onClick={() => setMySubject('')}>
+                  <span className="text-muted-foreground">{t('questions.subject')}</span>
+                  {!mySubject && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+                {subjects.map((s) => (
+                  <DropdownMenuItem key={s} onClick={() => setMySubject(s)}>
+                    {s}
+                    {mySubject === s && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1 text-xs">
+                  {myCategory || t('questions.category')}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                <DropdownMenuItem onClick={() => setMyCategory('')}>
+                  <span className="text-muted-foreground">{t('questions.category')}</span>
+                  {!myCategory && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+                {myFilteredCategories.map((c) => (
+                  <DropdownMenuItem key={c} onClick={() => setMyCategory(c)}>
+                    {c}
+                    {myCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1 text-xs">
+                  {myType ? t(`questionTypes.${myType}` as any) : t('questions.questionType')}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => setMyType('')}>
+                  <span className="text-muted-foreground">{t('questions.questionType')}</span>
+                  {!myType && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+                {QUESTION_TYPE_OPTIONS.map((o) => (
+                  <DropdownMenuItem key={o.value} onClick={() => setMyType(o.value)}>
+                    {t(`questionTypes.${o.value}` as any)}
+                    {myType === o.value && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           {myNotesLoading ? (
             <LoadingTips className="py-12" compact />
           ) : (
@@ -367,9 +487,14 @@ export function Component() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {myNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} style="my" />
-                  ))}
+                  {myNotes
+                    .filter((n) => myVisibility === 'all' || (myVisibility === 'public' ? n.is_public : !n.is_public))
+                    .filter((n) => !mySubject || n.questions?.subject === mySubject)
+                    .filter((n) => !myCategory || n.questions?.category === myCategory)
+                    .filter((n) => !myType || n.questions?.question_type === myType)
+                    .map((note) => (
+                      <NoteCard key={note.id} note={note} style="my" />
+                    ))}
                 </div>
               )}
             </>
