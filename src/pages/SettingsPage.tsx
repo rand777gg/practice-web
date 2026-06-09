@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
-import { useSettingsStore } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -42,6 +42,7 @@ export function Component() {
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
   const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme } = useSettingsStore()
+  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
   const siteTheme = useThemeStore((s) => s.theme)
   const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
   const navigate = useNavigate()
@@ -429,11 +430,28 @@ export function Component() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <div>
+                <div className="min-w-0 mr-2">
                   <p className="text-sm">{t('settings.eyeCare')}</p>
                   <p className="text-xs text-muted-foreground">{t('settings.eyeCareDesc')}</p>
                 </div>
-                <Switch checked={eyeCare} onCheckedChange={setEyeCare} disabled={siteTheme === 'dark'} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs shrink-0" disabled={siteTheme === 'dark'}>
+                      <span className="w-3.5 h-3.5 rounded-full border border-border/50 shrink-0" style={{ background: currentPalette.preview }} />
+                      {currentPalette.label}
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {EYE_CARE_PALETTES.map((p) => (
+                      <DropdownMenuItem key={p.value} onClick={() => setEyeCare(p.value)}>
+                        <span className="w-4 h-4 rounded-full border border-border/50 mr-2 shrink-0" style={{ background: p.preview }} />
+                        {p.label}
+                        {eyeCare === p.value && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               <div className="flex items-center justify-between">
                 <div>

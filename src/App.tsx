@@ -150,10 +150,11 @@ function EyeCareInitializer({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement
+    // Remove all eye-care classes
+    root.classList.remove('eye-care-silk', 'eye-care-celadon', 'eye-care-lotus', 'eye-care-tea', 'eye-care-bamboo')
+    // Add selected palette (only in light mode)
     if (eyeCare && theme !== 'dark') {
-      root.classList.add('eye-care')
-    } else {
-      root.classList.remove('eye-care')
+      root.classList.add(`eye-care-${eyeCare}`)
     }
   }, [eyeCare, theme])
 

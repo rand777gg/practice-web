@@ -14,6 +14,15 @@ const EYE_CARE_KEY = 'eye_care'
 const DARK_CODE_THEME_KEY = 'dark_code_theme'
 const LIGHT_CODE_THEME_KEY = 'light_code_theme'
 
+export const EYE_CARE_PALETTES = [
+  { value: '',       label: '默认',   preview: 'hsl(0 0% 100%)' },
+  { value: 'silk',   label: '绢色',   preview: '#F4EDE4' },
+  { value: 'celadon', label: '青瓷',  preview: '#EAF0E5' },
+  { value: 'lotus',  label: '藕荷',   preview: '#F4EEF1' },
+  { value: 'tea',    label: '茶白',   preview: '#F2EFEA' },
+  { value: 'bamboo', label: '竹青',   preview: '#EFF3E7' },
+] as const
+
 function loadFlags(): AiFeatureFlags {
   try {
     const raw = localStorage.getItem(FLAGS_KEY)
@@ -37,13 +46,13 @@ function loadLightCodeTheme(): string {
 interface SettingsState {
   flags: AiFeatureFlags
   offlineMode: boolean
-  eyeCare: boolean
+  eyeCare: string
   sidebarCollapsed: boolean
   darkCodeTheme: string
   lightCodeTheme: string
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
-  setEyeCare: (value: boolean) => void
+  setEyeCare: (value: string) => void
   setSidebarCollapsed: (value: boolean) => void
   setCodeTheme: (theme: string) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
@@ -52,7 +61,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   flags: loadFlags(),
   offlineMode: loadOfflineMode(),
-  eyeCare: localStorage.getItem(EYE_CARE_KEY) === 'true',
+  eyeCare: localStorage.getItem(EYE_CARE_KEY) || '',
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
   darkCodeTheme: loadDarkCodeTheme(),
   lightCodeTheme: loadLightCodeTheme(),
@@ -68,7 +77,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ offlineMode: value })
   },
   setEyeCare: (value) => {
-    localStorage.setItem(EYE_CARE_KEY, String(value))
+    localStorage.setItem(EYE_CARE_KEY, value)
     set({ eyeCare: value })
   },
   setSidebarCollapsed: (value) => {
@@ -76,7 +85,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ sidebarCollapsed: value })
   },
   setCodeTheme: (theme) => {
-    // Auto-detect dark/light from theme name and save to appropriate slot
     const isDarkTheme = !/(light|dawn|latte|lotus)/.test(theme)
     if (isDarkTheme) {
       localStorage.setItem(DARK_CODE_THEME_KEY, theme)

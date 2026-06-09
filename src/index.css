@@ -76,8 +76,14 @@
   --sidebar-ring: 217.2 91.2% 59.8%;
 }
 
-/* Eye-care light mode — Chinese traditional colors (zhongguose.com) */
-.eye-care {
+/* Eye-care light mode — Chinese traditional color palettes (zhongguose.com) */
+/* Shared eye-care warm scrollbar */
+.eye-care- {
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+/* 绢色 Silk — warm paper cream */
+.eye-care-silk {
   --color-background: #F4EDE4;
   --background: 36 25% 93%;
   --foreground: 30 6% 26%;
@@ -86,7 +92,7 @@
   --popover: 34 40% 96%;
   --popover-foreground: 30 6% 26%;
   --primary: 200 15% 40%;
-  --primary-foreground: 36 30% 96%;
+  --primary-foreground: 36 30% 97%;
   --secondary: 36 18% 90%;
   --secondary-foreground: 30 6% 28%;
   --muted: 36 18% 90%;
@@ -94,18 +100,146 @@
   --accent: 35 22% 87%;
   --accent-foreground: 30 6% 28%;
   --destructive: 0 40% 52%;
-  --destructive-foreground: 36 30% 96%;
+  --destructive-foreground: 36 30% 97%;
   --border: 34 14% 82%;
   --input: 34 14% 82%;
   --ring: 200 15% 40%;
   --sidebar-background: 34 30% 94%;
   --sidebar-foreground: 30 6% 26%;
   --sidebar-primary: 200 15% 40%;
-  --sidebar-primary-foreground: 36 30% 96%;
+  --sidebar-primary-foreground: 36 30% 97%;
   --sidebar-accent: 36 18% 90%;
   --sidebar-accent-foreground: 30 6% 26%;
   --sidebar-border: 34 14% 82%;
   --sidebar-ring: 200 15% 40%;
+}
+
+/* 青瓷 Celadon — soft sage green */
+.eye-care-celadon {
+  --color-background: #EAF0E5;
+  --background: 100 18% 92%;
+  --foreground: 100 8% 24%;
+  --card: 100 35% 95%;
+  --card-foreground: 100 8% 24%;
+  --popover: 100 35% 95%;
+  --popover-foreground: 100 8% 24%;
+  --primary: 160 14% 36%;
+  --primary-foreground: 100 30% 96%;
+  --secondary: 100 14% 88%;
+  --secondary-foreground: 100 8% 26%;
+  --muted: 100 14% 88%;
+  --muted-foreground: 100 4% 44%;
+  --accent: 95 16% 85%;
+  --accent-foreground: 100 8% 26%;
+  --destructive: 0 40% 50%;
+  --destructive-foreground: 100 30% 96%;
+  --border: 100 10% 80%;
+  --input: 100 10% 80%;
+  --ring: 160 14% 36%;
+  --sidebar-background: 100 24% 92%;
+  --sidebar-foreground: 100 8% 24%;
+  --sidebar-primary: 160 14% 36%;
+  --sidebar-primary-foreground: 100 30% 96%;
+  --sidebar-accent: 100 14% 88%;
+  --sidebar-accent-foreground: 100 8% 24%;
+  --sidebar-border: 100 10% 80%;
+  --sidebar-ring: 160 14% 36%;
+}
+
+/* 藕荷 Lotus — muted lavender pink */
+.eye-care-lotus {
+  --color-background: #F4EEF1;
+  --background: 340 16% 94%;
+  --foreground: 340 6% 27%;
+  --card: 340 35% 97%;
+  --card-foreground: 340 6% 27%;
+  --popover: 340 35% 97%;
+  --popover-foreground: 340 6% 27%;
+  --primary: 330 12% 40%;
+  --primary-foreground: 340 30% 97%;
+  --secondary: 340 12% 91%;
+  --secondary-foreground: 340 6% 29%;
+  --muted: 340 12% 91%;
+  --muted-foreground: 340 4% 46%;
+  --accent: 335 14% 89%;
+  --accent-foreground: 340 6% 29%;
+  --destructive: 0 40% 50%;
+  --destructive-foreground: 340 30% 97%;
+  --border: 340 10% 83%;
+  --input: 340 10% 83%;
+  --ring: 330 12% 40%;
+  --sidebar-background: 340 22% 94%;
+  --sidebar-foreground: 340 6% 27%;
+  --sidebar-primary: 330 12% 40%;
+  --sidebar-primary-foreground: 340 30% 97%;
+  --sidebar-accent: 340 12% 91%;
+  --sidebar-accent-foreground: 340 6% 27%;
+  --sidebar-border: 340 10% 83%;
+  --sidebar-ring: 330 12% 40%;
+}
+
+/* 茶白 Tea — warm greige taupe */
+.eye-care-tea {
+  --color-background: #F2EFEA;
+  --background: 40 12% 93%;
+  --foreground: 40 6% 25%;
+  --card: 40 35% 96%;
+  --card-foreground: 40 6% 25%;
+  --popover: 40 35% 96%;
+  --popover-foreground: 40 6% 25%;
+  --primary: 30 14% 36%;
+  --primary-foreground: 40 30% 97%;
+  --secondary: 40 12% 89%;
+  --secondary-foreground: 40 6% 27%;
+  --muted: 40 12% 89%;
+  --muted-foreground: 40 4% 46%;
+  --accent: 38 14% 86%;
+  --accent-foreground: 40 6% 27%;
+  --destructive: 0 40% 50%;
+  --destructive-foreground: 40 30% 97%;
+  --border: 40 10% 81%;
+  --input: 40 10% 81%;
+  --ring: 30 14% 36%;
+  --sidebar-background: 40 22% 93%;
+  --sidebar-foreground: 40 6% 25%;
+  --sidebar-primary: 30 14% 36%;
+  --sidebar-primary-foreground: 40 30% 97%;
+  --sidebar-accent: 40 12% 89%;
+  --sidebar-accent-foreground: 40 6% 25%;
+  --sidebar-border: 40 10% 81%;
+  --sidebar-ring: 30 14% 36%;
+}
+
+/* 竹青 Bamboo — fresh muted green */
+.eye-care-bamboo {
+  --color-background: #EFF3E7;
+  --background: 80 20% 92%;
+  --foreground: 80 8% 23%;
+  --card: 80 38% 95%;
+  --card-foreground: 80 8% 23%;
+  --popover: 80 38% 95%;
+  --popover-foreground: 80 8% 23%;
+  --primary: 140 13% 34%;
+  --primary-foreground: 80 30% 96%;
+  --secondary: 80 14% 88%;
+  --secondary-foreground: 80 8% 26%;
+  --muted: 80 14% 88%;
+  --muted-foreground: 80 4% 44%;
+  --accent: 75 16% 85%;
+  --accent-foreground: 80 8% 26%;
+  --destructive: 0 40% 50%;
+  --destructive-foreground: 80 30% 96%;
+  --border: 80 10% 80%;
+  --input: 80 10% 80%;
+  --ring: 140 13% 34%;
+  --sidebar-background: 80 24% 92%;
+  --sidebar-foreground: 80 8% 23%;
+  --sidebar-primary: 140 13% 34%;
+  --sidebar-primary-foreground: 80 30% 96%;
+  --sidebar-accent: 80 14% 88%;
+  --sidebar-accent-foreground: 80 8% 23%;
+  --sidebar-border: 80 10% 80%;
+  --sidebar-ring: 140 13% 34%;
 }
 
 @theme inline {
