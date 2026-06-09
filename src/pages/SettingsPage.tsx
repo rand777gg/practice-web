@@ -374,7 +374,7 @@ export function Component() {
                 <div className="mb-2">
                   <CodePreview theme={codeTheme} lang={previewLang} />
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap justify-end">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7">
@@ -383,7 +383,7 @@ export function Component() {
                         <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+                    <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>◼ 深色主题</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
@@ -416,7 +416,7 @@ export function Component() {
                         <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                    <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
                       {PREVIEW_LANGS.map((l) => (
                         <DropdownMenuItem key={l} onClick={() => setPreviewLang(l)}>
                           <LangIcon id={l} className="h-3.5 w-3.5 mr-1.5" />
@@ -599,99 +599,51 @@ function CodePreview({ theme, lang }: { theme: string; lang: string }) {
   )
 }
 
-const PREVIEW_LANGS = ['javascript', 'typescript', 'python', 'java', 'cpp', 'sql', 'css', 'html', 'bash', 'json']
+const PREVIEW_LANGS = [
+  'javascript', 'typescript', 'python', 'java', 'cpp', 'csharp', 'c',
+  'go', 'rust', 'swift', 'kotlin', 'dart', 'ruby', 'php', 'scala', 'haskell', 'lua',
+  'sql', 'css', 'html', 'bash', 'powershell',
+  'json', 'yaml', 'xml', 'markdown', 'latex',
+  'r', 'dockerfile', 'graphql', 'ini', 'toml', 'makefile', 'nginx', 'diff', 'viml',
+]
 
 const LANGS: Record<string, string> = {
-  javascript: `function fibonacci(n) {
-  if (n <= 1) return n
-  return fibonacci(n - 1) + fibonacci(n - 2)
-}
-console.log(fibonacci(10)) // 55`,
-
-  typescript: `interface User {
-  name: string
-  age: number
-}
-function greet(u: User): string {
-  return \`Hello, \${u.name}!\`
-}
-console.log(greet({ name: 'Alice', age: 30 }))`,
-
-  python: `def fibonacci(n: int) -> int:
-    if n <= 1:
-        return n
-    return fibonacci(n - 1) + fibonacci(n - 2)
-
-print(fibonacci(10))  # 55`,
-
-  java: `public class Main {
-  static int fib(int n) {
-    if (n <= 1) return n;
-    return fib(n - 1) + fib(n - 2);
-  }
-  public static void main(String[] args) {
-    System.out.println(fib(10)); // 55
-  }
-}`,
-
-  cpp: `#include <iostream>
-using namespace std;
-
-int fib(int n) {
-  if (n <= 1) return n;
-  return fib(n - 1) + fib(n - 2);
-}
-
-int main() {
-  cout << fib(10) << endl; // 55
-  return 0;
-}`,
-
-  sql: `SELECT u.name, COUNT(o.id) AS orders
-FROM users u
-JOIN orders o ON o.user_id = u.id
-WHERE u.created_at > '2024-01-01'
-GROUP BY u.name
-HAVING COUNT(o.id) > 5
-ORDER BY orders DESC
-LIMIT 10;`,
-
-  css: `.card {
-  border-radius: 8px;
-  padding: 1rem;
-  background: var(--bg);
-  transition: box-shadow 0.2s;
-}
-.card:hover {
-  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
-}`,
-
-  html: `<!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="UTF-8">
-  <title>示例</title>
-</head>
-<body>
-  <h1>Hello World</h1>
-</body>
-</html>`,
-
-  bash: `#!/bin/bash
-echo "Building..."
-npm run build
-echo "Deploying..."
-aws s3 sync dist/ s3://bucket/ \\
-  --endpoint-url \$R2_ENDPOINT`,
-
-  json: `{
-  "name": "practice-web",
-  "version": "1.10.1",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build"
-  }
-}`,
+  javascript: `function fibonacci(n) {\n  if (n <= 1) return n\n  return fibonacci(n - 1) + fibonacci(n - 2)\n}\nconsole.log(fibonacci(10)) // 55`,
+  typescript: `interface User {\n  name: string\n  age: number\n}\nfunction greet(u: User): string {\n  return \`Hello, \${u.name}!\`\n}`,
+  python: `def fibonacci(n: int) -> int:\n    if n <= 1:\n        return n\n    return fibonacci(n - 1) + fibonacci(n - 2)\n\nprint(fibonacci(10))`,
+  java: `public class Main {\n  static int fib(int n) {\n    if (n <= 1) return n;\n    return fib(n - 1) + fib(n - 2);\n  }\n  public static void main(String[] a) {\n    System.out.println(fib(10));\n  }\n}`,
+  cpp: `#include <iostream>\nusing namespace std;\nint fib(int n) {\n  if (n <= 1) return n;\n  return fib(n-1)+fib(n-2);\n}\nint main() {\n  cout << fib(10) << endl;\n}`,
+  c: `#include <stdio.h>\nint fib(int n) {\n  if (n <= 1) return n;\n  return fib(n-1)+fib(n-2);\n}\nint main() {\n  printf("%d\\n", fib(10));\n  return 0;\n}`,
+  csharp: `class Program {\n  static int Fib(int n) {\n    if (n <= 1) return n;\n    return Fib(n-1)+Fib(n-2);\n  }\n  static void Main() {\n    Console.WriteLine(Fib(10));\n  }\n}`,
+  go: `package main\nimport "fmt"\nfunc fib(n int) int {\n  if n <= 1 { return n }\n  return fib(n-1) + fib(n-2)\n}\nfunc main() {\n  fmt.Println(fib(10))\n}`,
+  rust: `fn fib(n: u32) -> u32 {\n    if n <= 1 { n } else { fib(n-1) + fib(n-2) }\n}\nfn main() {\n    println!("{}", fib(10));\n}`,
+  swift: `func fib(_ n: Int) -> Int {\n    n <= 1 ? n : fib(n-1) + fib(n-2)\n}\nprint(fib(10))`,
+  kotlin: `fun fib(n: Int): Int = if (n <= 1) n else fib(n-1) + fib(n-2)\nfun main() = println(fib(10))`,
+  dart: `int fib(int n) => n <= 1 ? n : fib(n-1) + fib(n-2);\nvoid main() => print(fib(10));`,
+  ruby: `def fib(n)\n  n <= 1 ? n : fib(n-1) + fib(n-2)\nend\nputs fib(10)`,
+  php: `<?php\nfunction fib($n) {\n  return $n <= 1 ? $n : fib($n-1) + fib($n-2);\n}\necho fib(10);`,
+  scala: `def fib(n: Int): Int = if n <= 1 then n else fib(n-1) + fib(n-2)\n@main def run() = println(fib(10))`,
+  haskell: `fib :: Int -> Int\nfib n | n <= 1    = n\n      | otherwise = fib (n-1) + fib (n-2)\nmain = print (fib 10)`,
+  lua: `function fib(n)\n  if n <= 1 then return n end\n  return fib(n-1) + fib(n-2)\nend\nprint(fib(10))`,
+  sql: `SELECT u.name, COUNT(o.id) AS orders\nFROM users u\nJOIN orders o ON o.user_id = u.id\nWHERE u.created_at > '2024-01-01'\nGROUP BY u.name\nHAVING COUNT(o.id) > 5\nORDER BY orders DESC\nLIMIT 10;`,
+  css: `.card {\n  border-radius: 8px;\n  padding: 1rem;\n  background: var(--bg);\n  transition: box-shadow 0.2s;\n}\n.card:hover {\n  box-shadow: 0 2px 12px rgba(0,0,0,0.12);\n}`,
+  html: `<!DOCTYPE html>\n<html lang="zh">\n<head>\n  <meta charset="UTF-8">\n  <title>示例</title>\n</head>\n<body>\n  <h1>Hello World</h1>\n</body>\n</html>`,
+  bash: `#!/bin/bash\necho "Building..."\nnpm run build\necho "Done!"`,
+  powershell: `function Get-Fib($n) {\n  if ($n -le 1) { return $n }\n  return (Get-Fib ($n-1)) + (Get-Fib ($n-2))\n}\nGet-Fib 10`,
+  json: `{\n  "name": "practice-web",\n  "version": "1.10.1",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc -b && vite build"\n  }\n}`,
+  yaml: `name: practice-web\nversion: 1.10.1\nscripts:\n  dev: vite\n  build: tsc -b && vite build`,
+  xml: `<?xml version="1.0" encoding="UTF-8"?>\n<project>\n  <name>practice-web</name>\n  <version>1.10.1</version>\n</project>`,
+  markdown: `# Practice Web\n\n刷题网站，支持：\n- 练习模式\n- 考试模式\n- **AI 智能解析**\n\n> 代码高亮由 Shiki 提供`,
+  latex: `\\documentclass{article}\n\\begin{document}\n\\title{示例}\n\\author{刷题网}\n\\maketitle\n\\section{介绍}\n这是 \\LaTeX 示例。\n\\end{document}`,
+  r: `fib <- function(n) {\n  if (n <= 1) n else fib(n-1) + fib(n-2)\n}\ncat(fib(10))`,
+  dockerfile: `FROM node:20-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\nEXPOSE 3000\nCMD ["node", "dist/server.js"]`,
+  graphql: `query GetUser($id: ID!) {\n  user(id: $id) {\n    name\n    email\n    posts(first: 10) {\n      title\n    }\n  }\n}`,
+  ini: `[server]\nhost = 0.0.0.0\nport = 3000\n\n[database]\nurl = postgres://localhost:5432/db`,
+  toml: `[package]\nname = "practice-web"\nversion = "1.10.1"\n\n[dependencies]\nreact = "^19.0"\nshiki = "^4.0"`,
+  makefile: `build:\n\tnpm run build\n\ndev:\n\tnpm run dev\n\nclean:\n\trm -rf dist node_modules`,
+  nginx: `server {\n  listen 80;\n  server_name practice.rand777.com;\n  root /var/www/html;\n  index index.html;\n  location / {\n    try_files $uri /index.html;\n  }\n}`,
+  diff: `diff --git a/src/index.ts b/src/index.ts\n@@ -1,5 +1,5 @@\n-import { oldLib } from './old'\n+import { newLib } from './new'\n \n export function main() {\n-  return oldLib()\n+  return newLib()\n }`,
+  viml: `" Vim configuration\nset number\nset expandtab\nset shiftwidth=2\nset tabstop=2\ncolorscheme tokyo-night`,
 }
 
 function LangIcon({ id, className }: { id: string; className?: string }) {
