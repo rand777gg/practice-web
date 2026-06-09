@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
+import { langDisplay } from '@/lib/lang-names'
 
 interface Props {
   content: string
@@ -135,17 +136,27 @@ function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: s
 
   if (!html) {
     return (
-      <pre className="my-2 rounded-lg bg-muted p-3 overflow-x-auto text-xs">
-        <code>{code}</code>
-      </pre>
+      <div className="relative my-2">
+        <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
+          {langDisplay(lang)}
+        </span>
+        <pre className="rounded-lg bg-muted p-3 pt-7 overflow-x-auto text-xs">
+          <code>{code}</code>
+        </pre>
+      </div>
     )
   }
 
   return (
-    <div
-      className="my-2 rounded-lg overflow-hidden [&_pre]:!bg-muted/70 [&_pre]:p-3 [&_pre]:overflow-x-auto [&_code]:text-xs"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className="relative my-2">
+      <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
+        {langDisplay(lang)}
+      </span>
+      <div
+        className="rounded-lg overflow-hidden [&_pre]:!bg-muted/70 [&_pre]:p-3 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_code]:text-xs"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
   )
 }
 

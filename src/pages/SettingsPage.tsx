@@ -29,6 +29,7 @@ import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
+import { langDisplay, LANG_ICONS } from '@/lib/lang-names'
 
 const ADJECTIVES = ['勤奋的', '勇敢的', '机智的', '冷静的', '乐观的', '执着的', '专注的', '敏捷的', '沉稳的', '好奇的']
 const NOUNS = ['学者', '探索者', '思考者', '求知者', '攀登者', '追光者', '行者', '旅人', '书虫', '夜猫']
@@ -411,7 +412,7 @@ export function Component() {
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1 text-xs h-7">
                         <LangIcon id={previewLang} className="h-3.5 w-3.5" />
-                        {previewLang}
+                        {langDisplay(previewLang)}
                         <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -419,7 +420,7 @@ export function Component() {
                       {PREVIEW_LANGS.map((l) => (
                         <DropdownMenuItem key={l} onClick={() => setPreviewLang(l)}>
                           <LangIcon id={l} className="h-3.5 w-3.5 mr-1.5" />
-                          {l}
+                          {langDisplay(l)}
                           {previewLang === l && <Check className="h-4 w-4 ml-auto" />}
                         </DropdownMenuItem>
                       ))}
@@ -587,7 +588,7 @@ function CodePreview({ theme, lang }: { theme: string; lang: string }) {
   return (
     <div className="relative rounded-lg overflow-hidden text-[11px] leading-relaxed [&_pre]:!bg-muted/50 [&_pre]:p-2.5 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_pre]:!border [&_pre]:!rounded-lg [&_code]:!text-[11px]">
       <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
-        {lang}
+        {langDisplay(lang)}
       </span>
       {html ? (
         <div dangerouslySetInnerHTML={{ __html: html }} />
@@ -691,19 +692,6 @@ aws s3 sync dist/ s3://bucket/ \\
     "build": "tsc -b && vite build"
   }
 }`,
-}
-
-const LANG_ICONS: Record<string, string> = {
-  javascript: 'vscode-icons:file-type-js-official',
-  typescript: 'vscode-icons:file-type-typescript-official',
-  python: 'vscode-icons:file-type-python',
-  java: 'vscode-icons:file-type-java',
-  cpp: 'vscode-icons:file-type-cpp3',
-  sql: 'vscode-icons:file-type-sql',
-  css: 'vscode-icons:file-type-css',
-  html: 'vscode-icons:file-type-html',
-  bash: 'vscode-icons:file-type-shell',
-  json: 'vscode-icons:file-type-json',
 }
 
 function LangIcon({ id, className }: { id: string; className?: string }) {
