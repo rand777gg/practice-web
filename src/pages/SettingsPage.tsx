@@ -259,9 +259,22 @@ export function Component() {
                               disabled={unlinkingGitHub}
                               onClick={async () => {
                                 setUnlinkingGitHub(true)
-                                const { error } = await supabase.functions.invoke('unlink-identity', { body: { provider: 'github' } })
-                                if (!error) window.location.reload()
-                                setGithubLinkError(error?.message || '')
+                                setGithubLinkError('')
+                                const ghIdentity = user?.identities?.find((i: any) => i.provider === 'github')
+                                if (!ghIdentity) {
+                                  setGithubLinkError('未找到 GitHub 身份')
+                                  setUnlinkingGitHub(false)
+                                  return
+                                }
+                                const { error } = await supabase.rpc('unlink_oauth_identity', {
+                                  p_identity_id: ghIdentity.id,
+                                  p_user_id: user!.id,
+                                })
+                                if (error) {
+                                  setGithubLinkError(error.message || '解绑失败')
+                                } else {
+                                  window.location.reload()
+                                }
                                 setUnlinkingGitHub(false)
                               }}
                             >

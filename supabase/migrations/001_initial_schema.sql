@@ -298,4 +298,4 @@ AS $$
   DELETE FROM auth.identities WHERE id = p_identity_id AND user_id = p_user_id;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.unlink_oauth_identity FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.unlink_oauth_identity TO authenticated;
