@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     const remainingIdentities = user.identities
       .filter((i: any) => i.provider !== provider)
       .map((i: any) => ({
-        id: i.identity_id,
+        id: i.id,
         user_id: user.id,
         identity_data: i.identity_data,
         provider: i.provider,
