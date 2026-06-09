@@ -72,7 +72,7 @@ export function Component() {
     if (storedId && user) {
       sessionStorage.removeItem('pre_oauth_user_id')
       if (storedId !== user.id) {
-        setGithubLinkError('该 GitHub 账号已绑定其他账户，已自动切换到该账户')
+        setGithubLinkError(t('auth.githubAlreadyBound'))
       } else if (isGitHubLinked) {
         setLinkSuccess(true)
         setTimeout(() => setLinkSuccess(false), 4000)
@@ -283,7 +283,7 @@ export function Component() {
                               })
                               if (error) {
                                 setGithubLinkError(error.message?.includes('already registered') || error.message?.includes('already linked')
-                                  ? '该 GitHub 账号已注册，请先登录该账号再解绑后重试，或联系管理员'
+                                  ? t('auth.githubAlreadyRegistered')
                                   : error.message)
                               }
                               setLinkingGitHub(false)
@@ -300,7 +300,7 @@ export function Component() {
                             <p className="text-xs text-destructive">{githubLinkError}</p>
                           )}
                           {linkSuccess && (
-                            <p className="text-xs text-green-600 dark:text-green-400">绑定成功!</p>
+                            <p className="text-xs text-green-600 dark:text-green-400">{t('auth.githubBindSuccess')}</p>
                           )}
                         </div>
                       )}

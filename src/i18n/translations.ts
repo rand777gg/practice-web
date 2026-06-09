@@ -49,6 +49,9 @@ export const zh = {
     githubRegister: '使用 GitHub 注册',
     githubBind: '绑定 GitHub',
     githubBound: '已绑定',
+    githubBindSuccess: '绑定成功!',
+    githubAlreadyBound: '该 GitHub 账号已绑定其他账户，已自动切换到该账户',
+    githubAlreadyRegistered: '该 GitHub 账号已注册，请先登录该账号再解绑后重试，或联系管理员',
   },
   dashboard: {
     title: '仪表盘',
@@ -422,6 +425,9 @@ export const en = {
     githubRegister: 'Sign up with GitHub',
     githubBind: 'Link GitHub',
     githubBound: 'Linked',
+    githubBindSuccess: 'Linked successfully!',
+    githubAlreadyBound: 'This GitHub account is already linked to another account. Switched to that account.',
+    githubAlreadyRegistered: 'This GitHub account is already registered. Please log in to that account and unlink first, or contact admin.',
   },
   dashboard: {
     title: 'Dashboard',
