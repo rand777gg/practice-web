@@ -17,6 +17,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
@@ -64,13 +65,22 @@ export function PracticeSession() {
   const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
 
-  const [selectedSubject, setSelectedSubject] = useState('')
+  const initRef = useRef(false)
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
+
   useEffect(() => {
-    updateFilteredCategories(selectedSubject)
+    if (!initRef.current && planSubjectSet.size > 0) {
+      setSelectedSubjects([...planSubjectSet])
+      initRef.current = true
+    }
+  }, [planSubjectSet])
+
+  useEffect(() => {
+    updateFilteredCategories(selectedSubjects.length === 1 ? selectedSubjects[0] : '')
     setSelectedCategory('')
-  }, [selectedSubject, updateFilteredCategories])
+  }, [selectedSubjects, updateFilteredCategories])
 
   const yearCategories = useMemo(
     () => filteredCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a)),
@@ -94,8 +104,8 @@ export function PracticeSession() {
 
     // Step 1: fetch only IDs (lightweight, ~100x smaller than fetching all columns)
     let idQuery = supabase.from('questions').select('id')
-    if (selectedSubject) {
-      idQuery = idQuery.eq('subject', selectedSubject)
+    if (selectedSubjects.length > 0) {
+      idQuery = idQuery.in('subject', selectedSubjects)
     } else if (planSubjectSet.size > 0) {
       idQuery = idQuery.in('subject', [...planSubjectSet])
     }
@@ -180,7 +190,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory, selectedType, planSubjectSet])
+  }, [selectedSubjects, selectedCategory, selectedType, planSubjectSet])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -230,28 +240,30 @@ export function PracticeSession() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {selectedSubject || t('questions.subject')}
+              {selectedSubjects.length > 0 ? `${t('questions.subject')}(${selectedSubjects.length})` : t('questions.subject')}
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => setSelectedSubject('')}>
-              <span className="text-muted-foreground">{t('questions.subject')}</span>
-              {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
             {planSubjects.length > 0 && (
               <>
-                <DropdownMenuSeparator />
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
                     {t('plan.longTerm')}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                     {planSubjects.map((s) => (
-                      <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                      <DropdownMenuCheckboxItem
+                        key={s}
+                        checked={selectedSubjects.includes(s)}
+                        onCheckedChange={() => {
+                          setSelectedSubjects((prev) =>
+                            prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+                          )
+                        }}
+                      >
                         {s}
-                        {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
-                      </DropdownMenuItem>
+                      </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
@@ -266,10 +278,17 @@ export function PracticeSession() {
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                     {dailyTargetSubjects.map((s) => (
-                      <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                      <DropdownMenuCheckboxItem
+                        key={s}
+                        checked={selectedSubjects.includes(s)}
+                        onCheckedChange={() => {
+                          setSelectedSubjects((prev) =>
+                            prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+                          )
+                        }}
+                      >
                         {s}
-                        {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
-                      </DropdownMenuItem>
+                      </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
@@ -284,13 +303,28 @@ export function PracticeSession() {
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                     {otherSubjects.map((s) => (
-                      <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                      <DropdownMenuCheckboxItem
+                        key={s}
+                        checked={selectedSubjects.includes(s)}
+                        onCheckedChange={() => {
+                          setSelectedSubjects((prev) =>
+                            prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+                          )
+                        }}
+                      >
                         {s}
-                        {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
-                      </DropdownMenuItem>
+                      </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
+              </>
+            )}
+            {selectedSubjects.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setSelectedSubjects([])} className="text-muted-foreground">
+                  清除筛选
+                </DropdownMenuItem>
               </>
             )}
           </DropdownMenuContent>

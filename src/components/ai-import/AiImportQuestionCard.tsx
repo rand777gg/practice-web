@@ -1,6 +1,6 @@
-import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -76,11 +76,12 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       </div>
 
       {/* Question text */}
-      <Textarea
+      <MarkdownEditor
         value={question.question_text}
-        onChange={(e) => patch({ question_text: e.target.value })}
-        className="text-sm min-h-[60px]"
+        onChange={(v) => patch({ question_text: v })}
         placeholder="题干"
+        minHeight="60px"
+        className="text-sm"
       />
 
       {/* Options (for choice types) */}

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -162,13 +163,12 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
       {/* Question text */}
       <div className="space-y-2">
-        <Label htmlFor="questionText">{t('questions.questionText')}</Label>
-        <Textarea
-          id="questionText"
+        <Label>{t('questions.questionText')}</Label>
+        <MarkdownEditor
           value={questionText}
-          onChange={(e) => setQuestionText(e.target.value)}
+          onChange={setQuestionText}
           placeholder={t('questions.questionPlaceholder')}
-          rows={3}
+          minHeight="120px"
         />
       </div>
 
