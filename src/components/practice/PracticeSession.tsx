@@ -63,6 +63,27 @@ export function PracticeSession() {
   const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
 
+  const categoryGroups = useMemo(() => {
+    const groupPattern = /^(.+?)(\d{4})$/
+    const groups = new Map<string, string[]>()
+    for (const c of filteredCategories) {
+      const m = c.match(groupPattern)
+      if (m) {
+        groups.set(m[1], [...(groups.get(m[1]) || []), c])
+      }
+    }
+    const result: { prefix: string; items: string[] }[] = []
+    const grouped = new Set<string>()
+    for (const [prefix, items] of groups) {
+      if (items.length >= 2) {
+        result.push({ prefix, items })
+        for (const item of items) grouped.add(item)
+      }
+    }
+    const solo = filteredCategories.filter((c) => !grouped.has(c))
+    return { groups: result, solo }
+  }, [filteredCategories])
+
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
@@ -298,7 +319,24 @@ export function PracticeSession() {
               <span className="text-muted-foreground">{t('questions.category')}</span>
               {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            {filteredCategories.map((c) => (
+            {categoryGroups.groups.map((g) => (
+              <DropdownMenuSub key={g.prefix}>
+                <DropdownMenuSeparator />
+                <DropdownMenuSubTrigger>{g.prefix}</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                  {g.items.map((c) => (
+                    <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                      {c.match(/\d{4}$/)?.[0] || c}
+                      {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ))}
+            {categoryGroups.solo.length > 0 && categoryGroups.groups.length > 0 && (
+              <DropdownMenuSeparator />
+            )}
+            {categoryGroups.solo.map((c) => (
               <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
                 {c}
                 {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}

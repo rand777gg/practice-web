@@ -140,7 +140,10 @@ export function Component() {
                       <AlertDialogCancel asChild>
                         <Button variant="outline" size="sm">取消</Button>
                       </AlertDialogCancel>
-                      <Button variant="default" size="sm" onClick={signOut}>
+                      <Button variant="default" size="sm" onClick={() => {
+                        setLogoutOpen(false)
+                        navigate('/farewell')
+                      }}>
                         确认退出
                       </Button>
                     </div>

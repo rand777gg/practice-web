@@ -20,6 +20,10 @@ export const router = createBrowserRouter([
         lazy: () => import('@/pages/WelcomePage'),
       },
       {
+        path: '/farewell',
+        lazy: () => import('@/pages/FarewellPage'),
+      },
+      {
         path: '/',
         element: <ProtectedRoute />,
         children: [
