@@ -820,16 +820,31 @@ export function Component() {
                           <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
                             activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
                             onBlockClick={(block) => {
-                              const idx = sectionsRef.current.findIndex(
-                                s => s.bbox && s.bbox[0] === block.bbox[0] && s.bbox[1] === block.bbox[1]
-                              )
-                              if (idx >= 0) {
-                                setActiveMdIdx(idx)
-                                setActivePage(block.page_idx + 1)
-                                setActiveBbox(block.bbox)
+                              // Find best matching markdown section by text similarity
+                              const blockNorm = normalize(block.text || '')
+                              let bestIdx = -1; let bestSim = 0
+                              for (let i = 0; i < sectionsRef.current.length; i++) {
+                                const sec = sectionsRef.current[i]
+                                if (!sec.bbox) continue
+                                const secNorm = normalize(sec.text)
+                                const sim = lcsSimilarity(blockNorm, secNorm)
+                                if (sim > bestSim && sim > 0.05) { bestSim = sim; bestIdx = i }
+                              }
+                              // Fallback: find by bbox
+                              if (bestIdx < 0) {
+                                bestIdx = sectionsRef.current.findIndex(
+                                  s => s.bbox && Math.abs(s.bbox[0] - block.bbox[0]) < 2 && Math.abs(s.bbox[1] - block.bbox[1]) < 2
+                                )
+                              }
+                              if (bestIdx >= 0) {
+                                const sec = sectionsRef.current[bestIdx]
+                                setActiveMdIdx(bestIdx)
+                                setActivePage(sec.page)
+                                setActiveBbox(sec.bbox)
                                 setTimeout(() => {
-                                  mdRef.current?.querySelector(`[data-md-idx="${idx}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                }, 50)
+                                  const el = mdRef.current?.querySelector(`[data-md-idx="${bestIdx}"]`)
+                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                }, 100)
                               }
                             }}
                           />
@@ -998,65 +1013,143 @@ export function Component() {
 type PdfBlock = { page_idx: number; bbox: [number, number, number, number]; text?: string; type?: string }
 
 function parseBlocks(jsonData: string): PdfBlock[] {
+  const result: PdfBlock[] = []
   try {
     const data = JSON.parse(jsonData)
-    if (Array.isArray(data)) {
-      return (data as Record<string, unknown>[]).filter(item =>
-        item.page_idx !== undefined && item.bbox && item.text
-      ).map(item => ({
-        page_idx: item.page_idx as number,
-        bbox: item.bbox as [number, number, number, number],
-        text: item.text as string,
-        type: item.type as string | undefined,
-      }))
+    if (!Array.isArray(data)) return result
+    function walk(items: Record<string, unknown>[], level: number) {
+      for (const item of items) {
+        if (item.page_idx !== undefined && item.bbox) {
+          result.push({
+            page_idx: item.page_idx as number,
+            bbox: item.bbox as [number, number, number, number],
+            text: item.text as string | undefined,
+            type: item.type as string | undefined,
+          })
+        }
+        if (Array.isArray(item.children)) {
+          walk(item.children as Record<string, unknown>[], level + 1)
+        }
+      }
     }
-    return []
-  } catch { return [] }
+    walk(data, 0)
+  } catch { /* ignore */ }
+  return result
 }
 
-function normalize(s: string) { return s.replace(/[#*\s\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase() }
+function normalize(s: string) {
+  return s.replace(/[#*\s\n\r\t`~|>\\[\]()]+/g, ' ').replace(/\s{2,}/g, ' ').trim().toLowerCase()
+}
+
+// Longest common substring between normalized strings
+function lcsSimilarity(a: string, b: string): number {
+  const shorter = a.length < b.length ? a : b
+  const longer = a.length < b.length ? b : a
+  if (shorter.length === 0) return 0
+  // Sliding window: find longest substring of `shorter` that appears in `longer`
+  let maxLen = 0
+  let window = Math.min(shorter.length, 30)
+  for (let i = 0; i < shorter.length; i++) {
+    if (shorter.length - i <= maxLen) break
+    for (let len = window; len > maxLen; len--) {
+      const sub = shorter.substring(i, i + len)
+      if (sub.length < 4) continue
+      if (longer.includes(sub)) {
+        maxLen = sub.length
+        break
+      }
+    }
+  }
+  return maxLen / Math.max(shorter.length, 1)
+}
 
 function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): { text: string; page: number; bbox: [number, number, number, number] | null }[] {
   const paragraphs = md.split(/\n\n+/).filter(p => p.trim())
-  const chunkSize = Math.max(Math.floor(blocks.length / Math.max(paragraphs.length, 1)), 1)
-  return paragraphs.map((para, pi) => {
+  const textBlocks = blocks.filter(b => b.text && b.text.trim().length > 1)
+  if (textBlocks.length === 0) {
+    return paragraphs.map(p => ({ text: p, page: 1, bbox: null }))
+  }
+
+  // Group blocks by page for progressive matching
+  const pageGroups = new Map<number, PdfBlock[]>()
+  for (const b of textBlocks) {
+    const g = pageGroups.get(b.page_idx) || []
+    g.push(b)
+    pageGroups.set(b.page_idx, g)
+  }
+
+  return paragraphs.map((para) => {
     const norm = normalize(para)
-    // also try matching individual lines for more precise matching
-    const normShort = normalize(para.split('\n').slice(0, 2).join(' '))
-    let best: PdfBlock | null = null; let bestScore = 0
-    const startIdx = pi * chunkSize
-    const endIdx = Math.min(startIdx + chunkSize * 3, blocks.length)
-    for (let i = startIdx; i < endIdx; i++) {
-      const b = blocks[i]
-      if (!b.text) continue
-      const bNorm = normalize(b.text)
-      if (bNorm.length < 2) continue
-      const words = bNorm.split(/\s+/).filter(w => w.length > 1)
-      const matched = words.filter(w => norm.includes(w)).length
-      const shortMatched = words.filter(w => normShort.includes(w)).length
-      const bestMatch = Math.max(matched, shortMatched)
-      const score = bestMatch / Math.max(words.length, 1)
+    if (norm.length < 4) {
+      const fallback = textBlocks[0]
+      return { text: para, page: fallback.page_idx + 1, bbox: fallback.bbox }
+    }
+
+    // Try to match against all blocks, find best
+    let best: PdfBlock | null = null
+    let bestScore = 0
+
+    // First pass: try matching against parent-level blocks (usually paragraphs)
+    const topBlocks = textBlocks.filter(b => b.type !== 'table-body' && b.type !== 'table-row')
+    for (const b of topBlocks) {
+      const bNorm = normalize(b.text!)
+      if (bNorm.length < 3) continue
+      const score = lcsSimilarity(norm, bNorm)
       if (score > bestScore) { bestScore = score; best = b }
     }
-    if (bestScore < 0.15) return { text: para, page: (blocks[Math.min(pi, blocks.length - 1)]?.page_idx ?? 0) + 1, bbox: null }
-    return { text: para, page: (best?.page_idx ?? 0) + 1, bbox: best?.bbox ?? null }
+
+    // If no good match, try all blocks including nested ones
+    if (bestScore < 0.2) {
+      for (const b of textBlocks) {
+        const bNorm = normalize(b.text!)
+        if (bNorm.length < 2) continue
+        const score = lcsSimilarity(norm, bNorm)
+        if (score > bestScore) { bestScore = score; best = b }
+      }
+    }
+
+    if (!best || bestScore < 0.1) {
+      // Estimate page from position in document
+      const ratio = paragraphs.indexOf(para) / Math.max(paragraphs.length, 1)
+      const estPage = Math.floor(ratio * (blocks.length > 0 ? Math.max(...blocks.map(b => b.page_idx)) + 1 : 1))
+      return { text: para, page: estPage + 1, bbox: null }
+    }
+
+    return { text: para, page: best.page_idx + 1, bbox: best.bbox }
   })
 }
 
 function ClickableMarkdown({ sections, activeIdx, onNavigate }: { sections: ReturnType<typeof matchMarkdownToPdf>; activeIdx: number | null; onNavigate: (page: number, bbox: [number, number, number, number] | null, idx: number) => void }) {
+  const matched = sections.filter(s => s.bbox).length
   return (
-    <div className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
-      {sections.map((sec, i) => (
-        <span
-          key={i}
-          data-md-idx={i}
-          className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${sec.bbox ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20' : 'text-muted-foreground/50'} ${activeIdx === i ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' : ''}`}
-          onClick={() => { if (sec.bbox) onNavigate(sec.page, sec.bbox, i) }}
-          title={sec.bbox ? `第 ${sec.page} 页 — 点击定位` : '无匹配'}
-        >
-          {sec.text}
+    <div>
+      <div className="flex items-center gap-2 mb-2 text-[10px] text-muted-foreground">
+        <span>段落：{sections.length}</span>
+        <span className={matched > 0 ? 'text-green-600' : 'text-amber-600'}>
+          已匹配：{matched}
         </span>
-      ))}
+      </div>
+      <div className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
+        {sections.map((sec, i) => (
+          <span
+            key={i}
+            data-md-idx={i}
+            className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${
+              sec.bbox
+                ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20 border-l-2 border-l-amber-300/50'
+                : 'text-muted-foreground/50 border-l-2 border-l-transparent'
+            } ${
+              activeIdx === i
+                ? '!bg-blue-100 dark:!bg-blue-900/40 ring-1 ring-blue-400 !border-l-blue-500'
+                : ''
+            }`}
+            onClick={() => onNavigate(sec.page, sec.bbox, i)}
+            title={sec.bbox ? `第 ${sec.page} 页 — 点击定位到 PDF` : '无匹配（点击可跳转到估算页面）'}
+          >
+            {sec.text}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
