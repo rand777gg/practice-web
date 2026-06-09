@@ -50,11 +50,12 @@ Deno.serve(async (req) => {
       .map((i: any) => ({
         id: i.id,
         user_id: user.id,
-        identity_data: i.identity_data,
+        identity_data: i.identity_data || {},
         provider: i.provider,
-        last_sign_in_at: i.last_sign_in_at,
-        created_at: i.created_at,
-        updated_at: i.updated_at,
+        email: i.identity_data?.email || user.email || '',
+        last_sign_in_at: i.last_sign_in_at || new Date().toISOString(),
+        created_at: i.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }))
 
     const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${user.id}`, {
