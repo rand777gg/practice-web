@@ -3,11 +3,16 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from 'npm:@aws-sdk/client-s3@3'
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3'
 
-const R2_ACCESS_KEY = Deno.env.get('R2_ACCESS_KEY_ID')!
-const R2_SECRET_KEY = Deno.env.get('R2_SECRET_ACCESS_KEY')!
-const R2_ENDPOINT = Deno.env.get('R2_ENDPOINT')!
-const R2_BUCKET = Deno.env.get('R2_BUCKET')!
-// Optional: custom domain that proxies presigned URLs (can be omitted)
+function requireEnv(name: string): string {
+  const v = Deno.env.get(name)
+  if (!v) throw new Error(`Missing env var: ${name}`)
+  return v
+}
+
+const R2_ACCESS_KEY = requireEnv('R2_ACCESS_KEY_ID')
+const R2_SECRET_KEY = requireEnv('R2_SECRET_ACCESS_KEY')
+const R2_ENDPOINT = requireEnv('R2_ENDPOINT')
+const R2_BUCKET = requireEnv('R2_BUCKET')
 const R2_PUBLIC_URL = Deno.env.get('R2_PUBLIC_URL') || ''
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']
