@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -70,7 +70,12 @@ export function PracticeSession() {
     setSelectedCategory('')
   }, [selectedSubject, updateFilteredCategories])
 
+  const fetchGenRef = useRef(0)
+
   const fetchRandomQuestion = useCallback(async () => {
+    fetchGenRef.current++
+    const myGen = fetchGenRef.current
+
     setIsLoading(true)
     setSelectedAnswer(null)
     setIsSubmitted(false)
@@ -90,9 +95,11 @@ export function PracticeSession() {
     if (selectedType) idQuery = idQuery.eq('question_type', selectedType)
 
     const { data: ids, error: idsErr } = await idQuery
+    if (fetchGenRef.current !== myGen) return
 
     if (idsErr || !ids || ids.length === 0) {
       // Offline fallback: try IndexedDB prefetched questions
+      if (fetchGenRef.current !== myGen) return
       const localIds = await getPrefetchedQuestionIds()
       if (localIds.length > 0) {
         const pickedId = localIds[Math.floor(Math.random() * localIds.length)]
@@ -122,9 +129,11 @@ export function PracticeSession() {
             .order('answered_at', { ascending: false })
         : Promise.resolve(null),
     ])
+    if (fetchGenRef.current !== myGen) return
 
     if (qRes.error || !qRes.data) {
       // Offline fallback: try IndexedDB
+      if (fetchGenRef.current !== myGen) return
       const localQ = await getPrefetchedQuestion(pickedId)
       if (localQ) {
         setQuestion(localQ as Question)
