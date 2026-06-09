@@ -54,10 +54,10 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
   return (
     <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
       <div className="flex items-start gap-1.5">
-        <span className="font-medium text-base lg:text-lg text-muted-foreground shrink-0">[{typeLabel}]</span>
         <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
       </div>
       <div className="flex flex-wrap gap-1.5">
+        <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{typeLabel}</span>
         {question.subject && (
           <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
             {question.subject}
