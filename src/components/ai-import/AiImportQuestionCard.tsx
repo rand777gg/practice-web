@@ -59,6 +59,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
               <DropdownMenuItem key={o.value} onClick={() => {
                 const newType = o.value as QuestionType
                 if (newType === 'true_false') patch({ question_type: newType, options: ['正确', '错误'], correct_answer: true })
+                else if (newType === 'judge_correct') patch({ question_type: newType, options: [], correct_answer: true })
                 else if (['fill_blank','short_answer','analysis'].includes(newType)) patch({ question_type: newType, options: [], correct_answer: '' })
                 else patch({ question_type: newType })
               }}>
@@ -148,6 +149,38 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           >
             错误
           </Button>
+        </div>
+      )}
+
+      {/* Judge & Correct */}
+      {type === 'judge_correct' && (
+        <div className="space-y-2 pl-1">
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={question.correct_answer === true ? 'default' : 'outline'}
+              className={`flex-1 h-8 text-xs ${question.correct_answer === true ? 'bg-green-500 hover:bg-green-600' : ''}`}
+              onClick={() => patch({ correct_answer: true })}
+            >
+              正确
+            </Button>
+            <Button
+              size="sm"
+              variant={question.correct_answer !== true ? 'default' : 'outline'}
+              className={`flex-1 h-8 text-xs ${question.correct_answer !== true ? 'bg-red-500 hover:bg-red-600' : ''}`}
+              onClick={() => patch({ correct_answer: '' })}
+            >
+              错误
+            </Button>
+          </div>
+          {question.correct_answer !== true && (
+            <Input
+              value={typeof question.correct_answer === 'string' ? question.correct_answer : ''}
+              onChange={(e) => patch({ correct_answer: e.target.value })}
+              className="h-8 text-xs"
+              placeholder="修正后的正确表述"
+            />
+          )}
         </div>
       )}
 

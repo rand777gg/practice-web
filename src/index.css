@@ -4,6 +4,16 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* Radix Themes Spinner & ScrollArea vars */
+  --spinner-animation-duration: 800ms;
+  --spinner-opacity: 0.65;
+  --space-3: 12px;
+  --space-4: 16px;
+  --radius-1: 3px;
+  --scaling: 1;
+  --radius-factor: 1;
+  --color-background: white;
+  /* shadcn vars */
   --background: 0 0% 100%;
   --foreground: 240 10% 3.9%;
   --card: 0 0% 100%;
@@ -35,6 +45,7 @@
 }
 
 .dark {
+  --color-background: #111113;
   --background: 240 10% 3.9%;
   --foreground: 0 0% 98%;
   --card: 240 10% 3.9%;
@@ -104,7 +115,9 @@
   * {
     @apply border-border;
   }
-  *, *::before, *::after {
+  .dark *, .dark *::before, .dark *::after,
+  *:hover, *::before:hover, *::after:hover,
+  *:focus-visible, *::before:focus-visible, *::after:focus-visible {
     transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
   }
   body {
@@ -257,48 +270,6 @@
   animation: colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite;
 }
 
-/* Radix Themes Spinner */
-:root {
-  --spinner-animation-duration: 800ms;
-  --spinner-opacity: 0.65;
-}
-.rt-Spinner {
-  display: block;
-  position: relative;
-  opacity: var(--spinner-opacity);
-}
-.rt-SpinnerLeaf {
-  position: absolute;
-  top: 0;
-  left: calc(50% - 12.5% / 2);
-  width: 12.5%;
-  height: 100%;
-  animation: rt-spinner-leaf-fade var(--spinner-animation-duration) linear infinite;
-}
-.rt-SpinnerLeaf::before {
-  content: '';
-  display: block;
-  width: 100%;
-  height: 30%;
-  border-radius: var(--radius-1, 3px);
-  background-color: currentColor;
-}
-.rt-SpinnerLeaf:where(:nth-child(1)) { transform: rotate(0deg); animation-delay: calc(-8 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(2)) { transform: rotate(45deg); animation-delay: calc(-7 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(3)) { transform: rotate(90deg); animation-delay: calc(-6 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(4)) { transform: rotate(135deg); animation-delay: calc(-5 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(5)) { transform: rotate(180deg); animation-delay: calc(-4 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(6)) { transform: rotate(225deg); animation-delay: calc(-3 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(7)) { transform: rotate(270deg); animation-delay: calc(-2 / 8 * var(--spinner-animation-duration)); }
-.rt-SpinnerLeaf:where(:nth-child(8)) { transform: rotate(315deg); animation-delay: calc(-1 / 8 * var(--spinner-animation-duration)); }
-@keyframes rt-spinner-leaf-fade {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-.rt-Spinner:where(.rt-r-size-1) { width: 12px; height: 12px; }
-.rt-Spinner:where(.rt-r-size-2) { width: 16px; height: 16px; }
-.rt-Spinner:where(.rt-r-size-3) { width: 20px; height: 20px; }
-
 .online-dot {
   display: inline-block;
   width: 10px;
@@ -310,4 +281,20 @@
 .online-dot.offline {
   background: #9ca3af;
   box-shadow: none;
+}
+
+/* Theme-matching scrollbar for dropdown menus */
+.dropdown-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.dropdown-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.dropdown-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dropdown-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ScrollArea } from '@radix-ui/themes'
+import { ScrollArea, Spinner } from '@radix-ui/themes'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
@@ -26,7 +26,7 @@ const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').t
 
 const ChartFallback = () => (
   <div className="flex items-center justify-center py-12">
-    <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+    <Spinner size="2" />
   </div>
 )
 
@@ -107,6 +107,7 @@ export function Component() {
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
   const btnRowRef = useRef<HTMLDivElement>(null)
+  const loadGenRef = useRef(0)
 
   useEffect(() => {
     if (expandedBtn === null) return
@@ -121,7 +122,11 @@ export function Component() {
 
   useEffect(() => {
     if (!user) return
+    let cancelled = false
     async function load() {
+      loadGenRef.current++
+      const myGen = loadGenRef.current
+
       if (chartData) setIsRefreshing(true)
       const now = new Date()
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -147,9 +152,11 @@ export function Component() {
           .gte('answered_at', start12wk.toISOString()),
         qFetchPromise,
       ])
+      if (loadGenRef.current !== myGen || cancelled) return
 
       if (!questions) {
         const { data: fresh } = await supabase.from('questions').select('id, subject, category, question_type')
+        if (loadGenRef.current !== myGen || cancelled) return
         questions = (fresh ?? []) as QMeta[]
         writeQMetaCache(questions)
       }
@@ -307,17 +314,21 @@ export function Component() {
       setIsRefreshing(false)
 
       // Background prefetch full questions for offline practice
+      const prefetchGen = myGen
       ;(async () => {
         try {
           const { data } = await supabase.from('questions').select('*')
+          if (loadGenRef.current !== prefetchGen) return
           if (data && data.length > 0) {
             await clearPrefetchedQuestions()
+            if (loadGenRef.current !== prefetchGen) return
             await prefetchQuestions(data.map((q) => ({ id: q.id, data: q })))
           }
         } catch { /* best-effort */ }
       })()
     }
     load()
+    return () => { cancelled = true }
   }, [user, profile?.deadline, profile?.plan_subjects])
 
   // Lazy-load key_points for knowledge graph (heavy field, not needed for initial render)
@@ -397,7 +408,7 @@ export function Component() {
         <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
         {isRefreshing && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+            <Spinner size="1" />
             更新中
           </div>
         )}

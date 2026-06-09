@@ -105,6 +105,7 @@ export function ExamSession() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     if (selectedSubjects.length === 0) {
       setFilteredCategories(categories)
     } else {
@@ -113,6 +114,7 @@ export function ExamSession() {
           .from('questions')
           .select('category')
           .in('subject', selectedSubjects)
+        if (cancelled) return
         const cats = new Set<string>()
         for (const row of data ?? []) {
           if (row.category) cats.add(row.category)
@@ -121,16 +123,19 @@ export function ExamSession() {
       }
       loadCats()
     }
+    return () => { cancelled = true }
   }, [selectedSubjects, categories])
 
   useEffect(() => {
+    let cancelled = false
     const sessionId = searchParams.get('sessionId')
     if (sessionId && user) {
       resumeExam(sessionId).then(() => {
+        if (cancelled) return
         setShowStart(false)
         setHasStarted(true)
       })
-      return
+      return () => { cancelled = true }
     }
 
     if (!user) return
@@ -146,12 +151,14 @@ export function ExamSession() {
       .limit(1)
       .maybeSingle()
       .then(({ data }) => {
+        if (cancelled) return
         if (data) {
           setPendingSession(data as unknown as ExamSessionType)
           setShowResumeDialog(true)
         }
         setCheckingSession(false)
       })
+    return () => { cancelled = true }
   }, [searchParams, user?.id, resumeExam])
 
   const handleStart = async () => {

@@ -5,7 +5,7 @@ import type { AiConfig, AiParseResult, ParsedQuestion } from './types'
 import { getAiConfig as getConfig } from './config'
 
 const questionSchema = z.object({
-  question_type: z.enum(['single_choice','multi_select','true_false','fill_blank','short_answer','analysis']),
+  question_type: z.enum(['single_choice','multi_select','true_false','fill_blank','short_answer','analysis','judge_correct']),
   question_text: z.string(),
   options: z.array(z.string()),
   correct_answer: z.union([z.number(), z.array(z.number()), z.boolean(), z.string(), z.array(z.string()), z.null()]),
@@ -21,14 +21,33 @@ const resultSchema = z.object({
 const SYSTEM_PROMPT = `You are a test question extraction assistant. Given a document in markdown format, extract ALL questions found in the document.
 
 Rules for each question type:
-- single_choice: correct_answer is an integer (0-based index). 
+- single_choice: correct_answer is an integer (0-based index).
 - multi_select: correct_answer is an array of integers. options must have ≥2 items.
 - true_false: correct_answer is boolean. options=["正确","错误"] or ["True","False"].
+- judge_correct: correct_answer is true if the statement is correct, or a string with the correction if the statement is wrong. options is empty array [].
 - fill_blank: correct_answer is a string. options is empty array []. In the question_text, mark the blank position with ____ (double underscores).
 - short_answer: correct_answer is a string or string[]. options is empty array [].
 - analysis: correct_answer is null. options is empty array [].
 
 Output every question you find in the document verbatim. Do not reword or reorder.`
+
+const GENERATE_FROM_DOC_SYSTEM = `你是一位经验丰富的考官。根据提供的学习材料，识别核心知识点，并以此出题。
+
+出题规则：
+- single_choice（单选题）：correct_answer 为整数（0-based 索引），options 至少4个
+- multi_select（多选题）：correct_answer 为整数数组，options 至少4个
+- true_false（判断题）：correct_answer 为 boolean，options=["正确","错误"]
+- judge_correct（判断改错题）：题干给出一段陈述，correct_answer 为 true（正确）或字符串（错误时的修正内容），options 为空数组[]
+- fill_blank（填空题）：correct_answer 为字符串，options 为空数组[]，题干中用 ____ 标记空缺位置
+- short_answer（简答题）：correct_answer 为字符串或字符串数组，options 为空数组[]
+- analysis（分析题/论述题/案例分析题）：correct_answer 为 null，options 为空数组[]
+
+要求：
+- 以考官视角，考察对材料核心知识点的理解，而非机械记忆
+- 涵盖概念理解、细节辨析、逻辑推理、案例分析等多种层次
+- 简答题和分析题的答案要详尽，分层次作答
+- 每题附带详细的解析（analysis），解释正确答案
+- 题目数量不少于5道，尽量覆盖材料中的主要知识点`
 
 export class DeepSeekParser {
   private client: ReturnType<typeof createDeepSeek>
@@ -42,11 +61,11 @@ export class DeepSeekParser {
     this.model = this.client(config.model || 'deepseek-chat')
   }
 
-  async parseDocument(markdown: string): Promise<AiParseResult> {
+  async parseDocument(markdown: string, systemPrompt?: string): Promise<AiParseResult> {
     const { object } = await generateObject({
       model: this.model,
       schema: resultSchema,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt || SYSTEM_PROMPT,
       prompt: `Extract all questions from this document:\n\n${markdown}`,
       temperature: 0.1,
     })
@@ -140,6 +159,76 @@ export class DeepSeekParser {
     return object
   }
 
+  async generateQuestions(params: {
+    subject: string
+    questionTypes: string[]
+    count: number
+    topicDescription?: string
+  }, systemPrompt?: string): Promise<AiParseResult> {
+    const typeList = params.questionTypes.join('、')
+    const topicHint = params.topicDescription ? `\n内容/知识点范围：${params.topicDescription}` : ''
+
+    const prompt = `请根据以下参数生成 ${params.count} 道原创练习题：
+
+学科：${params.subject}
+题型：${typeList}${topicHint}
+
+要求：
+- 题目要有教育意义，考察对学科知识的理解
+- 每题附带详细的解析（analysis），解释正确答案
+- 单选题和多选题至少4个选项
+- 判断题选项为["正确", "错误"]
+- 判断改错题的题干是一段陈述，correct_answer 为 true（正确）或字符串（修正后的正确表述）
+- 填空题用 ____ 标记空缺
+- 题目难度适中，避免过于简单或偏门`
+
+    const { object } = await generateObject({
+      model: this.model,
+      schema: resultSchema,
+      system: systemPrompt || `You are a test question generation assistant. Create original, high-quality practice questions based on the given subject and parameters. Include detailed analysis (analysis field) for each question explaining the correct answer. Questions should be educational and test real understanding.`,
+      prompt,
+      temperature: 0.7,
+    })
+
+    return { questions: this.normalize(object.questions).slice(0, params.count) }
+  }
+
+  async generateFromText(params: {
+    documentText: string
+    subject?: string
+    questionTypes?: string[]
+    count?: number
+  }, systemPrompt?: string): Promise<AiParseResult> {
+    const typeHint = params.questionTypes?.length ? `\n题型要求：${params.questionTypes.join('、')}` : ''
+    const subjectHint = params.subject ? `\n学科：${params.subject}` : ''
+    const countHint = params.count ? `\n请生成 ${params.count} 道题目。` : '\n请生成至少5道题目。'
+
+    const prompt = `请根据以下学习材料，识别核心知识点，以考官视角出题。${subjectHint}${typeHint}${countHint}\n\n材料内容：\n\n${params.documentText}`
+
+    const { object } = await generateObject({
+      model: this.model,
+      schema: resultSchema,
+      system: systemPrompt || GENERATE_FROM_DOC_SYSTEM,
+      prompt,
+      temperature: 0.7,
+    })
+
+    const questions = this.normalize(object.questions)
+    return { questions: params.count ? questions.slice(0, params.count) : questions }
+  }
+
+  async generateFromDocument(markdown: string, systemPrompt?: string): Promise<AiParseResult> {
+    const { object } = await generateObject({
+      model: this.model,
+      schema: resultSchema,
+      system: systemPrompt || GENERATE_FROM_DOC_SYSTEM,
+      prompt: `请根据以下学习材料，识别核心知识点，以考官视角出题：\n\n${markdown}`,
+      temperature: 0.7,
+    })
+
+    return { questions: this.normalize(object.questions) }
+  }
+
   async suggestPlan(data: {
     totalReviewQueue: number
     topUrgent: { subject: string; urgency: number; reviewQueue: number; errorRate: number }[]
@@ -189,11 +278,17 @@ export class DeepSeekParser {
           options = ['正确', '错误']
           correct_answer = Boolean(correct_answer)
         }
-        if (['fill_blank','short_answer','analysis'].includes(question_type)) {
+        if (['fill_blank','short_answer','analysis','judge_correct'].includes(question_type)) {
           options = []
         }
         if (question_type === 'analysis') {
           correct_answer = null
+        }
+        if (question_type === 'judge_correct') {
+          // true = correct statement, string = correction when wrong
+          if (correct_answer !== true && typeof correct_answer !== 'string') {
+            correct_answer = String(correct_answer ?? '')
+          }
         }
         if (options.length < 2 && ['single_choice','multi_select'].includes(question_type)) {
           question_type = 'short_answer'
@@ -243,6 +338,31 @@ export async function suggestExamConfig(stats: {
 }> {
   const parser = new DeepSeekParser(getConfig())
   return parser.suggestExam(stats)
+}
+
+export async function generateQuestions(params: {
+  subject: string
+  questionTypes: string[]
+  count: number
+  topicDescription?: string
+}, systemPrompt?: string): Promise<AiParseResult> {
+  const parser = new DeepSeekParser(getConfig())
+  return parser.generateQuestions(params, systemPrompt)
+}
+
+export async function generateFromText(params: {
+  documentText: string
+  subject?: string
+  questionTypes?: string[]
+  count?: number
+}, systemPrompt?: string): Promise<AiParseResult> {
+  const parser = new DeepSeekParser(getConfig())
+  return parser.generateFromText(params, systemPrompt)
+}
+
+export async function generateFromDocument(markdown: string, systemPrompt?: string): Promise<AiParseResult> {
+  const parser = new DeepSeekParser(getConfig())
+  return parser.generateFromDocument(markdown, systemPrompt)
 }
 
 export async function suggestPlan(data: {

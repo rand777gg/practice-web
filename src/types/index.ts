@@ -10,6 +10,7 @@ export type QuestionType =
   | 'fill_blank'
   | 'short_answer'
   | 'analysis'
+  | 'judge_correct'
 
 export type CorrectAnswer =
   | number      // single_choice: index into options
@@ -157,6 +158,8 @@ export function parseCorrectAnswer(raw: unknown, type: QuestionType): CorrectAns
       return Array.isArray(raw) ? raw.map(Number) : [Number(raw)]
     case 'true_false':
       return raw === true || raw === 'true' || raw === 1
+    case 'judge_correct':
+      return raw === true ? true : String(raw)
     case 'fill_blank':
       return String(raw)
     case 'short_answer':

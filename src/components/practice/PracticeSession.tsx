@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -13,35 +13,21 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Textarea } from '@/components/ui/textarea'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
-import type { Question, CorrectAnswer, Profile, QuestionType } from '@/types'
+import type { Question, CorrectAnswer, QuestionType } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
-function getGoalSubjects(profile: Profile | null): string[] {
-  if (!profile) return []
-  const subjects = new Set<string>()
-
-  try {
-    const raw = profile.daily_targets ? JSON.parse(profile.daily_targets) : []
-    for (const t of normalizeDailyTargets(raw)) {
-      for (const s of t.subjects) subjects.add(s.subject)
-    }
-  } catch { /* ignore parse errors */ }
-
-  try {
-    const plans = profile.plan_subjects ? JSON.parse(profile.plan_subjects) : []
-    if (Array.isArray(plans)) for (const s of plans) subjects.add(s)
-  } catch { /* ignore parse errors */ }
-
-  return [...subjects]
-}
 
 export function PracticeSession() {
   const { t } = useT()
@@ -61,10 +47,25 @@ export function PracticeSession() {
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
 
+  const planSubjects = useMemo(() => {
+    if (!profile?.plan_subjects) return [] as string[]
+    try { const p = JSON.parse(profile.plan_subjects); return Array.isArray(p) ? p : [] } catch { return [] }
+  }, [profile?.plan_subjects])
+
+  const dailyTargetSubjects = useMemo(() => {
+    if (!profile?.daily_targets) return [] as string[]
+    try {
+      const raw = normalizeDailyTargets(JSON.parse(profile.daily_targets))
+      return [...new Set(raw.flatMap((t) => t.subjects.map((s) => s.subject)))]
+    } catch { return [] }
+  }, [profile?.daily_targets])
+
+  const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
+  const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
+
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
-
   useEffect(() => {
     updateFilteredCategories(selectedSubject)
     setSelectedCategory('')
@@ -82,14 +83,11 @@ export function PracticeSession() {
     setAnswerId(null)
 
     // Step 1: fetch only IDs (lightweight, ~100x smaller than fetching all columns)
-    const goalSubjects = getGoalSubjects(profile)
     let idQuery = supabase.from('questions').select('id')
-    if (goalSubjects.length > 0) {
-      idQuery = selectedSubject
-        ? idQuery.eq('subject', selectedSubject)
-        : idQuery.in('subject', goalSubjects)
-    } else if (selectedSubject) {
+    if (selectedSubject) {
       idQuery = idQuery.eq('subject', selectedSubject)
+    } else if (planSubjectSet.size > 0) {
+      idQuery = idQuery.in('subject', [...planSubjectSet])
     }
     if (selectedCategory) idQuery = idQuery.eq('category', selectedCategory)
     if (selectedType) idQuery = idQuery.eq('question_type', selectedType)
@@ -115,9 +113,23 @@ export function PracticeSession() {
       return
     }
 
-    // Step 2: pick random ID, fetch full question + stats in parallel
-    const pickedId = ids[Math.floor(Math.random() * ids.length)].id
+    // Step 2: prioritize unanswered questions, then pick random from the best pool
+    const allIds = ids.map((r) => r.id)
     const currentUser = useAuthStore.getState().user
+
+    let pickPool = allIds
+    if (currentUser) {
+      // Find IDs the user has already answered
+      const { data: answered } = await supabase.from('user_answers')
+        .select('question_id')
+        .eq('user_id', currentUser.id)
+        .in('question_id', allIds)
+      const answeredSet = new Set((answered || []).map((a) => a.question_id))
+      const unanswered = allIds.filter((id) => !answeredSet.has(id))
+      if (unanswered.length > 0) pickPool = unanswered
+    }
+
+    const pickedId = pickPool[Math.floor(Math.random() * pickPool.length)]
 
     const [qRes, statsRes] = await Promise.all([
       supabase.from('questions').select('*').eq('id', pickedId).single(),
@@ -158,7 +170,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubject, selectedCategory, selectedType, profile?.daily_targets, profile?.plan_subjects])
+  }, [selectedSubject, selectedCategory, selectedType, planSubjectSet])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -217,12 +229,60 @@ export function PracticeSession() {
               <span className="text-muted-foreground">{t('questions.subject')}</span>
               {!selectedSubject && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            {subjects.map((s) => (
-              <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
-                {s}
-                {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-            ))}
+            {planSubjects.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    {t('plan.longTerm')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                    {planSubjects.map((s) => (
+                      <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                        {s}
+                        {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
+            )}
+            {dailyTargetSubjects.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    {t('plan.dailyTarget')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                    {dailyTargetSubjects.map((s) => (
+                      <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                        {s}
+                        {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
+            )}
+            {otherSubjects.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    其他
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                    {otherSubjects.map((s) => (
+                      <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
+                        {s}
+                        {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

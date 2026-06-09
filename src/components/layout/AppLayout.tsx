@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
@@ -8,8 +8,10 @@ import { useSettingsStore } from '@/stores/settings-store'
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
-  const toggleCollapse = useSettingsStore((s) => s.setSidebarCollapsed)
-  const handleToggle = () => toggleCollapse(!sidebarCollapsed)
+  const handleToggle = useCallback(() => {
+    const s = useSettingsStore.getState()
+    s.setSidebarCollapsed(!s.sidebarCollapsed)
+  }, [])
 
   return (
     <div className="min-h-screen flex">

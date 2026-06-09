@@ -55,6 +55,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const isSingle = questionType === 'single_choice'
   const isMulti = questionType === 'multi_select'
   const isTrueFalse = questionType === 'true_false'
+  const isJudgeCorrect = questionType === 'judge_correct'
   const isFillBlank = questionType === 'fill_blank'
   const isShortAnswer = questionType === 'short_answer'
 
@@ -62,7 +63,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     setQuestionType(t)
     setCorrectAnswer(getDefaultAnswer(t))
     if (t === 'true_false') setOptions(['正确', '错误'])
-    else if (t === 'fill_blank' || t === 'short_answer' || t === 'analysis') setOptions([])
+    else if (t === 'judge_correct' || t === 'fill_blank' || t === 'short_answer' || t === 'analysis') setOptions([])
     else if (options.length < 2) setOptions(['', ''])
   }
 
@@ -231,6 +232,35 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         </div>
       )}
 
+      {/* Judge & Correct answer */}
+      {isJudgeCorrect && (
+        <div className="space-y-2">
+          <Label>正确答案</Label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`flex-1 h-10 rounded-md border text-sm font-medium transition-colors ${correctAnswer === true ? 'bg-green-500 border-green-500 text-white' : 'border-border hover:bg-accent'}`}
+              onClick={() => setCorrectAnswer(true)}
+            >
+              正确
+            </button>
+            <button
+              type="button"
+              className={`flex-1 h-10 rounded-md border text-sm font-medium transition-colors ${correctAnswer !== true ? 'bg-red-500 border-red-500 text-white' : 'border-border hover:bg-accent'}`}
+              onClick={() => setCorrectAnswer('')}
+            >
+              错误
+            </button>
+          </div>
+          {correctAnswer !== true && (
+            <div className="space-y-1.5">
+              <Label htmlFor="correction">修正后的正确表述</Label>
+              <Input id="correction" value={typeof correctAnswer === 'string' ? correctAnswer : ''} onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="输入修正后的正确表述" />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Fill blank answer */}
       {isFillBlank && (
         <div className="space-y-2">
@@ -322,6 +352,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
                   else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = (correctAnswer as number[]).map(i => options[i]).join('、')
                   else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
+                  else if (isJudgeCorrect) answerStr = correctAnswer === true ? '正确' : `修正：${correctAnswer}`
                   else if (typeof correctAnswer === 'string') answerStr = correctAnswer
                   else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')
 

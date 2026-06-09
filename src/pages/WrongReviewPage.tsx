@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { QuestionCard } from '@/components/questions/QuestionCard'
@@ -23,8 +23,13 @@ export function Component() {
   const [editText, setEditText] = useState('')
   const [editIsPublic, setEditIsPublic] = useState(false)
 
+  const fetchGenRef = useRef(0)
+
   const fetchAnswers = useCallback(async () => {
     if (!user) return
+    fetchGenRef.current++
+    const myGen = fetchGenRef.current
+
     setIsLoading(true)
     let query = supabase
       .from('user_answers')
@@ -38,6 +43,8 @@ export function Component() {
     }
 
     const { data } = await query
+    if (fetchGenRef.current !== myGen) return
+
     setAnswers((data ?? []) as (UserAnswer & { questions: Question })[])
     setIsLoading(false)
   }, [user, mode])

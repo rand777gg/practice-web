@@ -16,6 +16,10 @@ export const router = createBrowserRouter([
         lazy: () => import('@/pages/RegisterPage'),
       },
       {
+        path: '/welcome',
+        lazy: () => import('@/pages/WelcomePage'),
+      },
+      {
         path: '/',
         element: <ProtectedRoute />,
         children: [

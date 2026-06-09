@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -9,17 +9,24 @@ export function useFavorites() {
   const [favorites, setFavorites] = useState<string[]>([])
   const [loaded, setLoaded] = useState(false)
 
+  const fetchGenRef = useRef(0)
+
   const fetchFavorites = useCallback(async () => {
     if (!user) {
       setFavorites([])
       setLoaded(true)
       return
     }
+    fetchGenRef.current++
+    const myGen = fetchGenRef.current
+
     const { data } = await supabase
       .from('favorites')
       .select('question_id')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
+    if (fetchGenRef.current !== myGen) return
+
     setFavorites((data ?? []).map((r: { question_id: string }) => r.question_id))
     setLoaded(true)
   }, [user])

@@ -21,7 +21,11 @@ export function RegisterForm() {
     setSuccess('')
     setIsSubmitting(true)
 
-    const { data, error: authError } = await supabase.auth.signUp({ email, password })
+    const { data, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin + '/welcome' },
+    })
     if (authError) {
       if (authError.message?.includes('already registered') || authError.status === 422) {
         setError(t('auth.alreadyRegistered'))

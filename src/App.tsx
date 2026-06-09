@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { router } from '@/router'
 import { supabase } from '@/lib/supabase'
@@ -67,6 +67,8 @@ function ThemeInitializer({ children }: { children: ReactNode }) {
 function AuthInitializer({ children }: { children: ReactNode }) {
   const { setUser, setProfile, setLoading, setInitialized, isInitialized } = useAuthStore()
 
+  const nicknameGeneratedRef = useRef(false)
+
   useEffect(() => {
     let cancelled = false
 
@@ -77,12 +79,13 @@ function AuthInitializer({ children }: { children: ReactNode }) {
       }
       if (!cancelled) {
         setProfile(profile)
-        // Auto-assign nickname if not set
-        if (profile && !profile.nickname) {
+        // Auto-assign nickname if not set (only once per session to avoid race)
+        if (profile && !profile.nickname && !nicknameGeneratedRef.current) {
+          nicknameGeneratedRef.current = true
           const rand = Math.random().toString(36).slice(2, 10)
           const nickname = `刷题网用户${rand}`
           supabase.from('profiles').update({ nickname }).eq('id', userId).then(() => {
-            setProfile({ ...profile, nickname })
+            if (!cancelled) setProfile({ ...profile, nickname })
           })
         }
       }

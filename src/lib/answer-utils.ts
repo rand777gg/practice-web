@@ -26,6 +26,8 @@ export function isAnswerCorrect(
       const acceptable = Array.isArray(correct) ? correct : [correct]
       return acceptable.some(a => userAnswer.includes(String(a).toLowerCase()))
     }
+    case 'judge_correct':
+      return selected === true ? correct === true : String(selected).trim().toLowerCase() === String(correct).trim().toLowerCase()
     case 'analysis':
       return false
   }
@@ -36,6 +38,7 @@ export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
     case 'single_choice': return 0
     case 'multi_select': return []
     case 'true_false': return true
+    case 'judge_correct': return true
     case 'fill_blank': return ''
     case 'short_answer': return ''
     case 'analysis': return null

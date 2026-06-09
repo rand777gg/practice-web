@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,7 @@ export function Component() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     if (!selectedSubject) {
       setFilteredCategories(categories)
     } else {
@@ -51,6 +52,7 @@ export function Component() {
           .from('questions')
           .select('category')
           .eq('subject', selectedSubject)
+        if (cancelled) return
         const cats = new Set<string>()
         for (const row of data ?? []) {
           if (row.category) cats.add(row.category)
@@ -60,9 +62,15 @@ export function Component() {
       loadCats()
     }
     setSelectedCategory('')
+    return () => { cancelled = true }
   }, [selectedSubject, categories])
 
+  const fetchGenRef = useRef(0)
+
   const fetchNotes = useCallback(async () => {
+    fetchGenRef.current++
+    const myGen = fetchGenRef.current
+
     setIsLoading(true)
     let query = supabase
       .from('user_answers')
@@ -72,6 +80,7 @@ export function Component() {
       .limit(50)
 
     const { data } = await query
+    if (fetchGenRef.current !== myGen) return
     const result = (data ?? []) as NoteWithQuestion[]
 
     if (selectedSubject) {
@@ -93,6 +102,7 @@ export function Component() {
         }
       }),
     )
+    if (fetchGenRef.current !== myGen) return
     setUserNicknames(nicknames)
     setIsLoading(false)
   }, [selectedSubject])

@@ -257,3 +257,26 @@ DROP POLICY IF EXISTS "files_delete_auth" ON storage.objects;
 CREATE POLICY "files_delete_auth" ON storage.objects
   FOR DELETE TO authenticated
   USING (bucket_id = 'files');
+
+-- ----------------------------------------------------------------------------
+-- 10. PARSE HISTORY — AI 智能解析历史记录
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.parse_history (
+  id             SERIAL PRIMARY KEY,
+  user_id        UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  file_name      TEXT NOT NULL DEFAULT '',
+  markdown       TEXT NOT NULL DEFAULT '',
+  json_data      TEXT,
+  questions_json TEXT,
+  mode           TEXT NOT NULL DEFAULT 'lightweight',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_parse_history_user
+  ON public.parse_history(user_id, created_at DESC);
+
+ALTER TABLE public.parse_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS parse_history_own ON public.parse_history;
+CREATE POLICY parse_history_own ON public.parse_history FOR ALL
+  USING (user_id = auth.uid() OR public.is_admin());

@@ -23,13 +23,17 @@ import { PdfViewer } from '@/components/ai-import/PdfViewer'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
+  generateQuestions, generateFromDocument, generateFromText,
 } from '@/lib/ai'
+import { extractFileText } from '@/lib/file-text'
+import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
+import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
-type ParseMode = 'lightweight' | 'precision'
+type ParseMode = 'lightweight' | 'precision' | 'generate'
 
 export function Component() {
   const [step, setStep] = useState<Step>('upload')
@@ -59,6 +63,21 @@ export function Component() {
   const [noCache, setNoCache] = useState(false)
   const [cacheTolerance, setCacheTolerance] = useState('')
   const [dataId, setDataId] = useState('')
+
+  // AI Generate state
+  const [genSubject, setGenSubject] = useState('')
+  const [genTypes, setGenTypes] = useState<Set<string>>(new Set(['single_choice']))
+  const [genCount, setGenCount] = useState(5)
+  const [genTopic, setGenTopic] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [genFile, setGenFile] = useState<File | null>(null)
+  const [genFileText, setGenFileText] = useState('')
+  const [extracting, setExtracting] = useState(false)
+
+  // Custom prompts
+  const [extractPrompt, setExtractPrompt] = useState(() => getPrompt('extract'))
+  const [generateDocPrompt, setGenerateDocPrompt] = useState(() => getPrompt('generate_doc'))
+  const [generateScratchPrompt, setGenerateScratchPrompt] = useState(() => getPrompt('generate_scratch'))
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
@@ -111,9 +130,12 @@ export function Component() {
 
   const aiConfigured = hasAiConfig()
   const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
-  const canStart = parseMode === 'precision'
-    ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
-    : !!file && aiConfigured
+  const genReady = parseMode === 'generate' && !!genSubject && genTypes.size > 0 && aiConfigured
+  const canStart = parseMode === 'generate'
+    ? genReady
+    : parseMode === 'precision'
+      ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
+      : !!file && aiConfigured
 
   useEffect(() => {
     async function loadMeta() {
@@ -128,6 +150,7 @@ export function Component() {
       setExistingCategories([...cats].sort())
     }
     loadMeta()
+    if (user) loadHistoryList()
   }, [])
 
   const handleFile = (f: File) => { setFile(f); setFiles([]) }
@@ -222,13 +245,81 @@ export function Component() {
   const extractQuestions = async (markdown: string) => {
     setParseMsg('AI 正在提取题目...')
     const parser = new DeepSeekParser(getAiConfig())
-    const result = await parser.parseDocument(markdown)
+    const result = await parser.parseDocument(markdown, extractPrompt)
 
     setQuestions(result.questions)
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
     setStep('preview')
     if (parseResult) {
       saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+    }
+  }
+
+  const generateFromDoc = async (markdown: string) => {
+    setParseMsg('AI 正在根据材料生成题目...')
+    try {
+      const result = await generateFromDocument(markdown, generateDocPrompt)
+      setQuestions(result.questions)
+      setSelectedIds(new Set(result.questions.map((_, i) => i)))
+      setCategory('AI生成')
+      setStep('preview')
+      if (parseResult) {
+        saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败')
+    }
+  }
+
+  const handleGenerate = async () => {
+    setGenerating(true)
+    setError('')
+    try {
+      let result
+      if (genFileText) {
+        result = await generateFromText({
+          documentText: genFileText,
+          subject: genSubject || undefined,
+          questionTypes: [...genTypes],
+          count: genCount,
+        }, generateDocPrompt)
+      } else {
+        result = await generateQuestions({
+          subject: genSubject,
+          questionTypes: [...genTypes],
+          count: genCount,
+          topicDescription: genTopic || undefined,
+        }, generateScratchPrompt)
+      }
+      setQuestions(result.questions)
+      setSelectedIds(new Set(result.questions.map((_, i) => i)))
+      setSubject(genSubject)
+      setCategory('AI生成')
+      setStep('preview')
+      if (genFile) {
+        saveToHistory({ fileName: genFile.name, markdown: genFileText, questions: result.questions, mode: 'generate' })
+      } else {
+        saveToHistory({ fileName: genSubject || '手动生成', markdown: genTopic || '', questions: result.questions, mode: 'generate' })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleGenFile = async (f: File) => {
+    setGenFile(f)
+    setExtracting(true)
+    setError('')
+    try {
+      const text = await extractFileText(f)
+      setGenFileText(text)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '文件读取失败')
+      setGenFile(null)
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -301,6 +392,13 @@ export function Component() {
     setSubject('')
     setCategory('')
     setSelectedIds(new Set())
+    setGenSubject('')
+    setGenTypes(new Set(['single_choice']))
+    setGenCount(5)
+    setGenTopic('')
+    setGenerating(false)
+    setGenFile(null)
+    setGenFileText('')
   }
 
   return (
@@ -328,7 +426,7 @@ export function Component() {
                 <div key={h.id} className="flex items-center gap-2 text-xs bg-muted/30 rounded-lg p-2 group">
                   <button type="button" className="flex-1 text-left min-w-0" onClick={() => loadHistory(h.id)}>
                     <p className="font-medium truncate">{h.file_name}</p>
-                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {h.mode === 'lightweight' ? '轻量' : '精准'}{h.questions_json ? ` · ${(JSON.parse(h.questions_json) as unknown[]).length} 题` : ''}</p>
+                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}{h.questions_json ? ` · ${(JSON.parse(h.questions_json) as unknown[]).length} 题` : ''}</p>
                   </button>
                   <button type="button" className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
                     onClick={() => deleteHistory(h.id)}>
@@ -362,6 +460,7 @@ export function Component() {
                   {isEnabled('mineru') && (
                     <TabsTrigger value="precision">精准解析</TabsTrigger>
                   )}
+                  <TabsTrigger value="generate">AI 生成</TabsTrigger>
                 </TabsList>
               </Tabs>
 
@@ -523,19 +622,171 @@ export function Component() {
                 </div>
               )}
 
-              <AiImportUpload
-                onFile={handleFile}
-                onFiles={handleFiles}
-                disabled={!aiConfigured || (parseMode === 'precision' && !mineruToken)}
-                multiple={parseMode === 'precision' && batchMode}
-              />
+              {parseMode === 'generate' ? (
+                <div className="space-y-4 p-4 rounded-lg border bg-muted/30">
+                  <p className="text-xs text-muted-foreground">上传原始资料，AI 直接阅读文献并生成练习题。支持 PDF、Word、TXT。</p>
+
+                  {/* File upload */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">上传资料文件</label>
+                    {genFile ? (
+                      <div className="flex items-center gap-2 text-xs bg-background rounded-lg border p-2.5">
+                        <span className="font-medium truncate flex-1">{genFile.name}</span>
+                        <span className="text-muted-foreground shrink-0">
+                          {extracting ? '提取中...' : `已提取 ${genFileText.length} 字符`}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => { setGenFile(null); setGenFileText('') }}
+                        >
+                          移除
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
+                        <input
+                          type="file"
+                          accept=".pdf,.docx,.doc,.txt,.md"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) handleGenFile(f)
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">点击选择文件，或拖拽到此处</span>
+                        <span className="text-[10px] text-muted-foreground/60">PDF、Word (.docx)、TXT</span>
+                      </label>
+                    )}
+                    {extracting && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Spinner /> 正在提取文本...
+                      </div>
+                    )}
+                    {genFileText && !extracting && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">预览提取内容</summary>
+                        <pre className="mt-1 p-2 bg-muted/50 rounded max-h-32 overflow-auto whitespace-pre-wrap break-all">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
+                      </details>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">学科（选填）</label>
+                    <Input
+                      className="mt-1"
+                      placeholder="如：逻辑学、数学、英语"
+                      value={genSubject}
+                      onChange={(e) => setGenSubject(e.target.value)}
+                      list="gen-subjects"
+                    />
+                    <datalist id="gen-subjects">
+                      {existingSubjects.map(s => <option key={s} value={s} />)}
+                    </datalist>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">题型（可多选）</label>
+                    <div className="flex flex-wrap gap-2 mt-1.5">
+                      {QUESTION_TYPE_OPTIONS.map((t) => (
+                        <button
+                          key={t.value}
+                          type="button"
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                            genTypes.has(t.value)
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-background text-muted-foreground border-border hover:border-primary/50'
+                          }`}
+                          onClick={() => {
+                            setGenTypes((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(t.value)) {
+                                if (next.size > 1) next.delete(t.value)
+                              } else {
+                                next.add(t.value)
+                              }
+                              return next
+                            })
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="text-sm font-medium">题目数量</label>
+                      <Input
+                        type="number"
+                        className="mt-1 w-20"
+                        min={1}
+                        max={30}
+                        value={genCount}
+                        onChange={(e) => setGenCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
+                      />
+                    </div>
+                  </div>
+
+                  {!genFileText && (
+                    <div>
+                      <label className="text-sm font-medium">知识点范围（选填）</label>
+                      <Input
+                        className="mt-1"
+                        placeholder="如：三段论、假言推理、选言推理"
+                        value={genTopic}
+                        onChange={(e) => setGenTopic(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {genFileText ? (
+                    <PromptEditor
+                      label="根据资料生成"
+                      value={generateDocPrompt}
+                      onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
+                      onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
+                    />
+                  ) : (
+                    <PromptEditor
+                      label="凭空生成"
+                      value={generateScratchPrompt}
+                      onChange={(v) => { setGenerateScratchPrompt(v); setPrompt('generate_scratch', v) }}
+                      onReset={() => setGenerateScratchPrompt(resetPrompt('generate_scratch'))}
+                    />
+                  )}
+                </div>
+              ) : (
+                <AiImportUpload
+                  onFile={handleFile}
+                  onFiles={handleFiles}
+                  disabled={!aiConfigured || (parseMode === 'precision' && !mineruToken)}
+                  multiple={parseMode === 'precision' && batchMode}
+                />
+              )}
 
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}
 
-              <Button onClick={startParse} disabled={!canStart} className="w-full mt-4">
-                <Play className="h-4 w-4" />
-                {parseMode === 'precision' ? '开始精准解析' : '开始解析'}
-              </Button>
+              {parseMode === 'generate' ? (
+                <Button onClick={handleGenerate} disabled={!canStart || generating} className="w-full mt-4">
+                  {generating ? (
+                    <>
+                      <Spinner />
+                      生成中...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      生成题目
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button onClick={startParse} disabled={!canStart} className="w-full mt-4">
+                  <Play className="h-4 w-4" />
+                  {parseMode === 'precision' ? '开始精准解析' : '开始解析'}
+                </Button>
+              )}
             </>
           )}
 
@@ -653,10 +904,28 @@ export function Component() {
                     <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
                       重新解析
                     </Button>
-                    <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
+                    <Button variant="outline" size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
                       <ArrowRight className="h-4 w-4" />
                       AI 提取题目
                     </Button>
+                    <Button size="sm" onClick={() => generateFromDoc(parseResult.markdown)}>
+                      <ArrowRight className="h-4 w-4" />
+                      AI 生成题目
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <PromptEditor
+                      label="提取题目"
+                      value={extractPrompt}
+                      onChange={(v) => { setExtractPrompt(v); setPrompt('extract', v) }}
+                      onReset={() => setExtractPrompt(resetPrompt('extract'))}
+                    />
+                    <PromptEditor
+                      label="根据资料生成"
+                      value={generateDocPrompt}
+                      onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
+                      onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
+                    />
                   </div>
                 </>
               )}
@@ -788,6 +1057,37 @@ function ClickableMarkdown({ sections, activeIdx, onNavigate }: { sections: Retu
           {sec.text}
         </span>
       ))}
+    </div>
+  )
+}
+
+function PromptEditor({ label, value, onChange, onReset }: { label: string; value: string; onChange: (v: string) => void; onReset: () => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+        onClick={() => setOpen(!open)}
+      >
+        {open ? '▾ ' : '▸ '}
+        提示词 {label && `(${label})`}
+      </button>
+      {open && (
+        <>
+          <textarea
+            className="w-full h-40 text-[11px] font-mono p-2.5 rounded-lg border bg-muted/30 resize-y"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            spellCheck={false}
+          />
+          <div className="flex justify-end">
+            <button type="button" className="text-[10px] text-muted-foreground hover:text-foreground" onClick={onReset}>
+              恢复默认
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

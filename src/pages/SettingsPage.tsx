@@ -5,13 +5,20 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
-import { Separator } from '@/components/ui/separator'
+
 import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
-import { AlertDialog } from '@radix-ui/themes'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -39,6 +46,7 @@ export function Component() {
   const [unlinkingGitHub, setUnlinkingGitHub] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
   const hasMultipleIdentities = user?.identities && user.identities.length > 1
 
@@ -114,6 +122,31 @@ export function Component() {
               <CardTitle className="text-sm">{t('settings.account')}</CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <p className="text-xs text-muted-foreground">{t('settings.accountDesc')}</p>
+                <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 text-xs shrink-0">
+                      <LogOut className="h-3.5 w-3.5" />
+                      {t('auth.logout')}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogTitle>确认退出</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      确定要退出登录吗？
+                    </AlertDialogDescription>
+                    <div className="flex gap-3 mt-4 justify-end">
+                      <AlertDialogCancel asChild>
+                        <Button variant="outline" size="sm">取消</Button>
+                      </AlertDialogCancel>
+                      <Button variant="default" size="sm" onClick={signOut}>
+                        确认退出
+                      </Button>
+                    </div>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
               <table className="w-full text-sm">
                 <tbody>
                   <tr>
@@ -134,14 +167,27 @@ export function Component() {
                           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={aiNickname} disabled={aiNickLoading} title={t('settings.nicknameRandom')}>
                             <Dice6 className={`h-3.5 w-3.5 ${aiNickLoading ? 'animate-spin' : ''}`} />
                           </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setNickEditing(false)}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       ) : (
-                        <span
-                          className="cursor-pointer hover:underline underline-offset-2"
-                          onClick={() => { setNickValue(profile?.nickname || ''); setNickEditing(true) }}
-                        >
-                          {profile?.nickname || <span className="text-muted-foreground italic">{t('settings.nicknamePlaceholder')}</span>}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="cursor-pointer hover:underline underline-offset-2"
+                            onClick={() => { setNickValue(profile?.nickname || ''); setNickEditing(true) }}
+                          >
+                            {profile?.nickname || <span className="text-muted-foreground italic">{t('settings.nicknamePlaceholder')}</span>}
+                          </span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                            onClick={() => { setNickValue(profile?.nickname || ''); setNickEditing(true) }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -235,35 +281,30 @@ export function Component() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('settings.language')}</CardTitle>
+              <CardTitle className="text-sm">{t('settings.preferences')}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <Button
-                  variant={lang === 'zh' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setLang('zh')}
-                >
-                  <Languages className="h-3.5 w-3.5" />
-                  中文
-                </Button>
-                <Button
-                  variant={lang === 'en' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setLang('en')}
-                >
-                  <Languages className="h-3.5 w-3.5" />
-                  English
-                </Button>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{t('settings.language')}</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant={lang === 'zh' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLang('zh')}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    中文
+                  </Button>
+                  <Button
+                    variant={lang === 'en' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLang('en')}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    English
+                  </Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('settings.offline')}</CardTitle>
-            </CardHeader>
-            <CardContent>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm">{t('settings.offlineMode')}</p>
@@ -317,51 +358,54 @@ export function Component() {
               </div>
             </CardContent>
           </Card>
+
+          <Card className="border-destructive/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-destructive">危险区域</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-3">
+                注销账号后，你的所有数据（包括答题记录、收藏、笔记等）将被永久删除且无法恢复。请谨慎操作。
+              </p>
+              <AlertDialog open={deleteOpen} onOpenChange={(open) => {
+                if (deleting && !open) return
+                setDeleteOpen(open)
+              }}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
+                    <Trash2 className="h-3.5 w-3.5" />
+                    注销账号
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogTitle>确认注销账号</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    此操作将永久删除你的账号及所有数据（包括答题记录、收藏、笔记等），且无法恢复。确定要继续吗？
+                  </AlertDialogDescription>
+                  <div className="flex gap-3 mt-4 justify-end">
+                    <AlertDialogCancel asChild>
+                      <Button variant="outline" size="sm" disabled={deleting}>取消</Button>
+                    </AlertDialogCancel>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={deleting}
+                      onClick={async () => {
+                        setDeleting(true)
+                        try { await supabase.functions.invoke('delete-account') } catch { /* ignore */ }
+                        setDeleteOpen(false)
+                        signOut()
+                      }}
+                    >
+                      {deleting ? '注销中...' : '确认注销'}
+                    </Button>
+                  </div>
+                </AlertDialogContent>
+              </AlertDialog>
+            </CardContent>
+          </Card>
         </div>
       </div>
-
-      <Separator />
-
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={signOut} className="h-8 text-xs flex-1">
-          <LogOut className="h-3.5 w-3.5" />
-          {t('auth.logout')}
-        </Button>
-        <Button variant="outline" size="sm" disabled onClick={() => setDeleteOpen(true)} className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
-          <Trash2 className="h-3.5 w-3.5" />
-          注销账号
-        </Button>
-      </div>
-
-      <AlertDialog.Root open={deleteOpen} onOpenChange={(open) => {
-        if (deleting && !open) return
-        setDeleteOpen(open)
-      }}>
-        <AlertDialog.Content maxWidth="400px">
-          <AlertDialog.Title>确认注销账号</AlertDialog.Title>
-          <AlertDialog.Description size="2">
-            此操作将永久删除你的账号及所有数据（包括答题记录、收藏、笔记等），且无法恢复。确定要继续吗？
-          </AlertDialog.Description>
-          <div className="flex gap-3 mt-4 justify-end">
-            <AlertDialog.Cancel>
-              <Button variant="outline" size="sm" disabled={deleting}>取消</Button>
-            </AlertDialog.Cancel>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleting}
-              onClick={async () => {
-                setDeleting(true)
-                try { await supabase.functions.invoke('delete-account') } catch { /* ignore */ }
-                setDeleteOpen(false)
-                signOut()
-              }}
-            >
-              {deleting ? '注销中...' : '确认注销'}
-            </Button>
-          </div>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
     </div>
   )
 }

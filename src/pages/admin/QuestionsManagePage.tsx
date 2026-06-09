@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import type { QuestionType } from '@/types'
+import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -131,10 +132,10 @@ export function Component() {
               <span className="text-muted-foreground">{t('questions.questionType')}</span>
               {!selectedType && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            {(['single_choice', 'multi_select', 'true_false', 'fill_blank', 'short_answer', 'analysis'] as QuestionType[]).map((qt) => (
-              <DropdownMenuItem key={qt} onClick={() => setSelectedType(qt)}>
-                {t(`questionTypes.${qt}` as any)}
-                {selectedType === qt && <Check className="h-4 w-4 ml-auto" />}
+            {QUESTION_TYPE_OPTIONS.map((qt) => (
+              <DropdownMenuItem key={qt.value} onClick={() => setSelectedType(qt.value)}>
+                {qt.label}
+                {selectedType === qt.value && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

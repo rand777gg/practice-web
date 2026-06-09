@@ -45,6 +45,7 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
   const isFillBlank = type === 'fill_blank'
   const isShort = type === 'short_answer'
   const isAnalysis = type === 'analysis'
+  const isJudgeCorrect = type === 'judge_correct'
   const isTextInput = isFillBlank || isShort || isAnalysis
   const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type)
   const typeLabel = QUESTION_TYPE_LABELS[type]
@@ -171,6 +172,42 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
         </div>
       )}
 
+      {/* Judge & Correct */}
+      {isJudgeCorrect && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {['正确', '错误'].map((label, ti) => {
+              const isSelected = ti === 0 ? selectedAnswer === true : selectedAnswer !== true && selectedAnswer != null
+              const isCorrectAnswer = ti === 0 ? question.correct_answer === true : question.correct_answer !== true
+              let cls = 'border-input hover:bg-accent'
+              if (showResult) {
+                if (isCorrectAnswer) cls = 'border-green-500 bg-green-50 dark:bg-green-950'
+                else if (isSelected && !isCorrectAnswer) cls = 'border-red-500 bg-red-50 dark:bg-red-950'
+              } else if (isSelected) cls = 'border-primary ring-2 ring-primary/30'
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={disabled || showResult}
+                  className={cn('flex-1 h-12 rounded-lg border text-sm font-medium transition-colors', cls)}
+                  onClick={() => onSelect?.(ti === 0 ? true : '')}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {selectedAnswer !== true && selectedAnswer != null && (
+            <Input
+              value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
+              onChange={(e) => onSelect?.(e.target.value)}
+              disabled={disabled || showResult}
+              placeholder="输入修正后的正确表述"
+            />
+          )}
+        </div>
+      )}
+
       {/* Text input (fill blank / short answer / analysis) */}
       {isTextInput && (
         <div>
@@ -196,6 +233,14 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
       {/* Result display */}
       {showResult && (
         <>
+          {isJudgeCorrect && selectedAnswer != null && (
+            <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
+              <p><span className="font-medium">{question.correct_answer === true ? '该说法正确' : '该说法错误'}</span></p>
+              {question.correct_answer !== true && (
+                <p className="mt-1"><span className="font-medium">修正: </span>{String(question.correct_answer)}</p>
+              )}
+            </div>
+          )}
           {isTextInput && selectedAnswer != null && (
             <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
               <p><span className="font-medium">{t('practice.yourAnswer')}: </span>{String(selectedAnswer)}</p>
