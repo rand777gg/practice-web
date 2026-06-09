@@ -28,6 +28,18 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [containerW, setContainerW] = useState(700)
+
+  // Track container width for responsive scaling
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      setContainerW(el.clientWidth - 16) // scrollbar
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const blocks = jsonData ? parseLayoutBlocks(jsonData) : []
 
@@ -93,10 +105,10 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
     return <iframe src={pdfUrl} className="w-full h-full min-h-[400px] rounded-lg border" title="PDF" />
   }
 
-  // Layout.json blocks use absolute PDF coordinates (points), convert to display
+  // Responsive: fit container width, scale proportionally
   const pageBlocks = blocks.filter(b => b.page_idx === currentPage - 1)
-  const displayWidth = Math.min(pageSize?.width || 700, 700)
-  const displayScale = pageSize ? displayWidth / pageSize.width : 1
+  const displayScale = pageSize && containerW ? containerW / pageSize.width : 1
+  const displayHeight = pageSize ? pageSize.height * displayScale : 0
 
   return (
     <div className="flex flex-col h-full">
@@ -111,12 +123,11 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
           下一页 ›
         </button>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-auto rounded-lg border bg-muted/30">
-        <div className="relative mx-auto" style={{ width: displayWidth, height: (pageSize?.height || 0) * displayScale }}>
+      <div ref={containerRef} className="flex-1 overflow-auto rounded-lg border bg-muted/30 p-1">
+        <div className="relative mx-auto" style={{ width: containerW, height: displayHeight }}>
           {pageSize && (
-            <canvas ref={canvasRef} className="w-full h-full" />
+            <canvas ref={canvasRef} className="w-full h-full rounded" />
           )}
-          {/* bbox overlay — layout.json coords are absolute PDF points */}
           {pageSize && pageBlocks.map((block, i) => {
             const [x0, y0, x1, y1] = block.bbox
             const isActive = activeBbox &&
