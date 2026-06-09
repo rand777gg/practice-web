@@ -10,7 +10,8 @@ export interface AiFeatureFlags {
 
 const FLAGS_KEY = 'ai_feature_flags'
 const OFFLINE_KEY = 'offline_mode'
-const CODE_THEME_KEY = 'code_theme'
+const DARK_CODE_THEME_KEY = 'dark_code_theme'
+const LIGHT_CODE_THEME_KEY = 'light_code_theme'
 
 function loadFlags(): AiFeatureFlags {
   try {
@@ -24,15 +25,20 @@ function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
 }
 
-function loadCodeTheme(): string {
-  return localStorage.getItem(CODE_THEME_KEY) || 'github-dark'
+function loadDarkCodeTheme(): string {
+  return localStorage.getItem(DARK_CODE_THEME_KEY) || 'houston'
+}
+
+function loadLightCodeTheme(): string {
+  return localStorage.getItem(LIGHT_CODE_THEME_KEY) || 'github-light'
 }
 
 interface SettingsState {
   flags: AiFeatureFlags
   offlineMode: boolean
   sidebarCollapsed: boolean
-  codeTheme: string
+  darkCodeTheme: string
+  lightCodeTheme: string
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setSidebarCollapsed: (value: boolean) => void
@@ -44,7 +50,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   flags: loadFlags(),
   offlineMode: loadOfflineMode(),
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
-  codeTheme: loadCodeTheme(),
+  darkCodeTheme: loadDarkCodeTheme(),
+  lightCodeTheme: loadLightCodeTheme(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -61,8 +68,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ sidebarCollapsed: value })
   },
   setCodeTheme: (theme) => {
-    localStorage.setItem(CODE_THEME_KEY, theme)
-    set({ codeTheme: theme })
+    // Auto-detect dark/light from theme name and save to appropriate slot
+    const isDarkTheme = !/(light|dawn|latte|lotus)/.test(theme)
+    if (isDarkTheme) {
+      localStorage.setItem(DARK_CODE_THEME_KEY, theme)
+      set({ darkCodeTheme: theme })
+    } else {
+      localStorage.setItem(LIGHT_CODE_THEME_KEY, theme)
+      set({ lightCodeTheme: theme })
+    }
   },
   isEnabled: (key) => get().flags[key],
 }))

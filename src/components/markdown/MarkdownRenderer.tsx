@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useThemeStore } from '@/stores/theme-store'
 
 interface Props {
   content: string
@@ -9,7 +10,10 @@ interface Props {
 }
 
 export function MarkdownRenderer({ content, className }: Props) {
-  const codeTheme = useSettingsStore((s) => s.codeTheme)
+  const darkCodeTheme = useSettingsStore((s) => s.darkCodeTheme)
+  const lightCodeTheme = useSettingsStore((s) => s.lightCodeTheme)
+  const siteTheme = useThemeStore((s) => s.theme)
+  const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
 
   const components = useMemo(() => ({
     // Inline code

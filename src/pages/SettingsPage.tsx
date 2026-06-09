@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -39,7 +40,9 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode, codeTheme, setCodeTheme } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, darkCodeTheme, lightCodeTheme, setCodeTheme } = useSettingsStore()
+  const siteTheme = useThemeStore((s) => s.theme)
+  const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
   const navigate = useNavigate()
   const [previewLang, setPreviewLang] = useState('javascript')
   const [aiGlow, setAiGlow] = useState(false)
