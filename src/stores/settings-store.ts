@@ -10,6 +10,7 @@ export interface AiFeatureFlags {
 
 const FLAGS_KEY = 'ai_feature_flags'
 const OFFLINE_KEY = 'offline_mode'
+const CODE_THEME_KEY = 'code_theme'
 
 function loadFlags(): AiFeatureFlags {
   try {
@@ -23,13 +24,19 @@ function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
 }
 
+function loadCodeTheme(): string {
+  return localStorage.getItem(CODE_THEME_KEY) || 'github-dark'
+}
+
 interface SettingsState {
   flags: AiFeatureFlags
   offlineMode: boolean
   sidebarCollapsed: boolean
+  codeTheme: string
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setSidebarCollapsed: (value: boolean) => void
+  setCodeTheme: (theme: string) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -37,6 +44,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   flags: loadFlags(),
   offlineMode: loadOfflineMode(),
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
+  codeTheme: loadCodeTheme(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -51,6 +59,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setSidebarCollapsed: (value) => {
     localStorage.setItem('sidebar_collapsed', String(value))
     set({ sidebarCollapsed: value })
+  },
+  setCodeTheme: (theme) => {
+    localStorage.setItem(CODE_THEME_KEY, theme)
+    set({ codeTheme: theme })
   },
   isEnabled: (key) => get().flags[key],
 }))

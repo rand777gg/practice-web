@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
-import { useThemeStore } from '@/stores/theme-store'
+import { useSettingsStore } from '@/stores/settings-store'
 
 interface Props {
   content: string
@@ -9,8 +9,7 @@ interface Props {
 }
 
 export function MarkdownRenderer({ content, className }: Props) {
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
+  const codeTheme = useSettingsStore((s) => s.codeTheme)
 
   const components = useMemo(() => ({
     // Inline code
@@ -26,7 +25,7 @@ export function MarkdownRenderer({ content, className }: Props) {
       }
       const lang = match[1]
       const text = String(children).replace(/\n$/, '')
-      return <CodeBlock lang={lang} code={text} isDark={isDark} />
+      return <CodeBlock lang={lang} code={text} theme={codeTheme} />
     },
     // Images from R2 or other sources
     img({ src, alt, ...props }: any) {
@@ -69,7 +68,7 @@ export function MarkdownRenderer({ content, className }: Props) {
     blockquote({ children, ...props }: any) {
       return <blockquote className="border-l-3 border-muted-foreground/30 pl-3 my-2 italic text-muted-foreground" {...props}>{children}</blockquote>
     },
-  } as any), [isDark])
+  } as any), [codeTheme])
 
   if (!content) return null
 
@@ -108,25 +107,27 @@ async function getHighlighter() {
   return _highlighterLoading
 }
 
-function CodeBlock({ lang, code, isDark }: { lang: string; code: string; isDark: boolean }) {
+function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: string }) {
   const [html, setHtml] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    getHighlighter().then((hl) => {
+    getHighlighter().then(async (hl) => {
       if (cancelled) return
       try {
-        const h = hl.codeToHtml(code, {
-          lang,
-          theme: isDark ? 'github-dark' : 'github-light',
-        })
+        // Load theme on demand if not already loaded
+        const loaded = await hl.getLoadedThemes()
+        if (!loaded.includes(theme)) {
+          await hl.loadTheme(theme)
+        }
+        const h = hl.codeToHtml(code, { lang, theme })
         setHtml(h)
       } catch {
         setHtml(`<pre><code>${escapeHtml(code)}</code></pre>`)
       }
     })
     return () => { cancelled = true }
-  }, [lang, code, isDark])
+  }, [lang, code, theme])
 
   if (!html) {
     return (

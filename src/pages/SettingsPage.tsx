@@ -34,7 +34,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, codeTheme, setCodeTheme } = useSettingsStore()
   const navigate = useNavigate()
   const [aiGlow, setAiGlow] = useState(false)
   const [nickEditing, setNickEditing] = useState(false)
@@ -359,6 +359,27 @@ export function Component() {
                   </Button>
                 </div>
               </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">代码高亮主题</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-3">
+                  {CODE_THEMES.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`text-xs px-2 py-1.5 rounded-md border transition-colors text-left truncate ${
+                        codeTheme === t.id
+                          ? 'border-primary bg-primary/10 text-primary font-medium'
+                          : 'border-border hover:border-primary/30'
+                      }`}
+                      onClick={() => setCodeTheme(t.id)}
+                    >
+                      <span className="mr-0.5">{t.type === 'dark' ? '◼' : '◻'}</span>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+                <CodePreview theme={codeTheme} />
+              </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm">{t('settings.offlineMode')}</p>
@@ -463,3 +484,67 @@ export function Component() {
     </div>
   )
 }
+
+const CODE_THEMES = [
+  { id: 'github-dark', name: 'GitHub Dark', type: 'dark' },
+  { id: 'github-light', name: 'GitHub Light', type: 'light' },
+  { id: 'dracula', name: 'Dracula', type: 'dark' },
+  { id: 'monokai', name: 'Monokai', type: 'dark' },
+  { id: 'nord', name: 'Nord', type: 'dark' },
+  { id: 'one-dark-pro', name: 'One Dark Pro', type: 'dark' },
+  { id: 'one-light', name: 'One Light', type: 'light' },
+  { id: 'tokyo-night', name: 'Tokyo Night', type: 'dark' },
+  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', type: 'dark' },
+  { id: 'catppuccin-latte', name: 'Catppuccin Latte', type: 'light' },
+  { id: 'night-owl', name: 'Night Owl', type: 'dark' },
+  { id: 'min-light', name: 'Min Light', type: 'light' },
+  { id: 'material-theme-palenight', name: 'Material Palenight', type: 'dark' },
+  { id: 'ayu-dark', name: 'Ayu Dark', type: 'dark' },
+  { id: 'everforest-dark', name: 'Everforest Dark', type: 'dark' },
+  { id: 'everforest-light', name: 'Everforest Light', type: 'light' },
+  { id: 'vitesse-dark', name: 'Vitesse Dark', type: 'dark' },
+  { id: 'vitesse-light', name: 'Vitesse Light', type: 'light' },
+]
+
+function CodePreview({ theme }: { theme: string }) {
+  const [html, setHtml] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    import('shiki').then(async ({ createHighlighter }) => {
+      const hl = await createHighlighter({
+        themes: ['github-dark', 'github-light'],
+        langs: ['javascript'],
+      })
+      if (cancelled) return
+      try {
+        const loaded = await hl.getLoadedThemes()
+        if (!loaded.includes(theme)) {
+          await hl.loadTheme(theme)
+        }
+        const h = hl.codeToHtml(SAMPLE_CODE, { lang: 'javascript', theme })
+        setHtml(h)
+      } catch {
+        setHtml(`<pre><code>${SAMPLE_CODE}</code></pre>`)
+      }
+    })
+    return () => { cancelled = true }
+  }, [theme])
+
+  return (
+    <div className="rounded-lg overflow-hidden text-[11px] leading-relaxed [&_pre]:!bg-muted/50 [&_pre]:p-2.5 [&_pre]:overflow-x-auto [&_pre]:!border [&_pre]:!rounded-lg [&_code]:!text-[11px]">
+      {html ? (
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <pre className="p-2.5 bg-muted/50 rounded-lg border"><code>{SAMPLE_CODE}</code></pre>
+      )}
+    </div>
+  )
+}
+
+const SAMPLE_CODE = `function fibonacci(n) {
+  if (n <= 1) return n
+  return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+console.log(fibonacci(10)) // 55`
