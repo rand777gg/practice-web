@@ -31,7 +31,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
     return {
       tooltip: {
         trigger: 'axis' as const,
-        backgroundColor: isDark ? '#1e293b' : '#faf8f5',
+        backgroundColor: isDark ? '#1e293b' : '#fff',
         borderColor: isDark ? '#334155' : '#e2e8f0',
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { name: string; value: number }[]) => {
@@ -94,7 +94,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
 
     return {
       tooltip: {
-        backgroundColor: isDark ? '#1e293b' : '#faf8f5',
+        backgroundColor: isDark ? '#1e293b' : '#fff',
         borderColor: isDark ? '#334155' : '#e2e8f0',
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { value: number[] }) => {

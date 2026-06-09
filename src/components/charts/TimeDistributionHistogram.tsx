@@ -136,7 +136,7 @@ export function TimeDistributionHistogram({ data }: Props) {
                 key={`w-${h}`}
                 d={wedgePath(CX, CY, innerR, outerR, startAngle, endAngle)}
                 fill={getColor(val)}
-                stroke={isDark ? '#0f172a' : '#faf8f5'}
+                stroke={isDark ? '#0f172a' : '#fff'}
                 strokeWidth={0.5}
                 style={{ cursor: 'pointer', transition: 'opacity 0.12s' }}
                 onPointerEnter={(e) => handlePointerEnter(dayLabels[ringIdx], h, val, e)}

@@ -119,7 +119,7 @@ export function ExamResultCard({ sessionId }: Props) {
       type: 'pie',
       radius: ['55%', '75%'],
       center: ['50%', '45%'],
-      itemStyle: { borderRadius: 4, borderColor: isDark ? '#1f2937' : '#faf8f5', borderWidth: 2 },
+      itemStyle: { borderRadius: 4, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       data: [

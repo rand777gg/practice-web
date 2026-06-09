@@ -30,7 +30,7 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
       tooltip: {
         trigger: 'axis' as const,
         axisPointer: { type: 'shadow' as const },
-        backgroundColor: isDark ? '#1e293b' : '#faf8f5',
+        backgroundColor: isDark ? '#1e293b' : '#fff',
         borderColor: isDark ? '#334155' : '#e2e8f0',
         textStyle: { color: textColor, fontSize: 11 },
       },
