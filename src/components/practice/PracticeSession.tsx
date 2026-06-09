@@ -56,34 +56,13 @@ export function PracticeSession() {
     if (!profile?.daily_targets) return [] as string[]
     try {
       const raw = normalizeDailyTargets(JSON.parse(profile.daily_targets))
-      return [...new Set(raw.flatMap((t) => t.subjects.map((s) => s.subject)))]
+      const planSet = new Set(planSubjects)
+      return [...new Set(raw.flatMap((t) => t.subjects.map((s) => s.subject)))].filter((s) => !planSet.has(s))
     } catch { return [] }
-  }, [profile?.daily_targets])
+  }, [profile?.daily_targets, planSubjects])
 
   const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
-
-  const categoryGroups = useMemo(() => {
-    const yearRe = /(\d{4})/
-    const groups = new Map<string, string[]>()
-    for (const c of filteredCategories) {
-      const m = c.match(yearRe)
-      if (m) {
-        const label = c.replace(yearRe, '').trim().replace(/^年|年$/g, '') || c
-        groups.set(label, [...(groups.get(label) || []), c])
-      }
-    }
-    const result: { prefix: string; items: string[] }[] = []
-    const grouped = new Set<string>()
-    for (const [prefix, items] of groups) {
-      if (items.length >= 2) {
-        result.push({ prefix, items })
-        for (const item of items) grouped.add(item)
-      }
-    }
-    const solo = filteredCategories.filter((c) => !grouped.has(c))
-    return { groups: result, solo }
-  }, [filteredCategories])
 
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -92,6 +71,15 @@ export function PracticeSession() {
     updateFilteredCategories(selectedSubject)
     setSelectedCategory('')
   }, [selectedSubject, updateFilteredCategories])
+
+  const yearCategories = useMemo(
+    () => filteredCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a)),
+    [filteredCategories],
+  )
+  const nonYearCategories = useMemo(
+    () => filteredCategories.filter((c) => !/^\d{4}年真题$/.test(c)),
+    [filteredCategories],
+  )
 
   const fetchGenRef = useRef(0)
 
@@ -320,34 +308,35 @@ export function PracticeSession() {
               <span className="text-muted-foreground">{t('questions.category')}</span>
               {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            {categoryGroups.solo.map((c) => (
-              <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                {c}
-                {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-            ))}
-            {categoryGroups.groups.length > 0 && categoryGroups.solo.length > 0 && (
-              <DropdownMenuSeparator />
+            {yearCategories.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    历年真题
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                    {yearCategories.map((c) => (
+                      <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                        {c}
+                        {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
             )}
-            {categoryGroups.groups.map((g) => (
-              <DropdownMenuSub key={g.prefix}>
-                <DropdownMenuSubTrigger>{g.prefix}</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                  {g.items.map((c) => (
-                    <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                      {c.match(/(\d{4})/)?.[1] || c}
-                      {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ))}
-            {categoryGroups.solo.map((c) => (
-              <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                {c}
-                {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-            ))}
+            {nonYearCategories.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                {nonYearCategories.map((c) => (
+                  <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
+                    {c}
+                    {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

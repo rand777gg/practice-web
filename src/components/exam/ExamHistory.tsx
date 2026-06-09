@@ -47,7 +47,7 @@ export function ExamHistory() {
         setSessions((data ?? []) as ExamSession[])
         setIsLoading(false)
       })
-  }, [user, version])
+  }, [user?.id, version])
 
   if (isLoading) return <Spinner />
 

@@ -47,7 +47,7 @@ export function Component() {
 
     setAnswers((data ?? []) as (UserAnswer & { questions: Question })[])
     setIsLoading(false)
-  }, [user, mode])
+  }, [user?.id, mode])
 
   useEffect(() => {
     fetchAnswers()

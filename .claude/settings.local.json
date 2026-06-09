@@ -35,7 +35,8 @@
       "Bash(curl -sL \"https://raw.githubusercontent.com/opendatalab/MinerU/master/docs/reference/output_files.md\")",
       "Bash(curl -sL \"https://raw.githubusercontent.com/opendatalab/MinerU/master/docs/output_file_format.md\")",
       "Bash(curl -sL \"https://opendatalab.github.io/MinerU/zh/reference/output_files/\")",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "WebFetch(domain:supabase.com)"
     ]
   }
 }

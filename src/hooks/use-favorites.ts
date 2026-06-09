@@ -29,7 +29,7 @@ export function useFavorites() {
 
     setFavorites((data ?? []).map((r: { question_id: string }) => r.question_id))
     setLoaded(true)
-  }, [user])
+  }, [user?.id])
 
   useEffect(() => {
     fetchFavorites()
@@ -47,7 +47,7 @@ export function useFavorites() {
         return [...prev, questionId]
       })
     },
-    [user],
+    [user?.id],
   )
 
   const isFavorite = useCallback(
@@ -65,7 +65,7 @@ export function useFavorites() {
         .eq('user_id', user.id)
         .eq('question_id', questionId)
     },
-    [user],
+    [user?.id],
   )
 
   return { favorites, isFavorite, toggleFavorite, removeFavorite, loaded }

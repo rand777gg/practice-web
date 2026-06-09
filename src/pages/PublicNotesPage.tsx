@@ -109,7 +109,7 @@ export function Component() {
 
     setMyNotes((data ?? []) as NoteWithQuestion[])
     setMyNotesLoading(false)
-  }, [user])
+  }, [user?.id])
 
   useEffect(() => {
     if (activeTab === 'my') fetchMyNotes()

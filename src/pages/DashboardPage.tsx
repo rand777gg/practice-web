@@ -329,7 +329,7 @@ export function Component() {
     }
     load()
     return () => { cancelled = true }
-  }, [user, profile?.deadline, profile?.plan_subjects])
+  }, [user?.id, profile?.deadline, profile?.plan_subjects])
 
   // Lazy-load key_points for knowledge graph (heavy field, not needed for initial render)
   useEffect(() => {
@@ -400,7 +400,7 @@ export function Component() {
         .map(([key, w]) => { const [s, t] = key.split('|||'); return { source: s, target: t, weight: w } })
       setChartData((prev) => prev ? { ...prev, knowledgeGraph: { nodes, edges } } : prev)
     })()
-  }, [chartData?.totalAnswered, user])
+  }, [chartData?.totalAnswered, user?.id])
 
   return (
     <div className="space-y-6 w-full">

@@ -142,7 +142,7 @@ export function PlanProgress() {
       setIsLoading(false)
     }
     load()
-  }, [user, deadline, planSubjects.join(','), JSON.stringify(dailyTargets), version])
+  }, [user?.id, deadline, planSubjects.join(','), JSON.stringify(dailyTargets), version])
 
   if (!user) return null
 

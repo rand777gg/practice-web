@@ -102,18 +102,22 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
     )}>
       <div className={cn('flex items-center border-b border-sidebar-border', collapsed ? 'h-14 justify-center' : 'h-14 px-4')}>
         {collapsed ? (
-          <button type="button" onClick={onToggleCollapse} className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors">
-            <PanelLeftOpen className="h-5 w-5" />
-          </button>
+          !overlay && (
+            <button type="button" onClick={onToggleCollapse} className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors">
+              <PanelLeftOpen className="h-5 w-5" />
+            </button>
+          )
         ) : (
           <>
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <GraduationCap className="h-6 w-6 text-sidebar-primary shrink-0" />
               <span className="font-semibold text-sidebar-foreground truncate">{t('app.shortTitle')}</span>
             </div>
-            <button type="button" onClick={onToggleCollapse} className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors shrink-0">
-              <PanelLeftClose className="h-5 w-5" />
-            </button>
+            {!overlay && (
+              <button type="button" onClick={onToggleCollapse} className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors shrink-0">
+                <PanelLeftClose className="h-5 w-5" />
+              </button>
+            )}
           </>
         )}
       </div>

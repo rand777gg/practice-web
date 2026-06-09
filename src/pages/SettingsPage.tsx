@@ -83,7 +83,7 @@ export function Component() {
         setTimeout(() => setLinkSuccess(false), 4000)
       }
     }
-  }, [user])
+  }, [user?.id, isGitHubLinked])
 
   const saveNickname = async (name: string) => {
     if (!name.trim()) return
