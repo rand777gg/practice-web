@@ -61,7 +61,12 @@ export function Component() {
       const error = params.get('error')
       const desc = params.get('error_description')
       if (error) {
-        setGithubLinkError(desc || error)
+        const raw = (desc || error).toLowerCase()
+        setGithubLinkError(
+          raw.includes('already linked') || raw.includes('already registered')
+            ? t('auth.githubAlreadyRegistered')
+            : (desc || error)
+        )
         window.history.replaceState(null, '', window.location.pathname + window.location.search)
       }
       sessionStorage.removeItem('pre_oauth_user_id')
