@@ -366,59 +366,61 @@ export function Component() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-2">代码高亮主题</p>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                      <Code2 className="h-3.5 w-3.5" />
-                      {codeTheme}
-                      <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>◼ 深色主题</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
-                        {DARK_THEMES.map((id) => (
-                          <DropdownMenuItem key={id} onClick={() => setCodeTheme(id)}>
-                            {id}
-                            {codeTheme === id && <Check className="h-4 w-4 ml-auto" />}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>◻ 浅色主题</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
-                        {LIGHT_THEMES.map((id) => (
-                          <DropdownMenuItem key={id} onClick={() => setCodeTheme(id)}>
-                            {id}
-                            {codeTheme === id && <Check className="h-4 w-4 ml-auto" />}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <div className="mt-2">
+                <div className="mb-2">
+                  <CodePreview theme={codeTheme} lang={previewLang} />
+                </div>
+                <div className="flex gap-2 flex-wrap">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6">
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7">
+                        <Code2 className="h-3.5 w-3.5" />
+                        {codeTheme}
+                        <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>◼ 深色主题</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
+                          {DARK_THEMES.map((id) => (
+                            <DropdownMenuItem key={id} onClick={() => setCodeTheme(id)}>
+                              {id}
+                              {codeTheme === id && <Check className="h-4 w-4 ml-auto" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>◻ 浅色主题</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
+                          {LIGHT_THEMES.map((id) => (
+                            <DropdownMenuItem key={id} onClick={() => setCodeTheme(id)}>
+                              {id}
+                              {codeTheme === id && <Check className="h-4 w-4 ml-auto" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-7">
+                        {LANG_ICONS[previewLang]}
                         {previewLang}
-                        <ChevronDown className="h-2.5 w-2.5 opacity-50" />
+                        <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
                       {PREVIEW_LANGS.map((l) => (
                         <DropdownMenuItem key={l} onClick={() => setPreviewLang(l)}>
+                          <span className="mr-1.5">{LANG_ICONS[l]}</span>
                           {l}
                           {previewLang === l && <Check className="h-4 w-4 ml-auto" />}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </div>
-                <div className="mt-1">
-                  <CodePreview theme={codeTheme} lang={previewLang} />
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -685,6 +687,19 @@ aws s3 sync dist/ s3://bucket/ \\
     "build": "tsc -b && vite build"
   }
 }`,
+}
+
+const LANG_ICONS: Record<string, string> = {
+  javascript: 'JS',
+  typescript: 'TS',
+  python: 'PY',
+  java: 'JV',
+  cpp: 'C++',
+  sql: 'SQ',
+  css: 'CS',
+  html: '</>',
+  bash: 'SH',
+  json: '{}',
 }
 
 const SAMPLE_CODE = `def function(x):
