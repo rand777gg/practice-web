@@ -205,7 +205,7 @@ export function Component() {
           {style === 'my' && (
             <span className={note.is_public
               ? 'inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs text-green-700 dark:text-green-300'
-              : 'inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground',
+              : 'inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
             }>
               {note.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
               {note.is_public ? t('notes.publicLabel') : t('notes.privateLabel')}
