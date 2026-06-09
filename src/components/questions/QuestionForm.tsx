@@ -31,7 +31,6 @@ interface Props {
 
 export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const { t } = useT()
-  const navigate = useNavigate()
   const { isEnabled } = useSettingsStore()
   const [questionType, setQuestionType] = useState<QuestionType>(initialData?.question_type ?? 'single_choice')
   const [questionText, setQuestionText] = useState(initialData?.question_text ?? '')
