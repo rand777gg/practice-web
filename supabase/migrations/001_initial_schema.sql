@@ -193,6 +193,11 @@ DROP POLICY IF EXISTS profiles_update_admin ON public.profiles;
 CREATE POLICY profiles_update_admin ON public.profiles FOR UPDATE
   USING (public.is_admin());
 
+DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
+CREATE POLICY profiles_update_own ON public.profiles FOR UPDATE
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
+
 -- 8b. Questions — 所有已认证用户可读，增删改仅限管理员
 DROP POLICY IF EXISTS questions_select_all ON public.questions;
 CREATE POLICY questions_select_all ON public.questions FOR SELECT
