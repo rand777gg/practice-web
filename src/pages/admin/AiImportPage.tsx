@@ -819,7 +819,7 @@ export function Component() {
                   <div className={`grid gap-4 items-stretch ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
                     {showSplitView && pdfUrl && (
                       <Card className="border-0 shadow-none">
-                        <CardContent className="p-3">
+                        <CardContent className="p-3 h-[calc(100vh-260px)]">
                           <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
                             activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
                             onBlockClick={(block) => {

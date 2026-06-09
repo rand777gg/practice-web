@@ -99,8 +99,8 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   const displayScale = pageSize ? displayWidth / pageSize.width : 1
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-center gap-2">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-center gap-2 py-2 shrink-0">
         <button type="button" className="px-2 py-1 text-xs rounded border hover:bg-accent disabled:opacity-30"
           disabled={currentPage <= 1} onClick={() => goPage(currentPage - 1)}>
           ‹ 上一页
@@ -111,33 +111,36 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
           下一页 ›
         </button>
       </div>
-      <div ref={containerRef} className="relative mx-auto" style={{ width: displayWidth, height: (pageSize?.height || 0) * displayScale }}>
-        <canvas ref={canvasRef} className="w-full h-full rounded border" />
-        {/* bbox overlay — layout.json coords are absolute PDF points */}
-        {pageSize && pageBlocks.map((block, i) => {
-          const [x0, y0, x1, y1] = block.bbox
-          const isActive = activeBbox &&
-            Math.abs(activeBbox[0] - x0) < 5 && Math.abs(activeBbox[1] - y0) < 5
-          // PDF y: bottom→top, CSS y: top→bottom
-          const cssTop = (pageSize.height - y1) * displayScale
-          const cssH = Math.max((y1 - y0) * displayScale, 2)
-          const cssLeft = x0 * displayScale
-          const cssW = Math.max((x1 - x0) * displayScale, 2)
+      <div ref={containerRef} className="flex-1 overflow-auto rounded-lg border bg-muted/30">
+        <div className="relative mx-auto" style={{ width: displayWidth, height: (pageSize?.height || 0) * displayScale }}>
+          {pageSize && (
+            <canvas ref={canvasRef} className="w-full h-full" />
+          )}
+          {/* bbox overlay — layout.json coords are absolute PDF points */}
+          {pageSize && pageBlocks.map((block, i) => {
+            const [x0, y0, x1, y1] = block.bbox
+            const isActive = activeBbox &&
+              Math.abs(activeBbox[0] - x0) < 5 && Math.abs(activeBbox[1] - y0) < 5
+            const cssTop = (pageSize.height - y1) * displayScale
+            const cssH = Math.max((y1 - y0) * displayScale, 2)
+            const cssLeft = x0 * displayScale
+            const cssW = Math.max((x1 - x0) * displayScale, 2)
 
-          return (
-            <div
-              key={i}
-              className={`absolute border transition-colors cursor-pointer ${
-                isActive
-                  ? 'border-blue-500 bg-blue-500/25 z-10 ring-1 ring-blue-400'
-                  : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
-              }`}
-              style={{ left: cssLeft, top: cssTop, width: cssW, height: cssH }}
-              title={(block.text || block.category || 'Block').slice(0, 120)}
-              onClick={() => onBlockClick?.(block)}
-            />
-          )
-        })}
+            return (
+              <div
+                key={i}
+                className={`absolute border transition-colors cursor-pointer ${
+                  isActive
+                    ? 'border-blue-500 bg-blue-500/25 z-10 ring-1 ring-blue-400'
+                    : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
+                }`}
+                style={{ left: cssLeft, top: cssTop, width: cssW, height: cssH }}
+                title={(block.text || block.category || 'Block').slice(0, 120)}
+                onClick={() => onBlockClick?.(block)}
+              />
+            )
+          })}
+        </div>
       </div>
     </div>
   )
