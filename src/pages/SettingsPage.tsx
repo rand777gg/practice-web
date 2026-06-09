@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -44,11 +44,41 @@ export function Component() {
   const [linkingGitHub, setLinkingGitHub] = useState(false)
   const [githubLinkError, setGithubLinkError] = useState('')
   const [unlinkingGitHub, setUnlinkingGitHub] = useState(false)
+  const [linkSuccess, setLinkSuccess] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
   const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
   const hasMultipleIdentities = user?.identities && user.identities.length > 1
+
+  // Detect OAuth redirect result
+  useEffect(() => {
+    const storedId = sessionStorage.getItem('pre_oauth_user_id')
+    const hash = window.location.hash
+
+    if (hash) {
+      const params = new URLSearchParams(hash.replace(/^#/, ''))
+      const error = params.get('error')
+      const desc = params.get('error_description')
+      if (error) {
+        setGithubLinkError(desc || error)
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      }
+      sessionStorage.removeItem('pre_oauth_user_id')
+      return
+    }
+
+    // Detect post-redirect: either linked successfully or account switched
+    if (storedId && user) {
+      sessionStorage.removeItem('pre_oauth_user_id')
+      if (storedId !== user.id) {
+        setGithubLinkError('该 GitHub 账号已绑定其他账户，已自动切换到该账户')
+      } else if (isGitHubLinked) {
+        setLinkSuccess(true)
+        setTimeout(() => setLinkSuccess(false), 4000)
+      }
+    }
+  }, [user])
 
   const saveNickname = async (name: string) => {
     if (!name.trim()) return
@@ -244,7 +274,9 @@ export function Component() {
                             disabled={linkingGitHub}
                             onClick={async () => {
                               setGithubLinkError('')
+                              setLinkSuccess(false)
                               setLinkingGitHub(true)
+                              sessionStorage.setItem('pre_oauth_user_id', user!.id)
                               const { error } = await supabase.auth.linkIdentity({
                                 provider: 'github',
                                 options: { redirectTo: window.location.origin + '/settings' },
@@ -266,6 +298,9 @@ export function Component() {
                           </Button>
                           {githubLinkError && (
                             <p className="text-xs text-destructive">{githubLinkError}</p>
+                          )}
+                          {linkSuccess && (
+                            <p className="text-xs text-green-600 dark:text-green-400">绑定成功!</p>
                           )}
                         </div>
                       )}
