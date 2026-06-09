@@ -273,6 +273,10 @@ export function Component() {
                                 if (error) {
                                   setGithubLinkError(error.message || '解绑失败')
                                 } else {
+                                  const { data: { session } } = await supabase.auth.getSession()
+                                  if (session) {
+                                    await supabase.auth.refreshSession({ refresh_token: session.refresh_token })
+                                  }
                                   window.location.reload()
                                 }
                                 setUnlinkingGitHub(false)
