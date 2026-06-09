@@ -150,8 +150,11 @@ export function Component() {
       setExistingCategories([...cats].sort())
     }
     loadMeta()
-    if (user) loadHistoryList()
   }, [])
+
+  useEffect(() => {
+    if (user) loadHistoryList()
+  }, [user])
 
   const handleFile = (f: File) => { setFile(f); setFiles([]) }
   const handleFiles = (fs: File[]) => { setFiles(fs); setFile(null) }
