@@ -5,7 +5,7 @@ export function Component() {
   const { t } = useT()
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <div className="flex items-center gap-3 mb-6">
         <h1 className="text-xl lg:text-2xl font-bold">{t('nav.questionBank')}</h1>
         <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground/70">ALPHA</span>

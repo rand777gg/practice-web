@@ -314,7 +314,7 @@ export function Component() {
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-5xl space-y-4">
       <h1 className="text-xl lg:text-2xl font-bold">{t('notes.title')}</h1>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>

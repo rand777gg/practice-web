@@ -69,7 +69,7 @@ export function Component() {
   }, [selectedSubject, updateFilteredCategories])
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="space-y-4 max-w-6xl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold">{t('questions.title')}</h1>

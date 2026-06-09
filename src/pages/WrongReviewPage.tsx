@@ -76,7 +76,7 @@ export function Component() {
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-5xl space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-xl lg:text-2xl font-bold">{t('review.title')}</h1>
         <div className="flex gap-1">

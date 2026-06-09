@@ -154,7 +154,7 @@ export function Component() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-6xl">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
@@ -514,19 +514,64 @@ export function Component() {
               <CardTitle className="text-sm text-destructive">危险区域</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground mb-3">
-                注销账号后，你的所有数据（包括答题记录、收藏、笔记等）将被永久删除且无法恢复。请谨慎操作。
-              </p>
-              <AlertDialog open={deleteOpen} onOpenChange={(open) => {
-                if (deleting && !open) return
-                setDeleteOpen(open)
-              }}>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
-                    <Trash2 className="h-3.5 w-3.5" />
-                    注销账号
-                  </Button>
-                </AlertDialogTrigger>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    重置后，你的所有答题记录、考试记录和笔记将被清空，但收藏和账号信息不受影响。此操作不可撤销。
+                  </p>
+                  <AlertDialog open={resetDataOpen} onOpenChange={(open) => {
+                    if (resettingData && !open) return
+                    setResetDataOpen(open)
+                  }}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        重置做题数据
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogTitle>确认重置做题数据</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        此操作将删除你的所有答题记录、考试记录和笔记，且无法恢复。收藏和账号信息不受影响。确定要继续吗？
+                      </AlertDialogDescription>
+                      <div className="flex gap-3 mt-4 justify-end">
+                        <AlertDialogCancel asChild>
+                          <Button variant="outline" size="sm" disabled={resettingData}>取消</Button>
+                        </AlertDialogCancel>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={resettingData}
+                          onClick={async () => {
+                            setResettingData(true)
+                            try {
+                              await supabase.from('user_answers').delete().eq('user_id', user!.id)
+                              await supabase.from('exam_sessions').delete().eq('user_id', user!.id)
+                            } catch { /* ignore */ }
+                            setResettingData(false)
+                            setResetDataOpen(false)
+                          }}
+                        >
+                          {resettingData ? '重置中...' : '确认重置'}
+                        </Button>
+                      </div>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    注销账号后，你的所有数据（包括答题记录、收藏、笔记等）将被永久删除且无法恢复。请谨慎操作。
+                  </p>
+                  <AlertDialog open={deleteOpen} onOpenChange={(open) => {
+                    if (deleting && !open) return
+                    setDeleteOpen(open)
+                  }}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
+                        <Trash2 className="h-3.5 w-3.5" />
+                        注销账号
+                      </Button>
+                    </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogTitle>确认注销账号</AlertDialogTitle>
                   <AlertDialogDescription>
@@ -552,6 +597,8 @@ export function Component() {
                   </div>
                 </AlertDialogContent>
               </AlertDialog>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

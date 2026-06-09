@@ -1,7 +1,7 @@
 {
   "name": "practice-web",
   "private": true,
-  "version": "1.10.1",
+  "version": "1.10.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
