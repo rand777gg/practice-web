@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from('user_answers').delete().eq('user_id', user.id)
     await supabaseAdmin.from('favorites').delete().eq('user_id', user.id)
     await supabaseAdmin.from('exam_sessions').delete().eq('user_id', user.id)
+    await supabaseAdmin.from('parse_history').delete().eq('user_id', user.id)
     await supabaseAdmin.from('profiles').delete().eq('id', user.id)
 
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id)

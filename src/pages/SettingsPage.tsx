@@ -245,7 +245,7 @@ export function Component() {
                             onClick={async () => {
                               setGithubLinkError('')
                               setLinkingGitHub(true)
-                              const { error } = await supabase.auth.signInWithOAuth({
+                              const { error } = await supabase.auth.linkIdentity({
                                 provider: 'github',
                                 options: { redirectTo: window.location.origin + '/settings' },
                               })
