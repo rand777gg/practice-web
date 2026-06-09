@@ -40,6 +40,7 @@ export function Component() {
   const { lang, setLang } = useLangStore()
   const { flags, setFlag, offlineMode, setOfflineMode, codeTheme, setCodeTheme } = useSettingsStore()
   const navigate = useNavigate()
+  const [previewLang, setPreviewLang] = useState('javascript')
   const [aiGlow, setAiGlow] = useState(false)
   const [nickEditing, setNickEditing] = useState(false)
   const [nickValue, setNickValue] = useState(profile?.nickname || '')
@@ -399,7 +400,25 @@ export function Component() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <div className="mt-2">
-                  <CodePreview theme={codeTheme} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1 text-[10px] h-6">
+                        {previewLang}
+                        <ChevronDown className="h-2.5 w-2.5 opacity-50" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                      {PREVIEW_LANGS.map((l) => (
+                        <DropdownMenuItem key={l} onClick={() => setPreviewLang(l)}>
+                          {l}
+                          {previewLang === l && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="mt-1">
+                  <CodePreview theme={codeTheme} lang={previewLang} />
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -528,8 +547,10 @@ const LIGHT_THEMES = [
   'rose-pine-dawn', 'snazzy-light', 'solarized-light', 'vitesse-light',
 ]
 
-function CodePreview({ theme }: { theme: string }) {
+function CodePreview({ theme, lang }: { theme: string; lang: string }) {
   const [html, setHtml] = useState<string | null>(null)
+
+  const code = LANGS[lang] || LANGS['javascript']
 
   useEffect(() => {
     let cancelled = false
@@ -540,31 +561,130 @@ function CodePreview({ theme }: { theme: string }) {
       })
       if (cancelled) return
       try {
-        const loaded = await hl.getLoadedThemes()
-        if (!loaded.includes(theme)) {
+        const loadedLangs = await hl.getLoadedLanguages()
+        if (!loadedLangs.includes(lang)) {
+          await hl.loadLanguage(lang as any)
+        }
+        const loadedThemes = await hl.getLoadedThemes()
+        if (!loadedThemes.includes(theme)) {
           await hl.loadTheme(theme)
         }
-        const h = hl.codeToHtml(SAMPLE_CODE, { lang: 'python', theme })
+        const h = hl.codeToHtml(code, { lang, theme })
         setHtml(h)
       } catch {
-        setHtml(`<pre><code>${SAMPLE_CODE}</code></pre>`)
+        setHtml(`<pre><code>${code}</code></pre>`)
       }
     })
     return () => { cancelled = true }
-  }, [theme])
+  }, [theme, lang, code])
 
   return (
     <div className="relative rounded-lg overflow-hidden text-[11px] leading-relaxed [&_pre]:!bg-muted/50 [&_pre]:p-2.5 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_pre]:!border [&_pre]:!rounded-lg [&_code]:!text-[11px]">
       <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
-        python
+        {lang}
       </span>
       {html ? (
         <div dangerouslySetInnerHTML={{ __html: html }} />
       ) : (
-        <pre className="p-2.5 pt-7 bg-muted/50 rounded-lg border"><code>{SAMPLE_CODE}</code></pre>
+        <pre className="p-2.5 pt-7 bg-muted/50 rounded-lg border"><code>{code}</code></pre>
       )}
     </div>
   )
+}
+
+const PREVIEW_LANGS = ['javascript', 'typescript', 'python', 'java', 'cpp', 'sql', 'css', 'html', 'bash', 'json']
+
+const LANGS: Record<string, string> = {
+  javascript: `function fibonacci(n) {
+  if (n <= 1) return n
+  return fibonacci(n - 1) + fibonacci(n - 2)
+}
+console.log(fibonacci(10)) // 55`,
+
+  typescript: `interface User {
+  name: string
+  age: number
+}
+function greet(u: User): string {
+  return \`Hello, \${u.name}!\`
+}
+console.log(greet({ name: 'Alice', age: 30 }))`,
+
+  python: `def fibonacci(n: int) -> int:
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+print(fibonacci(10))  # 55`,
+
+  java: `public class Main {
+  static int fib(int n) {
+    if (n <= 1) return n;
+    return fib(n - 1) + fib(n - 2);
+  }
+  public static void main(String[] args) {
+    System.out.println(fib(10)); // 55
+  }
+}`,
+
+  cpp: `#include <iostream>
+using namespace std;
+
+int fib(int n) {
+  if (n <= 1) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+int main() {
+  cout << fib(10) << endl; // 55
+  return 0;
+}`,
+
+  sql: `SELECT u.name, COUNT(o.id) AS orders
+FROM users u
+JOIN orders o ON o.user_id = u.id
+WHERE u.created_at > '2024-01-01'
+GROUP BY u.name
+HAVING COUNT(o.id) > 5
+ORDER BY orders DESC
+LIMIT 10;`,
+
+  css: `.card {
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--bg);
+  transition: box-shadow 0.2s;
+}
+.card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+}`,
+
+  html: `<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>示例</title>
+</head>
+<body>
+  <h1>Hello World</h1>
+</body>
+</html>`,
+
+  bash: `#!/bin/bash
+echo "Building..."
+npm run build
+echo "Deploying..."
+aws s3 sync dist/ s3://bucket/ \\
+  --endpoint-url \$R2_ENDPOINT`,
+
+  json: `{
+  "name": "practice-web",
+  "version": "1.10.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build"
+  }
+}`,
 }
 
 const SAMPLE_CODE = `def function(x):
