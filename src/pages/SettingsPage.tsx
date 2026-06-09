@@ -22,6 +22,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
@@ -406,7 +407,7 @@ export function Component() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1 text-xs h-7">
-                        {LANG_ICONS[previewLang]}
+                        <LangIcon id={previewLang} className="h-3.5 w-3.5" />
                         {previewLang}
                         <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
                       </Button>
@@ -414,7 +415,7 @@ export function Component() {
                     <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
                       {PREVIEW_LANGS.map((l) => (
                         <DropdownMenuItem key={l} onClick={() => setPreviewLang(l)}>
-                          <span className="mr-1.5">{LANG_ICONS[l]}</span>
+                          <LangIcon id={l} className="h-3.5 w-3.5 mr-1.5" />
                           {l}
                           {previewLang === l && <Check className="h-4 w-4 ml-auto" />}
                         </DropdownMenuItem>
@@ -690,16 +691,22 @@ aws s3 sync dist/ s3://bucket/ \\
 }
 
 const LANG_ICONS: Record<string, string> = {
-  javascript: 'JS',
-  typescript: 'TS',
-  python: 'PY',
-  java: 'JV',
-  cpp: 'C++',
-  sql: 'SQ',
-  css: 'CS',
-  html: '</>',
-  bash: 'SH',
-  json: '{}',
+  javascript: 'vscode-icons:file-type-js-official',
+  typescript: 'vscode-icons:file-type-typescript-official',
+  python: 'vscode-icons:file-type-python',
+  java: 'vscode-icons:file-type-java',
+  cpp: 'vscode-icons:file-type-cpp3',
+  sql: 'vscode-icons:file-type-sql',
+  css: 'vscode-icons:file-type-css',
+  html: 'vscode-icons:file-type-html',
+  bash: 'vscode-icons:file-type-shell',
+  json: 'vscode-icons:file-type-json',
+}
+
+function LangIcon({ id, className }: { id: string; className?: string }) {
+  const icon = LANG_ICONS[id]
+  if (!icon) return <Code2 className={className} />
+  return <Icon icon={icon} className={className} />
 }
 
 const SAMPLE_CODE = `def function(x):
