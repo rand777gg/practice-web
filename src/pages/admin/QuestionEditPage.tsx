@@ -3,7 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
 import { QuestionForm } from '@/components/questions/QuestionForm'
+import { Button } from '@/components/ui/button'
 import { LoadingTips } from '@/components/layout/LoadingTips'
+import { ArrowLeft } from 'lucide-react'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 
@@ -29,9 +31,7 @@ export function Component() {
   }, [questionId])
 
   if (isLoading) {
-    return (
-      <LoadingTips className="py-12" compact />
-    )
+    return <LoadingTips className="py-12" compact />
   }
 
   if (!question) {
@@ -45,7 +45,12 @@ export function Component() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <h1 className="text-xl lg:text-2xl font-bold">{t('questions.editTitle')}</h1>
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate('/admin/questions')}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <h1 className="text-xl font-bold">{t('questions.editTitle')}</h1>
+      </div>
       <QuestionForm
         initialData={question}
         onSubmit={handleSubmit}
