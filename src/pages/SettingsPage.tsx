@@ -554,11 +554,14 @@ function CodePreview({ theme }: { theme: string }) {
   }, [theme])
 
   return (
-    <div className="rounded-lg overflow-hidden text-[11px] leading-relaxed [&_pre]:!bg-muted/50 [&_pre]:p-2.5 [&_pre]:overflow-x-auto [&_pre]:!border [&_pre]:!rounded-lg [&_code]:!text-[11px]">
+    <div className="relative rounded-lg overflow-hidden text-[11px] leading-relaxed [&_pre]:!bg-muted/50 [&_pre]:p-2.5 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_pre]:!border [&_pre]:!rounded-lg [&_code]:!text-[11px]">
+      <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
+        javascript
+      </span>
       {html ? (
         <div dangerouslySetInnerHTML={{ __html: html }} />
       ) : (
-        <pre className="p-2.5 bg-muted/50 rounded-lg border"><code>{SAMPLE_CODE}</code></pre>
+        <pre className="p-2.5 pt-7 bg-muted/50 rounded-lg border"><code>{SAMPLE_CODE}</code></pre>
       )}
     </div>
   )
