@@ -1,7 +1,13 @@
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { AiImportQuestionCard } from './AiImportQuestionCard'
+import { Check, ChevronDown } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import { useT } from '@/i18n/use-t'
 
@@ -44,29 +50,50 @@ export function AiImportPreview({
       </div>
 
       {/* Subject & Category */}
-      <div className="flex items-center gap-1.5">
-        <label className="text-[10px] text-muted-foreground shrink-0">{t('questions.subject')}</label>
-        <Input
-          className="h-6 text-[10px] flex-1 max-w-[160px]"
-          placeholder={t('questions.subjectPlaceholder')}
-          value={subject}
-          onChange={(e) => onSubjectChange(e.target.value)}
-          list="preview-subjects"
-        />
-        <datalist id="preview-subjects">
-          {existingSubjects.map(s => <option key={s} value={s} />)}
-        </datalist>
-        <label className="text-[10px] text-muted-foreground shrink-0">{t('questions.category')}</label>
-        <Input
-          className="h-6 text-[10px] flex-1 max-w-[160px]"
-          placeholder={t('questions.categoryPlaceholder')}
-          value={category}
-          onChange={(e) => onCategoryChange(e.target.value)}
-          list="preview-categories"
-        />
-        <datalist id="preview-categories">
-          {existingCategories.map(c => <option key={c} value={c} />)}
-        </datalist>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground shrink-0">{t('questions.subject')}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+              {subject || t('questions.subject')}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            <DropdownMenuItem onClick={() => onSubjectChange('')}>
+              <span className="text-muted-foreground">{t('questions.subject')}</span>
+              {!subject && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {existingSubjects.map((s) => (
+              <DropdownMenuItem key={s} onClick={() => onSubjectChange(s)}>
+                {s}
+                {subject === s && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <span className="text-xs text-muted-foreground shrink-0">{t('questions.category')}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+              {category || t('questions.category')}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            <DropdownMenuItem onClick={() => onCategoryChange('')}>
+              <span className="text-muted-foreground">{t('questions.category')}</span>
+              {!category && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {existingCategories.map((c) => (
+              <DropdownMenuItem key={c} onClick={() => onCategoryChange(c)}>
+                {c}
+                {category === c && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <ScrollArea className="max-h-[55vh] pr-1">

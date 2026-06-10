@@ -32,18 +32,16 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
   const type = question.question_type
 
   return (
-    <div className={`rounded-lg border p-3 space-y-2 ${selected ? 'border-blue-500 bg-blue-50/30 dark:bg-blue-950/10' : ''}`}>
+    <div className={`rounded-lg border p-3 space-y-2 ${selected ? 'border-primary bg-primary/5' : ''}`}>
       {/* Header */}
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`shrink-0 w-5 h-5 rounded border-2 transition-colors
-            ${selected ? 'bg-blue-500 border-blue-500 text-white hover:bg-blue-600 hover:text-white' : 'border-muted-foreground/30'}`}
+        <button type="button"
+          className={`shrink-0 w-5 h-5 rounded flex items-center justify-center border-2 transition-colors
+            ${selected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'}`}
           onClick={onToggleSelect}
         >
           {selected && <Check className="h-3 w-3" />}
-        </Button>
+        </button>
 
         <span className="text-xs text-muted-foreground font-medium">{circled(index + 1)}</span>
 
@@ -91,16 +89,12 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
             const isCorrect = type === 'single_choice'
               ? question.correct_answer === oi
               : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi)
-            const hasAnswer = type === 'single_choice'
-              ? question.correct_answer !== undefined && question.correct_answer !== null
-              : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).length > 0
-            const isWrong = hasAnswer && !isCorrect
 
             return (
-              <div key={oi} className={`flex items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors ${isWrong ? 'bg-red-100 dark:bg-red-950/30 border border-red-200 dark:border-red-800' : ''}`}>
+              <div key={oi} className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5">
                 {type === 'single_choice' ? (
                   <input type="radio" name={`q-${index}`} checked={isCorrect} onChange={() => patch({ correct_answer: oi })}
-                    className="shrink-0 h-3.5 w-3.5 accent-green-500 cursor-pointer" />
+                    className="shrink-0 h-3.5 w-3.5 accent-primary cursor-pointer" />
                 ) : (
                   <input type="checkbox" checked={isCorrect} onChange={() => {
                     const arr: number[] = Array.isArray(question.correct_answer) ? [...question.correct_answer as number[]] : []
@@ -109,7 +103,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                     else arr.push(oi)
                     patch({ correct_answer: arr })
                   }}
-                    className="shrink-0 h-3.5 w-3.5 accent-green-500 cursor-pointer" />
+                    className="shrink-0 h-3.5 w-3.5 accent-primary cursor-pointer" />
                 )}
                 <span className="text-[11px] text-muted-foreground w-4 tabular-nums shrink-0">{String.fromCharCode(65 + oi)}</span>
                 <Input
@@ -119,7 +113,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                     newOpts[oi] = e.target.value
                     patch({ options: newOpts })
                   }}
-                  className={`h-6 text-[11px] ${isWrong ? 'border-red-300 dark:border-red-700' : ''}`}
+                  className="h-6 text-[11px]"
                   placeholder={`选项 ${String.fromCharCode(65 + oi)}`}
                 />
               </div>
