@@ -41,6 +41,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [subject, setSubject] = useState(initialData?.subject ?? '')
   const [analysis, setAnalysis] = useState(initialData?.analysis ?? '')
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
+  const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [keyPointsGlow, setKeyPointsGlow] = useState(false)
   const [keyPointsFade, setKeyPointsFade] = useState(false)
   const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
@@ -157,6 +158,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         subject: subject.trim() || null,
         analysis: analysis.trim() || null,
         key_points: keyPoints.trim() || null,
+        seq_number: seqNumber ? Number(seqNumber) : null,
       })
     } catch {
       setError(t('questions.saveFailed'))
@@ -332,6 +334,25 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
         {/* Right column — metadata & analysis */}
         <div className="lg:col-span-2 space-y-6">
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">#</span>
+                题目编号
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Input
+                type="number"
+                value={seqNumber}
+                onChange={(e) => setSeqNumber(e.target.value)}
+                placeholder="如：1、2、3..."
+                className="text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">用于真题排序，留空则无编号</p>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">基本信息</CardTitle>

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
@@ -85,7 +86,7 @@ export function TimeScatterChart({ data }: Props) {
 
   return (
     <ScrollArea scrollbars="horizontal">
-      <ReactECharts option={option} style={{ height: 400, minWidth: 320 }} />
+      <ReactECharts echarts={echarts} option={option} style={{ height: 400, minWidth: 320 }} />
     </ScrollArea>
   )
 }

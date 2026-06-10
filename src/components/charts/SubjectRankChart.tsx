@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
@@ -77,7 +78,7 @@ export function SubjectRankChart({ data }: Props) {
   return (
     <ScrollArea scrollbars="horizontal">
       <p className="text-xs text-muted-foreground text-center mb-1">学科题目排行</p>
-      <ReactECharts option={option} style={{ height: 480, minWidth: 320 }} />
+      <ReactECharts echarts={echarts} option={option} style={{ height: 480, minWidth: 320 }} />
     </ScrollArea>
   )
 }

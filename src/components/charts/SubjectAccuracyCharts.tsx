@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
@@ -146,11 +147,11 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <ScrollArea scrollbars="horizontal">
         <p className="text-xs text-muted-foreground text-center mb-1">科目正确率</p>
-        <ReactECharts option={barOption} style={{ height: 320, minWidth: 280 }} />
+        <ReactECharts echarts={echarts} option={barOption} style={{ height: 320, minWidth: 280 }} />
       </ScrollArea>
       <ScrollArea scrollbars="horizontal">
         <p className="text-xs text-muted-foreground text-center mb-1">科目 × 题型 正确率热力图</p>
-        <ReactECharts option={heatmapOption} style={{ height: 320, minWidth: 360 }} />
+        <ReactECharts echarts={echarts} option={heatmapOption} style={{ height: 320, minWidth: 360 }} />
       </ScrollArea>
     </div>
   )

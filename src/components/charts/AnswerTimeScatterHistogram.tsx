@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
@@ -115,7 +116,7 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
 
   return (
     <ScrollArea scrollbars="horizontal">
-      <ReactECharts option={option} style={{ height: 420, minWidth: 600 }} />
+      <ReactECharts echarts={echarts} option={option} style={{ height: 420, minWidth: 600 }} />
     </ScrollArea>
   )
 }

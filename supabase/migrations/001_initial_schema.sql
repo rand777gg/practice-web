@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS public.favorites (
 -- Ensure question_type column exists (added post-initial schema)
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'single_choice';
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS answer_explanation TEXT;
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS seq_number INTEGER;
 
 -- questions: filter dropdowns, random pick, dashboard metadata
 CREATE INDEX IF NOT EXISTS idx_questions_category       ON public.questions(category);

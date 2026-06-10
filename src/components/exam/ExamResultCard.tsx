@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
@@ -163,13 +164,13 @@ export function ExamResultCard({ sessionId }: Props) {
         <Card className="border-0 shadow-none">
           <CardHeader className="pb-0"><CardTitle className="text-sm text-muted-foreground">{t('exam.score')}</CardTitle></CardHeader>
           <CardContent>
-            <ReactECharts option={gaugeOption} style={{ height: 220 }} />
+            <ReactECharts echarts={echarts} option={gaugeOption} style={{ height: 220 }} />
           </CardContent>
         </Card>
         <Card className="border-0 shadow-none">
           <CardHeader className="pb-0"><CardTitle className="text-sm text-muted-foreground">{t('exam.correctRate')}</CardTitle></CardHeader>
           <CardContent>
-            <ReactECharts option={donutOption} style={{ height: 220 }} />
+            <ReactECharts echarts={echarts} option={donutOption} style={{ height: 220 }} />
           </CardContent>
         </Card>
       </div>
@@ -178,7 +179,7 @@ export function ExamResultCard({ sessionId }: Props) {
         <Card className="border-0 shadow-none">
           <CardHeader className="pb-0"><CardTitle className="text-sm text-muted-foreground">各学科正确率</CardTitle></CardHeader>
           <CardContent>
-            <ReactECharts option={subjectBarOption} style={{ height: Math.max(120, subjectStats.length * 32) }} />
+            <ReactECharts echarts={echarts} option={subjectBarOption} style={{ height: Math.max(120, subjectStats.length * 32) }} />
           </CardContent>
         </Card>
       )}

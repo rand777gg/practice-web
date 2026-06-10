@@ -1,4 +1,5 @@
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { useThemeStore } from '@/stores/theme-store'
 import type { ForgettingCurvePoint } from '@/lib/ai/ebbinghaus'
 
@@ -96,5 +97,5 @@ export function EbbinghausCurve({ curve }: Props) {
     ],
   }
 
-  return <ReactECharts option={option} style={{ height: 220 }} />
+  return <ReactECharts echarts={echarts} option={option} style={{ height: 220 }} />
 }

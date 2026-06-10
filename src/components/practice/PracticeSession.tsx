@@ -103,25 +103,33 @@ export function PracticeSession() {
     setIsSubmitted(false)
     setAnswerId(null)
 
-    // Step 1: fetch only IDs (lightweight, ~100x smaller than fetching all columns)
-    let idQuery = supabase.from('questions').select('id')
-    if (selectedSubjects.length > 0) {
-      idQuery = idQuery.in('subject', selectedSubjects)
-    } else if (planSubjectSet.size > 0) {
-      idQuery = idQuery.in('subject', [...planSubjectSet])
-    }
-    if (selectedCategory) idQuery = idQuery.eq('category', selectedCategory)
-    if (selectedType) idQuery = idQuery.eq('question_type', selectedType)
+    const currentUser = useAuthStore.getState().user
 
-    const { data: ids, error: idsErr } = await idQuery
+    // Use server-side RPC to pick a random unanswered question in a single round-trip.
+    // Falls back to client-side filter + IndexedDB when offline or RPC fails.
+    let pickedId: string | null = null
+
+    if (currentUser) {
+      const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
+        p_user_id: currentUser.id,
+        p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
+        p_category: selectedCategory || null,
+        p_question_type: selectedType || null,
+      })
+      if (fetchGenRef.current !== myGen) return
+
+      if (!rpcErr && rpcId) {
+        pickedId = rpcId
+      }
+    }
+
     if (fetchGenRef.current !== myGen) return
 
-    if (idsErr || !ids || ids.length === 0) {
-      // Offline fallback: try IndexedDB prefetched questions
-      if (fetchGenRef.current !== myGen) return
+    // Offline fallback: try IndexedDB prefetched questions
+    if (!pickedId) {
       const localIds = await getPrefetchedQuestionIds()
       if (localIds.length > 0) {
-        const pickedId = localIds[Math.floor(Math.random() * localIds.length)]
+        pickedId = localIds[Math.floor(Math.random() * localIds.length)]
         const localQ = await getPrefetchedQuestion(pickedId)
         if (localQ) {
           setQuestion(localQ as Question)
@@ -133,24 +141,6 @@ export function PracticeSession() {
       setIsLoading(false)
       return
     }
-
-    // Step 2: prioritize unanswered questions, then pick random from the best pool
-    const allIds = ids.map((r) => r.id)
-    const currentUser = useAuthStore.getState().user
-
-    let pickPool = allIds
-    if (currentUser) {
-      // Find IDs the user has already answered
-      const { data: answered } = await supabase.from('user_answers')
-        .select('question_id')
-        .eq('user_id', currentUser.id)
-        .in('question_id', allIds)
-      const answeredSet = new Set((answered || []).map((a) => a.question_id))
-      const unanswered = allIds.filter((id) => !answeredSet.has(id))
-      if (unanswered.length > 0) pickPool = unanswered
-    }
-
-    const pickedId = pickPool[Math.floor(Math.random() * pickPool.length)]
 
     const [qRes, statsRes] = await Promise.all([
       supabase.from('questions').select('*').eq('id', pickedId).single(),
@@ -165,9 +155,8 @@ export function PracticeSession() {
     if (fetchGenRef.current !== myGen) return
 
     if (qRes.error || !qRes.data) {
-      // Offline fallback: try IndexedDB
       if (fetchGenRef.current !== myGen) return
-      const localQ = await getPrefetchedQuestion(pickedId)
+      const localQ = await getPrefetchedQuestion(pickedId!)
       if (localQ) {
         setQuestion(localQ as Question)
         setIsLoading(false)

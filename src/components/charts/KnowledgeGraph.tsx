@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
 import { useThemeStore } from '@/stores/theme-store'
 
@@ -173,7 +174,7 @@ export function KnowledgeGraph({ nodes, edges }: Props) {
           {colorMode === 'subject' ? '按正确率着色' : '按学科着色'}
         </button>
       </div>
-      <ReactECharts option={option} style={{ height: 480, minWidth: 360 }} />
+      <ReactECharts echarts={echarts} option={option} style={{ height: 480, minWidth: 360 }} />
     </ScrollArea>
   )
 }

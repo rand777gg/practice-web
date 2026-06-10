@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { useThemeStore } from '@/stores/theme-store'
 
 interface Props {
@@ -129,5 +130,5 @@ export function SubjectDonutCharts({ data }: Props) {
     }
   }, [data, isDark, textColor])
 
-  return <ReactECharts option={option} style={{ height: 480 }} />
+  return <ReactECharts echarts={echarts} option={option} style={{ height: 480 }} />
 }

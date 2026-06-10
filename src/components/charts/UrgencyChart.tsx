@@ -1,4 +1,5 @@
 import ReactECharts from 'echarts-for-react'
+import echarts from '@/lib/echarts'
 import { useThemeStore } from '@/stores/theme-store'
 import type { SubjectUrgency } from '@/lib/ai/ebbinghaus'
 
@@ -85,5 +86,5 @@ export function UrgencyChart({ urgency }: Props) {
     }],
   }
 
-  return <ReactECharts option={option} style={{ height: Math.max(120, urgency.length * 34) }} />
+  return <ReactECharts echarts={echarts} option={option} style={{ height: Math.max(120, urgency.length * 34) }} />
 }
