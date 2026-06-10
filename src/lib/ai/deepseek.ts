@@ -281,8 +281,15 @@ export class DeepSeekParser {
         if (['fill_blank','short_answer','analysis','judge_correct'].includes(question_type)) {
           options = []
         }
-        if (question_type === 'fill_blank' && Array.isArray(correct_answer)) {
-          correct_answer = correct_answer.filter((a): a is string => typeof a === 'string')
+        if (question_type === 'fill_blank') {
+          if (Array.isArray(correct_answer)) {
+            correct_answer = correct_answer.filter((a): a is string => typeof a === 'string')
+          } else if (typeof correct_answer !== 'string') {
+            correct_answer = String(correct_answer ?? '')
+          }
+        }
+        if (question_type === 'short_answer' && typeof correct_answer !== 'string' && !Array.isArray(correct_answer)) {
+          correct_answer = String(correct_answer ?? '')
         }
         if (question_type === 'analysis') {
           correct_answer = null
