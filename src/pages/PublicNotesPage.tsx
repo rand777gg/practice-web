@@ -212,8 +212,8 @@ export function Component() {
     const userIds = [...new Set(result.map((n) => n.user_id))]
     const nicknames: Record<string, string> = {}
     if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('id, nickname').in('id', userIds)
-      for (const p of profiles ?? []) {
+      const { data: profiles } = await supabase.rpc('get_profile_nicknames', { user_ids: userIds })
+      for (const p of (profiles ?? []) as { id: string; nickname: string | null }[]) {
         nicknames[p.id] = p.nickname || `用户${p.id.slice(0, 6)}`
       }
       for (const uid of userIds) {
