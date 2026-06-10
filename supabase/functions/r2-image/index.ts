@@ -46,13 +46,15 @@ Deno.serve(async (req) => {
       return new Response('Not found', { status: 404, headers: corsHeaders })
     }
 
-    // Stream the R2 response body directly
+    // Read body into buffer to avoid CRC32 streaming bug in Deno AWS SDK
+    const bodyBytes = await result.Body!.transformToByteArray()
+
     const headers = new Headers(corsHeaders)
     if (result.ContentType) headers.set('Content-Type', result.ContentType)
     headers.set('Cache-Control', 'public, max-age=86400, immutable')
     headers.set('ETag', result.ETag || key)
 
-    return new Response(result.Body as ReadableStream, { headers })
+    return new Response(bodyBytes, { headers })
   } catch (err) {
     console.error('r2-image error:', err)
     return new Response(String(err), { status: 500, headers: corsHeaders })
