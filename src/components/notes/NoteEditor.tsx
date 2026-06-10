@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, memo } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { ImagePlus, Sparkles, Loader2, X } from 'lucide-react'
@@ -13,7 +13,7 @@ interface Props {
   rows?: number
 }
 
-export function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
+export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isRecognizing, setIsRecognizing] = useState(false)
@@ -131,4 +131,4 @@ export function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
       </div>
     </div>
   )
-}
+})

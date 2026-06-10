@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ScrollArea, Spinner } from '@radix-ui/themes'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useDashboardStore } from '@/stores/dashboard-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,59 +52,18 @@ interface ChartData {
   } | null
 }
 
-// localStorage caches — survive browser restart
-const CACHE_KEY = 'ds_cache'
-const Q_META_KEY = 'ds_qmeta'
-const Q_META_TTL = 30 * 60 * 1000 // 30 minutes for questions metadata
-
-interface CacheEntry { data: ChartData; key: string; ts: number }
-
-function readCache(): CacheEntry | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as CacheEntry
-  } catch { /* ignore */ }
-  return null
-}
-
-function writeCache(data: ChartData, key: string) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, key, ts: Date.now() }))
-  } catch { /* ignore */ }
-}
-
 interface QMeta { id: string; subject: string; category: string; question_type: string }
-let qMetaCache: QMeta[] | null = null
-
-function readQMetaCache(): QMeta[] | null {
-  if (qMetaCache) return qMetaCache
-  try {
-    const raw = localStorage.getItem(Q_META_KEY)
-    if (!raw) return null
-    const entry = JSON.parse(raw) as { data: QMeta[]; ts: number }
-    if (Date.now() - entry.ts < Q_META_TTL) { qMetaCache = entry.data; return qMetaCache }
-  } catch { /* ignore */ }
-  return null
-}
-
-function writeQMetaCache(data: QMeta[]) {
-  qMetaCache = data
-  try {
-    localStorage.setItem(Q_META_KEY, JSON.stringify({ data, ts: Date.now() }))
-  } catch { /* ignore */ }
-}
 
 export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const navigate = useNavigate()
+  const dashboardStore = useDashboardStore()
 
   const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
-  const cached = readCache()
-  const hasCache = !!(cached && cached.key === cacheKey)
+  const hasCache = !!(dashboardStore.getChartCache(cacheKey))
 
-  const [chartData, setChartData] = useState<ChartData | null>(hasCache ? cached!.data : null)
+  const [chartData, setChartData] = useState<ChartData | null>(hasCache ? dashboardStore.chartData : null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
@@ -142,60 +102,114 @@ export function Component() {
       end7d.setDate(end7d.getDate() + 7)
 
       // Questions metadata: try cache first, otherwise fetch (without heavy key_points)
-      let questions = readQMetaCache()
+      let questions = dashboardStore.getQMetaCache()
       const qFetchPromise = questions
         ? Promise.resolve(null)
         : supabase.from('questions').select('id, subject, category, question_type')
-            .then(({ data }) => { if (data) writeQMetaCache(data as QMeta[]); return null })
+            .then(({ data }) => { if (data) dashboardStore.setQMetaCache(data as QMeta[]); return null })
 
-      const [{ data: answers }, , kpResult] = await Promise.all([
+      // Pre-aggregated daily stats (lightweight — replaces raw user_answers for charts)
+      // Also fetch key_points + question-level correctness for knowledge graph
+      const [{ data: statsRows }, , kpResult, , { data: kgAnswers }] = await Promise.all([
+        supabase
+          .from('user_daily_stats')
+          .select('date, subject, question_type, total, correct, hourly')
+          .eq('user_id', user!.id)
+          .gte('date', start12wk.toISOString().slice(0, 10)),
+        qFetchPromise,
+        supabase.from('questions').select('id, key_points, subject'),
+        // Lightweight query for knowledge graph: only question_id + is_correct
         supabase
           .from('user_answers')
-          .select('is_correct, answered_at, question_id')
+          .select('question_id, is_correct')
           .eq('user_id', user!.id)
           .gte('answered_at', start12wk.toISOString()),
-        qFetchPromise,
-        // Prefetch key_points in parallel — used later for knowledge graph
-        supabase.from('questions').select('id, key_points, subject'),
       ])
       if (loadGenRef.current !== myGen || cancelled) return
 
-      // Cache raw data for knowledge-graph reuse
-      answersRef.current = (answers ?? []) as typeof answersRef.current
+      answersRef.current = (kgAnswers ?? []) as typeof answersRef.current
       kpRef.current = (kpResult?.data ?? []) as typeof kpRef.current
 
       if (!questions) {
         const { data: fresh } = await supabase.from('questions').select('id, subject, category, question_type')
         if (loadGenRef.current !== myGen || cancelled) return
         questions = (fresh ?? []) as QMeta[]
-        writeQMetaCache(questions)
+        dashboardStore.setQMetaCache(questions)
       }
 
-      const qMap = new Map<string, { subject: string; category: string; questionType: string }>()
-      for (const q of questions ?? []) {
-        qMap.set(q.id, { subject: q.subject ?? '', category: q.category ?? '', questionType: q.question_type ?? '' })
-      }
+      type StatsRow = { date: string; subject: string; question_type: string; total: number; correct: number; hourly: number[] }
+      const rows = (statsRows ?? []) as StatsRow[]
 
       let correctCount = 0
-      const dailyMap = new Map<string, { correct: number; wrong: number; ids: Set<string> }>()
+      let totalAnswered = 0
+      const dailyMap = new Map<string, { correct: number; wrong: number; total: number }>()
+      const dateSubjectMap = new Map<string, Map<string, number>>()
+      const subjectSet = new Set<string>()
+      const subjAccMap = new Map<string, { correct: number; total: number }>()
+      const heatmapMap = new Map<string, { correct: number; total: number }>()
+      const hourlyDistribution = Array.from({ length: 7 }, () => new Array(24).fill(0))
+      let todayHourlyData = new Array(24).fill(0)
+      const todayStr = today.toISOString().slice(0, 10)
 
-      for (const a of answers ?? []) {
-        const day = (a.answered_at as string).slice(0, 10)
-        if (!dailyMap.has(day)) dailyMap.set(day, { correct: 0, wrong: 0, ids: new Set() })
-        const entry = dailyMap.get(day)!
-        entry.ids.add(a.question_id)
-        if (a.is_correct) { correctCount++; entry.correct++ }
-        else entry.wrong++
+      for (const r of rows) {
+        totalAnswered += r.total
+        correctCount += r.correct
+
+        // Daily map
+        if (!dailyMap.has(r.date)) dailyMap.set(r.date, { correct: 0, wrong: 0, total: 0 })
+        const dm = dailyMap.get(r.date)!
+        dm.correct += r.correct
+        dm.wrong += r.total - r.correct
+        dm.total += r.total
+
+        // Date-subject map (for 15-day window)
+        if (r.date >= start7d.toISOString().slice(0, 10)) {
+          if (!dateSubjectMap.has(r.date)) dateSubjectMap.set(r.date, new Map())
+          const dsm = dateSubjectMap.get(r.date)!
+          const subj = r.subject || '未分类'
+          subjectSet.add(subj)
+          dsm.set(subj, (dsm.get(subj) ?? 0) + r.total)
+        }
+
+        // Subject accuracy
+        const subj = r.subject || '未分类'
+        if (!subjAccMap.has(subj)) subjAccMap.set(subj, { correct: 0, total: 0 })
+        const sa = subjAccMap.get(subj)!
+        sa.correct += r.correct
+        sa.total += r.total
+
+        // Heatmap (subject × question_type)
+        const qt = r.question_type || '未分类'
+        const hk = `${subj}|||${qt}`
+        if (!heatmapMap.has(hk)) heatmapMap.set(hk, { correct: 0, total: 0 })
+        const hm = heatmapMap.get(hk)!
+        hm.correct += r.correct
+        hm.total += r.total
+
+        // Hourly distribution
+        const d = new Date(r.date + 'T00:00:00')
+        const dayOfWeek = (d.getDay() + 6) % 7
+        for (let h = 0; h < 24; h++) {
+          if (r.hourly[h]) {
+            hourlyDistribution[dayOfWeek][h] += r.hourly[h]
+          }
+        }
+
+        // Today hourly
+        if (r.date === todayStr) {
+          const merged = new Array(24).fill(0)
+          for (let h = 0; h < 24; h++) merged[h] = todayHourlyData[h] + (r.hourly[h] ?? 0)
+          todayHourlyData = merged
+        }
       }
 
-      const totalAnswered = (answers ?? []).length
       const wrongCount = totalAnswered - correctCount
       const checkinDays = dailyMap.size
 
       // Daily answers for heatmap
       const dailyAnswers = Array.from(dailyMap.entries()).map(([date, v]) => ({
         date,
-        count: v.ids.size,
+        count: v.total,
       }))
 
       // Bar data for today ±7 days (15 days)
@@ -226,10 +240,11 @@ export function Component() {
             .filter((q) => planSubjects.length === 0 || planSubjects.includes(q.subject ?? ''))
             .map((q) => q.id),
         )
+        // Use knowledge-graph answers for question-level uniqueness
         const distinctDone = new Set(
-          (answers ?? [])
-            .filter((a) => scopeIds.has(a.question_id))
-            .map((a) => a.question_id),
+          (kgAnswers ?? [])
+            .filter((a: { question_id: string }) => scopeIds.has(a.question_id))
+            .map((a: { question_id: string }) => a.question_id),
         )
         const totalInScope = scopeIds.size
         const remaining = Math.max(totalInScope - distinctDone.size, 0)
@@ -237,69 +252,21 @@ export function Component() {
         dailyGoal = Math.ceil(remaining / daysLeft)
       }
 
-      // Today's hourly distribution
-      const todayStr = today.toISOString().slice(0, 10)
-      const todayHourlyData = new Array(24).fill(0)
-      for (const a of answers ?? []) {
-        if ((a.answered_at as string).slice(0, 10) === todayStr) {
-          todayHourlyData[new Date(a.answered_at as string).getHours()]++
-        }
-      }
-
-      // Hourly distribution by day of week: 7 rows (Mon=0..Sun=6) x 24 hours
-      const hourlyDistribution = Array.from({ length: 7 }, () => new Array(24).fill(0))
-      for (const a of answers ?? []) {
-        const d = new Date(a.answered_at as string)
-        const dayOfWeek = (d.getDay() + 6) % 7 // Sun=0 -> Mon=0, Sun=6
-        const h = d.getHours()
-        hourlyDistribution[dayOfWeek][h]++
-      }
-
-      // Daily subject stacked bar data for today ±7 days (15 days)
+      // Daily subject data (15-day window)
       const dailySubjectDates: string[] = []
-      const subjectSet = new Set<string>()
-      const dateSubjectMap = new Map<string, Map<string, number>>()
       for (let d = new Date(start7d); d <= end7d; d.setDate(d.getDate() + 1)) {
-        const key = d.toISOString().slice(0, 10)
-        dailySubjectDates.push(key)
-        dateSubjectMap.set(key, new Map())
-      }
-      for (const a of answers ?? []) {
-        const dateKey = (a.answered_at as string).slice(0, 10)
-        const daySubjectMap = dateSubjectMap.get(dateKey)
-        if (!daySubjectMap) continue
-        const qInfo = qMap.get(a.question_id)
-        const subject = qInfo?.subject || '未分类'
-        subjectSet.add(subject)
-        daySubjectMap.set(subject, (daySubjectMap.get(subject) ?? 0) + 1)
+        dailySubjectDates.push(d.toISOString().slice(0, 10))
       }
       const dailySubjectSubjects = Array.from(subjectSet)
       const dailySubjectData = dailySubjectDates.map((date) => {
-        const dayMap = dateSubjectMap.get(date)!
+        const dayMap = dateSubjectMap.get(date)
         const row: Record<string, number> = {}
         for (const s of dailySubjectSubjects) {
-          row[s] = dayMap.get(s) ?? 0
+          row[s] = dayMap?.get(s) ?? 0
         }
         return row
       })
 
-      // Subject accuracy
-      const subjAccMap = new Map<string, { correct: number; total: number }>()
-      const heatmapMap = new Map<string, { correct: number; total: number }>()
-      for (const a of answers ?? []) {
-        const q = qMap.get(a.question_id)
-        const subj = q?.subject || '未分类'
-        if (!subjAccMap.has(subj)) subjAccMap.set(subj, { correct: 0, total: 0 })
-        const sa = subjAccMap.get(subj)!
-        sa.total++
-        if (a.is_correct) sa.correct++
-        const qt = q?.questionType || '未分类'
-        const hk = `${subj}|||${qt}`
-        if (!heatmapMap.has(hk)) heatmapMap.set(hk, { correct: 0, total: 0 })
-        const hm = heatmapMap.get(hk)!
-        hm.total++
-        if (a.is_correct) hm.correct++
-      }
       const subjectAccuracy = [...subjAccMap.entries()]
         .map(([subject, v]) => ({ subject, ...v }))
         .filter((s) => s.total > 0)
@@ -315,7 +282,7 @@ export function Component() {
         todayHourlyData, subjectAccuracy, heatmapData,
         knowledgeGraph: null,
       })
-      writeCache({
+      dashboardStore.setChartCache({
         totalAnswered, correctCount, wrongCount, checkinDays, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
@@ -323,17 +290,25 @@ export function Component() {
       }, cacheKey)
       setIsRefreshing(false)
 
-      // Background prefetch full questions for offline practice
+      // Background incremental sync questions for offline practice
       const prefetchGen = myGen
       ;(async () => {
         try {
-          const { data } = await supabase.from('questions').select('*')
+          const SYNC_TS_KEY = 'q_last_sync_ts'
+          const lastSync = localStorage.getItem(SYNC_TS_KEY)
+          let query = supabase.from('questions').select('*')
+          if (lastSync) {
+            query = query.gte('updated_at', lastSync)
+          }
+          const { data } = await query
           if (loadGenRef.current !== prefetchGen) return
           if (data && data.length > 0) {
-            await clearPrefetchedQuestions()
+            // Full sync on first run; incremental upsert thereafter
+            if (!lastSync) await clearPrefetchedQuestions()
             if (loadGenRef.current !== prefetchGen) return
-            await prefetchQuestions(data.map((q) => ({ id: q.id, data: q })))
+            await prefetchQuestions(data.map((q: Record<string, unknown>) => ({ id: q.id as string, data: q })))
           }
+          localStorage.setItem(SYNC_TS_KEY, new Date().toISOString())
         } catch { /* best-effort */ }
       })()
     }

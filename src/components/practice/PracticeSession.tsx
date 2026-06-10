@@ -186,10 +186,10 @@ export function PracticeSession() {
     fetchRandomQuestion()
   }, [fetchRandomQuestion])
 
-  const handleSelect = (answer: CorrectAnswer) => {
+  const handleSelect = useCallback((answer: CorrectAnswer) => {
     if (isSubmitted) return
     setSelectedAnswer(answer)
-  }
+  }, [isSubmitted])
 
   const bumpRefresh = useRefreshStore((s) => s.bump)
 
@@ -202,23 +202,23 @@ export function PracticeSession() {
     setIsSubmitted(true)
   }
 
-  const handleNoteChange = async (value: string, pub?: boolean) => {
+  const handleNoteChange = useCallback(async (value: string, pub?: boolean) => {
     setNote(value)
     if (answerId) {
       await updateNote(answerId, value, pub !== undefined ? pub : isPublic)
     }
-  }
+  }, [answerId, isPublic, updateNote])
 
-  const handlePublicToggle = async (pub: boolean) => {
+  const handlePublicToggle = useCallback(async (pub: boolean) => {
     setIsPublic(pub)
     if (answerId) {
       await updateNote(answerId, note, pub)
     }
-  }
+  }, [answerId, note, updateNote])
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     fetchRandomQuestion()
-  }
+  }, [fetchRandomQuestion])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,

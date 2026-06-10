@@ -18,6 +18,9 @@ dist-ssr
 # Supabase
 supabase/.temp
 
+# Bundle analysis
+stats.html
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

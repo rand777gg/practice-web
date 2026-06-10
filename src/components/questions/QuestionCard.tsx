@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS } from '@/lib/constants'
@@ -37,7 +38,7 @@ interface Props {
   onToggleFavorite?: () => void
 }
 
-export function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite }: Props) {
   const { t } = useT()
   const type = question.question_type
   const isSingle = type === 'single_choice'
@@ -289,4 +290,4 @@ export function QuestionCard({ question, selectedAnswer, showResult, onSelect, d
       )}
     </div>
   )
-}
+})

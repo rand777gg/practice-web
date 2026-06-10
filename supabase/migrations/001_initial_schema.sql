@@ -375,3 +375,178 @@ CREATE POLICY qbi_delete ON public.question_bank_items FOR DELETE
       WHERE id = bank_id AND (created_by = auth.uid() OR public.is_admin())
     )
   );
+
+-- ----------------------------------------------------------------------------
+-- 12. RANDOM UNANSWERED QUESTION PICKER — 服务端随机抽取未做题目
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_random_question_id(
+  p_user_id       UUID,
+  p_subjects      TEXT[]  DEFAULT NULL,
+  p_category      TEXT    DEFAULT NULL,
+  p_question_type TEXT    DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  v_id UUID;
+BEGIN
+  SELECT q.id INTO v_id
+  FROM public.questions q
+  WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+    AND (p_category IS NULL OR q.category = p_category)
+    AND (p_question_type IS NULL OR q.question_type = p_question_type)
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_answers ua
+      WHERE ua.question_id = q.id AND ua.user_id = p_user_id
+    )
+  ORDER BY random()
+  LIMIT 1;
+
+  IF v_id IS NOT NULL THEN
+    RETURN v_id;
+  END IF;
+
+  SELECT q.id INTO v_id
+  FROM public.questions q
+  WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+    AND (p_category IS NULL OR q.category = p_category)
+    AND (p_question_type IS NULL OR q.question_type = p_question_type)
+  ORDER BY random()
+  LIMIT 1;
+
+  RETURN v_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_random_question_id TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 13. UPDATED_AT TRIGGER — 自动记录题目变更时间，支持增量同步
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_questions_updated_at ON public.questions(updated_at);
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_set_updated_at ON public.questions;
+CREATE TRIGGER trg_set_updated_at
+  BEFORE UPDATE ON public.questions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
+
+-- ----------------------------------------------------------------------------
+-- 14. USER DAILY STATS — 预聚合每日答题统计，加速 Dashboard
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_daily_stats (
+  user_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  date          DATE NOT NULL,
+  subject       TEXT NOT NULL DEFAULT '',
+  question_type TEXT NOT NULL DEFAULT '',
+  total         INTEGER NOT NULL DEFAULT 0,
+  correct       INTEGER NOT NULL DEFAULT 0,
+  hourly        INTEGER[24] NOT NULL DEFAULT '{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}',
+  PRIMARY KEY (user_id, date, subject, question_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uds_user_date ON public.user_daily_stats(user_id, date);
+
+ALTER TABLE public.user_daily_stats ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS uds_own ON public.user_daily_stats;
+CREATE POLICY uds_own ON public.user_daily_stats FOR SELECT
+  USING (user_id = auth.uid() OR public.is_admin());
+
+-- Trigger: auto-upsert stats when a new answer is inserted
+CREATE OR REPLACE FUNCTION public.upsert_daily_stats()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_subject       TEXT;
+  v_question_type TEXT;
+  v_hour          INTEGER;
+BEGIN
+  SELECT COALESCE(q.subject, ''), COALESCE(q.question_type, '')
+    INTO v_subject, v_question_type
+    FROM public.questions q WHERE q.id = NEW.question_id;
+
+  v_hour := EXTRACT(HOUR FROM NEW.answered_at);
+
+  INSERT INTO public.user_daily_stats (user_id, date, subject, question_type, total, correct, hourly)
+  VALUES (
+    NEW.user_id,
+    NEW.answered_at::DATE,
+    v_subject,
+    v_question_type,
+    1,
+    CASE WHEN NEW.is_correct THEN 1 ELSE 0 END,
+    (SELECT array_agg(CASE WHEN i = v_hour THEN 1 ELSE 0 END) FROM generate_series(0, 23) i)
+  )
+  ON CONFLICT (user_id, date, subject, question_type)
+  DO UPDATE SET
+    total   = user_daily_stats.total + 1,
+    correct = user_daily_stats.correct + CASE WHEN NEW.is_correct THEN 1 ELSE 0 END,
+    hourly  = (
+      SELECT array_agg(
+        user_daily_stats.hourly[idx] + CASE WHEN idx - 1 = v_hour THEN 1 ELSE 0 END
+      ) FROM generate_subscripts(user_daily_stats.hourly, 1) idx
+    );
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_upsert_daily_stats ON public.user_answers;
+CREATE TRIGGER trg_upsert_daily_stats
+  AFTER INSERT ON public.user_answers
+  FOR EACH ROW
+  EXECUTE FUNCTION public.upsert_daily_stats();
+
+-- Backfill: populate user_daily_stats from existing user_answers (run once)
+CREATE OR REPLACE FUNCTION public.backfill_daily_stats()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  r RECORD;
+BEGIN
+  DELETE FROM public.user_daily_stats;
+  FOR r IN
+    SELECT
+      ua.user_id,
+      ua.answered_at::DATE AS date,
+      COALESCE(q.subject, '') AS subject,
+      COALESCE(q.question_type, '') AS question_type,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE ua.is_correct) AS correct,
+      array_agg(EXTRACT(HOUR FROM ua.answered_at)::INTEGER) AS hours_list
+    FROM public.user_answers ua
+    JOIN public.questions q ON q.id = ua.question_id
+    GROUP BY ua.user_id, ua.answered_at::DATE, q.subject, q.question_type
+  LOOP
+    INSERT INTO public.user_daily_stats (user_id, date, subject, question_type, total, correct, hourly)
+    VALUES (
+      r.user_id, r.date, r.subject, r.question_type, r.total, r.correct,
+      (SELECT array_agg(COALESCE(cnt, 0)) FROM generate_series(0, 23) g(h)
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::INTEGER FROM unnest(r.hours_list) t(h2) WHERE t.h2 = g.h
+       ) sub(cnt) ON true)
+    )
+    ON CONFLICT (user_id, date, subject, question_type) DO NOTHING;
+  END LOOP;
+END;
+$$;

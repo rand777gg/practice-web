@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -478,6 +478,13 @@ export function ExamSession() {
 
   const currentQuestion = questions[currentIndex]
 
+  const handleAnswerSelect = useCallback(
+    (index: Parameters<typeof answerQuestion>[1]) => answerQuestion(currentQuestion!.id, index),
+    [currentQuestion?.id, answerQuestion],
+  )
+
+  const questionIds = useMemo(() => questions.map((q) => q.id), [questions])
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -490,7 +497,7 @@ export function ExamSession() {
           current={currentIndex}
           total={questions.length}
           answers={answers}
-          questionIds={questions.map((q) => q.id)}
+          questionIds={questionIds}
           onJumpTo={jumpTo}
         />
       </div>
@@ -506,7 +513,7 @@ export function ExamSession() {
           <QuestionCard
             question={currentQuestion}
             selectedAnswer={answers.get(currentQuestion.id) ?? null}
-            onSelect={(index) => answerQuestion(currentQuestion.id, index)}
+            onSelect={handleAnswerSelect}
           />
         </div>
       )}

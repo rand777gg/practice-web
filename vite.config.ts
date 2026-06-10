@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'path'
 
 export default defineConfig({
@@ -36,15 +37,42 @@ export default defineConfig({
         skipWaiting: false,
         runtimeCaching: [
           {
+            // Supabase API — network first, stale-while-revalidate cache
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
+              networkTimeoutSeconds: 5,
+            },
+          },
+          {
+            // Static assets (JS/CSS chunks) — CacheFirst for instant repeat loads
+            urlPattern: /\.(?:js|css)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-assets',
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            // Fonts and images — stale-while-revalidate
+            urlPattern: /\.(?:woff2?|png|svg|jpg|jpeg|gif|ico)$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'static-media',
+              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 90 },
             },
           },
         ],
       },
+    }),
+    // Bundle analyzer — open stats.html after build
+    visualizer({
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+      filename: 'stats.html',
     }),
   ],
   resolve: {
