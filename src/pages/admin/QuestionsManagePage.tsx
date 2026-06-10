@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { supabase } from '@/lib/supabase'
 import { Link } from 'react-router-dom'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
@@ -20,7 +21,14 @@ import { Pagination } from '@/components/ui/pagination'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown, Sparkles } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
+import { Upload, Plus, Check, ChevronDown, Sparkles, ListOrdered } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
@@ -29,6 +37,10 @@ export function Component() {
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [showRenumber, setShowRenumber] = useState(false)
+  const [renumberSubject, setRenumberSubject] = useState('')
+  const [renumbering, setRenumbering] = useState(false)
+  const [renumberMsg, setRenumberMsg] = useState('')
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
@@ -81,6 +93,10 @@ export function Component() {
               <Sparkles className="h-4 w-4" />
               <span className="hidden sm:inline ml-1">AI 智能解析</span>
             </Link>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setRenumberSubject(selectedSubject || ''); setRenumberMsg(''); setShowRenumber(true) }}>
+            <ListOrdered className="h-4 w-4" />
+            <span className="hidden sm:inline ml-1">编号</span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
             <Upload className="h-4 w-4" />
@@ -207,6 +223,71 @@ export function Component() {
         onClose={() => setShowImport(false)}
         onImported={refetch}
       />
+
+      <AlertDialog open={showRenumber} onOpenChange={setShowRenumber}>
+        <AlertDialogContent>
+          <AlertDialogTitle>重新编号</AlertDialogTitle>
+          <AlertDialogDescription>
+            为指定学科的题目按创建时间顺序添加序号（如 "1. ", "2. "）。已有序号的会被替换。
+          </AlertDialogDescription>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">学科</label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs w-full justify-between">
+                    {renumberSubject || '选择学科'}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                  {subjects.map((s) => (
+                    <DropdownMenuItem key={s} onClick={() => setRenumberSubject(s)}>
+                      {s}
+                      {renumberSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {renumberMsg && (
+              <div className="rounded-md bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">{renumberMsg}</div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <AlertDialogCancel asChild>
+                <Button variant="outline" size="sm" disabled={renumbering}>取消</Button>
+              </AlertDialogCancel>
+              <Button size="sm" disabled={!renumberSubject || renumbering}
+                onClick={async () => {
+                  setRenumbering(true)
+                  setRenumberMsg('')
+                  try {
+                    const { data } = await supabase.from('questions')
+                      .select('id, question_text').eq('subject', renumberSubject)
+                      .order('created_at', { ascending: true })
+                    if (!data || data.length === 0) {
+                      setRenumberMsg('该学科没有题目'); setRenumbering(false); return
+                    }
+                    let count = 0
+                    for (let i = 0; i < data.length; i++) {
+                      const q = data[i]
+                      const newText = `${i + 1}. ${(q.question_text as string).replace(/^\d+\.\s*/, '')}`
+                      if (newText !== q.question_text) {
+                        await supabase.from('questions').update({ question_text: newText }).eq('id', q.id)
+                        count++
+                      }
+                    }
+                    setRenumberMsg(`已更新 ${count} 道题目`)
+                    refetch()
+                  } catch { setRenumberMsg('编号失败') }
+                  setRenumbering(false)
+                }}>
+                {renumbering ? '编号中...' : '开始编号'}
+              </Button>
+            </div>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
