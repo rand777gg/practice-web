@@ -22,7 +22,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-re
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n/use-t'
 
-const PAGE_SIZE = 10
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 50]
 
 interface Props {
   open: boolean
@@ -39,13 +39,14 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [totalCount, setTotalCount] = useState(0)
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
   const [search, setSearch] = useState('')
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
   useEffect(() => {
     updateFilteredCategories(selectedSubject)
@@ -61,8 +62,8 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
     if (selectedCategory) query = query.or(`category.eq."${selectedCategory}",categories.cs.{${selectedCategory}}`)
     if (selectedType) query = query.eq('question_type', selectedType)
 
-    const from = (page - 1) * PAGE_SIZE
-    const to = from + PAGE_SIZE - 1
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
 
     const { data, count } = await query
       .order('created_at', { ascending: false })
@@ -71,7 +72,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
     setQuestions((data ?? []) as typeof questions)
     setTotalCount(count ?? 0)
     setLoading(false)
-  }, [page, search, selectedSubject, selectedCategory, selectedType])
+  }, [page, pageSize, search, selectedSubject, selectedCategory, selectedType])
 
   useEffect(() => {
     if (open) { setPage(1); setSelectedIds(new Set()); fetchQuestions() }
@@ -79,7 +80,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
 
   useEffect(() => {
     if (open) fetchQuestions()
-  }, [page, selectedSubject, selectedCategory, selectedType, search])
+  }, [page, pageSize, selectedSubject, selectedCategory, selectedType, search])
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -184,7 +185,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
           ) : questions.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-8">暂无题目</p>
           ) : (
-            <Table>
+            <Table className="table-fixed w-full">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40px]">
@@ -194,7 +195,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       </div>
                     </button>
                   </TableHead>
-                  <TableHead className="text-xs w-[200px]">题目</TableHead>
+                  <TableHead className="text-xs w-[50%]">题目</TableHead>
                   <TableHead className="text-xs w-[80px]">学科</TableHead>
                   <TableHead className="text-xs w-[120px]">分类</TableHead>
                   <TableHead className="text-xs w-[80px]">类型</TableHead>
@@ -214,7 +215,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                           {alreadyAdded ? <Check className="h-3 w-3 text-muted-foreground/40" /> : selected ? <Check className="h-3 w-3" /> : null}
                         </button>
                       </TableCell>
-                      <TableCell className="text-xs py-2 whitespace-nowrap">{q.question_text}</TableCell>
+                      <TableCell className="text-xs py-2 overflow-hidden text-ellipsis whitespace-nowrap">{q.question_text}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q.subject || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
@@ -238,8 +239,8 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
           )}
         </div>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 pt-3 border-t">
+        <div className="flex items-center justify-between pt-3 border-t">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
               <ChevronLeft className="h-3 w-3" />
             </Button>
@@ -247,14 +248,27 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
               <ChevronRight className="h-3 w-3" />
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                  {pageSize} 条/页
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <DropdownMenuItem key={n} onClick={() => { setPageSize(n); setPage(1) }}>
+                    {n} 条/页
+                    {pageSize === n && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        )}
-
-        <div className="flex gap-2 justify-between pt-3 border-t">
-          <span className="text-xs text-muted-foreground self-center">
-            {selectedIds.size > 0 ? `已选 ${selectedIds.size} 道` : '未选择题目'}
-          </span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {selectedIds.size > 0 ? `已选 ${selectedIds.size} 道` : '未选择题目'}
+            </span>
             <AlertDialogCancel asChild>
               <Button variant="outline" size="sm">取消</Button>
             </AlertDialogCancel>
