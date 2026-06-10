@@ -30,6 +30,7 @@ function LogoImage({ src, alt, className, fallbackClassName }: { src: string; al
     </div>
   )
 }
+import { useAuthStore } from '@/stores/auth-store'
 import type { QuestionBank } from '@/hooks/use-question-banks'
 
 interface Props {
@@ -40,6 +41,8 @@ interface Props {
 }
 
 export function BankCard({ bank, onEdit, onDelete, onClick }: Props) {
+  const user = useAuthStore((s) => s.user)
+  const isOwner = user?.id === bank.created_by
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -74,14 +77,18 @@ export function BankCard({ bank, onEdit, onDelete, onClick }: Props) {
               {(bank.question_count ?? 0)} 道题目
             </span>
             <div className="flex-1" />
-            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => { e.stopPropagation(); onEdit(bank) }}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-              onClick={(e) => { e.stopPropagation(); setDeleteOpen(true) }}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {isOwner && (
+              <>
+                <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => { e.stopPropagation(); onEdit(bank) }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                  onClick={(e) => { e.stopPropagation(); setDeleteOpen(true) }}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
