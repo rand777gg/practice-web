@@ -302,15 +302,18 @@ export function Component() {
           topicDescription: genTopic || undefined,
         }, generateDocPrompt)
       }
-      setQuestions(result.questions)
-      setSelectedIds(new Set(result.questions.map((_, i) => i)))
+      const questions = genTopic
+        ? result.questions.map((q) => ({ ...q, key_points: genTopic }))
+        : result.questions
+      setQuestions(questions)
+      setSelectedIds(new Set(questions.map((_, i) => i)))
       setSubject(genSubject)
       setCategory('AI生成')
       setStep('preview')
       if (genFile) {
-        saveToHistory({ fileName: genFile.name, markdown: genFileText, questions: result.questions, mode: 'generate' })
+        saveToHistory({ fileName: genFile.name, markdown: genFileText, questions, mode: 'generate' })
       } else {
-        saveToHistory({ fileName: genSubject || '手动生成', markdown: genTopic || '', questions: result.questions, mode: 'generate' })
+        saveToHistory({ fileName: genSubject || '手动生成', markdown: genTopic || '', questions, mode: 'generate' })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败')
