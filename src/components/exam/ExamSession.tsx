@@ -428,13 +428,13 @@ export function ExamSession() {
             <AlertDialogHeader>
               <AlertDialogTitle>{t('exam.resumeTitle')}</AlertDialogTitle>
               <AlertDialogDescription className="space-y-2">
-                <p>{t('exam.resumeDesc')}</p>
+                <div>{t('exam.resumeDesc')}</div>
                 {pendingSession && (
                   <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-                    <p>{t('exam.resumeTotal')}: {pendingSession.question_ids.length} {t('questions.total')}</p>
-                    <p>{t('exam.resumeProgress')}: {pendingSession.current_index + 1} / {pendingSession.question_ids.length}</p>
-                    <p>{t('exam.resumeStarted')}: {new Date(pendingSession.started_at).toLocaleString()}</p>
-                    <p>{t('exam.resumeTime')}: {Math.ceil(Math.max(0, pendingSession.duration_ms - (Date.now() - new Date(pendingSession.started_at).getTime())) / 60000)} {t('exam.minutes')}</p>
+                    <div>{t('exam.resumeTotal')}: {pendingSession.question_ids.length} {t('questions.total')}</div>
+                    <div>{t('exam.resumeProgress')}: {pendingSession.current_index + 1} / {pendingSession.question_ids.length}</div>
+                    <div>{t('exam.resumeStarted')}: {new Date(pendingSession.started_at).toLocaleString()}</div>
+                    <div>{t('exam.resumeTime')}: {Math.ceil(Math.max(0, pendingSession.duration_ms - (Date.now() - new Date(pendingSession.started_at).getTime())) / 60000)} {t('exam.minutes')}</div>
                   </div>
                 )}
               </AlertDialogDescription>
