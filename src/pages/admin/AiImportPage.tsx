@@ -750,12 +750,13 @@ export function Component() {
                           <pre className="mt-1 p-3 bg-muted/50 rounded-lg border max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
                         </details>
                       )}
-                      <PromptEditor label="提示词 - 预设" value={generateDocPrompt}
-                        onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
-                        onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
-                      />
                     </CardContent>
                   </Card>
+
+                  <PromptEditor label="提示词 - 预设" value={generateDocPrompt}
+                    onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
+                    onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
+                  />
 
                   {/* Config */}
                   <Card>
