@@ -255,10 +255,10 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
                 Math.abs(activeBbox[0] - x0) < 2 && Math.abs(activeBbox[1] - y0) < 2
               let left: number, top: number, w: number, h: number
               if (isNormalized) {
-                // content_list.json: 0-1000, Y from bottom (PDF-style)
+                // content_list.json: 0-1000, Y from top (CSS-style)
                 const cw = containerW; const ch = displayHeight
                 left = (x0 / 1000) * cw
-                top = ch - (y1 / 1000) * ch
+                top = (y0 / 1000) * ch
                 w = Math.max(((x1 - x0) / 1000) * cw, 2)
                 h = Math.max(((y1 - y0) / 1000) * ch, 2)
               } else {

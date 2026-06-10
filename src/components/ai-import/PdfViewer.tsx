@@ -136,9 +136,9 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
             const cssH = pageSize.height * displayScale
             let blockLeft: number, blockTop: number, blockW: number, blockH: number
             if (isNormalized) {
-              // content_list.json: 0-1000 range, Y from bottom (PDF-style)
+              // content_list.json: 0-1000 range, Y from top (CSS-style)
               blockLeft = (x0 / 1000) * cssW
-              blockTop = cssH - (y1 / 1000) * cssH
+              blockTop = (y0 / 1000) * cssH
               blockW = Math.max(((x1 - x0) / 1000) * cssW, 2)
               blockH = Math.max(((y1 - y0) / 1000) * cssH, 2)
             } else {

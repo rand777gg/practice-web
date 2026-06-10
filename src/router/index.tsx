@@ -87,10 +87,6 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/pages/admin/AiImportPage'),
                   },
                   {
-                    path: 'pdf-test',
-                    lazy: () => import('@/pages/admin/PdfTestPage'),
-                  },
-                  {
                     path: 'users',
                     lazy: () => import('@/pages/admin/UsersManagePage'),
                   },
