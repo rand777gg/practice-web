@@ -880,10 +880,10 @@ export function Component() {
                           {showSplitView ? '隐藏原文' : '对照原文'}
                         </button>
                       )}
-                      {pdfUrl && parseResult.jsonData && (
+                      {pdfUrl && (
                         <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => {
                           sessionStorage.setItem('pdf_test_url', pdfUrl)
-                          sessionStorage.setItem('pdf_test_json', parseResult.jsonData!)
+                          sessionStorage.setItem('pdf_test_json', parseResult.jsonData || '')
                           sessionStorage.setItem('pdf_test_md', parseResult.markdown)
                           window.open('/admin/pdf-test', '_blank')
                         }}>
