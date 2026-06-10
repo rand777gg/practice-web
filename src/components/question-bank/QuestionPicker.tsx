@@ -115,12 +115,13 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
           从题库中选择题目添加到试题库
         </AlertDialogDescription>
 
-        <div className="flex flex-wrap items-center gap-2 mt-2">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2 mt-2">
+          <div className="relative w-full sm:flex-1 sm:min-w-[200px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input className="pl-8 h-8 text-xs" placeholder="搜索题目..." value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
           </div>
+          <div className="flex flex-wrap gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
@@ -181,6 +182,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto scrollbar-visible -mx-6 px-6 mt-3">
@@ -264,8 +266,8 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
           )}
         </div>
 
-        <div className="flex items-center justify-between pt-3 border-t">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-3 border-t">
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
               <ChevronLeft className="h-3 w-3" />
             </Button>
@@ -290,8 +292,8 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
               {selectedIds.size > 0 ? `已选 ${selectedIds.size} 道` : '未选择题目'}
             </span>
             <AlertDialogCancel asChild>
