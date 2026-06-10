@@ -891,7 +891,6 @@ export function Component() {
                         </button>
                       )}
                     </div>
-                    )}
                   </div>
 
                   <div className={`grid gap-4 items-stretch ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
