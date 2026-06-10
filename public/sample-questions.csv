@@ -1,0 +1,4 @@
+question_text,option_a,option_b,option_c,option_d,correct_answer,category,subject,analysis,key_points
+HTML 的全称是什么？,Hyper Text Markup Language,High Tech Modern Language,Hyper Transfer Markup Language,Home Tool Markup Language,0,前端基础,计算机,HTML 是 Hyper Text Markup Language（超文本标记语言）的缩写。,HTML; Web基础
+CSS 的全称是什么？,Cascading Style Sheets,Computer Style System,Creative Style Sheets,Colorful Style Sheets,0,前端基础,计算机,CSS 是 Cascading Style Sheets（层叠样式表）的缩写。,CSS; Web基础
+JavaScript 的数据类型不包括以下哪项？,String,Number,Boolean,Float,3,前端基础,计算机,JavaScript 有 7 种原始类型：String、Number、Boolean、Null、Undefined、Symbol、BigInt。Float 不是独立类型。,JavaScript; 数据类型

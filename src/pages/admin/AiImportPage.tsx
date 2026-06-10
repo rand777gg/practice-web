@@ -37,7 +37,7 @@ import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, Clock, Play, Trash2, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
-type ParseMode = 'lightweight' | 'precision' | 'generate' | 'manual'
+type ParseMode = 'lightweight' | 'precision' | 'generate'
 
 export function Component() {
   const [step, setStep] = useState<Step>('upload')

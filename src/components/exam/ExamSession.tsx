@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -210,7 +211,18 @@ export function ExamSession() {
   })
 
   if (checkingSession) {
-    return <LoadingTips className="py-12" compact />
+    return (
+      <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
+        <Skeleton className="h-6 w-3/4" />
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-10 w-32" />
+      </div>
+    )
   }
 
   if (showStart) {
@@ -432,7 +444,18 @@ export function ExamSession() {
   }
 
   if (isLoading) {
-    return <LoadingTips className="py-12" compact />
+    return (
+      <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
+        <Skeleton className="h-6 w-3/4" />
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-10 w-32" />
+      </div>
+    )
   }
 
   if (error && !hasStarted) {
