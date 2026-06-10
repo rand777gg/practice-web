@@ -352,59 +352,92 @@ export function Component() {
               <CardTitle className="text-sm">界面设置</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              {/* Font family */}
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">字体</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {FONT_OPTIONS.map((f) => {
-                    const isActive = fontFamily === f.value
-                    return (
-                      <button
-                        key={f.value}
-                        type="button"
-                        onClick={() => setFontFamily(f.value)}
-                        className={cn(
-                          'px-2.5 py-1 rounded-md text-xs border transition-colors',
-                          isActive
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border hover:bg-accent',
-                        )}
-                        style={{ fontFamily: f.value === 'system' ? undefined : `'${f.value}', system-ui, sans-serif` }}
-                      >
-                        {f.label}
-                      </button>
-                    )
-                  })}
+              {/* Eye care — top */}
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 mr-2">
+                  <p className="text-sm">{t('settings.eyeCare')}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.eyeCareDesc')}</p>
                 </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs shrink-0" disabled={siteTheme === 'dark'}>
+                      <span className="w-3.5 h-3.5 rounded-full border border-border/50 shrink-0" style={{ background: currentPalette.preview }} />
+                      {currentPalette.label}
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {EYE_CARE_PALETTES.map((p) => (
+                      <DropdownMenuItem key={p.value} onClick={() => setEyeCare(p.value)}>
+                        <span className="w-4 h-4 rounded-full border border-border/50 mr-2 shrink-0" style={{ background: p.preview }} />
+                        {p.label}
+                        {eyeCare === p.value && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
-              {/* Font size + weight row */}
+              <div className="border-t pt-4" />
+
+              {/* Font family + weight row */}
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <p className="text-xs text-muted-foreground mb-2">字号 <span className="tabular-nums font-medium text-foreground">{fontSize}px</span></p>
-                  <Slider min={13} max={22} step={1} value={fontSize} onChange={setFontSize} />
+                  <p className="text-xs text-muted-foreground mb-2">字体</p>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs w-full justify-between">
+                        <span style={{ fontFamily: fontFamily === 'system' ? undefined : `'${fontFamily}', system-ui, sans-serif` }}>
+                          {FONT_OPTIONS.find((f) => f.value === fontFamily)?.label ?? fontFamily}
+                        </span>
+                        <ChevronDown className="h-3 w-3 opacity-50" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                      {FONT_OPTIONS.map((f) => (
+                        <DropdownMenuItem
+                          key={f.value}
+                          onClick={() => setFontFamily(f.value)}
+                          style={{ fontFamily: f.value === 'system' ? undefined : `'${f.value}', system-ui, sans-serif` }}
+                        >
+                          {f.label}
+                          {fontFamily === f.value && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div className="flex-1">
                   <p className="text-xs text-muted-foreground mb-2">粗细</p>
-                  <div className="flex gap-1">
-                    {FONT_WEIGHTS.map((w) => (
-                      <button
-                        key={w.value}
-                        type="button"
-                        onClick={() => setFontWeight(w.value)}
-                        className={cn(
-                          'px-2 py-1 rounded-md text-xs border transition-colors',
-                          fontWeight === w.value
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border hover:bg-accent',
-                        )}
-                        style={{ fontWeight: w.value }}
-                      >
-                        {w.label}
-                      </button>
-                    ))}
-                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs w-full justify-between">
+                        <span style={{ fontWeight }}>
+                          {FONT_WEIGHTS.find((w) => w.value === fontWeight)?.label ?? '常规'}
+                        </span>
+                        <ChevronDown className="h-3 w-3 opacity-50" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {FONT_WEIGHTS.map((w) => (
+                        <DropdownMenuItem
+                          key={w.value}
+                          onClick={() => setFontWeight(w.value)}
+                          style={{ fontWeight: w.value }}
+                        >
+                          {w.label}
+                          {fontWeight === w.value && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
+              </div>
+
+              {/* Font size slider */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">字号 <span className="tabular-nums font-medium text-foreground">{fontSize}px</span></p>
+                <Slider min={13} max={22} step={1} value={fontSize} onChange={setFontSize} />
               </div>
 
               {/* Font preview */}
@@ -481,72 +514,9 @@ export function Component() {
                   </DropdownMenu>
                 </div>
               </div>
-
-              <div className="border-t pt-4" />
-
-              {/* Eye care */}
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 mr-2">
-                  <p className="text-sm">{t('settings.eyeCare')}</p>
-                  <p className="text-xs text-muted-foreground">{t('settings.eyeCareDesc')}</p>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs shrink-0" disabled={siteTheme === 'dark'}>
-                      <span className="w-3.5 h-3.5 rounded-full border border-border/50 shrink-0" style={{ background: currentPalette.preview }} />
-                      {currentPalette.label}
-                      <ChevronDown className="h-3 w-3 opacity-50" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {EYE_CARE_PALETTES.map((p) => (
-                      <DropdownMenuItem key={p.value} onClick={() => setEyeCare(p.value)}>
-                        <span className="w-4 h-4 rounded-full border border-border/50 mr-2 shrink-0" style={{ background: p.preview }} />
-                        {p.label}
-                        {eyeCare === p.value && <Check className="h-4 w-4 ml-auto" />}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('settings.preferences')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">{t('settings.language')}</p>
-                <div className="flex gap-2">
-                  <Button
-                    variant={lang === 'zh' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setLang('zh')}
-                  >
-                    <Languages className="h-3.5 w-3.5" />
-                    中文
-                  </Button>
-                  <Button
-                    variant={lang === 'en' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setLang('en')}
-                  >
-                    <Languages className="h-3.5 w-3.5" />
-                    English
-                  </Button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm">{t('settings.offlineMode')}</p>
-                  <p className="text-xs text-muted-foreground">{t('settings.offlineModeDesc')}</p>
-                </div>
-                <Switch checked={offlineMode} onCheckedChange={setOfflineMode} />
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Right column */}
@@ -588,6 +558,42 @@ export function Component() {
                     />
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">{t('settings.preferences')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{t('settings.language')}</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant={lang === 'zh' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLang('zh')}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    中文
+                  </Button>
+                  <Button
+                    variant={lang === 'en' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLang('en')}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    English
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm">{t('settings.offlineMode')}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.offlineModeDesc')}</p>
+                </div>
+                <Switch checked={offlineMode} onCheckedChange={setOfflineMode} />
               </div>
             </CardContent>
           </Card>

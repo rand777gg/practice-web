@@ -108,7 +108,7 @@ export function Component() {
     setHistoryLoading(false)
   }
 
-  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string }) => {
+  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string; extraFormats?: string[] }) => {
     if (!user) return
     await supabase.from('parse_history').insert({
       user_id: user.id,
@@ -119,6 +119,7 @@ export function Component() {
       mode: record.mode,
       status_json: parseStatus ? JSON.stringify(parseStatus) : null,
       page_ranges: record.pageRanges || null,
+      extra_formats: record.extraFormats?.length ? JSON.stringify(record.extraFormats) : null,
     })
   }
 
@@ -130,20 +131,23 @@ export function Component() {
         try { setQuestions(JSON.parse(entry.questions_json)) } catch { /* ignore */ }
       }
       if (entry.page_ranges) setPageRanges(entry.page_ranges)
-      // Restore parse mode so precision/lightweight UI matches
       if (entry.mode === 'precision' || entry.mode === 'lightweight' || entry.mode === 'generate') {
         setParseMode(entry.mode)
       }
-      // Restore status_json so MinerU API response data shows
       if (entry.status_json) {
         try { setParseStatus(JSON.parse(entry.status_json)) } catch { /* ignore */ }
       } else {
         setParseStatus(null)
       }
-      setParseMsg('已从历史记录加载')
-      setParsingDone(true)
-      setStep('parsing')
       setShowHistory(false)
+      // If questions were already generated, go straight to preview
+      if (entry.questions_json) {
+        setStep('preview')
+      } else {
+        setParseMsg('已从历史记录加载')
+        setParsingDone(true)
+        setStep('parsing')
+      }
     }
   }
 
@@ -249,12 +253,12 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
-      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined })
+      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined })
     } else if (file) {
       const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
-      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined })
+      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined })
     }
   }
 
