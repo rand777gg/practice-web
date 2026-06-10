@@ -37,7 +37,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     let query = supabase.from('questions').select('id')
     if (subjects?.length) query = query.in('subject', subjects)
-    if (categories?.length) query = query.in('category', categories)
+    if (categories?.length) query = query.contains('categories', categories)
     if (questionTypes?.length) query = query.in('question_type', questionTypes)
 
     const { data: allQuestions, error: fetchError } = await query

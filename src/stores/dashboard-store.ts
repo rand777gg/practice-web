@@ -25,6 +25,7 @@ interface QMeta {
   id: string
   subject: string
   category: string
+  categories: string[]
   question_type: string
 }
 

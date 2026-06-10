@@ -37,7 +37,7 @@ export function useQuestions() {
 
     if (search) query = query.ilike('question_text', `%${search}%`)
     if (subject) query = query.eq('subject', subject)
-    if (category) query = query.eq('category', category)
+    if (category) query = query.contains('categories', [category])
     if (questionType) query = query.eq('question_type', questionType)
 
     query = query.order('created_at', { ascending: false }).range(from, to)

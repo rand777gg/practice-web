@@ -44,7 +44,7 @@ export function Component() {
 
   const filtered = useMemo(() => questions.filter(q => {
     if (selectedSubject && q.subject !== selectedSubject) return false
-    if (selectedCategory && q.category !== selectedCategory) return false
+    if (selectedCategory && !(q.categories?.includes(selectedCategory) || q.category === selectedCategory)) return false
     if (selectedType && q.question_type !== selectedType) return false
     return true
   }), [questions, selectedSubject, selectedCategory, selectedType])

@@ -37,7 +37,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [options, setOptions] = useState<string[]>(initialData?.options ?? ['', ''])
   const [correctAnswer, setCorrectAnswer] = useState<CorrectAnswer>(initialData?.correct_answer ?? 0)
   const [answerExplanation, setAnswerExplanation] = useState(initialData?.answer_explanation ?? '')
-  const [category, setCategory] = useState(initialData?.category ?? '')
+  const [categories, setCategories] = useState<string[]>(
+    initialData?.categories?.length ? initialData.categories : initialData?.category ? [initialData.category] : []
+  )
+  const [categoryInput, setCategoryInput] = useState('')
   const [subject, setSubject] = useState(initialData?.subject ?? '')
   const [analysis, setAnalysis] = useState(initialData?.analysis ?? '')
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
@@ -58,14 +61,23 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [subjectOpen, setSubjectOpen] = useState(false)
   const [categoryOpen, setCategoryOpen] = useState(false)
   const subjectFiltered = existingSubjects.filter((s) => !subject || s.includes(subject)).slice(0, 8)
-  const categoryFiltered = existingCategories.filter((c) => !category || c.includes(category)).slice(0, 8)
+  const categoryFiltered = existingCategories.filter((c) => {
+    if (categories.includes(c)) return false
+    if (!categoryInput) return true
+    return c.includes(categoryInput)
+  }).slice(0, 8)
 
   useEffect(() => {
-    supabase.from('questions').select('subject, category').then(({ data }) => {
+    supabase.from('questions').select('subject, category, categories').then(({ data }) => {
       const subs = new Set<string>(); const cats = new Set<string>()
       for (const row of data ?? []) {
         if (row.subject) subs.add(row.subject)
         if (row.category) cats.add(row.category)
+        if (row.categories) {
+          for (const c of row.categories as string[]) {
+            if (c) cats.add(c)
+          }
+        }
       }
       setExistingSubjects([...subs].sort())
       setExistingCategories([...cats].sort())
@@ -155,7 +167,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         options: options.map((o) => o.trim()),
         correct_answer: correctAnswer,
         answer_explanation: answerExplanation.trim() || null,
-        category: category.trim() || null,
+        categories: categories.length ? categories : null,
         subject: subject.trim() || null,
         analysis: analysis.trim() || null,
         key_points: keyPoints.trim() || null,
@@ -386,17 +398,39 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category">{t('questions.categoryLabel')} <span className="text-muted-foreground font-normal">(选填)</span></Label>
+                <Label>{t('questions.categoryLabel')} <span className="text-muted-foreground font-normal">(多选)</span></Label>
+                {categories.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.map((c) => (
+                      <span key={c} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs">
+                        {c}
+                        <button type="button" onClick={() => setCategories((prev) => prev.filter((x) => x !== c))} className="text-muted-foreground hover:text-foreground">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="relative">
-                  <Input id="category" value={category} onChange={(e) => { setCategory(e.target.value); setCategoryOpen(true) }}
+                  <Input id="category" value={categoryInput} onChange={(e) => { setCategoryInput(e.target.value); setCategoryOpen(true) }}
                     onFocus={() => setCategoryOpen(true)} onBlur={() => setTimeout(() => setCategoryOpen(false), 150)}
-                    placeholder={t('questions.categoryPlaceholder')} autoComplete="off" />
-                  {category && <button type="button" onClick={() => setCategory('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const v = categoryInput.trim()
+                        if (v && !categories.includes(v)) {
+                          setCategories((prev) => [...prev, v])
+                        }
+                        setCategoryInput('')
+                      }
+                    }}
+                    placeholder="如：2022年真题, 2023年真题" autoComplete="off" />
+                  {categoryInput && <button type="button" onClick={() => setCategoryInput('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
                   {categoryOpen && categoryFiltered.length > 0 && (
                     <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
                       {categoryFiltered.map((c) => (
                         <button key={c} type="button" className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
-                          onMouseDown={() => { setCategory(c); setCategoryOpen(false) }}>{c}</button>
+                          onMouseDown={() => { setCategories((prev) => prev.includes(c) ? prev : [...prev, c]); setCategoryInput(''); setCategoryOpen(false) }}>{c}</button>
                       ))}
                     </div>
                   )}

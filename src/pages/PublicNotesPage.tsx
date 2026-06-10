@@ -63,12 +63,17 @@ export function Component() {
 
   useEffect(() => {
     async function loadFilters() {
-      const { data } = await supabase.from('questions').select('subject, category')
+      const { data } = await supabase.from('questions').select('subject, category, categories')
       const subs = new Set<string>()
       const cats = new Set<string>()
       for (const row of data ?? []) {
         if (row.subject) subs.add(row.subject)
         if (row.category) cats.add(row.category)
+        if (row.categories) {
+          for (const c of row.categories as string[]) {
+            if (c) cats.add(c)
+          }
+        }
       }
       setSubjects([...subs].sort())
       setCategories([...cats].sort())
@@ -87,12 +92,15 @@ export function Component() {
       async function loadCats() {
         const { data } = await supabase
           .from('questions')
-          .select('category')
+          .select('category, categories')
           .eq('subject', pubSubject)
         if (cancelled) return
         const cats = new Set<string>()
         for (const row of data ?? []) {
           if (row.category) cats.add(row.category)
+          if (row.categories) {
+            for (const c of row.categories as string[]) { if (c) cats.add(c) }
+          }
         }
         setPubFilteredCategories([...cats].sort())
       }
@@ -111,12 +119,15 @@ export function Component() {
       async function loadCats() {
         const { data } = await supabase
           .from('questions')
-          .select('category')
+          .select('category, categories')
           .eq('subject', mySubject)
         if (cancelled) return
         const cats = new Set<string>()
         for (const row of data ?? []) {
           if (row.category) cats.add(row.category)
+          if (row.categories) {
+            for (const c of row.categories as string[]) { if (c) cats.add(c) }
+          }
         }
         setMyFilteredCategories([...cats].sort())
       }
@@ -233,11 +244,11 @@ export function Component() {
               {note.questions.subject}
             </span>
           )}
-          {note.questions?.category && (
-            <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-              {note.questions.category}
+          {(note.questions?.categories?.length ? note.questions.categories : note.questions?.category ? [note.questions.category] : []).map((cat: string) => (
+            <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+              {cat}
             </span>
-          )}
+          ))}
           {style === 'my' && (
             <span className={note.is_public
               ? 'inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs text-green-700 dark:text-green-300'
@@ -389,7 +400,7 @@ export function Component() {
               ) : (
                 <div className="space-y-3">
                   {publicNotes
-                    .filter((n) => !pubCategory || n.questions?.category === pubCategory)
+                    .filter((n) => !pubCategory || n.questions?.category === pubCategory || (n.questions?.categories as string[])?.includes(pubCategory))
                     .map((note) => (
                       <NoteCard key={note.id} note={note} showAuthor style="public" />
                     ))}
@@ -506,7 +517,7 @@ export function Component() {
                   {myNotes
                     .filter((n) => myVisibility === 'all' || (myVisibility === 'public' ? n.is_public : !n.is_public))
                     .filter((n) => !mySubject || n.questions?.subject === mySubject)
-                    .filter((n) => !myCategory || n.questions?.category === myCategory)
+                    .filter((n) => !myCategory || n.questions?.category === myCategory || (n.questions?.categories as string[])?.includes(myCategory))
                     .filter((n) => !myType || n.questions?.question_type === myType)
                     .map((note) => (
                       <NoteCard key={note.id} note={note} style="my" />

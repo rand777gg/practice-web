@@ -43,7 +43,7 @@ export function Component() {
     const q = a.questions
     if (!q) return false
     if (selectedSubject && q.subject !== selectedSubject) return false
-    if (selectedCategory && q.category !== selectedCategory) return false
+    if (selectedCategory && !(q.categories?.includes(selectedCategory) || q.category === selectedCategory)) return false
     if (selectedType && q.question_type !== selectedType) return false
     return true
   }), [answers, selectedSubject, selectedCategory, selectedType])

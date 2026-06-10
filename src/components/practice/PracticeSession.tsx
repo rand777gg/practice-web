@@ -112,7 +112,7 @@ export function PracticeSession() {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
-        p_category: selectedCategory || null,
+        p_categories: selectedCategory ? [selectedCategory] : null,
         p_question_type: selectedType || null,
       })
       if (fetchGenRef.current !== myGen) return

@@ -14,13 +14,18 @@ export function useQuestionFilters() {
     if (cacheSubs) return
     let cancelled = false
     async function load() {
-      const { data } = await supabase.from('questions').select('subject, category')
+      const { data } = await supabase.from('questions').select('subject, category, categories')
       if (cancelled) return
       const subs = new Set<string>()
       const cats = new Set<string>()
       for (const row of data ?? []) {
         if (row.subject) subs.add(row.subject)
         if (row.category) cats.add(row.category)
+        if (row.categories) {
+          for (const c of row.categories as string[]) {
+            if (c) cats.add(c)
+          }
+        }
       }
       cacheSubs = [...subs].sort()
       cacheCats = [...cats].sort()
@@ -40,11 +45,16 @@ export function useQuestionFilters() {
     }
     const { data } = await supabase
       .from('questions')
-      .select('category')
+      .select('category, categories')
       .eq('subject', subject)
     const cats = new Set<string>()
     for (const row of data ?? []) {
       if (row.category) cats.add(row.category)
+      if (row.categories) {
+        for (const c of row.categories as string[]) {
+          if (c) cats.add(c)
+        }
+      }
     }
     setFilteredCategories([...cats].sort())
   }, [categories])

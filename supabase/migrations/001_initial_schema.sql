@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS public.favorites (
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'single_choice';
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS answer_explanation TEXT;
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS seq_number INTEGER;
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS status_json TEXT;
 ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS page_ranges TEXT;
 ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS extra_formats TEXT;
@@ -104,6 +105,26 @@ CREATE INDEX IF NOT EXISTS idx_questions_subject        ON public.questions(subj
 CREATE INDEX IF NOT EXISTS idx_questions_subj_cat       ON public.questions(subject, category);
 CREATE INDEX IF NOT EXISTS idx_questions_type           ON public.questions(question_type);
 CREATE INDEX IF NOT EXISTS idx_questions_filter         ON public.questions(subject, category, question_type);
+CREATE INDEX IF NOT EXISTS idx_questions_categories     ON public.questions USING GIN (categories);
+
+-- Keep category in sync with categories[0] automatically
+CREATE OR REPLACE FUNCTION public.sync_category_from_categories()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.categories IS NOT NULL AND jsonb_array_length(NEW.categories) > 0 THEN
+    NEW.category = NEW.categories->>0;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_category ON public.questions;
+CREATE TRIGGER trg_sync_category
+  BEFORE INSERT OR UPDATE ON public.questions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.sync_category_from_categories();
 
 -- user_answers: dashboard time-range, per-question stats, review
 CREATE INDEX IF NOT EXISTS idx_ua_user                ON public.user_answers(user_id);
@@ -398,7 +419,7 @@ CREATE POLICY qbi_delete ON public.question_bank_items FOR DELETE
 CREATE OR REPLACE FUNCTION public.get_random_question_id(
   p_user_id       UUID,
   p_subjects      TEXT[]  DEFAULT NULL,
-  p_category      TEXT    DEFAULT NULL,
+  p_categories    TEXT[]  DEFAULT NULL,
   p_question_type TEXT    DEFAULT NULL
 )
 RETURNS UUID
@@ -412,7 +433,7 @@ BEGIN
   SELECT q.id INTO v_id
   FROM public.questions q
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
-    AND (p_category IS NULL OR q.category = p_category)
+    AND (p_categories IS NULL OR q.categories ?| p_categories)
     AND (p_question_type IS NULL OR q.question_type = p_question_type)
     AND NOT EXISTS (
       SELECT 1 FROM public.user_answers ua
@@ -428,7 +449,7 @@ BEGIN
   SELECT q.id INTO v_id
   FROM public.questions q
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
-    AND (p_category IS NULL OR q.category = p_category)
+    AND (p_categories IS NULL OR q.categories ?| p_categories)
     AND (p_question_type IS NULL OR q.question_type = p_question_type)
   ORDER BY random()
   LIMIT 1;

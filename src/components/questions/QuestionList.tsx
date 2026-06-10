@@ -65,7 +65,7 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
                 </TableCell>
                 <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
                 <TableCell className="whitespace-nowrap">{q.subject ?? '-'}</TableCell>
-                <TableCell className="whitespace-nowrap">{q.category ?? '-'}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{q.categories?.length ? q.categories.join(', ') : (q.category ?? '-')}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
                     {t(`questionTypes.${q.question_type}` as any) || q.question_type}

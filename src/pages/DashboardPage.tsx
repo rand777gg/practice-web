@@ -52,7 +52,7 @@ interface ChartData {
   } | null
 }
 
-interface QMeta { id: string; subject: string; category: string; question_type: string }
+interface QMeta { id: string; subject: string; category: string; categories: string[]; question_type: string }
 
 export function Component() {
   const { t } = useT()
@@ -105,7 +105,7 @@ export function Component() {
       let questions = dashboardStore.getQMetaCache()
       const qFetchPromise = questions
         ? Promise.resolve(null)
-        : supabase.from('questions').select('id, subject, category, question_type')
+        : supabase.from('questions').select('id, subject, category, categories, question_type')
             .then(({ data }) => { if (data) dashboardStore.setQMetaCache(data as QMeta[]); return null })
 
       // Pre-aggregated daily stats (lightweight — replaces raw user_answers for charts)
@@ -220,12 +220,18 @@ export function Component() {
         barData.push({ date: key, correct: entry?.correct ?? 0, wrong: entry?.wrong ?? 0 })
       }
 
-      // Sunburst — merge year subjects (2024真题 → 真题)
-      const sunburstData = (questions ?? []).map((q) => ({
-        subject: /^\d{4}真题$/.test(q.subject || '') ? '真题' : q.subject || '',
-        category: q.category || '',
-        questionType: q.question_type || '',
-      }))
+      // Sunburst — one row per category (explode multi-category questions)
+      const sunburstData: { subject: string; category: string; questionType: string }[] = []
+      for (const q of questions ?? []) {
+        const cats = q.categories?.length ? q.categories : [q.category || '']
+        for (const c of cats) {
+          sunburstData.push({
+            subject: /^\d{4}真题$/.test(q.subject || '') ? '真题' : q.subject || '',
+            category: c || '',
+            questionType: q.question_type || '',
+          })
+        }
+      }
 
       // Daily goal
       const deadline = profile?.deadline

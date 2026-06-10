@@ -115,7 +115,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                     <TableRow key={item.id}>
                       <TableCell className="text-xs py-2 max-w-[300px] truncate">{q?.question_text as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{q?.category as string || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">{((q as any)?.categories?.length ? (q as any).categories.join(', ') : q?.category as string) || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q?.question_type as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"

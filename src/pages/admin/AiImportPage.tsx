@@ -362,7 +362,7 @@ export function Component() {
           question_text: q.question_text,
           options: q.options,
           correct_answer: q.correct_answer as any,
-          category: category || null,
+          categories: category ? [category] : null,
           subject: subject || null,
           analysis: q.analysis ?? null,
           key_points: q.key_points ?? null,

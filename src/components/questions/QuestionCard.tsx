@@ -64,13 +64,13 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
             {question.subject}
           </span>
         )}
-        {question.category && (
-          question.category === 'AI生成' ? (
-            <HoverCard openDelay={200} closeDelay={100}>
+        {(question.categories?.length ? question.categories : question.category ? [question.category] : []).map((cat) =>
+          cat === 'AI生成' ? (
+            <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
               <HoverCardTrigger asChild>
                 <span className="ai-badge ai-badge-dark">
                   <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
-                  <span className="badge-text">{question.category}</span>
+                  <span className="badge-text">AI生成</span>
                 </span>
               </HoverCardTrigger>
               <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
@@ -78,8 +78,8 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               </HoverCardContent>
             </HoverCard>
           ) : (
-            <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-              {question.category}
+            <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+              {cat}
             </span>
           )
         )}

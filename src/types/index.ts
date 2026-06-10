@@ -78,6 +78,7 @@ export interface Question {
   options: string[]
   correct_answer: CorrectAnswer
   category: string | null
+  categories: string[]
   subject: string | null
   analysis: string | null
   key_points: string | null
@@ -138,6 +139,7 @@ export interface ImportedQuestion {
   options: string[]
   correct_answer: CorrectAnswer
   category?: string
+  categories?: string[]
   subject?: string
   analysis?: string
   key_points?: string
