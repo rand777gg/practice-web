@@ -147,7 +147,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="text-xs py-2 whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q?.subject as string || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
                           const cats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]

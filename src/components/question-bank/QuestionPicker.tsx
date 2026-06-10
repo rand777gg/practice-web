@@ -216,7 +216,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                         </button>
                       </TableCell>
                       <TableCell className="text-xs py-2 overflow-hidden text-ellipsis whitespace-nowrap">{q.question_text}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q.subject || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">{q.subject || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
                           const cats = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
