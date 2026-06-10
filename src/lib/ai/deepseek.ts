@@ -295,9 +295,13 @@ export class DeepSeekParser {
           correct_answer = null
         }
         if (question_type === 'judge_correct') {
-          // true = correct statement, string = correction when wrong
-          if (correct_answer !== true && typeof correct_answer !== 'string') {
+          if (correct_answer === false || correct_answer === 'false' || correct_answer === 0 || correct_answer === '0') {
+            correct_answer = ''
+          } else if (correct_answer !== true && typeof correct_answer !== 'string') {
             correct_answer = String(correct_answer ?? '')
+          }
+          if (typeof correct_answer === 'string' && correct_answer.trim() === '') {
+            correct_answer = ''
           }
         }
         if (options.length < 2 && ['single_choice','multi_select'].includes(question_type)) {
