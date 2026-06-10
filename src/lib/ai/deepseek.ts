@@ -16,7 +16,7 @@ const questionSchema = z.object({
 
 const resultSchema = z.object({
   questions: z.array(questionSchema),
-})
+}).passthrough()
 
 const SYSTEM_PROMPT = `You are a test question extraction assistant. Given a document in markdown format, extract ALL questions found in the document.
 
