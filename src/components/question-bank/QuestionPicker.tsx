@@ -58,7 +58,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
 
     if (search) query = query.ilike('question_text', `%${search}%`)
     if (selectedSubject) query = query.eq('subject', selectedSubject)
-    if (selectedCategory) query = query.contains('categories', [selectedCategory])
+    if (selectedCategory) query = query.or(`category.eq."${selectedCategory}",categories.cs.{${selectedCategory}}`)
     if (selectedType) query = query.eq('question_type', selectedType)
 
     const from = (page - 1) * PAGE_SIZE
