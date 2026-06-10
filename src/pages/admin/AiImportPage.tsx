@@ -86,7 +86,7 @@ export function Component() {
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const user = useAuthStore((s) => s.user)
@@ -96,7 +96,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, markdown, json_data, questions_json, status_json, page_ranges, mode, created_at')
+      .select('id, file_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -108,7 +108,7 @@ export function Component() {
     setHistoryLoading(false)
   }
 
-  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string; extraFormats?: string[] }) => {
+  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string; extraFormats?: string[]; pdfTotalPages?: number }) => {
     if (!user) return
     await supabase.from('parse_history').insert({
       user_id: user.id,
@@ -120,6 +120,7 @@ export function Component() {
       status_json: parseStatus ? JSON.stringify(parseStatus) : null,
       page_ranges: record.pageRanges || null,
       extra_formats: record.extraFormats?.length ? JSON.stringify(record.extraFormats) : null,
+      pdf_total_pages: record.pdfTotalPages || null,
     })
   }
 
@@ -224,7 +225,7 @@ export function Component() {
     const result = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
     setParseResult(result)
     setParsingDone(true)
-    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRanges || undefined })
+    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRanges || undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
   }
 
   const runPrecisionParse = async () => {
@@ -253,12 +254,12 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
-      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined })
+      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
     } else if (file) {
       const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
-      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined })
+      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
     }
   }
 
@@ -482,10 +483,23 @@ export function Component() {
                         <TableCell className="text-xs py-2 text-muted-foreground">
                           {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}
                         </TableCell>
-                        <TableCell className="text-xs py-2 text-muted-foreground font-mono">
-                          {h.page_ranges || '全部'}
+                        <TableCell className="text-xs py-2 text-muted-foreground font-mono whitespace-nowrap">
+                          {h.page_ranges ? `${h.page_ranges}` : '全部'}{h.pdf_total_pages ? ` / ${h.pdf_total_pages}页` : ''}
                         </TableCell>
-                        <TableCell className="text-xs py-2 tabular-nums">{qCount > 0 ? `${qCount}` : '-'}</TableCell>
+                        <TableCell className="text-xs py-2 tabular-nums">
+                          {qCount > 0 ? (
+                            <button type="button" className="hover:underline underline-offset-2 font-medium text-primary" onClick={() => {
+                              if (h.questions_json) {
+                                try { setQuestions(JSON.parse(h.questions_json)) } catch { /* ignore */ }
+                                setSelectedIds(new Set())
+                                setStep('preview')
+                                setShowHistory(false)
+                              }
+                            }}>
+                              {qCount}
+                            </button>
+                          ) : '-'}
+                        </TableCell>
                         <TableCell className="text-xs py-2">
                           {statusText ? (
                             <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColor}`}>{statusText}</span>
@@ -959,13 +973,9 @@ export function Component() {
                     <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
                       重新解析
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
+                    <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
                       <ArrowRight className="h-4 w-4" />
                       AI 提取题目
-                    </Button>
-                    <Button size="sm" onClick={() => generateFromDoc(parseResult.markdown)}>
-                      <ArrowRight className="h-4 w-4" />
-                      AI 生成题目
                     </Button>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
