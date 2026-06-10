@@ -870,14 +870,27 @@ export function Component() {
                       <p className="text-sm font-medium">解析结果</p>
                       <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
                     </div>
-                    {pdfUrl && (
-                      <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => {
-                        const next = !showSplitView
-                        setShowSplitView(next)
-                        if (next) setSidebarCollapsed(true)
-                      }}>
-                        {showSplitView ? '隐藏原文' : '对照原文'}
-                      </button>
+                    <div className="flex items-center gap-3">
+                      {pdfUrl && (
+                        <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => {
+                          const next = !showSplitView
+                          setShowSplitView(next)
+                          if (next) setSidebarCollapsed(true)
+                        }}>
+                          {showSplitView ? '隐藏原文' : '对照原文'}
+                        </button>
+                      )}
+                      {pdfUrl && parseResult.jsonData && (
+                        <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => {
+                          sessionStorage.setItem('pdf_test_url', pdfUrl)
+                          sessionStorage.setItem('pdf_test_json', parseResult.jsonData!)
+                          sessionStorage.setItem('pdf_test_md', parseResult.markdown)
+                          window.open('/admin/pdf-test', '_blank')
+                        }}>
+                          调试定位
+                        </button>
+                      )}
+                    </div>
                     )}
                   </div>
 
