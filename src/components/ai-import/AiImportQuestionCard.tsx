@@ -223,7 +223,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         value={question.analysis || ''}
         onChange={(e) => patch({ analysis: e.target.value })}
         className="h-8 text-xs"
-        placeholder="解析（可选）"
+        placeholder="解析"
       />
 
       {/* Key points */}
@@ -232,7 +232,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           value={question.key_points || ''}
           onChange={(e) => patch({ key_points: e.target.value })}
           className="h-8 text-xs pr-8"
-          placeholder="知识点，逗号分隔（可选）"
+          placeholder="知识点，逗号分隔"
         />
         {hasAiConfig() && isEnabled('keypoints') && (
           <Button type="button" variant="ghost" size="icon"
