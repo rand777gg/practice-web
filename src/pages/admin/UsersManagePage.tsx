@@ -13,7 +13,7 @@ export function Component() {
   const { t } = useT()
   const onlineIds = useOnlineUsers()
   const { user: currentUser, profile: myProfile } = useAuthStore()
-  const [profiles, setProfiles] = useState<(Profile & { email?: string })[]>([])
+  const [profiles, setProfiles] = useState<(Profile & { email?: string; providers?: string[] })[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
