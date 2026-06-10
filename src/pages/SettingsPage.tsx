@@ -38,6 +38,19 @@ function randomNickname() {
   return `${ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]}${NOUNS[Math.floor(Math.random() * NOUNS.length)]}${Math.floor(Math.random() * 1000)}`
 }
 
+function preloadAllFonts() {
+  FONT_OPTIONS.forEach((opt) => {
+    if (!opt.google) return
+    const id = `font-preview-${opt.value.replace(/\s+/g, '-')}`
+    if (document.getElementById(id)) return
+    const link = document.createElement('link')
+    link.id = id
+    link.rel = 'stylesheet'
+    link.href = `https://fonts.googleapis.com/css2?family=${opt.google}:wght@${opt.weights}&display=swap`
+    document.head.appendChild(link)
+  })
+}
+
 export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
@@ -384,7 +397,7 @@ export function Component() {
               <div className="flex gap-4">
                 <div className="flex-1">
                   <p className="text-xs text-muted-foreground mb-2">字体</p>
-                  <DropdownMenu>
+                  <DropdownMenu onOpenChange={(open) => { if (open) preloadAllFonts() }}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1.5 text-xs w-full justify-between">
                         <span style={{ fontFamily: fontFamily === 'system' ? undefined : `'${fontFamily}', system-ui, sans-serif` }}>
