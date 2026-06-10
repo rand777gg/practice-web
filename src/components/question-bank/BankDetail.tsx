@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
@@ -9,6 +10,7 @@ import { ArrowLeft, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | null; alt: string; className?: string; fallbackClassName?: string }) {
+  const [loaded, setLoaded] = useState(false)
   const [errored, setErrored] = useState(false)
   if (errored || !src) {
     return (
@@ -17,7 +19,13 @@ function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | 
       </div>
     )
   }
-  return <img src={src} alt={alt} className={cn('object-cover shrink-0', className)} onError={() => setErrored(true)} />
+  return (
+    <div className={cn('relative shrink-0', className)}>
+      {!loaded && <Skeleton className={cn('absolute inset-0 rounded-lg', className)} />}
+      <img src={src} alt={alt} className={cn('object-cover', className, loaded ? 'opacity-100' : 'opacity-0')}
+        onLoad={() => setLoaded(true)} onError={() => setErrored(true)} />
+    </div>
+  )
 }
 
 interface Props {

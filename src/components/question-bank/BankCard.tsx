@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -12,6 +13,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 function LogoImage({ src, alt, className, fallbackClassName }: { src: string; alt: string; className?: string; fallbackClassName?: string }) {
+  const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   if (failed || !src) {
     return (
@@ -20,7 +22,13 @@ function LogoImage({ src, alt, className, fallbackClassName }: { src: string; al
       </div>
     )
   }
-  return <img src={src} alt={alt} className={cn('object-cover shrink-0', className)} onError={() => setFailed(true)} />
+  return (
+    <div className={cn('relative shrink-0', className)}>
+      {!loaded && <Skeleton className={cn('absolute inset-0 rounded-xl', className)} />}
+      <img src={src} alt={alt} className={cn('object-cover', className, loaded ? 'opacity-100' : 'opacity-0')}
+        onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
+    </div>
+  )
 }
 import type { QuestionBank } from '@/hooks/use-question-banks'
 
