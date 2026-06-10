@@ -97,5 +97,10 @@ export function useQuestionBanks() {
     if (error) throw error
   }, [])
 
-  return { banks, isLoading, fetchBanks, createBank, updateBank, deleteBank, fetchBankItems, addBankItems, removeBankItem }
+  const removeBankItems = useCallback(async (itemIds: string[]) => {
+    const { error } = await supabase.from('question_bank_items').delete().in('id', itemIds)
+    if (error) throw error
+  }, [])
+
+  return { banks, isLoading, fetchBanks, createBank, updateBank, deleteBank, fetchBankItems, addBankItems, removeBankItem, removeBankItems }
 }

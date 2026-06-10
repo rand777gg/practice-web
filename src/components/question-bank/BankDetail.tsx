@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { QuestionPicker } from './QuestionPicker'
-import { ArrowLeft, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 
@@ -35,11 +35,12 @@ interface Props {
 }
 
 export function BankDetail({ bank, onBack, onEdit }: Props) {
-  const { fetchBankItems, addBankItems, removeBankItem } = useQuestionBanks()
+  const { fetchBankItems, addBankItems, removeBankItem, removeBankItems } = useQuestionBanks()
   const [items, setItems] = useState<Array<{ id: string; bank_id: string; question_id: string; added_at: string; questions: Record<string, unknown> }>>([])
   const [loading, setLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
 
   const loadItems = async () => {
     setLoading(true)
@@ -62,7 +63,32 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
 
   const handleRemove = async (itemId: string) => {
     await removeBankItem(itemId)
+    setSelectedItems((prev) => { const next = new Set(prev); next.delete(itemId); return next })
     loadItems()
+  }
+
+  const handleBatchRemove = async () => {
+    if (selectedItems.size === 0) return
+    await removeBankItems([...selectedItems])
+    setSelectedItems(new Set())
+    loadItems()
+  }
+
+  const toggleItem = (id: string) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selectedItems.size >= items.length) {
+      setSelectedItems(new Set())
+    } else {
+      setSelectedItems(new Set(items.map((i) => i.id)))
+    }
   }
 
   return (
@@ -83,8 +109,15 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
         <Button variant="outline" size="sm" onClick={() => onEdit(bank)}>编辑</Button>
       </div>
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">共 {items.length} 道题目</p>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">共 {items.length} 道题目</p>
+          {selectedItems.size > 0 && (
+            <Button variant="destructive" size="sm" onClick={handleBatchRemove}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" />删除选中 ({selectedItems.size})
+            </Button>
+          )}
+        </div>
         <Button size="sm" onClick={() => setPickerOpen(true)}>
           <Plus className="h-3.5 w-3.5 mr-1" />添加题目
         </Button>
@@ -96,6 +129,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
             <Table className="min-w-[680px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[40px]" />
                   <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
                   <TableHead className="text-xs w-[120px]">分类</TableHead>
@@ -106,6 +140,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
               <TableBody>
                 {[...Array(5)].map((_, i) => (
                   <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-36" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
@@ -131,9 +166,16 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
       ) : (
         <Card>
           <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
-            <Table className="min-w-[680px]">
+            <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[40px]">
+                    <button type="button" onClick={toggleAll} className="flex items-center">
+                      <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${selectedItems.size >= items.length && items.length > 0 ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
+                        {selectedItems.size >= items.length && items.length > 0 && <Check className="h-3 w-3" />}
+                      </div>
+                    </button>
+                  </TableHead>
                   <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
                   <TableHead className="text-xs w-[120px]">分类</TableHead>
@@ -144,8 +186,15 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
               <TableBody>
                 {items.map((item) => {
                   const q = item.questions
+                  const checked = selectedItems.has(item.id)
                   return (
                     <TableRow key={item.id}>
+                      <TableCell>
+                        <button type="button" onClick={() => toggleItem(item.id)}
+                          className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'}`}>
+                          {checked && <Check className="h-3 w-3" />}
+                        </button>
+                      </TableCell>
                       <TableCell className="text-xs py-2 whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
