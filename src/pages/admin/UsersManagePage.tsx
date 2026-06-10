@@ -89,13 +89,13 @@ export function Component() {
                 <TableCell className="font-mono text-xs whitespace-nowrap">{p.email || '-'}</TableCell>
                 <TableCell>
                   {p.providers?.includes('github') ? (
-                    <Badge variant="default" className="text-[10px]">GitHub</Badge>
+                    <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/30 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-300">已绑定</span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
+                    <span className="text-xs text-muted-foreground">未绑定</span>
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
+                  <Badge variant={p.role === 'admin' ? 'default' : 'secondary'} className="whitespace-nowrap">
                     {p.role === 'admin' ? t('users.admin') : t('users.user')}
                   </Badge>
                 </TableCell>
