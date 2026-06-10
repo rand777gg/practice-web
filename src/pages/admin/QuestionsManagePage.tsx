@@ -101,12 +101,31 @@ export function Component() {
     }
   }
 
+  const [bulkSubject, setBulkSubject] = useState('')
+  const [bulkCategory, setBulkCategory] = useState('')
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+
   const handleBulkDelete = async () => {
     setBulkDeleting(true)
     const ids = [...selectedIds]
     await supabase.from('questions').delete().in('id', ids)
     setSelectedIds(new Set())
     setBulkDeleting(false)
+    refetch()
+  }
+
+  const handleBulkUpdate = async () => {
+    if (!bulkSubject && !bulkCategory) return
+    setBulkUpdating(true)
+    const ids = [...selectedIds]
+    const data: Record<string, unknown> = {}
+    if (bulkSubject) data.subject = bulkSubject
+    if (bulkCategory) { data.category = bulkCategory; data.categories = [bulkCategory] }
+    await supabase.from('questions').update(data).in('id', ids)
+    setBulkSubject('')
+    setBulkCategory('')
+    setSelectedIds(new Set())
+    setBulkUpdating(false)
     refetch()
   }
 
@@ -283,9 +302,53 @@ export function Component() {
             onToggleAll={toggleAll}
           />
           {selectedIds.size > 0 && (
-            <div className="sticky bottom-0 z-10 -mx-4 sm:mx-0 px-4 py-3 bg-background border-t flex items-center justify-between gap-3 rounded-b-lg">
+            <div className="sticky bottom-0 z-10 -mx-4 sm:mx-0 px-4 py-3 bg-background border-t flex items-center justify-between gap-3 rounded-b-lg flex-wrap">
               <span className="text-sm text-muted-foreground">已选 <strong className="text-foreground">{selectedIds.size}</strong> 道题目</span>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                      {bulkSubject || '设置学科'}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                    <DropdownMenuItem onClick={() => setBulkSubject('')}>
+                      <span className="text-muted-foreground">不设置</span>
+                      {!bulkSubject && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                    {subjects.map((s) => (
+                      <DropdownMenuItem key={s} onClick={() => setBulkSubject(s)}>
+                        {s}
+                        {bulkSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                      {bulkCategory || '设置分类'}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                    <DropdownMenuItem onClick={() => setBulkCategory('')}>
+                      <span className="text-muted-foreground">不设置</span>
+                      {!bulkCategory && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                    {filteredCategories.map((c) => (
+                      <DropdownMenuItem key={c} onClick={() => setBulkCategory(c)}>
+                        {c}
+                        {bulkCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button variant="default" size="sm" disabled={bulkUpdating || (!bulkSubject && !bulkCategory)}
+                  onClick={handleBulkUpdate}>
+                  {bulkUpdating ? '应用中...' : '应用'}
+                </Button>
                 <Button variant="outline" size="sm" onClick={clearSelection}>取消选择</Button>
                 <Button variant="destructive" size="sm" disabled={bulkDeleting}
                   onClick={handleBulkDelete}>
