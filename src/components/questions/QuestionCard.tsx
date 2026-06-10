@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Pencil, Star, Sparkles, CalendarDays } from 'lucide-react'
+import { Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const POINT_COLORS = [
@@ -75,15 +75,16 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               <>
                 <HoverCard openDelay={200} closeDelay={100}>
                   <HoverCardTrigger asChild>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary cursor-default">
-                      <CalendarDays className="h-3 w-3" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-default shadow-sm">
+                      <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                       {yearCats.length}年真题
                     </span>
                   </HoverCardTrigger>
                   <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+                    <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
                     <div className="flex flex-wrap gap-1">
                       {yearCats.map((y) => (
-                        <span key={y} className="rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">{y}</span>
+                        <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium">{y}</span>
                       ))}
                     </div>
                   </HoverCardContent>
