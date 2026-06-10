@@ -191,6 +191,7 @@ export function ExamResultCard({ sessionId }: Props) {
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">{t('exam.reviewAnswers')}</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {answers.map((ans) => (
           <QuestionCard
             key={ans.id}
@@ -200,6 +201,7 @@ export function ExamResultCard({ sessionId }: Props) {
             showEditLink={isAdmin}
           />
         ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">

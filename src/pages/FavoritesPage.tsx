@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useFavorites } from '@/hooks/use-favorites'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 
@@ -32,7 +33,25 @@ export function Component() {
 
   if (isLoading) {
     return (
-      <LoadingTips className="py-12" compact />
+      <div className="max-w-5xl">
+        <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('favorites.title')}</h1>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-pulse">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="rounded-xl border bg-card p-4 lg:p-6 space-y-3">
+              <Skeleton className="h-6 w-3/4" />
+              <div className="flex gap-1.5">
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-5 w-12 rounded-full" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     )
   }
 
@@ -44,7 +63,7 @@ export function Component() {
           <p className="text-muted-foreground">{t('favorites.empty')}</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {questions.map((q) => (
             <QuestionCard
               key={q.id}
