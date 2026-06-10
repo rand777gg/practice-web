@@ -30,6 +30,7 @@ import {
 import { extractFileText } from '@/lib/file-text'
 import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
+import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, Clock, Play, Trash2, Upload, X } from 'lucide-react'
