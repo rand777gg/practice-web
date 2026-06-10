@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
@@ -253,10 +254,10 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       {/* Analysis */}
       <div>
         <label className="text-[11px] text-muted-foreground mb-1 block">解析</label>
-        <Input
+        <Textarea
           value={question.analysis || ''}
           onChange={(e) => patch({ analysis: e.target.value })}
-          className="h-8 text-xs"
+          className="text-xs min-h-[60px] resize-y"
           placeholder="解释正确答案..."
         />
       </div>
