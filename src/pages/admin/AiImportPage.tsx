@@ -181,6 +181,7 @@ export function Component() {
     setParsingDone(false)
     setParsePage(0)
     setQuestions([])
+    setParseStatus({ state: 'connecting' })
 
     try {
       if (parseMode === 'precision') {
@@ -1212,11 +1213,13 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
     if (s === 'running') return '处理中'
     if (s === 'pending') return '排队中'
     if (s === 'converting') return '转换中'
+    if (s === 'connecting') return '连接中'
     return String(s)
   }
   const stateColor = (s: unknown) => {
     if (s === 'done') return 'text-green-600 bg-green-100 dark:bg-green-900/30'
     if (s === 'failed') return 'text-red-500 bg-red-100 dark:bg-red-900/30'
+    if (s === 'connecting') return 'text-blue-500 bg-blue-100 dark:bg-blue-900/30'
     return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30'
   }
 
