@@ -348,10 +348,13 @@ export function Component() {
           question_text: q.question_text,
           options: q.options,
           correct_answer: q.correct_answer as any,
-          categories: category ? [category] : null,
+          category: category ? (Array.isArray(category) ? category[0] : category) : null,
+          categories: category ? (Array.isArray(category) ? category : [category]) : [],
           subject: subject || null,
-          analysis: q.analysis ?? null,
-          key_points: q.key_points ?? null,
+          analysis: q.analysis?.trim() || null,
+          key_points: q.key_points?.trim() || null,
+          answer_explanation: null,
+          seq_number: null,
         })),
       )
 
