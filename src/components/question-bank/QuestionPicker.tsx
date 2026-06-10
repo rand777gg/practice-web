@@ -196,7 +196,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                   </TableHead>
                   <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[80px]">学科</TableHead>
-                  <TableHead className="text-xs w-[130px]">分类</TableHead>
+                  <TableHead className="text-xs w-[120px]">分类</TableHead>
                   <TableHead className="text-xs w-[80px]">类型</TableHead>
                 </TableRow>
               </TableHeader>

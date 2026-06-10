@@ -98,7 +98,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                 <TableRow>
                   <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
-                  <TableHead className="text-xs w-[130px]">分类</TableHead>
+                  <TableHead className="text-xs w-[120px]">分类</TableHead>
                   <TableHead className="text-xs w-[90px]">题型</TableHead>
                   <TableHead className="text-xs w-[40px]" />
                 </TableRow>
@@ -108,7 +108,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                   <TableRow key={i}>
                     <TableCell className="py-2"><Skeleton className="h-4 w-36" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>
                   </TableRow>
@@ -136,7 +136,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                 <TableRow>
                   <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
-                  <TableHead className="text-xs w-[130px]">分类</TableHead>
+                  <TableHead className="text-xs w-[120px]">分类</TableHead>
                   <TableHead className="text-xs w-[90px]">题型</TableHead>
                   <TableHead className="text-xs w-[40px]" />
                 </TableRow>
