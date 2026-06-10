@@ -24,7 +24,7 @@ interface Props {
 
 type ImportState = 'input' | 'preview' | 'importing' | 'done' | 'error'
 
-const JSON_SAMPLE = `[
+	const JSON_SAMPLE = ```json
   {
     "question_type": "single_choice",
     "question_text": "HTML 的全称是什么？",
@@ -40,7 +40,7 @@ const JSON_SAMPLE = `[
     "analysis": "HTML 是 Hyper Text Markup Language 的缩写。",
     "key_points": "HTML, Web基础"
   }
-]`
+````
 const CSV_SAMPLE = `question_text,option_a,option_b,option_c,option_d,correct_answer,subject,key_points
 HTML 的全称是什么？,Hyper Text Markup Language,High Tech Modern Language,Hyper Transfer Markup Language,Home Tool Markup Language,0,计算机,HTML; Web基础
 CSS 的全称是什么？,Cascading Style Sheets,Computer Style System,Creative Style Sheets,Colorful Style Sheets,0,计算机,CSS; Web基础`
@@ -184,7 +184,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         </DialogHeader>
 
         {state === 'input' && (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0 overflow-hidden">
             <div className="flex items-center gap-2">
               <Button variant={format === 'csv' ? 'default' : 'outline'} size="sm" onClick={() => setFormat('csv')}>CSV</Button>
               <Button variant={format === 'json' ? 'default' : 'outline'} size="sm" onClick={() => setFormat('json')}>JSON</Button>
@@ -196,13 +196,13 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             </div>
 
             {showSample && (
-              <div className="space-y-3 max-w-full overflow-x-auto">
-                <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-x-auto max-h-44 font-mono leading-relaxed whitespace-nowrap">
+              <div className="space-y-3 min-w-0">
+                <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-x-auto max-h-44 font-mono leading-relaxed whitespace-pre-wrap break-all">
                   <code>{format === 'json' ? JSON_SAMPLE : CSV_SAMPLE}</code>
                 </pre>
                 {format === 'csv' && (
-                  <div className="rounded-lg border overflow-x-auto">
-                    <Table>
+                  <div className="rounded-lg border overflow-x-auto max-w-full">
+                    <Table className="w-max min-w-full">
                       <TableHeader>
                         <TableRow>
                           {CSV_SAMPLE.split('\n')[0].split(',').map((h, i) => (
@@ -256,7 +256,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         )}
 
         {state === 'preview' && (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0 overflow-hidden">
             <p className="text-sm">解析到 <strong>{parsed.length}</strong> 道有效题目</p>
             {errors.length > 0 && (
               <div className="rounded-md bg-destructive/10 p-3 text-xs text-destructive space-y-0.5 max-h-24 overflow-auto">
