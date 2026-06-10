@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
-import { LoadingTips } from '@/components/layout/LoadingTips'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { QuestionPicker } from './QuestionPicker'
 import { ArrowLeft, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
@@ -92,7 +91,32 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
       </div>
 
       {loading ? (
-        <LoadingTips compact className="py-12" />
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">题目</TableHead>
+                  <TableHead className="text-xs w-[80px]">学科</TableHead>
+                  <TableHead className="text-xs w-[80px]">分类</TableHead>
+                  <TableHead className="text-xs w-[80px]">题型</TableHead>
+                  <TableHead className="text-xs w-[40px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...Array(5)].map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-full max-w-[280px]" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">

@@ -35,7 +35,7 @@ interface Props {
 export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingIds }: Props) {
   const { t } = useT()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
-  const [questions, setQuestions] = useState<Array<{ id: string; question_text: string; subject: string | null; category: string | null; question_type: string }>>([])
+  const [questions, setQuestions] = useState<Array<{ id: string; question_text: string; subject: string | null; category: string | null; categories: string[] | null; question_type: string }>>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
@@ -54,7 +54,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
 
   const fetchQuestions = useCallback(async () => {
     setLoading(true)
-    let query = supabase.from('questions').select('id, question_text, subject, category, question_type', { count: 'exact' })
+    let query = supabase.from('questions').select('id, question_text, subject, category, categories, question_type', { count: 'exact' })
 
     if (search) query = query.ilike('question_text', `%${search}%`)
     if (selectedSubject) query = query.eq('subject', selectedSubject)
@@ -195,7 +195,8 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                     </button>
                   </TableHead>
                   <TableHead className="text-xs">题目</TableHead>
-                  <TableHead className="text-xs w-[80px]">学科</TableHead>
+                  <TableHead className="text-xs w-[70px]">学科</TableHead>
+                  <TableHead className="text-xs w-[70px]">分类</TableHead>
                   <TableHead className="text-xs w-[60px]">类型</TableHead>
                 </TableRow>
               </TableHeader>
@@ -215,6 +216,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       </TableCell>
                       <TableCell className="text-xs py-2 max-w-[280px] truncate">{q.question_text}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q.subject || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">{(q.categories?.length ? q.categories.join(', ') : q.category) || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q.question_type as keyof typeof QUESTION_TYPE_LABELS] || q.question_type}</TableCell>
                     </TableRow>
                   )
