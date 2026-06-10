@@ -63,7 +63,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
     <div className={`rounded-xl border p-3 space-y-2 backdrop-blur-xl ${
       selected
         ? 'border-primary/50 bg-primary/10 dark:bg-primary/10'
-        : 'bg-white/80 dark:bg-zinc-800/50 border-white/50 dark:border-zinc-700/30 shadow-sm'
+        : 'bg-white/90 dark:bg-zinc-800/50 border-white/50 dark:border-zinc-700/30 shadow-sm'
     }`}>
       {/* Header */}
       <div className="flex items-center gap-2">
