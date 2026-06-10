@@ -247,14 +247,25 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
                           const cats = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
+                          if (!cats.length) return '—'
                           const yearPattern = /^\d{4}年真题$/
                           const yearCats = cats.filter((c: string) => yearPattern.test(c))
                           const otherCats = cats.filter((c: string) => !yearPattern.test(c))
-                          const parts: string[] = []
-                          if (yearCats.length >= 2) parts.push(`${yearCats.length}年真题`)
-                          else if (yearCats.length === 1) parts.push(yearCats[0])
-                          parts.push(...otherCats)
-                          return parts.join('、') || '—'
+                          return (
+                            <span className="inline-flex gap-1">
+                              {yearCats.length >= 2 && (
+                                <span className="inline-block rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1 text-[10px] font-medium">{yearCats.length}年真题</span>
+                              )}
+                              {yearCats.length === 1 && (
+                                <span>{yearCats[0]}</span>
+                              )}
+                              {otherCats.map((cat: string, i: number) => (
+                                <span key={cat}>
+                                  {(yearCats.length >= 1 || i > 0) && '、'}{cat}
+                                </span>
+                              ))}
+                            </span>
+                          )
                         })()}
                       </TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{QUESTION_TYPE_LABELS[q.question_type as keyof typeof QUESTION_TYPE_LABELS] || q.question_type}</TableCell>
