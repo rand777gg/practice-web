@@ -27,7 +27,12 @@ const JSON_SAMPLE = `[
   {
     "question_type": "single_choice",
     "question_text": "HTML 的全称是什么？",
-    "options": ["Hyper Text Markup Language", "High Tech Modern Language", "Hyper Transfer Markup Language", "Home Tool Markup Language"],
+    "options": [
+      "Hyper Text Markup Language",
+      "High Tech Modern Language",
+      "Hyper Transfer Markup Language",
+      "Home Tool Markup Language"
+    ],
     "correct_answer": 0,
     "category": "前端基础",
     "subject": "计算机",
