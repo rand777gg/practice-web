@@ -6,6 +6,7 @@ import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogTitle,
+  AlertDialogDescription,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import {
@@ -110,6 +111,9 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
         <AlertDialogTitle>添加题目</AlertDialogTitle>
+        <AlertDialogDescription className="sr-only">
+          从题库中选择题目添加到试题库
+        </AlertDialogDescription>
 
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <div className="relative flex-1 min-w-[200px]">
