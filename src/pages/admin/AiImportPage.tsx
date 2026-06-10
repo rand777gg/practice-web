@@ -916,7 +916,7 @@ export function Component() {
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
                         <p className="text-xs text-muted-foreground">MinerU 解析结果</p>
-                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-200px)]">
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-120px)]">
                           <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
                             {(() => {
                               const start = parsePage * CHARS_PER_PAGE
