@@ -94,11 +94,11 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
 
       {loading ? (
         <Card>
-          <CardContent className="p-0 overflow-x-auto">
+          <CardContent className="p-0 overflow-x-auto scrollbar-visible">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs min-w-[280px]">题目</TableHead>
+                  <TableHead className="text-xs w-[280px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
                   <TableHead className="text-xs w-[180px]">分类</TableHead>
                   <TableHead className="text-xs w-[90px]">题型</TableHead>
@@ -132,11 +132,11 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-0 overflow-x-auto">
+          <CardContent className="p-0 overflow-x-auto scrollbar-visible">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs min-w-[280px]">题目</TableHead>
+                  <TableHead className="text-xs w-[280px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
                   <TableHead className="text-xs w-[180px]">分类</TableHead>
                   <TableHead className="text-xs w-[90px]">题型</TableHead>
