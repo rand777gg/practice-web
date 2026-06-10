@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { Link } from 'react-router-dom'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import type { QuestionType } from '@/types'
@@ -26,6 +26,7 @@ import { useT } from '@/i18n/use-t'
 
 export function Component() {
   const { t } = useT()
+  const navigate = useNavigate()
   const { questions, count, isLoading, page, totalPages, deleteQuestion, fetchQuestions, refetch } = useQuestions()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
@@ -133,15 +134,17 @@ export function Component() {
               </span>
             )
 
-            if ('to' in btn && btn.to) {
-              return (
-                <Button key={i} variant={btn.variant} size="sm" asChild className={`${sharedClass} ${btn.className ?? ''}`}>
-                  <Link to={btn.to} onClick={() => setExpandedBtn(null)}>
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {labelSpan}
-                  </Link>
-                </Button>
-              )
+            const handleClick = () => {
+              if (window.innerWidth >= 640) {
+                if ('to' in btn && btn.to) navigate(btn.to)
+                else btn.action?.()
+              } else if (isExpanded) {
+                setExpandedBtn(null)
+                if ('to' in btn && btn.to) navigate(btn.to)
+                else btn.action?.()
+              } else {
+                setExpandedBtn(i)
+              }
             }
 
             return (
@@ -149,17 +152,8 @@ export function Component() {
                 key={i}
                 variant={btn.variant}
                 size="sm"
-                className={sharedClass}
-                onClick={() => {
-                  if (window.innerWidth >= 640) {
-                    btn.action?.()
-                  } else if (isExpanded) {
-                    setExpandedBtn(null)
-                    btn.action?.()
-                  } else {
-                    setExpandedBtn(i)
-                  }
-                }}
+                className={`${sharedClass} ${btn.className ?? ''}`}
+                onClick={handleClick}
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 {labelSpan}
