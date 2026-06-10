@@ -898,7 +898,7 @@ export function Component() {
                   {pdfUrl && parseResult.jsonData ? (
                     <Card className="border-0 shadow-none">
                       <CardContent className="p-0 h-[calc(100vh-120px)]">
-                        <PdfMarkdownViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown}>
+                        <PdfMarkdownViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges}>
                           <button type="button" className="text-[10px] underline text-muted-foreground hover:text-foreground" onClick={() => {
                             sessionStorage.setItem('pdf_test_url', pdfUrl)
                             sessionStorage.setItem('pdf_test_json', parseResult.jsonData!)

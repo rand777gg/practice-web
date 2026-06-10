@@ -4,7 +4,7 @@ import { router } from '@/router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
-import { useSettingsStore } from '@/stores/settings-store'
+import { useSettingsStore, FONT_OPTIONS } from '@/stores/settings-store'
 import type { Profile } from '@/types'
 import { LoadingScreen } from '@/components/layout/LoadingScreen'
 
@@ -161,13 +161,57 @@ function EyeCareInitializer({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+function FontInitializer({ children }: { children: ReactNode }) {
+  const fontFamily = useSettingsStore((s) => s.fontFamily)
+  const fontSize = useSettingsStore((s) => s.fontSize)
+  const fontWeight = useSettingsStore((s) => s.fontWeight)
+
+  useEffect(() => {
+    const root = document.documentElement
+    const linkId = 'font-stylesheet'
+
+    // Remove old font link
+    const oldLink = document.getElementById(linkId) as HTMLLinkElement | null
+    if (oldLink) oldLink.remove()
+
+    // Load new Google Font (unless system)
+    const opt = FONT_OPTIONS.find((f) => f.value === fontFamily)
+    if (opt?.google) {
+      const link = document.createElement('link')
+      link.id = linkId
+      link.rel = 'stylesheet'
+      const { google, weights } = opt
+      link.href = `https://fonts.googleapis.com/css2?family=${google}:wght@${weights}&display=swap`
+      document.head.appendChild(link)
+    }
+
+    // Apply font-family CSS variable
+    const fallback = 'system-ui, -apple-system, "Microsoft YaHei", sans-serif'
+    root.style.setProperty('--font-sans', fontFamily === 'system'
+      ? fallback
+      : `'${fontFamily}', ${fallback}`)
+  }, [fontFamily])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-size', `${fontSize}px`)
+  }, [fontSize])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-weight', String(fontWeight))
+  }, [fontWeight])
+
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <ThemeInitializer>
       <EyeCareInitializer>
-        <AuthInitializer>
-          <RouterProvider router={router} />
-        </AuthInitializer>
+        <FontInitializer>
+          <AuthInitializer>
+            <RouterProvider router={router} />
+          </AuthInitializer>
+        </FontInitializer>
       </EyeCareInitializer>
     </ThemeInitializer>
   )

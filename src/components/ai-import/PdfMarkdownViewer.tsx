@@ -23,7 +23,29 @@ interface Props {
   pdfUrl: string
   jsonData?: string
   markdown: string
+  pageRanges?: string  // e.g. "1-10,15-20"
   children?: React.ReactNode  // toolbar actions slot
+}
+
+function parsePageRanges(ranges: string | undefined, totalPages: number): Set<number> {
+  if (!ranges || !ranges.trim()) {
+    // No range specified — include all pages
+    return new Set(Array.from({ length: totalPages }, (_, i) => i + 1))
+  }
+  const pages = new Set<number>()
+  for (const part of ranges.split(',')) {
+    const trimmed = part.trim()
+    if (trimmed.includes('-')) {
+      const [start, end] = trimmed.split('-').map(Number)
+      for (let i = Math.max(1, start); i <= Math.min(totalPages, end || start); i++) {
+        pages.add(i)
+      }
+    } else {
+      const n = Number(trimmed)
+      if (n >= 1 && n <= totalPages) pages.add(n)
+    }
+  }
+  return pages.size > 0 ? pages : new Set(Array.from({ length: totalPages }, (_, i) => i + 1))
 }
 
 // ---- Block parsing ----
@@ -110,7 +132,7 @@ function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): MdSection[] {
 
 // ---- Component ----
 
-export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Props) {
+export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, children }: Props) {
   const mdRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   const pageImgRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -138,8 +160,10 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
       const pdf = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
       const scale = RENDER_SCALE
+      const includedPages = parsePageRanges(pageRanges, pdf.numPages)
       const pages: { p: number; w: number; h: number; src: string }[] = []
       for (let i = 1; i <= pdf.numPages; i++) {
+        if (!includedPages.has(i)) continue
         if (cancelled) return
         const page = await pdf.getPage(i)
         const vp = page.getViewport({ scale })

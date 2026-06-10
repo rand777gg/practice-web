@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
-import { useSettingsStore, EYE_CARE_PALETTES } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,6 +11,7 @@ import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -41,7 +42,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight } = useSettingsStore()
   const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
   const siteTheme = useThemeStore((s) => s.theme)
   const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
@@ -348,36 +349,85 @@ export function Component() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('settings.preferences')}</CardTitle>
+              <CardTitle className="text-sm">界面设置</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5">
+              {/* Font family */}
               <div>
-                <p className="text-xs text-muted-foreground mb-2">{t('settings.language')}</p>
-                <div className="flex gap-2">
-                  <Button
-                    variant={lang === 'zh' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setLang('zh')}
-                  >
-                    <Languages className="h-3.5 w-3.5" />
-                    中文
-                  </Button>
-                  <Button
-                    variant={lang === 'en' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setLang('en')}
-                  >
-                    <Languages className="h-3.5 w-3.5" />
-                    English
-                  </Button>
+                <p className="text-xs text-muted-foreground mb-2">字体</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {FONT_OPTIONS.map((f) => {
+                    const isActive = fontFamily === f.value
+                    return (
+                      <button
+                        key={f.value}
+                        type="button"
+                        onClick={() => setFontFamily(f.value)}
+                        className={cn(
+                          'px-2.5 py-1 rounded-md text-xs border transition-colors',
+                          isActive
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border hover:bg-accent',
+                        )}
+                        style={{ fontFamily: f.value === 'system' ? undefined : `'${f.value}', system-ui, sans-serif` }}
+                      >
+                        {f.label}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
+
+              {/* Font size + weight row */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground mb-2">字号 <span className="tabular-nums font-medium text-foreground">{fontSize}px</span></p>
+                  <Slider min={13} max={22} step={1} value={fontSize} onChange={setFontSize} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground mb-2">粗细</p>
+                  <div className="flex gap-1">
+                    {FONT_WEIGHTS.map((w) => (
+                      <button
+                        key={w.value}
+                        type="button"
+                        onClick={() => setFontWeight(w.value)}
+                        className={cn(
+                          'px-2 py-1 rounded-md text-xs border transition-colors',
+                          fontWeight === w.value
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border hover:bg-accent',
+                        )}
+                        style={{ fontWeight: w.value }}
+                      >
+                        {w.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Font preview */}
+              <div
+                className="rounded-lg border bg-muted/20 p-3 text-sm leading-relaxed"
+                style={{
+                  fontFamily: fontFamily === 'system' ? undefined : `'${fontFamily}', system-ui, sans-serif`,
+                  fontSize: `${fontSize}px`,
+                  fontWeight,
+                }}
+              >
+                敏捷的棕色狐狸跳过懒狗。<br />
+                The quick brown fox jumps over the lazy dog.<br />
+                0123456789 · 敏捷的棕色狐狸
+              </div>
+
+              <div className="border-t pt-4" />
+
+              {/* Code theme */}
               <div>
                 <p className="text-xs text-muted-foreground mb-2">代码高亮主题</p>
-                <div className="mb-2">
-                  <CodePreview theme={codeTheme} lang={previewLang} />
-                </div>
-                <div className="flex gap-2 flex-wrap justify-end">
+                <CodePreview theme={codeTheme} lang={previewLang} />
+                <div className="flex gap-2 flex-wrap justify-end mt-2">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7">
@@ -431,6 +481,10 @@ export function Component() {
                   </DropdownMenu>
                 </div>
               </div>
+
+              <div className="border-t pt-4" />
+
+              {/* Eye care */}
               <div className="flex items-center justify-between">
                 <div className="min-w-0 mr-2">
                   <p className="text-sm">{t('settings.eyeCare')}</p>
@@ -454,6 +508,35 @@ export function Component() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">{t('settings.preferences')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{t('settings.language')}</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant={lang === 'zh' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLang('zh')}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    中文
+                  </Button>
+                  <Button
+                    variant={lang === 'en' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLang('en')}
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    English
+                  </Button>
+                </div>
               </div>
               <div className="flex items-center justify-between">
                 <div>
