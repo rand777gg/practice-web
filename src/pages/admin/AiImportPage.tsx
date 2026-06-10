@@ -1087,12 +1087,13 @@ function parseBlocks(jsonData: string): PdfBlock[] {
     if (!Array.isArray(data)) return result
     function walk(items: Record<string, unknown>[], level: number) {
       for (const item of items) {
-        if (item.page_idx !== undefined && item.bbox) {
+        const pageIdx = (item.page_idx ?? item.page_index) as number | undefined
+        if (pageIdx !== undefined && item.bbox) {
           result.push({
-            page_idx: item.page_idx as number,
+            page_idx: pageIdx,
             bbox: item.bbox as [number, number, number, number],
             text: item.text as string | undefined,
-            type: item.type as string | undefined,
+            type: (item.category || item.type) as string | undefined,
           })
         }
         if (Array.isArray(item.children)) {
