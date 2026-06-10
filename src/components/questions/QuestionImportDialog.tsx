@@ -190,7 +190,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             </div>
 
             {showSample && (
-              <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-auto max-h-44 font-mono leading-relaxed">
+              <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-auto max-h-44 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">
                 <code>{format === 'json' ? JSON_SAMPLE : CSV_SAMPLE}</code>
               </pre>
             )}

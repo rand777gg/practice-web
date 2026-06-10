@@ -1,12 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Trash2, Pencil, Check, X, Star } from 'lucide-react'
-import type { UserAnswer, Question } from '@/types'
+import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { Trash2, Pencil, Check, X, Star, ChevronDown } from 'lucide-react'
+import type { UserAnswer, Question, QuestionType } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { useFavorites } from '@/hooks/use-favorites'
 
@@ -16,12 +23,31 @@ export function Component() {
   const { t } = useT()
   const { user } = useAuthStore()
   const { isFavorite, toggleFavorite } = useFavorites()
+  const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [mode, setMode] = useState<FilterMode>('all')
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [editIsPublic, setEditIsPublic] = useState(false)
+  const [selectedSubject, setSelectedSubject] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
+
+  const sortedSubjects = useMemo(() => [...subjects].sort((a, b) => a.localeCompare(b, 'zh-CN')), [subjects])
+  const yearCategories = useMemo(() => filteredCategories.filter(c => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a)), [filteredCategories])
+  const nonYearCategories = useMemo(() => filteredCategories.filter(c => !/^\d{4}年真题$/.test(c)), [filteredCategories])
+
+  useEffect(() => { updateFilteredCategories(selectedSubject) }, [selectedSubject, updateFilteredCategories])
+
+  const filtered = useMemo(() => answers.filter(a => {
+    const q = a.questions
+    if (!q) return false
+    if (selectedSubject && q.subject !== selectedSubject) return false
+    if (selectedCategory && q.category !== selectedCategory) return false
+    if (selectedType && q.question_type !== selectedType) return false
+    return true
+  }), [answers, selectedSubject, selectedCategory, selectedType])
 
   const fetchGenRef = useRef(0)
 
@@ -94,13 +120,59 @@ export function Component() {
         </div>
       </div>
 
+      <div className="flex gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">{selectedSubject || '学科'}<ChevronDown className="h-3 w-3" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            <DropdownMenuItem onClick={() => setSelectedSubject('')}><span className="text-muted-foreground">学科</span>{!selectedSubject && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {sortedSubjects.map(s => <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>{s}{selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">{selectedCategory || '分类'}<ChevronDown className="h-3 w-3" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            <DropdownMenuItem onClick={() => setSelectedCategory('')}><span className="text-muted-foreground">分类</span>{!selectedCategory && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {yearCategories.length > 0 && (
+              <DropdownMenuSub><DropdownMenuSubTrigger>历年真题</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                  {yearCategories.map(c => <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            {nonYearCategories.length > 0 && (<><DropdownMenuSeparator />{nonYearCategories.map(c => <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">{selectedType ? t(`questionTypes.${selectedType}` as any) : '题型'}<ChevronDown className="h-3 w-3" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSelectedType('')}><span className="text-muted-foreground">题型</span>{!selectedType && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {QUESTION_TYPE_OPTIONS.map(o => <DropdownMenuItem key={o.value} onClick={() => setSelectedType(o.value)}>{o.label}{selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {isLoading ? (
-        <LoadingTips className="py-12" compact />
+        <div className="space-y-4 animate-pulse">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="rounded-xl border bg-card p-4 lg:p-6 space-y-3">
+              <Skeleton className="h-6 w-3/4" />
+              <div className="space-y-2"><Skeleton className="h-10 w-full rounded-lg" /><Skeleton className="h-10 w-full rounded-lg" /></div>
+            </div>
+          ))}
+        </div>
       ) : answers.length === 0 ? (
         <p className="text-muted-foreground text-center py-12">{t('review.noWrong')}</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-muted-foreground text-center py-12">所选条件下无错题记录</p>
       ) : (
         <div className="space-y-4">
-          {answers.map((ans) => (
+          {filtered.map((ans) => (
             <div key={ans.id} className="space-y-2">
               <QuestionCard
                 question={ans.questions}
