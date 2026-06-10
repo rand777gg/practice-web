@@ -209,6 +209,13 @@ export function ExamSession() {
     onSwipeRight: previousQuestion,
   })
 
+  const currentQuestionId = questions[currentIndex]?.id
+  const handleAnswerSelect = useCallback(
+    (index: Parameters<typeof answerQuestion>[1]) => answerQuestion(currentQuestionId!, index),
+    [currentQuestionId, answerQuestion],
+  )
+  const questionIds = useMemo(() => questions.map((q) => q.id), [questions])
+
   if (checkingSession) {
     return (
       <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
@@ -476,13 +483,6 @@ export function ExamSession() {
   }
 
   const currentQuestion = questions[currentIndex]
-
-  const handleAnswerSelect = useCallback(
-    (index: Parameters<typeof answerQuestion>[1]) => answerQuestion(currentQuestion!.id, index),
-    [currentQuestion?.id, answerQuestion],
-  )
-
-  const questionIds = useMemo(() => questions.map((q) => q.id), [questions])
 
   return (
     <div className="space-y-4">
