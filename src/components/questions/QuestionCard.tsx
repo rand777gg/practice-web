@@ -75,8 +75,8 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               <>
                 <HoverCard openDelay={200} closeDelay={100}>
                   <HoverCardTrigger asChild>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-default shadow-sm">
-                      <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-default">
+                      <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500" />
                       {yearCats.length}年真题
                     </span>
                   </HoverCardTrigger>
