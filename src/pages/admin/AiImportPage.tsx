@@ -715,7 +715,7 @@ export function Component() {
                   <Card>
                     <CardContent className="pt-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">上传资料文件 <span className="text-muted-foreground font-normal text-xs">(选填)</span></p>
+                        <p className="text-sm font-medium">上传资料文件</p>
                         {genFile && (
                           <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-destructive"
                             onClick={() => { setGenFile(null); setGenFileText('') }}>
