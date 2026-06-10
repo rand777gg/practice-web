@@ -18,7 +18,9 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { QuestionType } from '@/types'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, Sparkles } from 'lucide-react'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import { MultiYearBadge } from '@/components/questions/QuestionCard'
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n/use-t'
 
@@ -196,7 +198,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                   </TableHead>
                   <TableHead className="text-xs min-w-[240px]">题目</TableHead>
                   <TableHead className="text-xs w-[80px]">学科</TableHead>
-                  <TableHead className="text-xs w-[160px]">分类</TableHead>
+                  <TableHead className="text-xs w-[180px]">分类</TableHead>
                   <TableHead className="text-xs w-[80px]">类型</TableHead>
                 </TableRow>
               </TableHeader>
@@ -216,7 +218,39 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       </TableCell>
                       <TableCell className="text-xs py-2 whitespace-nowrap">{q.question_text}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q.subject || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{(q.categories?.length ? q.categories.join(', ') : q.category) || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">
+                        {(() => {
+                          const cats = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
+                          if (!cats.length) return '—'
+                          const yearPattern = /^\d{4}年真题$/
+                          const yearCats = cats.filter((c: string) => yearPattern.test(c))
+                          const otherCats = cats.filter((c: string) => !yearPattern.test(c))
+                          return (
+                            <div className="flex gap-1">
+                              {yearCats.length >= 2 && <MultiYearBadge yearCats={yearCats} />}
+                              {yearCats.length === 1 && (
+                                <span className="inline-block rounded-full bg-secondary px-1.5 py-0.5 text-[10px] whitespace-nowrap">{yearCats[0]}</span>
+                              )}
+                              {otherCats.map((cat: string) =>
+                                cat === 'AI生成' ? (
+                                  <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
+                                    <HoverCardTrigger asChild>
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 border border-blue-500/30 px-1.5 py-0.5 text-[10px] font-medium cursor-default whitespace-nowrap">
+                                        <Sparkles className="h-2.5 w-2.5" />AI生成
+                                      </span>
+                                    </HoverCardTrigger>
+                                    <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+                                      <p>该题由AI生成，仅供练习参考</p>
+                                    </HoverCardContent>
+                                  </HoverCard>
+                                ) : (
+                                  <span key={cat} className="inline-block rounded-full bg-secondary px-1.5 py-0.5 text-[10px] whitespace-nowrap">{cat}</span>
+                                )
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{QUESTION_TYPE_LABELS[q.question_type as keyof typeof QUESTION_TYPE_LABELS] || q.question_type}</TableCell>
                     </TableRow>
                   )
