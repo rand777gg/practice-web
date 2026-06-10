@@ -124,8 +124,8 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
         </button>
       </div>
       <div ref={containerRef} className="flex-1 overflow-auto rounded-lg border bg-muted/30 p-1">
-        <div className="relative mx-auto" style={{ width: containerW, height: displayHeight || 600 }}>
-          <canvas ref={canvasRef} className="w-full h-full rounded" />
+        <div className="relative mx-auto min-h-full" style={{ width: containerW }}>
+          <canvas ref={canvasRef} className="w-full rounded" style={{ height: displayHeight || 600 }} />
           {pageSize && pageBlocks.map((block, i) => {
             const [x0, y0, x1, y1] = block.bbox
             const isActive = activeBbox &&
