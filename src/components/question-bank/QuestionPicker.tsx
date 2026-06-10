@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { QuestionType } from '@/types'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n/use-t'
@@ -254,7 +255,19 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                           return (
                             <span className="inline-flex gap-1">
                               {yearCats.length >= 2 && (
-                                <span className="inline-block rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1 text-[10px] font-medium">{yearCats.length}年真题</span>
+                                <HoverCard openDelay={200} closeDelay={100}>
+                                  <HoverCardTrigger asChild>
+                                    <span className="inline-block rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1 text-[10px] font-medium cursor-default">{yearCats.length}年真题</span>
+                                  </HoverCardTrigger>
+                                  <HoverCardContent side="bottom" align="start" className="w-auto px-3 py-2 text-xs">
+                                    <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {yearCats.map((y) => (
+                                        <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
+                                      ))}
+                                    </div>
+                                  </HoverCardContent>
+                                </HoverCard>
                               )}
                               {yearCats.length === 1 && (
                                 <span>{yearCats[0]}</span>
