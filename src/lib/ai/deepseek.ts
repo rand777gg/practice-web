@@ -7,11 +7,11 @@ import { getAiConfig as getConfig } from './config'
 const questionSchema = z.object({
   question_type: z.enum(['single_choice','multi_select','true_false','fill_blank','short_answer','analysis','judge_correct']),
   question_text: z.string(),
-  options: z.array(z.string()),
-  correct_answer: z.union([z.number(), z.array(z.number()), z.boolean(), z.string(), z.array(z.string()), z.null()]),
-  analysis: z.string().optional(),
-  key_points: z.string().optional(),
-  answer_explanation: z.string().optional(),
+  options: z.array(z.any()).transform(arr => arr.map(String)),
+  correct_answer: z.any(),
+  analysis: z.string().optional().nullable(),
+  key_points: z.string().optional().nullable(),
+  answer_explanation: z.string().optional().nullable(),
 })
 
 const resultSchema = z.object({
@@ -295,14 +295,20 @@ export class DeepSeekParser {
           options = []
         }
 
+        const strOrUndefined = (v: unknown): string | undefined => {
+          if (typeof v === 'string') return v.trim() || undefined
+          if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string').join('、') || undefined
+          return undefined
+        }
+
         return {
           question_type,
           question_text: q.question_text.trim(),
           options,
           correct_answer,
-          analysis: q.analysis?.trim() || undefined,
-          key_points: q.key_points?.trim() || undefined,
-          answer_explanation: q.answer_explanation?.trim() || undefined,
+          analysis: strOrUndefined(q.analysis),
+          key_points: strOrUndefined(q.key_points),
+          answer_explanation: strOrUndefined(q.answer_explanation),
         }
       })
   }
