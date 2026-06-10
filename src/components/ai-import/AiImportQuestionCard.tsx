@@ -60,7 +60,11 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
   }
 
   return (
-    <div className={`rounded-lg border p-3 space-y-2 ${selected ? 'border-primary bg-primary/5' : ''}`}>
+    <div className={`rounded-xl border p-3 space-y-2 backdrop-blur-xl ${
+      selected
+        ? 'border-primary/50 bg-primary/10 dark:bg-primary/10'
+        : 'bg-white/50 dark:bg-zinc-800/50 border-white/20 dark:border-zinc-700/30'
+    }`}>
       {/* Header */}
       <div className="flex items-center gap-2">
         <button type="button"
@@ -111,20 +115,22 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       />
 
       {/* Key points — right after question text, always visible */}
-      <div className="relative">
-        <Input
-          value={question.key_points || ''}
-          onChange={(e) => patch({ key_points: e.target.value })}
-          className="h-8 text-xs pr-8"
-          placeholder="知识点，逗号分隔"
-        />
-        {hasAiConfig() && isEnabled('keypoints') && (
-          <Button type="button" variant="ghost" size="icon"
-            className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
-            disabled={kpLoading || !question.question_text.trim()}
-            onClick={handleGenerateKeyPoints}
-            title="AI 生成知识点"
-          >
+      <div>
+        <label className="text-[11px] text-muted-foreground mb-1 block">知识点</label>
+        <div className="relative">
+          <Input
+            value={question.key_points || ''}
+            onChange={(e) => patch({ key_points: e.target.value })}
+            className="h-8 text-xs pr-8"
+            placeholder="逗号分隔"
+          />
+          {hasAiConfig() && isEnabled('keypoints') && (
+            <Button type="button" variant="ghost" size="icon"
+              className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
+              disabled={kpLoading || !question.question_text.trim()}
+              onClick={handleGenerateKeyPoints}
+              title="AI 生成知识点"
+            >
             <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
           </Button>
         )}
