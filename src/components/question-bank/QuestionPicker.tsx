@@ -75,7 +75,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
 
   useEffect(() => {
     if (open) { setPage(1); setSelectedIds(new Set()); fetchQuestions() }
-  }, [open, fetchQuestions])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (open) fetchQuestions()
