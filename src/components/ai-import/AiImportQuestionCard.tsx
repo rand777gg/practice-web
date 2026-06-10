@@ -232,12 +232,12 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           </div>
           {question.correct_answer !== true && (
             <div>
-              <label className="text-[11px] text-muted-foreground mb-1 block">答案</label>
+              <label className="text-[11px] text-muted-foreground mb-1 block">修正后的正确表述</label>
               <Input
-                value={typeof question.correct_answer === 'string' ? question.correct_answer : ''}
+                value={typeof question.correct_answer === 'string' && question.correct_answer !== 'true' && question.correct_answer !== 'false' ? question.correct_answer : ''}
                 onChange={(e) => patch({ correct_answer: e.target.value })}
                 className="h-8 text-xs"
-                placeholder="修正后的正确表述"
+                placeholder="指明错在哪里，并给出修正后的正确答案"
               />
             </div>
           )}
