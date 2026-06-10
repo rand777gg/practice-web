@@ -79,8 +79,6 @@ export function Component() {
   const [extracting, setExtracting] = useState(false)
 
   // Manual import state
-  const [manualFormat, setManualFormat] = useState<'markdown' | 'json'>('markdown')
-  const [manualText, setManualText] = useState('')
 
   // Custom prompts
   const [extractPrompt, setExtractPrompt] = useState(() => getPrompt('extract'))
@@ -528,7 +526,6 @@ export function Component() {
                     <TabsTrigger value="precision">精准解析</TabsTrigger>
                   )}
                   <TabsTrigger value="generate">AI 生成</TabsTrigger>
-                  <TabsTrigger value="manual">手动导入</TabsTrigger>
                 </TabsList>
               </Tabs>
 

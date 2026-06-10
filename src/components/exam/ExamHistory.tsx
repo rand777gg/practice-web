@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ChevronRight } from 'lucide-react'
 import type { ExamSession } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -49,7 +50,28 @@ export function ExamHistory() {
       })
   }, [user?.id, version])
 
-  if (isLoading) return <Spinner />
+  if (isLoading) return (
+    <div className="rounded-lg border animate-pulse">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {[...Array(6)].map((_, i) => (
+              <TableHead key={i}><Skeleton className="h-4 w-12" /></TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {[...Array(5)].map((_, i) => (
+            <TableRow key={i}>
+              {[...Array(6)].map((_, j) => (
+                <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
 
   if (sessions.length === 0) {
     return (
