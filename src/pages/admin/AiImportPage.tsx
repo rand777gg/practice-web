@@ -420,23 +420,27 @@ export function Component() {
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <h1 className="text-xl font-bold flex items-center gap-2">AI 智能解析<span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span><a href="https://mineru.net" target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground ml-1 hover:underline">由 MinerU 提供解析</a></h1>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistoryList() }}>
+        <Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => setShowHistory(!showHistory)}>
           <Clock className="h-3.5 w-3.5" />
           历史记录{history.length > 0 ? ` (${history.length})` : ''}
         </Button>
       </div>
 
-      {showHistory && (
-        <Card className="border-0 shadow-none">
-          <CardContent className="py-3">
-            {historyError ? (
-              <p className="text-xs text-destructive text-center py-4">加载失败: {historyError}</p>
-            ) : historyLoading ? (
-              <p className="text-xs text-muted-foreground text-center py-4">加载中...</p>
-            ) : history.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">暂无历史记录</p>
-            ) : (
-              <Table>
+      <div className={cn(
+        'grid transition-all duration-300 ease-out',
+        showHistory ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+      )}>
+        <div className="overflow-hidden">
+          <Card className="border-0 shadow-none">
+            <CardContent className="py-3">
+              {historyError ? (
+                <p className="text-xs text-destructive text-center py-4">加载失败: {historyError}</p>
+              ) : historyLoading ? (
+                <p className="text-xs text-muted-foreground text-center py-4">加载中...</p>
+              ) : history.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">暂无历史记录</p>
+              ) : (
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs">文件名</TableHead>
@@ -485,7 +489,8 @@ export function Component() {
             )}
           </CardContent>
         </Card>
-      )}
+        </div>
+      </div>
 
       {!aiConfigured && (
         <Card className="border-orange-500/50 bg-orange-50/30 dark:bg-orange-950/10">
