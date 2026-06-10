@@ -51,7 +51,7 @@ function loadFlags(): AiFeatureFlags {
     const raw = localStorage.getItem(FLAGS_KEY)
     if (raw) return JSON.parse(raw) as AiFeatureFlags
   } catch { /* ignore */ }
-  return { exam: true, summary: true, suggestions: true, mineru: true, keypoints: true }
+  return { exam: true, summary: false, suggestions: false, mineru: true, keypoints: true }
 }
 
 function loadOfflineMode(): boolean {
