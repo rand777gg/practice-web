@@ -113,6 +113,7 @@ export function Component() {
       json_data: record.jsonData || null,
       questions_json: record.questions ? JSON.stringify(record.questions) : null,
       mode: record.mode,
+      status_json: parseStatus ? JSON.stringify(parseStatus) : null,
     })
   }
 
