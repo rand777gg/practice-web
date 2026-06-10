@@ -296,6 +296,7 @@ export const zh = {
     confirmDelete: '确定删除这条笔记吗？',
     edited: '编辑于',
     untitled: '无标题',
+    anonymous: '匿名用户',
   },
   favorites: {
     title: '收藏题目',
@@ -679,6 +680,7 @@ export const en = {
     confirmDelete: 'Are you sure you want to delete this note?',
     edited: 'Edited',
     untitled: 'Untitled',
+    anonymous: 'Anonymous',
   },
   favorites: {
     title: 'Favorites',

@@ -205,26 +205,23 @@ export function Component() {
     if (publicGenRef.current !== myGen) return
     const result = (data ?? []) as NoteWithQuestion[]
 
-    if (pubSubject) {
-      const filtered = result.filter((n) => n.questions?.subject === pubSubject)
-      setPublicNotes(filtered)
-    } else {
-      setPublicNotes(result)
-    }
+    const filtered = pubSubject
+      ? result.filter((n) => n.questions?.subject === pubSubject)
+      : result
 
     const userIds = [...new Set(result.map((n) => n.user_id))]
     const nicknames: Record<string, string> = {}
-    await Promise.all(
-      userIds.map(async (uid) => {
-        try {
-          const { data: prof } = await supabase.from('profiles').select('nickname').eq('id', uid).maybeSingle()
-          nicknames[uid] = prof?.nickname || `用户${uid.slice(0, 6)}`
-        } catch {
-          nicknames[uid] = `用户${uid.slice(0, 6)}`
-        }
-      }),
-    )
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, nickname').in('id', userIds)
+      for (const p of profiles ?? []) {
+        nicknames[p.id] = p.nickname || `用户${p.id.slice(0, 6)}`
+      }
+      for (const uid of userIds) {
+        if (!nicknames[uid]) nicknames[uid] = `用户${uid.slice(0, 6)}`
+      }
+    }
     if (publicGenRef.current !== myGen) return
+    setPublicNotes(filtered)
     setUserNicknames(nicknames)
     setPublicNotesLoading(false)
   }, [pubSubject])
@@ -260,7 +257,7 @@ export function Component() {
           )}
           {showAuthor && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              {t('notes.author')}: {userNicknames[note.user_id] || note.user_id.slice(0, 8) + '...'}
+              {t('notes.author')}: {userNicknames[note.user_id] || t('notes.anonymous')}
             </span>
           )}
           <span className="text-xs text-muted-foreground">
