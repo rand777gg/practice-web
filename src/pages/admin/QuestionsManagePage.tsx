@@ -208,9 +208,6 @@ export function Component() {
         onClose={() => setShowImport(false)}
         onImported={refetch}
       />
-
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
