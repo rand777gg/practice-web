@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Pencil, Star, Sparkles } from 'lucide-react'
+import { Pencil, Star, Sparkles, CalendarDays } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const POINT_COLORS = [
@@ -64,25 +64,69 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
             {question.subject}
           </span>
         )}
-        {(question.categories?.length ? question.categories : question.category ? [question.category] : []).map((cat) =>
-          cat === 'AI生成' ? (
-            <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
-              <HoverCardTrigger asChild>
-                <span className="ai-badge ai-badge-dark">
-                  <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
-                  <span className="badge-text">AI生成</span>
-                </span>
-              </HoverCardTrigger>
-              <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                <p>{t('ai.disclaimer')}</p>
-              </HoverCardContent>
-            </HoverCard>
-          ) : (
-            <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-              {cat}
-            </span>
+        {(() => {
+          const cats = question.categories?.length ? question.categories : question.category ? [question.category] : []
+          const yearPattern = /^\d{4}年真题$/
+          const yearCats = cats.filter((c) => yearPattern.test(c))
+          // Multiple year categories → show "N年真题" with hover detail
+          if (yearCats.length >= 2) {
+            const otherCats = cats.filter((c) => !yearPattern.test(c))
+            return (
+              <>
+                <HoverCard openDelay={200} closeDelay={100}>
+                  <HoverCardTrigger asChild>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary cursor-default">
+                      <CalendarDays className="h-3 w-3" />
+                      {yearCats.length}年真题
+                    </span>
+                  </HoverCardTrigger>
+                  <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+                    <div className="flex flex-wrap gap-1">
+                      {yearCats.map((y) => (
+                        <span key={y} className="rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">{y}</span>
+                      ))}
+                    </div>
+                  </HoverCardContent>
+                </HoverCard>
+                {otherCats.map((cat) =>
+                  cat === 'AI生成' ? (
+                    <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
+                      <HoverCardTrigger asChild>
+                        <span className="ai-badge ai-badge-dark">
+                          <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
+                          <span className="badge-text">AI生成</span>
+                        </span>
+                      </HoverCardTrigger>
+                      <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+                        <p>{t('ai.disclaimer')}</p>
+                      </HoverCardContent>
+                    </HoverCard>
+                  ) : (
+                    <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
+                  )
+                )}
+              </>
+            )
+          }
+          // Default: show all categories as individual badges
+          return cats.map((cat) =>
+            cat === 'AI生成' ? (
+              <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
+                <HoverCardTrigger asChild>
+                  <span className="ai-badge ai-badge-dark">
+                    <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
+                    <span className="badge-text">AI生成</span>
+                  </span>
+                </HoverCardTrigger>
+                <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+                  <p>{t('ai.disclaimer')}</p>
+                </HoverCardContent>
+              </HoverCard>
+            ) : (
+              <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
+            )
           )
-        )}
+        })()}
         {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
           <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
         ))}
