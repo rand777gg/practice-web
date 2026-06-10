@@ -22,6 +22,7 @@ import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { PdfViewer } from '@/components/ai-import/PdfViewer'
+import { PdfMarkdownViewer } from '@/components/ai-import/PdfMarkdownViewer'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
@@ -906,108 +907,47 @@ export function Component() {
                     </div>
                   </div>
 
-                  <div className={`grid gap-4 items-stretch ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                    {showSplitView && pdfUrl && (
-                      <Card className="border-0 shadow-none">
-                        <CardContent className="p-3 h-[calc(100vh-160px)]">
-                          <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
-                            activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
-                            onBlockClick={(block) => {
-                              // Find best matching markdown section by text similarity
-                              const blockNorm = normalize(block.text || '')
-                              let bestIdx = -1; let bestSim = 0
-                              for (let i = 0; i < sectionsRef.current.length; i++) {
-                                const sec = sectionsRef.current[i]
-                                if (!sec.bbox) continue
-                                const secNorm = normalize(sec.text)
-                                const sim = lcsSimilarity(blockNorm, secNorm)
-                                if (sim > bestSim && sim > 0.05) { bestSim = sim; bestIdx = i }
-                              }
-                              // Fallback: find by bbox
-                              if (bestIdx < 0) {
-                                bestIdx = sectionsRef.current.findIndex(
-                                  s => s.bbox && Math.abs(s.bbox[0] - block.bbox[0]) < 2 && Math.abs(s.bbox[1] - block.bbox[1]) < 2
-                                )
-                              }
-                              if (bestIdx >= 0) {
-                                const sec = sectionsRef.current[bestIdx]
-                                setActiveMdIdx(bestIdx)
-                                setActivePage(sec.page)
-                                setActiveBbox(sec.bbox)
-                                setTimeout(() => {
-                                  const el = mdRef.current?.querySelector(`[data-md-idx="${bestIdx}"]`)
-                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                }, 100)
-                              }
-                            }}
-                          />
-                        </CardContent>
-                      </Card>
-                    )}
+                  {pdfUrl && parseResult.jsonData ? (
+                    <Card className="border-0 shadow-none">
+                      <CardContent className="p-3 h-[calc(100vh-200px)]">
+                        <PdfMarkdownViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown}>
+                          <button type="button" className="text-[10px] underline text-muted-foreground hover:text-foreground" onClick={() => {
+                            sessionStorage.setItem('pdf_test_url', pdfUrl)
+                            sessionStorage.setItem('pdf_test_json', parseResult.jsonData!)
+                            sessionStorage.setItem('pdf_test_md', parseResult.markdown)
+                            window.open('/admin/pdf-test', '_blank')
+                          }}>
+                            调试
+                          </button>
+                        </PdfMarkdownViewer>
+                      </CardContent>
+                    </Card>
+                  ) : (
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>MinerU 解析结果</span>
-                          {parseResult.jsonData ? (() => {
-                            const blocks = parseBlocks(parseResult.jsonData)
-                            const secs = matchMarkdownToPdf(parseResult.markdown, blocks)
-                            sectionsRef.current = secs
-                            const matched = secs.filter(s => s.bbox).length
-                            return (
-                              <>
-                                <span className={blocks.length > 0 ? 'text-green-500' : 'text-amber-500'}>
-                                  {blocks.length > 0 ? `· ${blocks.length} 个定位块，${matched} 个匹配` : '· JSON 已加载但无有效块'}
-                                </span>
-                                <button type="button" className="ml-auto text-[10px] underline" onClick={() => {
-                                  const win = window.open('', '_blank', 'width=600,height=400')
-                                  if (win) { win.document.write(`<pre style="font-size:11px;padding:12px">${JSON.stringify(JSON.parse(parseResult.jsonData!).slice(0, 5), null, 2)}</pre>`); win.document.title = 'content_list.json preview (first 5)' }
-                                }}>预览 JSON</button>
-                              </>
-                            )
-                          })() : (
-                            <span>（Markdown）</span>
-                          )}
-                        </div>
-                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-160px)]">
-                          {parseResult.jsonData ? (
-                            <div ref={mdRef}>
-                              <ClickableMarkdown
-                                sections={sectionsRef.current}
-                                activeIdx={activeMdIdx}
-                                onNavigate={(page, bbox, idx) => { setActivePage(page); setActiveBbox(bbox); setActiveMdIdx(idx) }}
-                              />
-                            </div>
-                          ) : (
-                            <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
-                              {(() => {
-                                const start = parsePage * CHARS_PER_PAGE
-                                return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
-                              })()}
-                            </pre>
-                          )}
+                        <p className="text-xs text-muted-foreground">MinerU 解析结果</p>
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-200px)]">
+                          <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
+                            {(() => {
+                              const start = parsePage * CHARS_PER_PAGE
+                              return parseResult.markdown.slice(start, start + CHARS_PER_PAGE)
+                            })()}
+                          </pre>
                         </ScrollArea>
-                        {!showSplitView && (() => {
+                        {(() => {
                           const totalPages = Math.ceil(parseResult.markdown.length / CHARS_PER_PAGE)
                           if (totalPages <= 1) return null
                           return (
                             <div className="flex items-center justify-center gap-2 pt-1">
-                              <Button variant="ghost" size="sm" className="h-6 text-xs"
-                                disabled={parsePage === 0}
-                                onClick={() => setParsePage(p => p - 1)}>
-                                上一页
-                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 text-xs" disabled={parsePage === 0} onClick={() => setParsePage(p => p - 1)}>上一页</Button>
                               <span className="text-xs text-muted-foreground tabular-nums">{parsePage + 1} / {totalPages}</span>
-                              <Button variant="ghost" size="sm" className="h-6 text-xs"
-                                disabled={parsePage >= totalPages - 1}
-                                onClick={() => setParsePage(p => p + 1)}>
-                                下一页
-                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 text-xs" disabled={parsePage >= totalPages - 1} onClick={() => setParsePage(p => p + 1)}>下一页</Button>
                             </div>
                           )
                         })()}
                       </CardContent>
                     </Card>
-                  </div>
+                  )}
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
                       重新解析
