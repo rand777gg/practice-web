@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator,
+  DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, RotateCcw } from 'lucide-react'
@@ -642,7 +642,7 @@ function CodePreview({ theme, lang }: { theme: string; lang: string }) {
         }
         const loadedThemes = await hl.getLoadedThemes()
         if (!loadedThemes.includes(theme)) {
-          await hl.loadTheme(theme)
+          await hl.loadTheme(theme as any)
         }
         const h = hl.codeToHtml(code, { lang, theme })
         setHtml(h)
@@ -720,5 +720,3 @@ function LangIcon({ id, className }: { id: string; className?: string }) {
   return <Icon icon={icon} className={className} />
 }
 
-const SAMPLE_CODE = `def function(x):
-return x * 2`

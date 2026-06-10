@@ -20,8 +20,6 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Check if R2 Edge Function is available
-  const r2Available = true // Assume deployed; 404 handled gracefully
 
   const uploadToR2 = useCallback(async (file: File): Promise<string | null> => {
     setUploading(true)

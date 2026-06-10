@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -114,7 +113,7 @@ function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): MdSection[] {
 export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Props) {
   const mdRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
-  const pageImgRefs = useRef<Map<number, HTMLImageElement>>(new Map())
+  const pageImgRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
   const [renderedPages, setRenderedPages] = useState<{ p: number; w: number; h: number; src: string }[]>([])
   const [containerW, setContainerW] = useState(700)
@@ -166,9 +165,6 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-
-  const firstPage = renderedPages[0]
-  const displayScale = firstPage && containerW ? containerW / firstPage.w : 1
 
   // MD click → highlight MD, scroll PDF to page
   const handleMdClick = useCallback((sec: MdSection, idx: number) => {

@@ -61,7 +61,7 @@ export function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
                 ? [{ type: 'text' as const, text: `用户已有的笔记：\n${value}\n\n请识别图片中的内容（文字、题目、图表等），将识别结果补充到笔记中。用中文输出。` }]
                 : [{ type: 'text' as const, text: '请识别图片中的内容（文字、题目、图表等）。用中文输出。' }]
               ),
-              { type: 'image' as const, image: imageBase64, mimeType: imageMimeType },
+              { type: 'image' as const, image: imageBase64 },
             ],
           },
         ],

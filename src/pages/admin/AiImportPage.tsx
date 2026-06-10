@@ -21,7 +21,6 @@ import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { PdfViewer } from '@/components/ai-import/PdfViewer'
 import { PdfMarkdownViewer } from '@/components/ai-import/PdfMarkdownViewer'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
@@ -248,11 +247,6 @@ export function Component() {
   const [parsingDone, setParsingDone] = useState(false)
   const [parsePage, setParsePage] = useState(0)
   const [showSplitView, setShowSplitView] = useState(false)
-  const [activePage, setActivePage] = useState(1)
-  const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
-  const [activeMdIdx, setActiveMdIdx] = useState<number | null>(null)
-  const mdRef = useRef<HTMLDivElement>(null)
-  const sectionsRef = useRef<ReturnType<typeof matchMarkdownToPdf>>([])
   const CHARS_PER_PAGE = 3000
   const pdfUrl = file ? URL.createObjectURL(file) : files.length > 0 ? URL.createObjectURL(files[0]) : null
 
@@ -1033,9 +1027,7 @@ export function Component() {
   )
 }
 
-type PdfBlock = { page_idx: number; bbox: [number, number, number, number]; text?: string; type?: string }
-
-function parseBlocks(jsonData: string): PdfBlock[] {
+function PromptEditor({ label, value, onChange, onReset }: { label: string; value: string; onChange: (v: string) => void; onReset: () => void }) {
   const result: PdfBlock[] = []
   try {
     const data = JSON.parse(jsonData)
