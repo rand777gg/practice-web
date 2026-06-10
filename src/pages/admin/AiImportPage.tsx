@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -427,26 +428,60 @@ export function Component() {
 
       {showHistory && (
         <Card className="border-0 shadow-none">
-          <CardContent className="py-3 space-y-2">
+          <CardContent className="py-3">
             {historyError ? (
-              <p className="text-xs text-destructive text-center py-2">加载失败: {historyError}</p>
+              <p className="text-xs text-destructive text-center py-4">加载失败: {historyError}</p>
             ) : historyLoading ? (
-              <p className="text-xs text-muted-foreground text-center py-2">加载中...</p>
+              <p className="text-xs text-muted-foreground text-center py-4">加载中...</p>
             ) : history.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-2">暂无历史记录</p>
+              <p className="text-xs text-muted-foreground text-center py-4">暂无历史记录</p>
             ) : (
-              history.map((h) => (
-                <div key={h.id} className="flex items-center gap-2 text-xs bg-muted/30 rounded-lg p-2 group">
-                  <button type="button" className="flex-1 text-left min-w-0" onClick={() => loadHistory(h.id)}>
-                    <p className="font-medium truncate">{h.file_name}</p>
-                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}{h.status_json ? ` · ${(() => { try { const s = JSON.parse(h.status_json); return stateLabel2(s.state) } catch { return '' } })()}` : ''}{h.questions_json ? ` · ${(JSON.parse(h.questions_json) as unknown[]).length} 题` : ''}</p>
-                  </button>
-                  <button type="button" className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
-                    onClick={() => deleteHistory(h.id)}>
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">文件名</TableHead>
+                    <TableHead className="text-xs w-[72px]">模式</TableHead>
+                    <TableHead className="text-xs w-[60px]">题目</TableHead>
+                    <TableHead className="text-xs w-[80px]">状态</TableHead>
+                    <TableHead className="text-xs w-[140px]">时间</TableHead>
+                    <TableHead className="text-xs w-[40px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {history.map((h) => {
+                    const qCount = h.questions_json ? (() => { try { return (JSON.parse(h.questions_json) as unknown[]).length } catch { return 0 } })() : 0
+                    const statusText = h.status_json ? (() => { try { const s = JSON.parse(h.status_json); return stateLabel2(s.state) } catch { return '' } })() : ''
+                    const statusColor = h.status_json ? (() => { try { const s = JSON.parse(h.status_json); return stateColor2(s.state) } catch { return 'text-muted-foreground' } })() : 'text-muted-foreground'
+                    return (
+                      <TableRow key={h.id}>
+                        <TableCell className="text-xs py-2">
+                          <button type="button" className="text-left hover:underline underline-offset-2 font-medium max-w-[300px] truncate block" onClick={() => loadHistory(h.id)}>
+                            {h.file_name}
+                          </button>
+                        </TableCell>
+                        <TableCell className="text-xs py-2 text-muted-foreground">
+                          {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}
+                        </TableCell>
+                        <TableCell className="text-xs py-2 tabular-nums">{qCount > 0 ? `${qCount}` : '-'}</TableCell>
+                        <TableCell className="text-xs py-2">
+                          {statusText ? (
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColor}`}>{statusText}</span>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
+                          {new Date(h.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-xs py-2">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteHistory(h.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -843,7 +878,7 @@ export function Component() {
                   <div className={`grid gap-4 items-stretch ${showSplitView && pdfUrl ? 'grid-cols-2' : 'grid-cols-1'}`}>
                     {showSplitView && pdfUrl && (
                       <Card className="border-0 shadow-none">
-                        <CardContent className="p-3 h-[calc(100vh-260px)]">
+                        <CardContent className="p-3 h-[calc(100vh-200px)]">
                           <PdfViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData}
                             activePage={activePage} activeBbox={activeBbox} onPageChange={setActivePage}
                             onBlockClick={(block) => {
@@ -902,7 +937,7 @@ export function Component() {
                             <span>（Markdown）</span>
                           )}
                         </div>
-                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-260px)]">
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-200px)]">
                           {parseResult.jsonData ? (
                             <div ref={mdRef}>
                               <ClickableMarkdown
