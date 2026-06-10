@@ -149,14 +149,17 @@ function LogoPreview({ url, onRemove }: { url: string; onRemove: () => void }) {
   return (
     <div className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
       {errored ? (
-        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <Library className="h-5 w-5 text-primary/60" />
+        <div className="h-16 w-16 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <Library className="h-6 w-6 text-primary/60" />
         </div>
       ) : (
-        <img src={url} alt="Logo preview" className="h-12 w-12 rounded-lg object-cover shrink-0" onError={() => setErrored(true)} />
+        <img src={url} alt="Logo" className="h-16 w-16 rounded-lg object-cover shrink-0 border" onError={() => setErrored(true)} />
       )}
-      <span className="text-xs text-muted-foreground flex-1 truncate">{url}</span>
-      <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={onRemove}>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate">Logo 已上传</p>
+        <p className="text-[10px] text-muted-foreground">点击右侧按钮可移除重新上传</p>
+      </div>
+      <Button type="button" variant="ghost" size="icon" className="shrink-0 hover:bg-destructive/10 hover:text-destructive" onClick={onRemove}>
         <X className="h-4 w-4" />
       </Button>
     </div>
