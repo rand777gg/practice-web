@@ -1102,6 +1102,9 @@ function parseBlocks(jsonData: string): PdfBlock[] {
       }
     }
     walk(data, 0)
+    console.log('[parseBlocks]', result.length, 'blocks, sample:', result.slice(0, 3).map(b => ({
+      page: b.page_idx, bbox: b.bbox, type: b.type, text: b.text?.slice(0, 40),
+    })))
   } catch { /* ignore */ }
   return result
 }
