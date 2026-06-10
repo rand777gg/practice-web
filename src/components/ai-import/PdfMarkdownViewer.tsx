@@ -168,18 +168,19 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
   const firstPage = renderedPages[0]
   const displayScale = firstPage && containerW ? containerW / firstPage.w : 1
 
-  // MD click → navigate PDF
+  // MD click → highlight MD, scroll PDF to page
   const handleMdClick = useCallback((sec: MdSection, idx: number) => {
     setActiveMdIdx(idx)
     if (sec.bbox) {
       setActiveBbox(sec.bbox)
-      const el = pageImgRefs.current.get(sec.page)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const pageEl = pageImgRefs.current.get(sec.page)
+      if (pageEl) pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [])
 
-  // PDF block click → scroll MD
+  // PDF block click → highlight bbox, scroll MD to matching section
   const handlePdfBlockClick = useCallback((block: PdfBlock) => {
+    setActiveBbox(block.bbox)
     const blockNorm = normalize(block.text || '')
     let bestIdx = -1; let bestSim = 0
     for (let i = 0; i < sections.length; i++) {
@@ -194,11 +195,8 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
     }
     if (bestIdx >= 0) {
       setActiveMdIdx(bestIdx)
-      setActiveBbox(sections[bestIdx].bbox)
-      setTimeout(() => {
-        const el = mdRef.current?.querySelector(`[data-md-idx="${bestIdx}"]`)
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }, 100)
+      const el = mdRef.current?.querySelector(`[data-md-idx="${bestIdx}"]`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [sections])
 
@@ -232,13 +230,13 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
             const pageScale = containerW / rp.w
 
             return (
-              <div key={rp.p} className="relative mx-auto" style={{ width: cssW, height: cssH }}>
-                <img
-                  ref={el => { if (el) pageImgRefs.current.set(rp.p, el) }}
-                  src={rp.src}
-                  alt={`Page ${rp.p}`}
-                  className="w-full h-full rounded border"
-                />
+              <div
+                key={rp.p}
+                ref={el => { if (el) pageImgRefs.current.set(rp.p, el) }}
+                className="relative mx-auto"
+                style={{ width: cssW, height: cssH }}
+              >
+                <img src={rp.src} alt={`Page ${rp.p}`} className="w-full h-full rounded border" />
                 {pageBlocks.map((b, i) => {
                   const [x0, y0, x1, y1] = b.bbox
                   const isActive = activeBbox &&
