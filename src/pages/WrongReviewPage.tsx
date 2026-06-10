@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QuestionCard } from '@/components/questions/QuestionCard'
-import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {

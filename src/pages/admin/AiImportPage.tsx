@@ -846,42 +846,7 @@ export function Component() {
 
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}
 
-              {parseMode === 'manual' ? (
-                <Button onClick={async () => {
-                  if (!manualText.trim()) return
-                  setStep('parsing'); setError(''); setParseMsg(manualFormat === 'json' ? '正在解析 JSON...' : 'AI 正在提取题目...')
-                  try {
-                    let questionsList: ParsedQuestion[]
-                    if (manualFormat === 'json') {
-                      const parsed = JSON.parse(manualText)
-                      const arr = Array.isArray(parsed) ? parsed : (parsed.questions || [parsed])
-                      questionsList = arr.map((q: Record<string, unknown>) => ({
-                        question_type: (q.question_type as QuestionType) || 'single_choice',
-                        question_text: (q.question_text as string) || (q.questionText as string) || '',
-                        options: Array.isArray(q.options) ? q.options as string[] : ['', ''],
-                        correct_answer: q.correct_answer !== undefined ? q.correct_answer : (q.correctAnswer !== undefined ? q.correctAnswer : 0),
-                        analysis: (q.analysis as string) || null,
-                        key_points: (q.key_points as string) || (q.keyPoints as string) || null,
-                        answer_explanation: (q.answer_explanation as string) || (q.answerExplanation as string) || null,
-                      }))
-                    } else {
-                      const parser = new DeepSeekParser(getAiConfig())
-                      const result = await parser.parseDocument(manualText, extractPrompt)
-                      questionsList = result.questions
-                    }
-                    setQuestions(questionsList)
-                    setSelectedIds(new Set(questionsList.map((_, i) => i)))
-                    setStep('preview')
-                    saveToHistory({ fileName: '手动导入', markdown: manualText, questions: questionsList, mode: 'manual' })
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : '解析失败')
-                    setStep('upload')
-                  }
-                }} disabled={!aiConfigured || !manualText.trim()} className="w-full mt-4">
-                  <Play className="h-4 w-4" />
-                  {manualFormat === 'json' ? '解析 JSON' : 'AI 解析导入'}
-                </Button>
-              ) : parseMode === 'generate' ? (
+              {parseMode === 'generate' ? (
                 <Button onClick={handleGenerate} disabled={!canStart || generating} className="w-full mt-4">
                   {generating ? (
                     <>

@@ -110,7 +110,7 @@ export function Component() {
 
       // Pre-aggregated daily stats (lightweight — replaces raw user_answers for charts)
       // Also fetch key_points + question-level correctness for knowledge graph
-      const [{ data: statsRows }, , kpResult, , { data: kgAnswers }] = await Promise.all([
+      const [{ data: statsRows }, , kpResult, { data: kgAnswers }] = await Promise.all([
         supabase
           .from('user_daily_stats')
           .select('date, subject, question_type, total, correct, hourly')

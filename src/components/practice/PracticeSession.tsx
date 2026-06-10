@@ -19,7 +19,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
-import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Skeleton } from '@/components/ui/skeleton'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
