@@ -37,7 +37,7 @@ const GENERATE_FROM_DOC_SYSTEM = `你是一位经验丰富的考官。根据提�
 - multi_select（多选题）：correct_answer 为整数数组，options 至少4个
 - true_false（判断题）：correct_answer 为 boolean，options=["正确","错误"]
 - judge_correct（判断改错题）：题干给出一段陈述，correct_answer 为 true（正确）或字符串（指明错在哪里并给出修正后的正确表述），options 为空数组[]
-- fill_blank（填空题）：correct_answer 为字符串，options 为空数组[]，题干中用 ____ 标记空缺位置
+- fill_blank（填空题）：correct_answer 为字符串或字符串数组（多个空时按顺序对应），options 为空数组[]，题干中用 ____ 标记空缺位置
 - short_answer（简答题）：correct_answer 为字符串或字符串数组，options 为空数组[]
 - analysis（分析题/论述题/案例分析题）：correct_answer 为 null，options 为空数组[]
 
@@ -280,6 +280,9 @@ export class DeepSeekParser {
         }
         if (['fill_blank','short_answer','analysis','judge_correct'].includes(question_type)) {
           options = []
+        }
+        if (question_type === 'fill_blank' && Array.isArray(correct_answer)) {
+          correct_answer = correct_answer.filter((a): a is string => typeof a === 'string')
         }
         if (question_type === 'analysis') {
           correct_answer = null
