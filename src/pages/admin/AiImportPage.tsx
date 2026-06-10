@@ -753,7 +753,7 @@ export function Component() {
                     </CardContent>
                   </Card>
 
-                  <PromptEditor label="提示词 - 预设" value={generateDocPrompt}
+                  <PromptEditor label="预设" value={generateDocPrompt}
                     onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
                     onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
                   />
