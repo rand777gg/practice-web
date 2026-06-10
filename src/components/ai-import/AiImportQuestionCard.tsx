@@ -111,6 +111,26 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         className="text-sm"
       />
 
+      {/* Key points — right after question text, always visible */}
+      <div className="relative">
+        <Input
+          value={question.key_points || ''}
+          onChange={(e) => patch({ key_points: e.target.value })}
+          className="h-8 text-xs pr-8"
+          placeholder="知识点，逗号分隔"
+        />
+        {hasAiConfig() && isEnabled('keypoints') && (
+          <Button type="button" variant="ghost" size="icon"
+            className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
+            disabled={kpLoading || !question.question_text.trim()}
+            onClick={handleGenerateKeyPoints}
+            title="AI 生成知识点"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
+          </Button>
+        )}
+      </div>
+
       {/* Options (for choice types) */}
       {['single_choice','multi_select'].includes(type) && (
         <div className="space-y-1 pl-1">
@@ -225,26 +245,6 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         className="h-8 text-xs"
         placeholder="解析"
       />
-
-      {/* Key points */}
-      <div className="relative">
-        <Input
-          value={question.key_points || ''}
-          onChange={(e) => patch({ key_points: e.target.value })}
-          className="h-8 text-xs pr-8"
-          placeholder="知识点，逗号分隔"
-        />
-        {hasAiConfig() && isEnabled('keypoints') && (
-          <Button type="button" variant="ghost" size="icon"
-            className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
-            disabled={kpLoading || !question.question_text.trim()}
-            onClick={handleGenerateKeyPoints}
-            title="AI 生成知识点"
-          >
-            <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
-          </Button>
-        )}
-      </div>
     </div>
   )
 }
