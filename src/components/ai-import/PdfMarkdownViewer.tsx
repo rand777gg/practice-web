@@ -130,13 +130,15 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
   })()
   const matched = sections.filter(s => s.bbox).length
 
+  const RENDER_SCALE = 2.0
+
   // Render all PDF pages as images
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const pdf = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
-      const scale = 1.2
+      const scale = RENDER_SCALE
       const pages: { p: number; w: number; h: number; src: string }[] = []
       for (let i = 1; i <= pdf.numPages; i++) {
         if (cancelled) return
@@ -248,7 +250,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
                     w = Math.max(((x1 - x0) / 1000) * cssW, 2)
                     h = Math.max(((y1 - y0) / 1000) * cssH, 2)
                   } else {
-                    const s = 1.2 * pageScale
+                    const s = RENDER_SCALE * pageScale
                     left = x0 * s; top = y0 * s
                     w = Math.max((x1 - x0) * s, 2); h = Math.max((y1 - y0) * s, 2)
                   }
