@@ -25,6 +25,7 @@ export function Component() {
   const [displayW, setDisplayW] = useState(700)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [coordMode, setCoordMode] = useState<'normalized' | 'absolute'>('normalized')
 
   useEffect(() => {
     if (manualFile) setManualUrl(URL.createObjectURL(manualFile))
@@ -113,6 +114,11 @@ export function Component() {
         <label className="ml-4">缩放</label>
         <Input type="number" value={renderScale} step={0.1} min={0.5} max={3}
           onChange={e => setRenderScale(Number(e.target.value))} className="w-16 h-6 text-xs" />
+        <label className="ml-2 text-[10px]">坐标</label>
+        <Button variant={coordMode === 'normalized' ? 'default' : 'outline'} size="sm" className="h-6 text-[10px]"
+          onClick={() => setCoordMode('normalized')}>归一化</Button>
+        <Button variant={coordMode === 'absolute' ? 'default' : 'outline'} size="sm" className="h-6 text-[10px]"
+          onClick={() => setCoordMode('absolute')}>绝对</Button>
         <span className="text-muted-foreground">
           Canvas: {pageSize?.w}x{pageSize?.h} | W: {displayW}px | pdfScale: {pdfScale.toFixed(4)} | blocks: {pageBlocks.length}
         </span>
@@ -132,12 +138,25 @@ export function Component() {
                 <canvas ref={canvasRef} className="w-full rounded border" style={{ height: pageSize ? pageSize.h * cssScale : 600 }} />
                 {pageSize && pageBlocks.map((b, i) => {
                   const [x0, y0, x1, y1] = b.bbox
-                  const left = x0 * pdfScale, top = y0 * pdfScale
-                  const w = Math.max((x1 - x0) * pdfScale, 2), h = Math.max((y1 - y0) * pdfScale, 2)
+                  const cssW = pageSize ? displayW : 700
+                  const cssH = pageSize ? pageSize.h * cssScale : 600
+                  let left: number, top: number, w: number, h: number
+                  if (coordMode === 'normalized') {
+                    // content_list.json: coords in 0-1000 range
+                    left = (x0 / 1000) * cssW
+                    top = (y0 / 1000) * cssH
+                    w = Math.max(((x1 - x0) / 1000) * cssW, 2)
+                    h = Math.max(((y1 - y0) / 1000) * cssH, 2)
+                  } else {
+                    // layout.json: absolute PDF points
+                    const s = pdfScale
+                    left = x0 * s; top = y0 * s
+                    w = Math.max((x1 - x0) * s, 2); h = Math.max((y1 - y0) * s, 2)
+                  }
                   return (
                     <div key={i} className="absolute border border-amber-500/70 bg-amber-400/15 cursor-pointer hover:bg-amber-400/40"
                       style={{ left, top, width: w, height: h }}
-                      title={`${b.text?.slice(0, 80)} | [${x0},${y0},${x1},${y1}]`} />
+                      title={`${b.text?.slice(0, 80)} | [${x0},${y0},${x1},${y1}] | ${coordMode}`} />
                   )
                 })}
               </div>

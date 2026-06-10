@@ -30,6 +30,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   const [loading, setLoading] = useState(true)
   const [containerW, setContainerW] = useState(700)
   const renderScale = 1.2 // must match scale used in render effect
+  const isNormalized = blocks.length > 0 && blocks.every(b => b.bbox.every(v => v <= 1000))
 
   // Track container width for responsive scaling
   useEffect(() => {
@@ -131,12 +132,23 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
             const [x0, y0, x1, y1] = block.bbox
             const isActive = activeBbox &&
               Math.abs(activeBbox[0] - x0) < 5 && Math.abs(activeBbox[1] - y0) < 5
-            // layout.json coords are in PDF points, CSS-style (y from top)
-            const s = renderScale * displayScale
-            const cssTop = y0 * s
-            const cssH = Math.max((y1 - y0) * s, 2)
-            const cssLeft = x0 * s
-            const cssW = Math.max((x1 - x0) * s, 2)
+            const cssW = containerW
+            const cssH = pageSize.height * displayScale
+            let blockLeft: number, blockTop: number, blockW: number, blockH: number
+            if (isNormalized) {
+              // content_list.json: 0-1000 range, Y from bottom (PDF-style)
+              blockLeft = (x0 / 1000) * cssW
+              blockTop = cssH - (y1 / 1000) * cssH
+              blockW = Math.max(((x1 - x0) / 1000) * cssW, 2)
+              blockH = Math.max(((y1 - y0) / 1000) * cssH, 2)
+            } else {
+              // layout.json: absolute PDF points, Y from top (CSS-style)
+              const s = renderScale * displayScale
+              blockLeft = x0 * s
+              blockTop = y0 * s
+              blockW = Math.max((x1 - x0) * s, 2)
+              blockH = Math.max((y1 - y0) * s, 2)
+            }
 
             return (
               <div
@@ -146,7 +158,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
                     ? 'border-blue-500 bg-blue-500/25 z-10 ring-1 ring-blue-400'
                     : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
                 }`}
-                style={{ left: cssLeft, top: cssTop, width: cssW, height: cssH }}
+                style={{ left: blockLeft, top: blockTop, width: blockW, height: blockH }}
                 title={(block.text || block.category || 'Block').slice(0, 120)}
                 onClick={() => onBlockClick?.(block)}
               />
