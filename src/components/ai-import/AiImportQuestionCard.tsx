@@ -53,7 +53,6 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         options: ['single_choice', 'multi_select'].includes(type) ? question.options.filter((o) => o.trim()) : undefined,
         correctAnswer: answerStr || undefined,
         analysis: question.analysis?.trim() || undefined,
-        answerExplanation: question.answer_explanation?.trim() || undefined,
       })
       patch({ key_points: result })
     } catch { /* ignore */ }
@@ -239,12 +238,15 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       )}
 
       {/* Analysis */}
-      <Input
-        value={question.analysis || ''}
-        onChange={(e) => patch({ analysis: e.target.value })}
-        className="h-8 text-xs"
-        placeholder="解析"
-      />
+      <div>
+        <label className="text-[11px] text-muted-foreground mb-1 block">解析</label>
+        <Input
+          value={question.analysis || ''}
+          onChange={(e) => patch({ analysis: e.target.value })}
+          className="h-8 text-xs"
+          placeholder="解释正确答案..."
+        />
+      </div>
     </div>
   )
 }

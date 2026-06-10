@@ -36,7 +36,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [questionText, setQuestionText] = useState(initialData?.question_text ?? '')
   const [options, setOptions] = useState<string[]>(initialData?.options ?? ['', ''])
   const [correctAnswer, setCorrectAnswer] = useState<CorrectAnswer>(initialData?.correct_answer ?? 0)
-  const [answerExplanation, setAnswerExplanation] = useState(initialData?.answer_explanation ?? '')
   const [categories, setCategories] = useState<string[]>(
     initialData?.categories?.length ? initialData.categories : initialData?.category ? [initialData.category] : []
   )
@@ -166,7 +165,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         question_text: questionText.trim(),
         options: options.map((o) => o.trim()),
         correct_answer: correctAnswer,
-        answer_explanation: answerExplanation.trim() || null,
+        answer_explanation: null,
         category: categories[0] ?? null,
         categories,
         subject: subject.trim() || null,
@@ -436,19 +435,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
             </CardContent>
           </Card>
 
-          {/* Answer explanation (conditional) */}
-          {['fill_blank', 'short_answer', 'true_false', 'judge_correct'].includes(questionType) && (
-            <Card>
-              <CardHeader className="py-2.5 px-4">
-                <CardTitle className="text-sm">答案解析 <span className="text-muted-foreground font-normal text-xs">(选填)</span></CardTitle>
-              </CardHeader>
-              <CardContent className="pb-3 px-4">
-                <Textarea value={answerExplanation} onChange={(e) => setAnswerExplanation(e.target.value)}
-                  placeholder="解释为什么这是正确答案..." rows={2} />
-              </CardContent>
-            </Card>
-          )}
-
           <Card>
             <CardHeader className="py-2.5 px-4 cursor-pointer select-none"
               onClick={() => setAnalysisOpen(!analysisOpen)}>
@@ -506,7 +492,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                               options: isChoiceType ? options.filter(o => o.trim()) : undefined,
                               correctAnswer: answerStr || undefined,
                               analysis: analysis.trim() || undefined,
-                              answerExplanation: answerExplanation.trim() || undefined,
                             })
                             if (typewriterRef.current.timer) clearTimeout(typewriterRef.current.timer)
                             const len = result.length; setKeyPointsOpacity(0.3); let i = 0

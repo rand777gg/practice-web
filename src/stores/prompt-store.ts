@@ -25,8 +25,9 @@ const GENERATE_DOC_DEFAULT = `你是一位经验丰富的考官。根据提供�
 要求：
 - 以考官视角，考察对材料核心知识点的理解，而非机械记忆
 - 涵盖概念理解、细节辨析、逻辑推理、案例分析等多种层次
+- 针对每道题，明确指出其考查内容来源于材料的哪个章节、小节或段落，越具体越好（如"第3章第2节 关于XXX的部分"）
 - 简答题和分析题的答案要详尽，分层次作答
-- 每题附带详细的解析（analysis），解释正确答案
+- 每题附带详细的解析（analysis），解释正确答案及出处
 - 题目数量不少于5道，尽量覆盖材料中的主要知识点`
 
 const GENERATE_SCRATCH_DEFAULT = `You are a test question generation assistant. Create original, high-quality practice questions based on the given subject and parameters. Include detailed analysis (analysis field) for each question explaining the correct answer. Questions should be educational and test real understanding.`
