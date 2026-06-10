@@ -24,7 +24,7 @@ interface Props {
 
 type ImportState = 'input' | 'preview' | 'importing' | 'done' | 'error'
 
-	const JSON_SAMPLE = ```json
+	const JSON_SAMPLE = `\`\`\`json
   {
     "question_type": "single_choice",
     "question_text": "HTML 的全称是什么？",
@@ -40,7 +40,7 @@ type ImportState = 'input' | 'preview' | 'importing' | 'done' | 'error'
     "analysis": "HTML 是 Hyper Text Markup Language 的缩写。",
     "key_points": "HTML, Web基础"
   }
-````
+\`\`\`\`
 const CSV_SAMPLE = `question_text,option_a,option_b,option_c,option_d,correct_answer,subject,key_points
 HTML 的全称是什么？,Hyper Text Markup Language,High Tech Modern Language,Hyper Transfer Markup Language,Home Tool Markup Language,0,计算机,HTML; Web基础
 CSS 的全称是什么？,Cascading Style Sheets,Computer Style System,Creative Style Sheets,Colorful Style Sheets,0,计算机,CSS; Web基础`

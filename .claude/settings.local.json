@@ -38,7 +38,10 @@
       "mcp__ide__getDiagnostics",
       "WebFetch(domain:supabase.com)",
       "WebFetch(domain:zhongguose.com)",
-      "WebFetch(domain:www.zhongguose.com)"
+      "WebFetch(domain:www.zhongguose.com)",
+      "Bash(sed -i '27s/.*/\\\\\\\\tconst JSON_SAMPLE = `\\\\\\\\`\\\\\\\\`\\\\\\\\`json/' \"C:/vsc-workspace/fe-workspace/practice-web/src/components/questions/QuestionImportDialog.tsx\")",
+      "Bash(sed -i '43s/.*/\\\\\\\\`\\\\\\\\`\\\\\\\\`\\\\\\\\`/' \"C:/vsc-workspace/fe-workspace/practice-web/src/components/questions/QuestionImportDialog.tsx\")",
+      "Bash(node *)"
     ]
   }
 }
