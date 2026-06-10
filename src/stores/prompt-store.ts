@@ -29,7 +29,7 @@ const GENERATE_DOC_DEFAULT = `你是一位经验丰富的考官。根据提供�
 - 每题附带详细的解析（analysis），解释正确答案
 - 题目数量不少于5道，尽量覆盖材料中的主要知识点`
 
-const GENERATE_SCRATCH_DEFAULT = `You are a test question generation assistant. Create original, high-quality practice questions based on the given subject and parameters. Include detailed analysis (analysis field) and key learning points (key_points, comma-separated) for each question explaining the correct answer. Questions should be educational and test real understanding.`
+const GENERATE_SCRATCH_DEFAULT = `You are a test question generation assistant. Create original, high-quality practice questions based on the given subject and parameters. Include detailed analysis (analysis field) for each question explaining the correct answer. Questions should be educational and test real understanding.`
 
 type PromptKey = 'extract' | 'generate_doc' | 'generate_scratch'
 

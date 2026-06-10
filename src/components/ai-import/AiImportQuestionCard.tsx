@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
@@ -7,10 +8,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { Check, ChevronDown, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Sparkles, Trash2 } from 'lucide-react'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
+import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 
 function circled(n: number): string {
   if (n >= 1 && n <= 20) return String.fromCodePoint(0x245f + n)
@@ -30,6 +33,32 @@ interface Props {
 export function AiImportQuestionCard({ question, index, selected, onToggleSelect, onChange, onRemove }: Props) {
   const patch = (partial: Partial<ParsedQuestion>) => onChange({ ...question, ...partial })
   const type = question.question_type
+  const { isEnabled } = useSettingsStore()
+  const [kpLoading, setKpLoading] = useState(false)
+
+  const handleGenerateKeyPoints = async () => {
+    if (!question.question_text.trim()) return
+    setKpLoading(true)
+    try {
+      let answerStr = ''
+      if (type === 'single_choice' && typeof question.correct_answer === 'number') answerStr = question.options[question.correct_answer] ?? ''
+      else if (type === 'multi_select' && Array.isArray(question.correct_answer)) answerStr = (question.correct_answer as number[]).map((i) => question.options[i]).join('、')
+      else if (type === 'true_false') answerStr = question.correct_answer ? '正确' : '错误'
+      else if (type === 'judge_correct') answerStr = question.correct_answer === true ? '正确' : `修正：${question.correct_answer}`
+      else if (typeof question.correct_answer === 'string') answerStr = question.correct_answer
+      else if (Array.isArray(question.correct_answer)) answerStr = question.correct_answer.join('；')
+      const result = await generateKeyPoints({
+        questionText: question.question_text.trim(),
+        questionType: QUESTION_TYPE_LABELS[type] || type,
+        options: ['single_choice', 'multi_select'].includes(type) ? question.options.filter((o) => o.trim()) : undefined,
+        correctAnswer: answerStr || undefined,
+        analysis: question.analysis?.trim() || undefined,
+        answerExplanation: question.answer_explanation?.trim() || undefined,
+      })
+      patch({ key_points: result })
+    } catch { /* ignore */ }
+    setKpLoading(false)
+  }
 
   return (
     <div className={`rounded-lg border p-3 space-y-2 ${selected ? 'border-primary bg-primary/5' : ''}`}>
@@ -198,12 +227,24 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       />
 
       {/* Key points */}
-      <Input
-        value={question.key_points || ''}
-        onChange={(e) => patch({ key_points: e.target.value })}
-        className="h-8 text-xs"
-        placeholder="知识点，逗号分隔（可选）"
-      />
+      <div className="relative">
+        <Input
+          value={question.key_points || ''}
+          onChange={(e) => patch({ key_points: e.target.value })}
+          className="h-8 text-xs pr-8"
+          placeholder="知识点，逗号分隔（可选）"
+        />
+        {hasAiConfig() && isEnabled('keypoints') && (
+          <Button type="button" variant="ghost" size="icon"
+            className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
+            disabled={kpLoading || !question.question_text.trim()}
+            onClick={handleGenerateKeyPoints}
+            title="AI 生成知识点"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
