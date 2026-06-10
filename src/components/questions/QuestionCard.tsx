@@ -25,11 +25,11 @@ function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
           {yearCats.length}年真题
         </span>
       </HoverCardTrigger>
-      <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+      <HoverCardContent side="bottom" align="start" className="w-auto max-w-[calc(100vw-2rem)] px-3 py-2 text-xs">
         <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
         <div className="flex flex-wrap gap-1">
           {yearCats.map((y) => (
-            <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium">{y}</span>
+            <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
           ))}
         </div>
       </HoverCardContent>
