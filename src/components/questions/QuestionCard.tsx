@@ -13,7 +13,7 @@ import { useT } from '@/i18n/use-t'
 import { Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
-function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
+export function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
   const [open, setOpen] = useState(false)
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
