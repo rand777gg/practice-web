@@ -633,137 +633,131 @@ export function Component() {
               )}
 
               {parseMode === 'generate' ? (
-                <div className="space-y-4 p-4 rounded-lg border bg-muted/30">
+                <div className="space-y-5">
                   <p className="text-xs text-muted-foreground">上传原始资料，AI 直接阅读文献并生成练习题。支持 PDF、Word、TXT。</p>
 
                   {/* File upload */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">上传资料文件</label>
-                    {genFile ? (
-                      <div className="flex items-center gap-2 text-xs bg-background rounded-lg border p-2.5">
-                        <span className="font-medium truncate flex-1">{genFile.name}</span>
-                        <span className="text-muted-foreground shrink-0">
-                          {extracting ? '提取中...' : `已提取 ${genFileText.length} 字符`}
-                        </span>
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-destructive shrink-0"
-                          onClick={() => { setGenFile(null); setGenFileText('') }}
-                        >
-                          移除
-                        </button>
+                  <Card>
+                    <CardContent className="pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">上传资料文件 <span className="text-muted-foreground font-normal text-xs">(选填)</span></p>
+                        {genFile && (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                            onClick={() => { setGenFile(null); setGenFileText('') }}>
+                            <X className="h-3 w-3 mr-1" />移除文件
+                          </Button>
+                        )}
                       </div>
-                    ) : (
-                      <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:border-primary/50 transition-colors">
-                        <input
-                          type="file"
-                          accept=".pdf,.docx,.doc,.txt,.md"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0]
-                            if (f) handleGenFile(f)
-                          }}
-                        />
-                        <span className="text-xs text-muted-foreground">点击选择文件，或拖拽到此处</span>
-                        <span className="text-[10px] text-muted-foreground/60">PDF、Word (.docx)、TXT</span>
-                      </label>
-                    )}
-                    {extracting && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Spinner /> 正在提取文本...
+                      {genFile ? (
+                        <div className="flex items-center gap-3 bg-muted/40 rounded-lg border p-3">
+                          <Upload className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{genFile.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {extracting ? '提取中...' : `已提取 ${genFileText.length} 字符`}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors">
+                          <input type="file" accept=".pdf,.docx,.doc,.txt,.md" className="hidden"
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleGenFile(f) }} />
+                          <Upload className="h-5 w-5 text-muted-foreground/60" />
+                          <span className="text-sm text-muted-foreground">点击选择文件，或拖拽到此处</span>
+                          <span className="text-xs text-muted-foreground/50">PDF、Word (.docx)、TXT</span>
+                        </label>
+                      )}
+                      {extracting && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Spinner /> 正在提取文本...
+                        </div>
+                      )}
+                      {genFileText && !extracting && (
+                        <details className="text-xs">
+                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1">预览提取内容</summary>
+                          <pre className="mt-1 p-3 bg-muted/50 rounded-lg border max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
+                        </details>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Config */}
+                  <Card>
+                    <CardContent className="pt-4 space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">学科 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
+                          <div className="relative">
+                            <Input placeholder="如：逻辑学、数学、英语" value={genSubject}
+                              onChange={(e) => setGenSubject(e.target.value)} autoComplete="off" />
+                            {genSubject && existingSubjects.filter(s => s.includes(genSubject)).length > 0 && (
+                              <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
+                                {existingSubjects.filter(s => s.includes(genSubject)).slice(0, 6).map((s) => (
+                                  <button key={s} type="button"
+                                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
+                                    onMouseDown={() => setGenSubject(s)}>{s}</button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">题目数量</label>
+                          <Input type="number" className="w-24" min={1} max={30}
+                            value={genCount}
+                            onChange={(e) => setGenCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} />
+                        </div>
                       </div>
-                    )}
-                    {genFileText && !extracting && (
-                      <details className="text-xs">
-                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">预览提取内容</summary>
-                        <pre className="mt-1 p-2 bg-muted/50 rounded max-h-32 overflow-auto whitespace-pre-wrap break-all">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
-                      </details>
-                    )}
-                  </div>
 
-                  <div>
-                    <label className="text-sm font-medium">学科（选填）</label>
-                    <Input
-                      className="mt-1"
-                      placeholder="如：逻辑学、数学、英语"
-                      value={genSubject}
-                      onChange={(e) => setGenSubject(e.target.value)}
-                      list="gen-subjects"
-                    />
-                    <datalist id="gen-subjects">
-                      {existingSubjects.map(s => <option key={s} value={s} />)}
-                    </datalist>
-                  </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">题型 <span className="text-muted-foreground font-normal text-xs">(至少选一个)</span></label>
+                        <div className="flex flex-wrap gap-2">
+                          {QUESTION_TYPE_OPTIONS.map((t) => {
+                            const selected = genTypes.has(t.value)
+                            return (
+                              <Button
+                                key={t.value}
+                                type="button"
+                                variant={selected ? 'default' : 'outline'}
+                                size="sm"
+                                className="text-xs"
+                                onClick={() => {
+                                  setGenTypes((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(t.value)) {
+                                      if (next.size > 1) next.delete(t.value)
+                                    } else {
+                                      next.add(t.value)
+                                    }
+                                    return next
+                                  })
+                                }}
+                              >
+                                {t.label}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      </div>
 
-                  <div>
-                    <label className="text-sm font-medium">题型（可多选）</label>
-                    <div className="flex flex-wrap gap-2 mt-1.5">
-                      {QUESTION_TYPE_OPTIONS.map((t) => (
-                        <button
-                          key={t.value}
-                          type="button"
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                            genTypes.has(t.value)
-                              ? 'bg-primary text-primary-foreground border-primary'
-                              : 'bg-background text-muted-foreground border-border hover:border-primary/50'
-                          }`}
-                          onClick={() => {
-                            setGenTypes((prev) => {
-                              const next = new Set(prev)
-                              if (next.has(t.value)) {
-                                if (next.size > 1) next.delete(t.value)
-                              } else {
-                                next.add(t.value)
-                              }
-                              return next
-                            })
-                          }}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                      {!genFileText && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">知识点范围 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
+                          <Input placeholder="如：三段论、假言推理、选言推理"
+                            value={genTopic} onChange={(e) => setGenTopic(e.target.value)} />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
 
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <label className="text-sm font-medium">题目数量</label>
-                      <Input
-                        type="number"
-                        className="mt-1 w-20"
-                        min={1}
-                        max={30}
-                        value={genCount}
-                        onChange={(e) => setGenCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
-                      />
-                    </div>
-                  </div>
-
-                  {!genFileText && (
-                    <div>
-                      <label className="text-sm font-medium">知识点范围（选填）</label>
-                      <Input
-                        className="mt-1"
-                        placeholder="如：三段论、假言推理、选言推理"
-                        value={genTopic}
-                        onChange={(e) => setGenTopic(e.target.value)}
-                      />
-                    </div>
-                  )}
                   {genFileText ? (
-                    <PromptEditor
-                      label="根据资料生成"
-                      value={generateDocPrompt}
+                    <PromptEditor label="根据资料生成" value={generateDocPrompt}
                       onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
-                      onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
-                    />
+                      onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))} />
                   ) : (
-                    <PromptEditor
-                      label="凭空生成"
-                      value={generateScratchPrompt}
+                    <PromptEditor label="凭空生成" value={generateScratchPrompt}
                       onChange={(v) => { setGenerateScratchPrompt(v); setPrompt('generate_scratch', v) }}
-                      onReset={() => setGenerateScratchPrompt(resetPrompt('generate_scratch'))}
-                    />
+                      onReset={() => setGenerateScratchPrompt(resetPrompt('generate_scratch'))} />
                   )}
                 </div>
               ) : (
@@ -1167,31 +1161,30 @@ function ClickableMarkdown({ sections, activeIdx, onNavigate }: { sections: Retu
 function PromptEditor({ label, value, onChange, onReset }: { label: string; value: string; onChange: (v: string) => void; onReset: () => void }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="space-y-1.5">
-      <button
-        type="button"
-        className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-        onClick={() => setOpen(!open)}
-      >
-        {open ? '▾ ' : '▸ '}
-        提示词 {label && `(${label})`}
-      </button>
-      {open && (
-        <>
-          <textarea
-            className="w-full h-40 text-[11px] font-mono p-2.5 rounded-lg border bg-muted/30 resize-y"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            spellCheck={false}
-          />
-          <div className="flex justify-end">
-            <button type="button" className="text-[10px] text-muted-foreground hover:text-foreground" onClick={onReset}>
-              恢复默认
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+    <Card>
+      <CardContent className="py-3 space-y-3">
+        <button type="button"
+          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 font-medium"
+          onClick={() => setOpen(!open)}>
+          {open ? '▾' : '▸'} 提示词 {label && `— ${label}`}
+        </button>
+        {open && (
+          <>
+            <textarea
+              className="w-full h-40 text-xs font-mono p-3 rounded-lg border bg-muted/30 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              spellCheck={false}
+            />
+            <div className="flex justify-end">
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={onReset}>
+                恢复默认
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
