@@ -25,10 +25,7 @@ export function Component() {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2">
-          {t('ai.title')}
-          <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span>
-        </h1>
+        <h1 className="text-xl lg:text-2xl font-bold">{t('ai.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">{t('ai.description')}</p>
       </div>
 

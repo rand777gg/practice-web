@@ -80,7 +80,6 @@ export function Component() {
             <Link to="/admin/ai-import">
               <Sparkles className="h-4 w-4" />
               <span className="hidden sm:inline ml-1">AI 智能解析</span>
-              <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1 py-0.5 rounded ml-1">BETA</span>
             </Link>
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
