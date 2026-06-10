@@ -86,7 +86,7 @@ export function Component() {
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const user = useAuthStore((s) => s.user)
@@ -96,7 +96,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, markdown, json_data, questions_json, status_json, mode, created_at')
+      .select('id, file_name, markdown, json_data, questions_json, status_json, page_ranges, mode, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -108,7 +108,7 @@ export function Component() {
     setHistoryLoading(false)
   }
 
-  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string }) => {
+  const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string }) => {
     if (!user) return
     await supabase.from('parse_history').insert({
       user_id: user.id,
@@ -118,6 +118,7 @@ export function Component() {
       questions_json: record.questions ? JSON.stringify(record.questions) : null,
       mode: record.mode,
       status_json: parseStatus ? JSON.stringify(parseStatus) : null,
+      page_ranges: record.pageRanges || null,
     })
   }
 
@@ -128,6 +129,7 @@ export function Component() {
       if (entry.questions_json) {
         try { setQuestions(JSON.parse(entry.questions_json)) } catch { /* ignore */ }
       }
+      if (entry.page_ranges) setPageRanges(entry.page_ranges)
       setParsingDone(true)
       setStep('parsing')
       setShowHistory(false)
@@ -207,7 +209,7 @@ export function Component() {
     const result = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
     setParseResult(result)
     setParsingDone(true)
-    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight' })
+    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRanges || undefined })
   }
 
   const runPrecisionParse = async () => {
@@ -236,12 +238,12 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
-      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision' })
+      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined })
     } else if (file) {
       const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
-      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision' })
+      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined })
     }
   }
 
