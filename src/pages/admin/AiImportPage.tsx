@@ -477,10 +477,23 @@ export function Component() {
                           {new Date(h.created_at).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-xs py-2">
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => deleteHistory(h.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex items-center gap-0.5">
+                            {h.json_data && (
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                  sessionStorage.setItem('pdf_test_json', h.json_data!)
+                                  sessionStorage.setItem('pdf_test_md', h.markdown)
+                                  sessionStorage.removeItem('pdf_test_url')
+                                  window.open('/admin/pdf-test', '_blank')
+                                }}>
+                                <Play className="h-3 w-3" />
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => deleteHistory(h.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )

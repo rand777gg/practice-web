@@ -9,9 +9,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 interface Block { page_idx: number; bbox: [number, number, number, number]; text?: string; type?: string }
 
 export function Component() {
-  const pdfUrl = sessionStorage.getItem('pdf_test_url')
+  const storedUrl = sessionStorage.getItem('pdf_test_url')
   const jsonStr = sessionStorage.getItem('pdf_test_json')
   const mdStr = sessionStorage.getItem('pdf_test_md')
+
+  const [manualFile, setManualFile] = useState<File | null>(null)
+  const [manualUrl, setManualUrl] = useState<string | null>(null)
+  const pdfUrl = manualUrl || storedUrl
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -22,7 +26,11 @@ export function Component() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
 
-  // Parse blocks from jsonData
+  useEffect(() => {
+    if (manualFile) setManualUrl(URL.createObjectURL(manualFile))
+  }, [manualFile])
+
+  // Parse blocks
   useEffect(() => {
     if (!jsonStr) return
     try {
@@ -42,7 +50,7 @@ export function Component() {
     } catch { /* ignore */ }
   }, [jsonStr])
 
-  // Load PDF metadata
+  // PDF metadata
   useEffect(() => {
     if (!pdfUrl) return
     let c = false
@@ -55,7 +63,7 @@ export function Component() {
     return () => { c = true }
   }, [pdfUrl])
 
-  // Render current page
+  // Render page
   useEffect(() => {
     if (!pdfUrl) return
     let cancelled = false
@@ -90,13 +98,15 @@ export function Component() {
   const cssScale = pageSize ? displayW / pageSize.w : 1
   const pdfScale = pageSize ? (renderScale * cssScale) : 1
 
-  if (!pdfUrl) return <p className="p-8 text-muted-foreground">no data — go back and click 调试定位</p>
-
   return (
     <div className="flex flex-col h-screen">
-      {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0 text-xs">
         <span className="font-medium">定位调试</span>
+        {!storedUrl && (
+          <label className="text-muted-foreground">上传PDF: <input type="file" accept=".pdf" className="text-xs"
+            onChange={e => setManualFile(e.target.files?.[0] || null)} /></label>
+        )}
+        {!jsonStr && <span className="text-muted-foreground">无定位数据</span>}
         <span>页 {currentPage}/{totalPages}</span>
         <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setCurrentPage(p => Math.max(1, p-1))}>‹</Button>
         <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))}>›</Button>
@@ -104,36 +114,40 @@ export function Component() {
         <Input type="number" value={renderScale} step={0.1} min={0.5} max={3}
           onChange={e => setRenderScale(Number(e.target.value))} className="w-16 h-6 text-xs" />
         <span className="text-muted-foreground">
-          Canvas: {pageSize?.w}x{pageSize?.h} | 容器: {displayW}px | pdfScale: {pdfScale.toFixed(4)}
+          Canvas: {pageSize?.w}x{pageSize?.h} | W: {displayW}px | pdfScale: {pdfScale.toFixed(4)} | blocks: {pageBlocks.length}
         </span>
       </div>
 
-      {/* Split view */}
-      <div className="flex-1 grid grid-cols-2 gap-0 min-h-0">
-        {/* Left: PDF */}
-        <div className="overflow-auto border-r">
-          <div ref={containerRef} className="p-2">
-            <div className="relative mx-auto" style={{ width: displayW }}>
-              <canvas ref={canvasRef} className="w-full rounded border" style={{ height: pageSize ? pageSize.h * cssScale : 600 }} />
-              {pageSize && pageBlocks.map((b, i) => {
-                const [x0, y0, x1, y1] = b.bbox
-                const left = x0 * pdfScale, top = y0 * pdfScale
-                const w = Math.max((x1 - x0) * pdfScale, 2), h = Math.max((y1 - y0) * pdfScale, 2)
-                return (
-                  <div key={i} className="absolute border border-amber-500/70 bg-amber-400/15 cursor-pointer hover:bg-amber-400/40"
-                    style={{ left, top, width: w, height: h }}
-                    title={`${b.text?.slice(0, 80)} | [${x0},${y0},${x1},${y1}]`} />
-                )
-              })}
+      {!pdfUrl && !manualFile && (
+        <div className="p-8 text-center text-muted-foreground text-sm">
+          从解析页点击"调试定位"进入，或手动上传 PDF + JSON 数据
+        </div>
+      )}
+
+      {pdfUrl && (
+        <div className="flex-1 grid grid-cols-2 gap-0 min-h-0">
+          <div className="overflow-auto border-r">
+            <div ref={containerRef} className="p-2">
+              <div className="relative mx-auto" style={{ width: displayW }}>
+                <canvas ref={canvasRef} className="w-full rounded border" style={{ height: pageSize ? pageSize.h * cssScale : 600 }} />
+                {pageSize && pageBlocks.map((b, i) => {
+                  const [x0, y0, x1, y1] = b.bbox
+                  const left = x0 * pdfScale, top = y0 * pdfScale
+                  const w = Math.max((x1 - x0) * pdfScale, 2), h = Math.max((y1 - y0) * pdfScale, 2)
+                  return (
+                    <div key={i} className="absolute border border-amber-500/70 bg-amber-400/15 cursor-pointer hover:bg-amber-400/40"
+                      style={{ left, top, width: w, height: h }}
+                      title={`${b.text?.slice(0, 80)} | [${x0},${y0},${x1},${y1}]`} />
+                  )
+                })}
+              </div>
             </div>
           </div>
+          <ScrollArea className="p-3">
+            <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">{mdStr || '无 Markdown 数据'}</pre>
+          </ScrollArea>
         </div>
-
-        {/* Right: Markdown */}
-        <ScrollArea className="p-3">
-          <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">{mdStr}</pre>
-        </ScrollArea>
-      </div>
+      )}
     </div>
   )
 }
