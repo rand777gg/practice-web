@@ -82,6 +82,7 @@ export interface Question {
   subject: string | null
   analysis: string | null
   key_points: string | null
+  answer_explanation: string | null
   seq_number: number | null
   created_at: string
   created_by: string | null
