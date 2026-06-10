@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Profile } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -59,7 +59,25 @@ export function Component() {
 
   if (isLoading) {
     return (
-      <LoadingTips className="py-12" compact />
+      <div className="space-y-4 max-w-5xl">
+        <Skeleton className="h-8 w-48" />
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {[...Array(7)].map((_, i) => <TableHead key={i}><Skeleton className="h-4 w-12" /></TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...Array(8)].map((_, i) => (
+                <TableRow key={i}>
+                  {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     )
   }
 

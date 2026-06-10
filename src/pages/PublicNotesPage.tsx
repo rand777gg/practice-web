@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -370,7 +370,15 @@ export function Component() {
           </div>
 
           {publicNotesLoading ? (
-            <LoadingTips className="py-12" compact />
+            <div className="space-y-3 animate-pulse">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="rounded-xl border p-4 space-y-3">
+                  <div className="flex gap-2"><Skeleton className="h-5 w-16 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></div>
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                </div>
+              ))}
+            </div>
           ) : (
             <>
               {publicNotes.length === 0 ? (
@@ -477,7 +485,15 @@ export function Component() {
           </div>
 
           {myNotesLoading ? (
-            <LoadingTips className="py-12" compact />
+            <div className="space-y-3 animate-pulse">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="rounded-xl border p-4 space-y-3">
+                  <div className="flex gap-2"><Skeleton className="h-5 w-16 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></div>
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                </div>
+              ))}
+            </div>
           ) : (
             <>
               {myNotes.length === 0 ? (

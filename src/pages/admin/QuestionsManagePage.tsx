@@ -18,7 +18,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { Pagination } from '@/components/ui/pagination'
-import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
 import { Upload, Plus, Check, ChevronDown, Sparkles, Trash2 } from 'lucide-react'
@@ -218,7 +218,23 @@ export function Component() {
       />
 
       {isLoading ? (
-        <LoadingTips className="py-12" compact />
+        <div className="space-y-3 animate-pulse">
+          <div className="flex gap-2">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-24 rounded-md" />)}
+          </div>
+          <div className="rounded-lg border">
+            <div className="border-b px-4 py-3">
+              <div className="flex gap-6">
+                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-4 w-16" />)}
+              </div>
+            </div>
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="border-b px-4 py-3">
+                <Skeleton className="h-4 w-full" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <>
           <QuestionList
