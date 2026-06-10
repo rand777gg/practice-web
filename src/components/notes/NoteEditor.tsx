@@ -16,7 +16,6 @@ interface Props {
 export function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
-  const [imageMimeType, setImageMimeType] = useState<string>('image/png')
   const [isRecognizing, setIsRecognizing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
