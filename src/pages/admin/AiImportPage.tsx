@@ -1210,12 +1210,6 @@ function PromptEditor({ label, value, onChange, onReset }: { label: string; valu
   )
 }
 
-function SkeletonRow({ w = 'w-full' }: { w?: string }) {
-  return <div className={`h-4 rounded bg-muted/50 ${w}`} />
-}
-
-function s(v: unknown): string { return v != null ? String(v) : '' }
-
 function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
   const steps = [
     { label: '上传文档', key: 'upload' },
@@ -1228,107 +1222,35 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
   else if (msg.includes('MinerU') || msg.includes('解析') || msg.includes('Batch')) activeIdx = 1
   else if (msg.includes('AI') || msg.includes('提取')) activeIdx = 2
 
-  const stateLabel = (s: unknown) => {
-    if (s === 'done') return '已完成'
-    if (s === 'failed') return '失败'
-    if (s === 'running') return '处理中'
-    if (s === 'pending') return '排队中'
-    if (s === 'converting') return '转换中'
-    if (s === 'connecting') return '连接中'
-    return String(s)
-  }
-  const stateColor = (s: unknown) => {
-    if (s === 'done') return 'text-green-600 bg-green-100 dark:bg-green-900/30'
-    if (s === 'failed') return 'text-red-500 bg-red-100 dark:bg-red-900/30'
-    if (s === 'connecting') return 'text-blue-500 bg-blue-100 dark:bg-blue-900/30'
-    return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30'
-  }
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* Left: Progress card */}
-      <Card className="border-0 shadow-none">
-        <CardContent className="py-6">
-          <div className="flex flex-col items-center gap-6">
-            <div className="flex items-center w-full max-w-xs">
-              {steps.map((s, i) => (
-                <div key={s.key} className="flex items-center flex-1 last:flex-[0]">
-                  <div className="flex flex-col items-center gap-1.5">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500
-                      ${i <= activeIdx ? 'bg-primary text-primary-foreground scale-110 shadow-md' : 'bg-muted text-muted-foreground'}`}>
-                      {i < activeIdx ? '✓' : i + 1}
-                    </div>
-                    <span className={`text-[10px] whitespace-nowrap transition-colors duration-500
-                      ${i <= activeIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                      {s.label}
-                    </span>
+    <Card className="border-0 shadow-none">
+      <CardContent className="py-6">
+        <div className="flex flex-col items-center gap-6">
+          <div className="flex items-center w-full max-w-xs">
+            {steps.map((s, i) => (
+              <div key={s.key} className="flex items-center flex-1 last:flex-[0]">
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500
+                    ${i <= activeIdx ? 'bg-primary text-primary-foreground scale-110 shadow-md' : 'bg-muted text-muted-foreground'}`}>
+                    {i < activeIdx ? '✓' : i + 1}
                   </div>
-                  {i < steps.length - 1 && (
-                    <div className="flex-1 h-0.5 mx-2 mt-[-12px] rounded bg-muted transition-all duration-700">
-                      <div className="h-full rounded bg-primary transition-all duration-700 ease-out"
-                        style={{ width: i < activeIdx ? '100%' : i === activeIdx ? '50%' : '0%' }} />
-                    </div>
-                  )}
+                  <span className={`text-[10px] whitespace-nowrap transition-colors duration-500
+                    ${i <= activeIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                    {s.label}
+                  </span>
                 </div>
-              ))}
-            </div>
-            <p className="text-sm font-medium shimmer-text">{msg || '正在解析...'}</p>
+                {i < steps.length - 1 && (
+                  <div className="flex-1 h-0.5 mx-2 mt-[-12px] rounded bg-muted transition-all duration-700">
+                    <div className="h-full rounded bg-primary transition-all duration-700 ease-out"
+                      style={{ width: i < activeIdx ? '100%' : i === activeIdx ? '50%' : '0%' }} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Right: Response data card */}
-      <Card className="border-0 shadow-none">
-        <CardContent className="py-6 space-y-3 text-[11px]">
-          <p className="font-medium text-muted-foreground">MinerU API 响应</p>
-
-          {!status ? (
-            <div className="space-y-2 animate-pulse">
-              <SkeletonRow />
-              <SkeletonRow w="w-3/4" />
-              <SkeletonRow w="w-1/2" />
-              <SkeletonRow />
-              <SkeletonRow w="w-2/3" />
-            </div>
-          ) : (
-            <>
-              {/* Basic info table */}
-              <table className="w-full border-collapse">
-                <tbody>
-                  {s(status.taskId) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Task ID</td><td className="py-1 font-mono break-all">{s(status.taskId)}</td></tr>}
-                  {s(status.batchId) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Batch ID</td><td className="py-1 font-mono break-all">{s(status.batchId)}</td></tr>}
-                  {s(status.dataId) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Data ID</td><td className="py-1 font-mono break-all">{s(status.dataId)}</td></tr>}
-                  {status.code !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Code</td><td className={`py-1 ${(status.code as number) === 0 ? 'text-green-600' : 'text-red-500'}`}>{s(status.code)}{status.msg ? ` — ${s(status.msg)}` : ''}</td></tr>}
-                  {status.state !== undefined && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">State</td><td className="py-1"><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${stateColor(status.state)}`}>{stateLabel(status.state)}</span></td></tr>}
-                  {s(status.markdownUrl) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Markdown URL</td><td className="py-1 font-mono break-all text-[10px]">{s(status.markdownUrl)}</td></tr>}
-                  {s(status.fullZipUrl) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">ZIP URL</td><td className="py-1 font-mono break-all text-[10px]">{s(status.fullZipUrl)}</td></tr>}
-                  {s(status.errMsg) && <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Error</td><td className="py-1 text-red-500">{s(status.errMsg)}</td></tr>}
-                  {status.extractProgress ? <tr><td className="py-1 pr-3 text-muted-foreground whitespace-nowrap align-top">Pages</td><td className="py-1">{s((status.extractProgress as Record<string, number>).extractedPages)} / {s((status.extractProgress as Record<string, number>).totalPages)}</td></tr> : null}
-                </tbody>
-              </table>
-
-              {/* File list for batch */}
-              {s(status.files) && (status.files as Array<Record<string, unknown>>).length > 0 && (
-                <div>
-                  <p className="text-muted-foreground mb-1.5">文件列表</p>
-                  <table className="w-full border-collapse text-[10px]">
-                    <thead><tr className="text-muted-foreground text-left"><th className="py-0.5 pr-2 font-normal">文件</th><th className="py-0.5 pr-2 font-normal">状态</th><th className="py-0.5 font-normal">Data ID</th></tr></thead>
-                    <tbody>
-                      {(status.files as Array<Record<string, unknown>>).map((f: Record<string, unknown>, i: number) => (
-                        <tr key={i} className="border-t border-border/50">
-                          <td className="py-1 pr-2 max-w-[120px] truncate">{f.fileName as string}</td>
-                          <td className="py-1 pr-2"><span className={`px-1 py-0.5 rounded text-[10px] ${stateColor(f.state)}`}>{stateLabel(f.state)}</span></td>
-                          <td className="py-1 font-mono text-[10px] text-muted-foreground">{f.dataId ? String(f.dataId) : '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          <p className="text-sm font-medium shimmer-text">{msg || '正在解析...'}</p>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
