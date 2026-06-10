@@ -835,13 +835,6 @@ export function Component() {
                       onReset={() => setGenerateScratchPrompt(resetPrompt('generate_scratch'))} />
                   )}
                 </div>
-              ) : parseMode === 'manual' ? (
-                <ManualImport
-                  manualFormat={manualFormat}
-                  setManualFormat={setManualFormat}
-                  manualText={manualText}
-                  setManualText={setManualText}
-                />
               ) : (
                 <AiImportUpload
                   onFile={handleFile}
@@ -1240,76 +1233,4 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
   )
 }
 
-function ManualImport({ manualFormat, setManualFormat, manualText, setManualText }: {
-  manualFormat: 'markdown' | 'json'
-  setManualFormat: (v: 'markdown' | 'json') => void
-  manualText: string
-  setManualText: (v: string) => void
-}) {
-  const [showExample, setShowExample] = useState(false)
-  const [exampleHtml, setExampleHtml] = useState('')
 
-  const jsonExample = `[
-  {
-    "question_type": "single_choice",
-    "question_text": "以下哪项是正确的？",
-    "options": ["选项A", "选项B", "选项C", "选项D"],
-    "correct_answer": 0,
-    "analysis": "解析内容...",
-    "key_points": "知识点1, 知识点2"
-  }
-]`
-
-  const mdExample = `### 1. 以下哪项是正确的？
-A. 选项A
-B. 选项B
-C. 选项C
-D. 选项D
-答案: A
-解析: 因为...
-
-### 2. 判断题
-人工智能是计算机科学的分支。
-答案: 正确`
-
-  useEffect(() => {
-    if (!showExample) { setExampleHtml(''); return }
-    const code = manualFormat === 'json' ? jsonExample : mdExample
-    const lang = manualFormat === 'json' ? 'json' : 'markdown'
-    setExampleHtml(`<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`)
-  }, [showExample, manualFormat])
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Button variant={manualFormat === 'markdown' ? 'default' : 'outline'} size="sm" className="text-xs h-8"
-          onClick={() => setManualFormat('markdown')}>Markdown</Button>
-        <Button variant={manualFormat === 'json' ? 'default' : 'outline'} size="sm" className="text-xs h-8"
-          onClick={() => setManualFormat('json')}>JSON</Button>
-        <Button variant="ghost" size="sm" className="text-xs h-8 ml-auto"
-          onClick={() => setShowExample(!showExample)}>
-          {showExample ? '隐藏示例' : '查看格式示例'}
-        </Button>
-      </div>
-
-      {showExample && exampleHtml && (
-        <div className="rounded-lg border bg-muted/30 p-3 text-xs overflow-auto max-h-48"
-          dangerouslySetInnerHTML={{ __html: exampleHtml }} />
-      )}
-
-      <textarea
-        className="w-full h-48 text-xs font-mono p-3 rounded-lg border bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-        value={manualText}
-        onChange={(e) => setManualText(e.target.value)}
-        placeholder={manualFormat === 'json'
-          ? '粘贴 JSON 数组，每个元素包含 question_type, question_text, options, correct_answer...'
-          : '粘贴 Markdown 格式的题目...'}
-        spellCheck={false}
-      />
-    </div>
-  )
-}
-
-function escapeHtml(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
