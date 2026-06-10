@@ -10,7 +10,6 @@ const questionSchema = z.object({
   options: z.array(z.any()).transform(arr => arr.map(String)),
   correct_answer: z.any(),
   analysis: z.string().optional().nullable(),
-  key_points: z.string().optional().nullable(),
   answer_explanation: z.string().optional().nullable(),
 })
 
@@ -307,7 +306,6 @@ export class DeepSeekParser {
           options,
           correct_answer,
           analysis: strOrUndefined(q.analysis),
-          key_points: strOrUndefined(q.key_points),
           answer_explanation: strOrUndefined(q.answer_explanation),
         }
       })
