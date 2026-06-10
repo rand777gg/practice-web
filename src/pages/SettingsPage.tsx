@@ -514,11 +514,8 @@ export function Component() {
               <CardTitle className="text-sm text-destructive">危险区域</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <div className="flex gap-2">
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">
-                    重置后，你的所有答题记录、考试记录和笔记将被清空，但收藏和账号信息不受影响。此操作不可撤销。
-                  </p>
                   <AlertDialog open={resetDataOpen} onOpenChange={(open) => {
                     if (resettingData && !open) return
                     setResetDataOpen(open)
@@ -559,9 +556,6 @@ export function Component() {
                   </AlertDialog>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">
-                    注销账号后，你的所有数据（包括答题记录、收藏、笔记等）将被永久删除且无法恢复。请谨慎操作。
-                  </p>
                   <AlertDialog open={deleteOpen} onOpenChange={(open) => {
                     if (deleting && !open) return
                     setDeleteOpen(open)

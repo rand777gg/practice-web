@@ -30,7 +30,7 @@ import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Play, CheckCircle, AlertCircle, ChevronDown, Clock, Trash2, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision' | 'generate'
