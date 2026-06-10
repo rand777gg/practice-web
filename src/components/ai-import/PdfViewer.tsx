@@ -131,9 +131,9 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
             const [x0, y0, x1, y1] = block.bbox
             const isActive = activeBbox &&
               Math.abs(activeBbox[0] - x0) < 5 && Math.abs(activeBbox[1] - y0) < 5
-            // layout.json coords are in PDF points. Scale to canvas pixels, then to CSS.
+            // layout.json coords are in PDF points, CSS-style (y from top)
             const s = renderScale * displayScale
-            const cssTop = (pageSize.height - y1 * renderScale) * displayScale
+            const cssTop = y0 * s
             const cssH = Math.max((y1 - y0) * s, 2)
             const cssLeft = x0 * s
             const cssW = Math.max((x1 - x0) * s, 2)
