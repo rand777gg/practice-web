@@ -25,7 +25,7 @@ import { PdfMarkdownViewer } from '@/components/ai-import/PdfMarkdownViewer'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
-  generateQuestions, generateFromDocument, generateFromText,
+  generateQuestions, generateFromText,
 } from '@/lib/ai'
 import { extractFileText } from '@/lib/file-text'
 import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
@@ -280,22 +280,6 @@ export function Component() {
     setStep('preview')
     if (parseResult) {
       saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
-    }
-  }
-
-  const generateFromDoc = async (markdown: string) => {
-    setParseMsg('AI 正在根据材料生成题目...')
-    try {
-      const result = await generateFromDocument(markdown, generateDocPrompt)
-      setQuestions(result.questions)
-      setSelectedIds(new Set(result.questions.map((_, i) => i)))
-      setCategory('AI生成')
-      setStep('preview')
-      if (parseResult) {
-        saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败')
     }
   }
 
