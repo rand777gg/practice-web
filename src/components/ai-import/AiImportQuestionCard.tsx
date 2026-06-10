@@ -29,10 +29,14 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
   const type = question.question_type
   const { isEnabled } = useSettingsStore()
   const [kpLoading, setKpLoading] = useState(false)
+  const [kpGlow, setKpGlow] = useState(false)
+  const [kpFade, setKpFade] = useState(false)
 
   const handleGenerateKeyPoints = async () => {
     if (!question.question_text.trim()) return
     setKpLoading(true)
+    setKpGlow(true)
+    setKpFade(false)
     try {
       let answerStr = ''
       if (type === 'single_choice' && typeof question.correct_answer === 'number') answerStr = question.options[question.correct_answer] ?? ''
@@ -49,6 +53,11 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         analysis: question.analysis?.trim() || undefined,
       })
       patch({ key_points: result })
+      setKpFade(true)
+      requestAnimationFrame(() => {
+        setKpGlow(false)
+        setTimeout(() => setKpFade(false), 1500)
+      })
     } catch { /* ignore */ }
     setKpLoading(false)
   }
@@ -115,7 +124,10 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           <Input
             value={question.key_points || ''}
             onChange={(e) => patch({ key_points: e.target.value })}
-            className="h-8 text-xs pr-8"
+            className={`h-8 text-xs pr-8 transition-[border-color,box-shadow] duration-1000 ${
+              kpGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' :
+              kpFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''
+            }`}
             placeholder="逗号分隔"
           />
           {hasAiConfig() && isEnabled('keypoints') && (
