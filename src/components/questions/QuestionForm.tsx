@@ -167,7 +167,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         options: options.map((o) => o.trim()),
         correct_answer: correctAnswer,
         answer_explanation: answerExplanation.trim() || null,
-        categories: categories.length ? categories : null,
+        categories,
         subject: subject.trim() || null,
         analysis: analysis.trim() || null,
         key_points: keyPoints.trim() || null,
