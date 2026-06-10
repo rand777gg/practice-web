@@ -152,7 +152,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
               : Array.isArray(question.correct_answer) && (question.correct_answer as number[]).includes(oi)
 
             return (
-              <div key={oi} className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5">
+              <div key={oi} className={`flex items-center gap-1.5 rounded-md px-1.5 py-0.5 ${isCorrect ? 'bg-green-100 dark:bg-green-900/40' : ''}`}>
                 {type === 'single_choice' ? (
                   <input type="radio" name={`q-${index}`} checked={isCorrect} onChange={() => patch({ correct_answer: oi })}
                     className="shrink-0 h-3.5 w-3.5 accent-primary cursor-pointer" />
