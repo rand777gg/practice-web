@@ -22,7 +22,6 @@ export function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setImageMimeType(file.type || 'image/png')
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string
