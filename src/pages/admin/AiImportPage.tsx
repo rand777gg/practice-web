@@ -82,7 +82,6 @@ export function Component() {
   // Custom prompts
   const [extractPrompt, setExtractPrompt] = useState(() => getPrompt('extract'))
   const [generateDocPrompt, setGenerateDocPrompt] = useState(() => getPrompt('generate_doc'))
-  const [generateScratchPrompt, setGenerateScratchPrompt] = useState(() => getPrompt('generate_scratch'))
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
@@ -301,7 +300,7 @@ export function Component() {
           questionTypes: [...genTypes],
           count: genCount,
           topicDescription: genTopic || undefined,
-        }, generateScratchPrompt)
+        }, generateDocPrompt)
       }
       setQuestions(result.questions)
       setSelectedIds(new Set(result.questions.map((_, i) => i)))
@@ -751,6 +750,10 @@ export function Component() {
                           <pre className="mt-1 p-3 bg-muted/50 rounded-lg border max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
                         </details>
                       )}
+                      <PromptEditor label="提示词 - 预设" value={generateDocPrompt}
+                        onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
+                        onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
+                      />
                     </CardContent>
                   </Card>
 
@@ -841,16 +844,6 @@ export function Component() {
                     </CardContent>
                   </Card>
 
-                  <PromptEditor label="提示词 - 预设" value={genFileText ? generateDocPrompt : generateScratchPrompt}
-                    onChange={(v) => {
-                      if (genFileText) { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }
-                      else { setGenerateScratchPrompt(v); setPrompt('generate_scratch', v) }
-                    }}
-                    onReset={() => {
-                      if (genFileText) setGenerateDocPrompt(resetPrompt('generate_doc'))
-                      else setGenerateScratchPrompt(resetPrompt('generate_scratch'))
-                    }}
-                  />
                 </div>
               ) : (
                 <AiImportUpload

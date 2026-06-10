@@ -30,20 +30,16 @@ const GENERATE_DOC_DEFAULT = `你是一位经验丰富的考官。根据提供�
 - 每题附带详细的解析（analysis），解释正确答案及出处
 - 题目数量不少于5道，尽量覆盖材料中的主要知识点`
 
-const GENERATE_SCRATCH_DEFAULT = `You are a test question generation assistant. Create original, high-quality practice questions based on the given subject and parameters. Include detailed analysis (analysis field) for each question explaining the correct answer. Questions should be educational and test real understanding.`
-
-type PromptKey = 'extract' | 'generate_doc' | 'generate_scratch'
+type PromptKey = 'extract' | 'generate_doc'
 
 const DEFAULTS: Record<PromptKey, string> = {
   extract: EXTRACT_DEFAULT,
   generate_doc: GENERATE_DOC_DEFAULT,
-  generate_scratch: GENERATE_SCRATCH_DEFAULT,
 }
 
 const STORAGE_KEYS: Record<PromptKey, string> = {
   extract: 'ai_prompt_extract',
   generate_doc: 'ai_prompt_generate_doc',
-  generate_scratch: 'ai_prompt_generate_scratch',
 }
 
 export function getPrompt(key: PromptKey): string {
