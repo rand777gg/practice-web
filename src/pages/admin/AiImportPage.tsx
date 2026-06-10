@@ -83,17 +83,22 @@ export function Component() {
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const user = useAuthStore((s) => s.user)
 
   const loadHistoryList = async () => {
     if (!user) return
     setHistoryLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('parse_history')
       .select('id, file_name, markdown, json_data, questions_json, mode, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
+    if (error) {
+      console.error('loadHistoryList error:', error)
+      setHistoryError(error.message || '加载失败')
+    }
     setHistory(data ?? [])
     setHistoryLoading(false)
   }
@@ -420,7 +425,9 @@ export function Component() {
       {showHistory && (
         <Card className="border-0 shadow-none">
           <CardContent className="py-3 space-y-2">
-            {historyLoading ? (
+            {historyError ? (
+              <p className="text-xs text-destructive text-center py-2">加载失败: {historyError}</p>
+            ) : historyLoading ? (
               <p className="text-xs text-muted-foreground text-center py-2">加载中...</p>
             ) : history.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-2">暂无历史记录</p>
