@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
+import { useAuthStore } from '@/stores/auth-store'
 import { QuestionPicker } from './QuestionPicker'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { ArrowLeft, Check, ChevronDown, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
@@ -42,7 +43,9 @@ interface Props {
 }
 
 export function BankDetail({ bank, onBack, onEdit }: Props) {
+  const user = useAuthStore((s) => s.user)
   const { fetchBankItems, addBankItems, removeBankItem, removeBankItems } = useQuestionBanks()
+  const isOwner = user?.id === bank.created_by
   const [items, setItems] = useState<Array<{ id: string; bank_id: string; question_id: string; added_at: string; questions: Record<string, unknown> }>>([])
   const [loading, setLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -147,7 +150,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
           {bank.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
           {bank.is_public ? '公开' : '私有'}
         </span>
-        <Button variant="outline" size="sm" onClick={() => onEdit(bank)}>编辑</Button>
+        {isOwner && <Button variant="outline" size="sm" onClick={() => onEdit(bank)}>编辑</Button>}
       </div>
 
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -222,35 +225,39 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" onClick={() => setPickerOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" />添加题目
-          </Button>
+          {isOwner && (
+            <Button size="sm" onClick={() => setPickerOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" />添加题目
+            </Button>
+          )}
         </div>
       </div>
 
       {loading ? (
         <Card>
           <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
-            <Table className="min-w-[680px]">
+            <Table className="table-fixed w-full min-w-[700px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[40px]" />
-                  <TableHead className="text-xs w-[200px]">题目</TableHead>
-                  <TableHead className="text-xs w-[90px]">学科</TableHead>
-                  <TableHead className="text-xs w-[120px]">分类</TableHead>
-                  <TableHead className="text-xs w-[90px]">题型</TableHead>
-                  <TableHead className="text-xs w-[40px]" />
+                  {isOwner && <TableHead className="w-[40px]" />}
+                  <TableHead className="text-xs w-[50%]">题目</TableHead>
+                  <TableHead className="text-xs w-[80px]">学科</TableHead>
+                  <TableHead className="text-xs w-[110px]">分类</TableHead>
+                  <TableHead className="text-xs w-[70px]">题型</TableHead>
+                  <TableHead className="text-xs w-[80px]">知识点</TableHead>
+                  {isOwner && <TableHead className="text-xs w-[40px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {[...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-36" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
+                    {isOwner && <TableCell><Skeleton className="h-4 w-4" /></TableCell>}
+                    <TableCell className="py-2"><Skeleton className="h-4 w-3/4" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-10" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+                    {isOwner && <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>}
                   </TableRow>
                 ))}
               </TableBody>
@@ -271,21 +278,24 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
       ) : (
         <Card>
           <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
-            <Table className="min-w-[720px]">
+            <Table className="table-fixed w-full min-w-[700px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[40px]">
-                    <button type="button" onClick={toggleAll} className="flex items-center">
-                      <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${filteredAllChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
-                        {filteredAllChecked && <Check className="h-3 w-3" />}
-                      </div>
-                    </button>
-                  </TableHead>
-                  <TableHead className="text-xs w-[200px]">题目</TableHead>
-                  <TableHead className="text-xs w-[90px]">学科</TableHead>
-                  <TableHead className="text-xs w-[120px]">分类</TableHead>
-                  <TableHead className="text-xs w-[90px]">题型</TableHead>
-                  <TableHead className="text-xs w-[40px]" />
+                  {isOwner && (
+                    <TableHead className="w-[40px]">
+                      <button type="button" onClick={toggleAll} className="flex items-center">
+                        <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${filteredAllChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
+                          {filteredAllChecked && <Check className="h-3 w-3" />}
+                        </div>
+                      </button>
+                    </TableHead>
+                  )}
+                  <TableHead className="text-xs w-[50%]">题目</TableHead>
+                  <TableHead className="text-xs w-[80px]">学科</TableHead>
+                  <TableHead className="text-xs w-[110px]">分类</TableHead>
+                  <TableHead className="text-xs w-[70px]">题型</TableHead>
+                  <TableHead className="text-xs w-[80px]">知识点</TableHead>
+                  {isOwner && <TableHead className="text-xs w-[40px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -294,13 +304,15 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                   const checked = selectedItems.has(item.id)
                   return (
                     <TableRow key={item.id}>
-                      <TableCell>
-                        <button type="button" onClick={() => toggleItem(item.id)}
-                          className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'}`}>
-                          {checked && <Check className="h-3 w-3" />}
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-xs py-2 whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
+                      {isOwner && (
+                        <TableCell>
+                          <button type="button" onClick={() => toggleItem(item.id)}
+                            className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'}`}>
+                            {checked && <Check className="h-3 w-3" />}
+                          </button>
+                        </TableCell>
+                      )}
+                      <TableCell className="text-xs py-2 overflow-hidden text-ellipsis whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
@@ -339,12 +351,15 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                         })()}
                       </TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q?.question_type as keyof typeof QUESTION_TYPE_LABELS] || '—'}</TableCell>
-                      <TableCell className="text-xs py-2">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleRemove(item.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">{q?.key_points as string || '—'}</TableCell>
+                      {isOwner && (
+                        <TableCell className="text-xs py-2">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => handleRemove(item.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   )
                 })}
