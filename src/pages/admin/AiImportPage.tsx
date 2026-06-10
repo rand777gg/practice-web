@@ -82,7 +82,7 @@ export function Component() {
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const user = useAuthStore((s) => s.user)
@@ -92,7 +92,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, markdown, json_data, questions_json, mode, created_at')
+      .select('id, file_name, markdown, json_data, questions_json, status_json, mode, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -439,7 +439,7 @@ export function Component() {
                 <div key={h.id} className="flex items-center gap-2 text-xs bg-muted/30 rounded-lg p-2 group">
                   <button type="button" className="flex-1 text-left min-w-0" onClick={() => loadHistory(h.id)}>
                     <p className="font-medium truncate">{h.file_name}</p>
-                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}{h.questions_json ? ` · ${(JSON.parse(h.questions_json) as unknown[]).length} 题` : ''}</p>
+                    <p className="text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}{h.status_json ? ` · ${(() => { try { const s = JSON.parse(h.status_json); return stateLabel2(s.state) } catch { return '' } })()}` : ''}{h.questions_json ? ` · ${(JSON.parse(h.questions_json) as unknown[]).length} 题` : ''}</p>
                   </button>
                   <button type="button" className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
                     onClick={() => deleteHistory(h.id)}>
@@ -1216,6 +1216,15 @@ function SkeletonRow({ w = 'w-full' }: { w?: string }) {
 }
 
 function s(v: unknown): string { return v != null ? String(v) : '' }
+
+function stateLabel2(s: unknown) {
+  if (s === 'done') return '已完成'
+  if (s === 'failed') return '失败'
+  if (s === 'running') return '处理中'
+  if (s === 'pending') return '排队中'
+  if (s === 'converting') return '转换中'
+  return s ? String(s) : ''
+}
 
 function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
   const steps = [
