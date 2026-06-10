@@ -176,7 +176,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t('questions.importTitle')}</DialogTitle>
           <DialogDescription>{t('questions.importDesc')}</DialogDescription>

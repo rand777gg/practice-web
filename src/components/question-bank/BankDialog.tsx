@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,8 +31,8 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
   const [saving, setSaving] = useState(false)
   const isEdit = !!initialData
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open && saving) return
+  // Sync form state when dialog opens with new initialData
+  useEffect(() => {
     if (open && initialData) {
       setName(initialData.name ?? '')
       setDescription(initialData.description ?? '')
@@ -44,7 +44,11 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
       setLogoUrl('')
       setIsPublic(false)
     }
-    onOpenChange(open)
+  }, [open, initialData?.id])
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && saving) return
+    onOpenChange(newOpen)
   }
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
