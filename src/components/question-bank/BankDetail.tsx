@@ -6,6 +6,19 @@ import { LoadingTips } from '@/components/layout/LoadingTips'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { QuestionPicker } from './QuestionPicker'
 import { ArrowLeft, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | null; alt: string; className?: string; fallbackClassName?: string }) {
+  const [errored, setErrored] = useState(false)
+  if (errored || !src) {
+    return (
+      <div className={cn('bg-primary/10 flex items-center justify-center shrink-0', className)}>
+        <Library className={cn('text-primary/60', fallbackClassName)} />
+      </div>
+    )
+  }
+  return <img src={src} alt={alt} className={cn('object-cover shrink-0', className)} onError={() => setErrored(true)} />
+}
 
 interface Props {
   bank: QuestionBank
@@ -50,13 +63,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        {bank.logo_url ? (
-          <img src={bank.logo_url} alt={bank.name} className="h-8 w-8 rounded-lg object-cover" />
-        ) : (
-          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Library className="h-4 w-4 text-primary/60" />
-          </div>
-        )}
+        <LogoImage src={bank.logo_url} alt={bank.name} className="h-8 w-8 rounded-lg" fallbackClassName="h-4 w-4" />
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-bold truncate">{bank.name}</h1>
           {bank.description && <p className="text-xs text-muted-foreground truncate">{bank.description}</p>}

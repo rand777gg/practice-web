@@ -9,6 +9,19 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Globe, Library, Lock, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
+
+function LogoImage({ src, alt, className, fallbackClassName }: { src: string; alt: string; className?: string; fallbackClassName?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed || !src) {
+    return (
+      <div className={cn('bg-primary/10 flex items-center justify-center shrink-0', className)}>
+        <Library className={cn('text-primary/60', fallbackClassName)} />
+      </div>
+    )
+  }
+  return <img src={src} alt={alt} className={cn('object-cover shrink-0', className)} onError={() => setFailed(true)} />
+}
 import type { QuestionBank } from '@/hooks/use-question-banks'
 
 interface Props {
@@ -28,7 +41,7 @@ export function BankCard({ bank, onEdit, onDelete, onClick }: Props) {
         <CardContent className="p-5 space-y-3">
           <div className="flex items-start gap-3">
             {bank.logo_url ? (
-              <img src={bank.logo_url} alt={bank.name} className="h-12 w-12 rounded-xl object-cover shrink-0" />
+              <LogoImage src={bank.logo_url} alt={bank.name} className="h-12 w-12 rounded-xl" fallbackClassName="h-6 w-6" />
             ) : (
               <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                 <Library className="h-6 w-6 text-primary/60" />

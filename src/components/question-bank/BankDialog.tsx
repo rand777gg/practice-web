@@ -12,7 +12,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { supabase } from '@/lib/supabase'
-import { ImagePlus, Loader2, X } from 'lucide-react'
+import { ImagePlus, Library, Loader2, X } from 'lucide-react'
 import type { QuestionBank } from '@/hooks/use-question-banks'
 
 interface Props {
@@ -98,13 +98,7 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
           <div className="space-y-2">
             <Label>Logo</Label>
             {logoUrl ? (
-              <div className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
-                <img src={logoUrl} alt="Logo preview" className="h-12 w-12 rounded-lg object-cover" />
-                <span className="text-xs text-muted-foreground flex-1 truncate">{logoUrl}</span>
-                <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => setLogoUrl('')}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+              <LogoPreview url={logoUrl} onRemove={() => setLogoUrl('')} />
             ) : (
               <label className="flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border p-4 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors">
                 <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
@@ -137,5 +131,24 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
         </form>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+function LogoPreview({ url, onRemove }: { url: string; onRemove: () => void }) {
+  const [errored, setErrored] = useState(false)
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
+      {errored ? (
+        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <Library className="h-5 w-5 text-primary/60" />
+        </div>
+      ) : (
+        <img src={url} alt="Logo preview" className="h-12 w-12 rounded-lg object-cover shrink-0" onError={() => setErrored(true)} />
+      )}
+      <span className="text-xs text-muted-foreground flex-1 truncate">{url}</span>
+      <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={onRemove}>
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
   )
 }
