@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Question, QuestionType } from '@/types'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
 const TYPE_COLORS: Record<QuestionType, string> = {
@@ -18,10 +19,14 @@ const TYPE_COLORS: Record<QuestionType, string> = {
 interface Props {
   questions: Question[]
   onDelete: (id: string) => Promise<void>
+  selectedIds: Set<string>
+  onToggleSelect: (id: string) => void
+  onToggleAll: () => void
 }
 
-export function QuestionList({ questions, onDelete }: Props) {
+export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect, onToggleAll }: Props) {
   const { t } = useT()
+  const allSelected = questions.length > 0 && selectedIds.size === questions.length
 
   if (questions.length === 0) {
     return <p className="text-muted-foreground text-center py-12">{t('questions.noQuestions')}</p>
@@ -32,6 +37,13 @@ export function QuestionList({ questions, onDelete }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10">
+              <button type="button" onClick={onToggleAll}
+                className={cn('h-4 w-4 rounded border-2 flex items-center justify-center transition-colors',
+                  allSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50')}>
+                {allSelected && <Check className="h-3 w-3" />}
+              </button>
+            </TableHead>
             <TableHead className="min-w-[180px]">{t('questions.question')}</TableHead>
             <TableHead>{t('questions.subject')}</TableHead>
             <TableHead>{t('questions.category')}</TableHead>
@@ -40,30 +52,40 @@ export function QuestionList({ questions, onDelete }: Props) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {questions.map((q) => (
-            <TableRow key={q.id}>
-              <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
-              <TableCell className="whitespace-nowrap">{q.subject ?? '-'}</TableCell>
-              <TableCell className="whitespace-nowrap">{q.category ?? '-'}</TableCell>
-              <TableCell className="whitespace-nowrap">
-                <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
-                  {t(`questionTypes.${q.question_type}` as any) || q.question_type}
-                </span>
-              </TableCell>
-              <TableCell>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" asChild>
-                    <Link to={`/admin/questions/${q.id}/edit`}>
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => onDelete(q.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
+          {questions.map((q) => {
+            const isSelected = selectedIds.has(q.id)
+            return (
+              <TableRow key={q.id} className={isSelected ? 'bg-primary/5' : ''}>
+                <TableCell>
+                  <button type="button" onClick={() => onToggleSelect(q.id)}
+                    className={cn('h-4 w-4 rounded border-2 flex items-center justify-center transition-colors',
+                      isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50')}>
+                    {isSelected && <Check className="h-3 w-3" />}
+                  </button>
+                </TableCell>
+                <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
+                <TableCell className="whitespace-nowrap">{q.subject ?? '-'}</TableCell>
+                <TableCell className="whitespace-nowrap">{q.category ?? '-'}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
+                    {t(`questionTypes.${q.question_type}` as any) || q.question_type}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" asChild>
+                      <Link to={`/admin/questions/${q.id}/edit`}>
+                        <Pencil className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => onDelete(q.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>

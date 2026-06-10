@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { supabase } from '@/lib/supabase'
 import { Link } from 'react-router-dom'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
@@ -20,7 +21,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown, Sparkles } from 'lucide-react'
+import { Upload, Plus, Check, ChevronDown, Sparkles, Trash2 } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
@@ -29,6 +30,8 @@ export function Component() {
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
@@ -67,6 +70,33 @@ export function Component() {
   useEffect(() => {
     updateFilteredCategories(selectedSubject)
   }, [selectedSubject, updateFilteredCategories])
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id) else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selectedIds.size === questions.length && questions.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(questions.map((q) => q.id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true)
+    const ids = [...selectedIds]
+    await supabase.from('questions').delete().in('id', ids)
+    setSelectedIds(new Set())
+    setBulkDeleting(false)
+    refetch()
+  }
+
+  const clearSelection = () => setSelectedIds(new Set())
 
   return (
     <div className="space-y-4 max-w-6xl">
@@ -191,7 +221,26 @@ export function Component() {
         <LoadingTips className="py-12" compact />
       ) : (
         <>
-          <QuestionList questions={questions} onDelete={deleteQuestion} />
+          <QuestionList
+            questions={questions}
+            onDelete={deleteQuestion}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleAll={toggleAll}
+          />
+          {selectedIds.size > 0 && (
+            <div className="sticky bottom-0 z-10 -mx-4 sm:mx-0 px-4 py-3 bg-background border-t flex items-center justify-between gap-3 rounded-b-lg">
+              <span className="text-sm text-muted-foreground">已选 <strong className="text-foreground">{selectedIds.size}</strong> 道题目</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={clearSelection}>取消选择</Button>
+                <Button variant="destructive" size="sm" disabled={bulkDeleting}
+                  onClick={handleBulkDelete}>
+                  <Trash2 className="h-4 w-4" />
+                  {bulkDeleting ? '删除中...' : `删除选中 (${selectedIds.size})`}
+                </Button>
+              </div>
+            </div>
+          )}
           <Pagination page={page} totalPages={totalPages} onPageChange={(p) => fetchQuestions({
             page: p,
             search,
