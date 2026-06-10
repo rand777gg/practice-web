@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
+import { NoteEditor } from '@/components/notes/NoteEditor'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -261,9 +261,9 @@ export function Component() {
 
         {isEditing ? (
           <div className="space-y-2">
-            <Textarea
+            <NoteEditor
               value={editText}
-              onChange={(e) => setEditText(e.target.value)}
+              onChange={setEditText}
               placeholder={t('practice.notePlaceholder')}
               rows={3}
             />

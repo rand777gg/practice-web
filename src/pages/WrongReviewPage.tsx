@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Trash2, Pencil, Check, X, Star } from 'lucide-react'
 import type { UserAnswer, Question } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -157,9 +157,9 @@ export function Component() {
               </div>
               {editingNote === ans.id && (
                 <div className="space-y-2">
-                  <Textarea
+                  <NoteEditor
                     value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
+                    onChange={setEditText}
                     placeholder={t('practice.notePlaceholder')}
                     rows={3}
                   />

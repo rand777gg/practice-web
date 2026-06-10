@@ -300,3 +300,77 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.unlink_oauth_identity TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 11. QUESTION BANKS — 试题库
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.question_banks (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL,
+  description TEXT,
+  logo_url    TEXT,
+  is_public   BOOLEAN NOT NULL DEFAULT false,
+  created_by  UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.question_bank_items (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_id     UUID NOT NULL REFERENCES public.question_banks(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  added_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(bank_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_qb_created_by ON public.question_banks(created_by);
+CREATE INDEX IF NOT EXISTS idx_qb_public     ON public.question_banks(is_public) WHERE is_public = true;
+CREATE INDEX IF NOT EXISTS idx_qbi_bank      ON public.question_bank_items(bank_id);
+CREATE INDEX IF NOT EXISTS idx_qbi_question  ON public.question_bank_items(question_id);
+
+ALTER TABLE public.question_banks       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.question_bank_items  ENABLE ROW LEVEL SECURITY;
+
+-- question_banks: anyone authenticated can view public or own banks; admin sees all
+DROP POLICY IF EXISTS qb_select ON public.question_banks;
+CREATE POLICY qb_select ON public.question_banks FOR SELECT
+  USING (is_public = true OR created_by = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS qb_insert ON public.question_banks;
+CREATE POLICY qb_insert ON public.question_banks FOR INSERT
+  WITH CHECK (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS qb_update ON public.question_banks;
+CREATE POLICY qb_update ON public.question_banks FOR UPDATE
+  USING (created_by = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS qb_delete ON public.question_banks;
+CREATE POLICY qb_delete ON public.question_banks FOR DELETE
+  USING (created_by = auth.uid() OR public.is_admin());
+
+-- question_bank_items: viewable if bank is viewable; modifiable by bank owner/admin
+DROP POLICY IF EXISTS qbi_select ON public.question_bank_items;
+CREATE POLICY qbi_select ON public.question_bank_items FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.question_banks
+      WHERE id = bank_id AND (is_public = true OR created_by = auth.uid() OR public.is_admin())
+    )
+  );
+
+DROP POLICY IF EXISTS qbi_insert ON public.question_bank_items;
+CREATE POLICY qbi_insert ON public.question_bank_items FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.question_banks
+      WHERE id = bank_id AND (created_by = auth.uid() OR public.is_admin())
+    )
+  );
+
+DROP POLICY IF EXISTS qbi_delete ON public.question_bank_items;
+CREATE POLICY qbi_delete ON public.question_bank_items FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.question_banks
+      WHERE id = bank_id AND (created_by = auth.uid() OR public.is_admin())
+    )
+  );

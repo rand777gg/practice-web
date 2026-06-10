@@ -20,7 +20,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { LoadingTips } from '@/components/layout/LoadingTips'
-import { Textarea } from '@/components/ui/textarea'
+import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
@@ -432,10 +432,10 @@ export function PracticeSession() {
           {isSubmitted && (
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
-              <Textarea
+              <NoteEditor
                 placeholder={t('practice.notePlaceholder')}
                 value={note}
-                onChange={(e) => handleNoteChange(e.target.value)}
+                onChange={(v) => handleNoteChange(v)}
                 rows={3}
               />
               <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
