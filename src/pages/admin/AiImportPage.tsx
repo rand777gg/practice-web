@@ -163,7 +163,7 @@ export function Component() {
 
   useEffect(() => {
     if (user) loadHistoryList()
-  }, [user])
+  }, [user?.id])
 
   const handleFile = (f: File) => { setFile(f); setFiles([]) }
   const handleFiles = (fs: File[]) => { setFiles(fs); setFile(null) }
