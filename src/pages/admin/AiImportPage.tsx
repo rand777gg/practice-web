@@ -130,6 +130,17 @@ export function Component() {
         try { setQuestions(JSON.parse(entry.questions_json)) } catch { /* ignore */ }
       }
       if (entry.page_ranges) setPageRanges(entry.page_ranges)
+      // Restore parse mode so precision/lightweight UI matches
+      if (entry.mode === 'precision' || entry.mode === 'lightweight' || entry.mode === 'generate') {
+        setParseMode(entry.mode)
+      }
+      // Restore status_json so MinerU API response data shows
+      if (entry.status_json) {
+        try { setParseStatus(JSON.parse(entry.status_json)) } catch { /* ignore */ }
+      } else {
+        setParseStatus(null)
+      }
+      setParseMsg('已从历史记录加载')
       setParsingDone(true)
       setStep('parsing')
       setShowHistory(false)
