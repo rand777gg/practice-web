@@ -36,7 +36,20 @@ export function Component() {
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
 
+  const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
+  const btnRowRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (expandedBtn === null) return
+    const handler = (e: MouseEvent) => {
+      if (btnRowRef.current && !btnRowRef.current.contains(e.target as Node)) {
+        setExpandedBtn(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expandedBtn])
 
   const sortedSubjects = useMemo(
     () => [...subjects].sort((a, b) => a.localeCompare(b, 'zh-CN')),
@@ -105,23 +118,54 @@ export function Component() {
           <h1 className="text-xl lg:text-2xl font-bold">{t('questions.title')}</h1>
           <p className="text-sm text-muted-foreground">{count} {t('questions.total')}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" asChild className="ai-nav-item">
-            <Link to="/admin/ai-import">
-              <Sparkles className="h-4 w-4" />
-              <span className="hidden sm:inline ml-1">AI 智能解析</span>
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
-            <Upload className="h-4 w-4" />
-            <span className="hidden sm:inline ml-1">{t('questions.import')}</span>
-          </Button>
-          <Button asChild size="sm">
-            <Link to="/admin/questions/new">
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline ml-1">{t('questions.addQuestion')}</span>
-            </Link>
-          </Button>
+        <div className="flex gap-2" ref={btnRowRef}>
+          {([
+            { icon: Sparkles, label: 'AI 智能解析', to: '/admin/ai-import', variant: 'outline' as const, className: 'ai-nav-item' },
+            { icon: Upload, label: t('questions.import'), action: () => setShowImport(true), variant: 'outline' as const },
+            { icon: Plus, label: t('questions.addQuestion'), to: '/admin/questions/new', variant: 'default' as const },
+          ]).map((btn, i) => {
+            const isExpanded = expandedBtn === i
+            const Icon = btn.icon
+            const sharedClass = `shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${isExpanded ? 'px-3 gap-2' : 'px-1.5'}`
+            const labelSpan = (
+              <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${isExpanded ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
+                {btn.label}
+              </span>
+            )
+
+            if ('to' in btn && btn.to) {
+              return (
+                <Button key={i} variant={btn.variant} size="sm" asChild className={`${sharedClass} ${btn.className ?? ''}`}>
+                  <Link to={btn.to} onClick={() => setExpandedBtn(null)}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {labelSpan}
+                  </Link>
+                </Button>
+              )
+            }
+
+            return (
+              <Button
+                key={i}
+                variant={btn.variant}
+                size="sm"
+                className={sharedClass}
+                onClick={() => {
+                  if (window.innerWidth >= 640) {
+                    btn.action?.()
+                  } else if (isExpanded) {
+                    setExpandedBtn(null)
+                    btn.action?.()
+                  } else {
+                    setExpandedBtn(i)
+                  }
+                }}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {labelSpan}
+              </Button>
+            )
+          })}
         </div>
       </div>
 
