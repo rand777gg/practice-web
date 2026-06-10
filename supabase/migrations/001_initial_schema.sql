@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS public.questions (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   question_text  TEXT NOT NULL,
   options        JSONB NOT NULL,
-  correct_answer INTEGER NOT NULL,
+  correct_answer JSONB NOT NULL DEFAULT '0',
   category       TEXT,
   subject        TEXT,
   analysis       TEXT,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS public.user_answers (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   question_id     UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
-  selected_answer INTEGER NOT NULL,
+  selected_answer JSONB NOT NULL DEFAULT '0',
   is_correct      BOOLEAN NOT NULL,
   mode            TEXT NOT NULL CHECK (mode IN ('practice', 'exam')),
   exam_session_id UUID REFERENCES public.exam_sessions(id) ON DELETE CASCADE,
@@ -601,5 +601,23 @@ BEGIN
     SELECT p.id, p.nickname
     FROM public.profiles p
     WHERE p.id = ANY(user_ids);
+END;
+$$;
+
+-- 兼容已有数据库：将 correct_answer 和 selected_answer 从 INTEGER 迁移到 JSONB
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'questions' AND column_name = 'correct_answer' AND data_type = 'integer'
+  ) THEN
+    ALTER TABLE public.questions ALTER COLUMN correct_answer TYPE JSONB USING to_jsonb(correct_answer);
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'user_answers' AND column_name = 'selected_answer' AND data_type = 'integer'
+  ) THEN
+    ALTER TABLE public.user_answers ALTER COLUMN selected_answer TYPE JSONB USING to_jsonb(selected_answer);
+  END IF;
 END;
 $$;
