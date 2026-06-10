@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import type { ImportedQuestion } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { Upload, Code2 } from 'lucide-react'
@@ -195,9 +196,33 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             </div>
 
             {showSample && (
-              <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-auto max-h-44 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">
-                <code>{format === 'json' ? JSON_SAMPLE : CSV_SAMPLE}</code>
-              </pre>
+              <div className="space-y-3">
+                <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-auto max-h-44 font-mono leading-relaxed whitespace-pre-wrap break-words max-w-full">
+                  <code>{format === 'json' ? JSON_SAMPLE : CSV_SAMPLE}</code>
+                </pre>
+                {format === 'csv' && (
+                  <div className="rounded-lg border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {CSV_SAMPLE.split('\n')[0].split(',').map((h, i) => (
+                            <TableHead key={i} className="text-[10px] py-1.5 px-2">{h.trim()}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {CSV_SAMPLE.split('\n').slice(1).map((row, ri) => (
+                          <TableRow key={ri}>
+                            {row.split(',').map((cell, ci) => (
+                              <TableCell key={ci} className="text-[10px] py-1 px-2 max-w-[120px] truncate">{cell.trim()}</TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
             )}
 
             <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as 'paste' | 'file')}>
