@@ -5,11 +5,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { QuestionPicker } from './QuestionPicker'
-import { ArrowLeft, Globe, Library, Lock, Plus, Sparkles, Trash2 } from 'lucide-react'
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import { ArrowLeft, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
-import { MultiYearBadge } from '@/components/questions/QuestionCard'
 
 function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | null; alt: string; className?: string; fallbackClassName?: string }) {
   const [loaded, setLoaded] = useState(false)
@@ -98,9 +96,9 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs w-[280px]">题目</TableHead>
+                  <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
-                  <TableHead className="text-xs w-[180px]">分类</TableHead>
+                  <TableHead className="text-xs w-[130px]">分类</TableHead>
                   <TableHead className="text-xs w-[90px]">题型</TableHead>
                   <TableHead className="text-xs w-[40px]" />
                 </TableRow>
@@ -108,9 +106,9 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
               <TableBody>
                 {[...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-56" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-36" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-20" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>
                   </TableRow>
@@ -136,9 +134,9 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs w-[280px]">题目</TableHead>
+                  <TableHead className="text-xs w-[200px]">题目</TableHead>
                   <TableHead className="text-xs w-[90px]">学科</TableHead>
-                  <TableHead className="text-xs w-[180px]">分类</TableHead>
+                  <TableHead className="text-xs w-[130px]">分类</TableHead>
                   <TableHead className="text-xs w-[90px]">题型</TableHead>
                   <TableHead className="text-xs w-[40px]" />
                 </TableRow>
@@ -150,37 +148,17 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                     <TableRow key={item.id}>
                       <TableCell className="text-xs py-2 whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q?.subject as string || '—'}</TableCell>
-                      <TableCell className="text-xs py-2">
+                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
                           const cats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]
-                          if (!cats.length) return <span className="text-muted-foreground">—</span>
                           const yearPattern = /^\d{4}年真题$/
                           const yearCats = cats.filter((c: string) => yearPattern.test(c))
                           const otherCats = cats.filter((c: string) => !yearPattern.test(c))
-                          return (
-                            <div className="flex gap-1">
-                              {yearCats.length >= 2 && <MultiYearBadge yearCats={yearCats} />}
-                              {yearCats.length === 1 && (
-                                <span className="inline-block rounded-full bg-secondary px-1.5 py-0.5 text-[10px] whitespace-nowrap">{yearCats[0]}</span>
-                              )}
-                              {otherCats.map((cat: string) =>
-                                cat === 'AI生成' ? (
-                                  <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
-                                    <HoverCardTrigger asChild>
-                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 border border-blue-500/30 px-1.5 py-0.5 text-[10px] font-medium cursor-default whitespace-nowrap">
-                                        <Sparkles className="h-2.5 w-2.5" />AI生成
-                                      </span>
-                                    </HoverCardTrigger>
-                                    <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                                      <p>该题由AI生成，仅供练习参考</p>
-                                    </HoverCardContent>
-                                  </HoverCard>
-                                ) : (
-                                  <span key={cat} className="inline-block rounded-full bg-secondary px-1.5 py-0.5 text-[10px] whitespace-nowrap">{cat}</span>
-                                )
-                              )}
-                            </div>
-                          )
+                          const parts: string[] = []
+                          if (yearCats.length >= 2) parts.push(`${yearCats.length}年真题`)
+                          else if (yearCats.length === 1) parts.push(yearCats[0])
+                          parts.push(...otherCats)
+                          return parts.join('、') || '—'
                         })()}
                       </TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q?.question_type as keyof typeof QUESTION_TYPE_LABELS] || '—'}</TableCell>
