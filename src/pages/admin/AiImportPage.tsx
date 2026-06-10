@@ -32,11 +32,12 @@ import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
+import type { QuestionType } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, Clock, Play, Trash2, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
-type ParseMode = 'lightweight' | 'precision' | 'generate'
+type ParseMode = 'lightweight' | 'precision' | 'generate' | 'manual'
 
 export function Component() {
   const [step, setStep] = useState<Step>('upload')
@@ -76,6 +77,10 @@ export function Component() {
   const [genFile, setGenFile] = useState<File | null>(null)
   const [genFileText, setGenFileText] = useState('')
   const [extracting, setExtracting] = useState(false)
+
+  // Manual import state
+  const [manualFormat, setManualFormat] = useState<'markdown' | 'json'>('markdown')
+  const [manualText, setManualText] = useState('')
 
   // Custom prompts
   const [extractPrompt, setExtractPrompt] = useState(() => getPrompt('extract'))
@@ -523,6 +528,7 @@ export function Component() {
                     <TabsTrigger value="precision">精准解析</TabsTrigger>
                   )}
                   <TabsTrigger value="generate">AI 生成</TabsTrigger>
+                  <TabsTrigger value="manual">手动导入</TabsTrigger>
                 </TabsList>
               </Tabs>
 
@@ -832,6 +838,13 @@ export function Component() {
                       onReset={() => setGenerateScratchPrompt(resetPrompt('generate_scratch'))} />
                   )}
                 </div>
+              ) : parseMode === 'manual' ? (
+                <ManualImport
+                  manualFormat={manualFormat}
+                  setManualFormat={setManualFormat}
+                  manualText={manualText}
+                  setManualText={setManualText}
+                />
               ) : (
                 <AiImportUpload
                   onFile={handleFile}
@@ -843,7 +856,42 @@ export function Component() {
 
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}
 
-              {parseMode === 'generate' ? (
+              {parseMode === 'manual' ? (
+                <Button onClick={async () => {
+                  if (!manualText.trim()) return
+                  setStep('parsing'); setError(''); setParseMsg(manualFormat === 'json' ? '正在解析 JSON...' : 'AI 正在提取题目...')
+                  try {
+                    let questionsList: ParsedQuestion[]
+                    if (manualFormat === 'json') {
+                      const parsed = JSON.parse(manualText)
+                      const arr = Array.isArray(parsed) ? parsed : (parsed.questions || [parsed])
+                      questionsList = arr.map((q: Record<string, unknown>) => ({
+                        question_type: (q.question_type as QuestionType) || 'single_choice',
+                        question_text: (q.question_text as string) || (q.questionText as string) || '',
+                        options: Array.isArray(q.options) ? q.options as string[] : ['', ''],
+                        correct_answer: q.correct_answer !== undefined ? q.correct_answer : (q.correctAnswer !== undefined ? q.correctAnswer : 0),
+                        analysis: (q.analysis as string) || null,
+                        key_points: (q.key_points as string) || (q.keyPoints as string) || null,
+                        answer_explanation: (q.answer_explanation as string) || (q.answerExplanation as string) || null,
+                      }))
+                    } else {
+                      const parser = new DeepSeekParser(getAiConfig())
+                      const result = await parser.parseDocument(manualText, extractPrompt)
+                      questionsList = result.questions
+                    }
+                    setQuestions(questionsList)
+                    setSelectedIds(new Set(questionsList.map((_, i) => i)))
+                    setStep('preview')
+                    saveToHistory({ fileName: '手动导入', markdown: manualText, questions: questionsList, mode: 'manual' })
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : '解析失败')
+                    setStep('upload')
+                  }
+                }} disabled={!aiConfigured || !manualText.trim()} className="w-full mt-4">
+                  <Play className="h-4 w-4" />
+                  {manualFormat === 'json' ? '解析 JSON' : 'AI 解析导入'}
+                </Button>
+              ) : parseMode === 'generate' ? (
                 <Button onClick={handleGenerate} disabled={!canStart || generating} className="w-full mt-4">
                   {generating ? (
                     <>
@@ -1193,4 +1241,78 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
       </Card>
     </div>
   )
+}
+
+function ManualImport({ manualFormat, setManualFormat, manualText, setManualText }: {
+  manualFormat: 'markdown' | 'json'
+  setManualFormat: (v: 'markdown' | 'json') => void
+  manualText: string
+  setManualText: (v: string) => void
+}) {
+  const [showExample, setShowExample] = useState(false)
+  const [exampleHtml, setExampleHtml] = useState('')
+
+  const jsonExample = `[
+  {
+    "question_type": "single_choice",
+    "question_text": "以下哪项是正确的？",
+    "options": ["选项A", "选项B", "选项C", "选项D"],
+    "correct_answer": 0,
+    "analysis": "解析内容...",
+    "key_points": "知识点1, 知识点2"
+  }
+]`
+
+  const mdExample = `### 1. 以下哪项是正确的？
+A. 选项A
+B. 选项B
+C. 选项C
+D. 选项D
+答案: A
+解析: 因为...
+
+### 2. 判断题
+人工智能是计算机科学的分支。
+答案: 正确`
+
+  useEffect(() => {
+    if (!showExample) { setExampleHtml(''); return }
+    const code = manualFormat === 'json' ? jsonExample : mdExample
+    const lang = manualFormat === 'json' ? 'json' : 'markdown'
+    setExampleHtml(`<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`)
+  }, [showExample, manualFormat])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Button variant={manualFormat === 'markdown' ? 'default' : 'outline'} size="sm" className="text-xs h-8"
+          onClick={() => setManualFormat('markdown')}>Markdown</Button>
+        <Button variant={manualFormat === 'json' ? 'default' : 'outline'} size="sm" className="text-xs h-8"
+          onClick={() => setManualFormat('json')}>JSON</Button>
+        <Button variant="ghost" size="sm" className="text-xs h-8 ml-auto"
+          onClick={() => setShowExample(!showExample)}>
+          {showExample ? '隐藏示例' : '查看格式示例'}
+        </Button>
+      </div>
+
+      {showExample && exampleHtml && (
+        <div className="rounded-lg border bg-muted/30 p-3 text-xs overflow-auto max-h-48"
+          dangerouslySetInnerHTML={{ __html: exampleHtml }} />
+      )}
+
+      <textarea
+        className="w-full h-48 text-xs font-mono p-3 rounded-lg border bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+        value={manualText}
+        onChange={(e) => setManualText(e.target.value)}
+        placeholder={manualFormat === 'json'
+          ? '粘贴 JSON 数组，每个元素包含 question_type, question_text, options, correct_answer...'
+          : '粘贴 Markdown 格式的题目...'}
+        spellCheck={false}
+      />
+    </div>
+  )
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
