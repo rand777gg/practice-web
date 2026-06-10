@@ -20,6 +20,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
@@ -397,7 +398,20 @@ export function PracticeSession() {
       </div>
 
       {isLoading ? (
-        <LoadingTips className="py-12" compact />
+        <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
+          <Skeleton className="h-6 w-3/4" />
+          <div className="flex flex-wrap gap-1.5">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full rounded-lg" />
+            <Skeleton className="h-12 w-full rounded-lg" />
+            <Skeleton className="h-12 w-full rounded-lg" />
+            <Skeleton className="h-12 w-full rounded-lg" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
       ) : noQuestions ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('practice.noQuestions')}</p>
