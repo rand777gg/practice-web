@@ -194,10 +194,10 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       </div>
                     </button>
                   </TableHead>
-                  <TableHead className="text-xs">题目</TableHead>
-                  <TableHead className="text-xs w-[70px]">学科</TableHead>
-                  <TableHead className="text-xs w-[70px]">分类</TableHead>
-                  <TableHead className="text-xs w-[60px]">类型</TableHead>
+                  <TableHead className="text-xs min-w-[240px]">题目</TableHead>
+                  <TableHead className="text-xs w-[80px]">学科</TableHead>
+                  <TableHead className="text-xs w-[160px]">分类</TableHead>
+                  <TableHead className="text-xs w-[80px]">类型</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -214,10 +214,10 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                           {alreadyAdded ? <Check className="h-3 w-3 text-muted-foreground/40" /> : selected ? <Check className="h-3 w-3" /> : null}
                         </button>
                       </TableCell>
-                      <TableCell className="text-xs py-2 max-w-[280px] truncate">{q.question_text}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{q.subject || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{(q.categories?.length ? q.categories.join(', ') : q.category) || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q.question_type as keyof typeof QUESTION_TYPE_LABELS] || q.question_type}</TableCell>
+                      <TableCell className="text-xs py-2 whitespace-nowrap">{q.question_text}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q.subject || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{(q.categories?.length ? q.categories.join(', ') : q.category) || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{QUESTION_TYPE_LABELS[q.question_type as keyof typeof QUESTION_TYPE_LABELS] || q.question_type}</TableCell>
                     </TableRow>
                   )
                 })}

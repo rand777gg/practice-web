@@ -94,24 +94,24 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
 
       {loading ? (
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">题目</TableHead>
-                  <TableHead className="text-xs w-[70px]">学科</TableHead>
-                  <TableHead className="text-xs w-[130px]">分类</TableHead>
-                  <TableHead className="text-xs w-[80px]">题型</TableHead>
+                  <TableHead className="text-xs min-w-[280px]">题目</TableHead>
+                  <TableHead className="text-xs w-[90px]">学科</TableHead>
+                  <TableHead className="text-xs w-[180px]">分类</TableHead>
+                  <TableHead className="text-xs w-[90px]">题型</TableHead>
                   <TableHead className="text-xs w-[40px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {[...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-full max-w-[280px]" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-56" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-14" /></TableCell>
                     <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>
                   </TableRow>
                 ))}
@@ -132,14 +132,14 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">题目</TableHead>
-                  <TableHead className="text-xs w-[70px]">学科</TableHead>
-                  <TableHead className="text-xs w-[130px]">分类</TableHead>
-                  <TableHead className="text-xs w-[80px]">题型</TableHead>
+                  <TableHead className="text-xs min-w-[280px]">题目</TableHead>
+                  <TableHead className="text-xs w-[90px]">学科</TableHead>
+                  <TableHead className="text-xs w-[180px]">分类</TableHead>
+                  <TableHead className="text-xs w-[90px]">题型</TableHead>
                   <TableHead className="text-xs w-[40px]" />
                 </TableRow>
               </TableHeader>
@@ -148,8 +148,8 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                   const q = item.questions
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="text-xs py-2 max-w-[300px] truncate">{q?.question_text as string || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">{q?.subject as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2">
                         {(() => {
                           const cats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]
@@ -158,7 +158,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                           const yearCats = cats.filter((c: string) => yearPattern.test(c))
                           const otherCats = cats.filter((c: string) => !yearPattern.test(c))
                           return (
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex gap-1">
                               {yearCats.length >= 2 && <MultiYearBadge yearCats={yearCats} />}
                               {yearCats.length === 1 && (
                                 <span className="inline-block rounded-full bg-secondary px-1.5 py-0.5 text-[10px] whitespace-nowrap">{yearCats[0]}</span>
