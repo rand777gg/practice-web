@@ -841,15 +841,16 @@ export function Component() {
                     </CardContent>
                   </Card>
 
-                  {genFileText ? (
-                    <PromptEditor label="根据资料生成" value={generateDocPrompt}
-                      onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
-                      onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))} />
-                  ) : (
-                    <PromptEditor label="凭空生成" value={generateScratchPrompt}
-                      onChange={(v) => { setGenerateScratchPrompt(v); setPrompt('generate_scratch', v) }}
-                      onReset={() => setGenerateScratchPrompt(resetPrompt('generate_scratch'))} />
-                  )}
+                  <PromptEditor label="提示词 - 预设" value={genFileText ? generateDocPrompt : generateScratchPrompt}
+                    onChange={(v) => {
+                      if (genFileText) { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }
+                      else { setGenerateScratchPrompt(v); setPrompt('generate_scratch', v) }
+                    }}
+                    onReset={() => {
+                      if (genFileText) setGenerateDocPrompt(resetPrompt('generate_doc'))
+                      else setGenerateScratchPrompt(resetPrompt('generate_scratch'))
+                    }}
+                  />
                 </div>
               ) : (
                 <AiImportUpload
