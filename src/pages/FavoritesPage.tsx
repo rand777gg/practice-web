@@ -9,11 +9,12 @@ import { useT } from '@/i18n/use-t'
 
 export function Component() {
   const { t } = useT()
-  const { favorites, isFavorite, toggleFavorite } = useFavorites()
+  const { favorites, isFavorite, toggleFavorite, loaded } = useFavorites()
   const [questions, setQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    if (!loaded) return
     async function load() {
       if (favorites.length === 0) {
         setQuestions([])
@@ -29,9 +30,9 @@ export function Component() {
       setIsLoading(false)
     }
     load()
-  }, [favorites])
+  }, [favorites, loaded])
 
-  if (isLoading) {
+  if (!loaded || isLoading) {
     return (
       <div className="max-w-5xl">
         <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('favorites.title')}</h1>
