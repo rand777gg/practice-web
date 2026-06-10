@@ -398,19 +398,17 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </div>
 
               <div className="space-y-2">
-                <Label>{t('questions.categoryLabel')} <span className="text-muted-foreground font-normal">(多选)</span></Label>
-                {categories.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {categories.map((c) => (
-                      <span key={c} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs">
-                        {c}
-                        <button type="button" onClick={() => setCategories((prev) => prev.filter((x) => x !== c))} className="text-muted-foreground hover:text-foreground">
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {categories.map((c) => (
+                    <span key={c} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs">
+                      {c}
+                      <button type="button" onClick={() => setCategories((prev) => prev.filter((x) => x !== c))} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
                 <div className="relative">
                   <Input id="category" value={categoryInput} onChange={(e) => { setCategoryInput(e.target.value); setCategoryOpen(true) }}
                     onFocus={() => setCategoryOpen(true)} onBlur={() => setTimeout(() => setCategoryOpen(false), 150)}
@@ -418,9 +416,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                       if (e.key === 'Enter') {
                         e.preventDefault()
                         const v = categoryInput.trim()
-                        if (v && !categories.includes(v)) {
-                          setCategories((prev) => [...prev, v])
-                        }
+                        if (v && !categories.includes(v)) setCategories((prev) => [...prev, v])
                         setCategoryInput('')
                       }
                     }}
