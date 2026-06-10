@@ -173,6 +173,18 @@ AS $$
   SELECT email FROM auth.users WHERE id = user_id;
 $$;
 
+-- 获取用户绑定的身份提供商（如 github）
+CREATE OR REPLACE FUNCTION public.get_user_providers(user_id UUID)
+RETURNS TEXT[]
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT COALESCE(array_agg(provider), ARRAY[]::TEXT[])
+  FROM auth.identities
+  WHERE user_id = $1 AND provider != 'email';
+$$;
+
 -- ----------------------------------------------------------------------------
 -- 8. ROW LEVEL SECURITY — 行级安全策略
 -- ----------------------------------------------------------------------------

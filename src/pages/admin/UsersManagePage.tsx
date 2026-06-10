@@ -23,16 +23,24 @@ export function Component() {
         .select('*')
         .order('created_at', { ascending: true })
 
-      const list = (data ?? []) as (Profile & { email?: string })[]
+      const list = (data ?? []) as (Profile & { email?: string; providers?: string[] })[]
 
-      const emails = await Promise.all(
-        list.map(async (p) => {
+      const [emails, providers] = await Promise.all([
+        Promise.all(list.map(async (p) => {
           const { data } = await supabase.rpc('get_user_email', { user_id: p.id })
           return { id: p.id, email: (data as string) ?? '' }
-        }),
-      )
+        })),
+        Promise.all(list.map(async (p) => {
+          const { data } = await supabase.rpc('get_user_providers', { user_id: p.id })
+          return { id: p.id, providers: (data as string[]) ?? [] }
+        })),
+      ])
       const emailMap = new Map(emails.map((e) => [e.id, e.email]))
-      for (const p of list) p.email = emailMap.get(p.id) ?? ''
+      const providerMap = new Map(providers.map((p) => [p.id, p.providers]))
+      for (const p of list) {
+        p.email = emailMap.get(p.id) ?? ''
+        p.providers = providerMap.get(p.id) ?? []
+      }
 
       setProfiles(list)
       setIsLoading(false)
@@ -63,7 +71,9 @@ export function Component() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">{t('users.status')}</TableHead>
+              <TableHead className="min-w-[120px]">ID</TableHead>
               <TableHead className="min-w-[160px]">{t('users.email')}</TableHead>
+              <TableHead className="w-20">GitHub</TableHead>
               <TableHead>{t('users.role')}</TableHead>
               <TableHead>{t('users.joined')}</TableHead>
               <TableHead className="w-20">{t('users.action')}</TableHead>
@@ -75,7 +85,15 @@ export function Component() {
                 <TableCell>
                   <span className={`online-dot ${onlineIds.has(p.id) ? '' : 'offline'}`} />
                 </TableCell>
-                <TableCell className="font-mono text-xs whitespace-nowrap">{p.email || p.id.slice(0, 12)}</TableCell>
+                <TableCell className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">{p.id.slice(0, 8)}</TableCell>
+                <TableCell className="font-mono text-xs whitespace-nowrap">{p.email || '-'}</TableCell>
+                <TableCell>
+                  {p.providers?.includes('github') ? (
+                    <Badge variant="default" className="text-[10px]">GitHub</Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
                     {p.role === 'admin' ? t('users.admin') : t('users.user')}
