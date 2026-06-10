@@ -1261,6 +1261,12 @@ function stateLabel2(s: unknown) {
   return s ? String(s) : ''
 }
 
+function stateColor2(s: unknown) {
+  if (s === 'done') return 'text-green-600 bg-green-100 dark:bg-green-900/30'
+  if (s === 'failed') return 'text-red-500 bg-red-100 dark:bg-red-900/30'
+  return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30'
+}
+
 function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
   const steps = [
     { label: '上传文档', key: 'upload' },
