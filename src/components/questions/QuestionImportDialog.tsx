@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import type { ImportedQuestion } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { Switch } from '@/components/ui/switch'
 import { Upload, Code2 } from 'lucide-react'
 
 interface Props {
@@ -24,7 +25,7 @@ interface Props {
 
 type ImportState = 'input' | 'preview' | 'importing' | 'done' | 'error'
 
-	const JSON_SAMPLE = `\`\`\`json
+const JSON_SAMPLE = `[
   {
     "question_type": "single_choice",
     "question_text": "HTML 的全称是什么？",
@@ -40,7 +41,7 @@ type ImportState = 'input' | 'preview' | 'importing' | 'done' | 'error'
     "analysis": "HTML 是 Hyper Text Markup Language 的缩写。",
     "key_points": "HTML, Web基础"
   }
-\`\`\`\`
+]`
 const CSV_SAMPLE = `question_text,option_a,option_b,option_c,option_d,correct_answer,subject,key_points
 HTML 的全称是什么？,Hyper Text Markup Language,High Tech Modern Language,Hyper Transfer Markup Language,Home Tool Markup Language,0,计算机,HTML; Web基础
 CSS 的全称是什么？,Cascading Style Sheets,Computer Style System,Creative Style Sheets,Colorful Style Sheets,0,计算机,CSS; Web基础`
@@ -108,6 +109,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
   const [errors, setErrors] = useState<string[]>([])
   const [message, setMessage] = useState('')
   const [showSample, setShowSample] = useState(false)
+  const [autoNumber, setAutoNumber] = useState(true)
 
   const reset = () => {
     setState('input'); setParsed([]); setErrors([]); setMessage(''); setPasteText('')
@@ -122,6 +124,9 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         setErrors([...parseErrors, '未解析到有效题目'])
         setState('input')
         return
+      }
+      if (autoNumber) {
+        questions.forEach((q, i) => { q.question_text = `${i + 1}. ${q.question_text}` })
       }
       setParsed(questions)
       setErrors(parseErrors)
@@ -144,6 +149,9 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
       if (questions.length === 0) {
         setErrors([...parseErrors, '未解析到有效题目'])
         return
+      }
+      if (autoNumber) {
+        questions.forEach((q, i) => { q.question_text = `${i + 1}. ${q.question_text}` })
       }
       setParsed(questions)
       setErrors(parseErrors)
@@ -188,6 +196,10 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             <div className="flex items-center gap-2">
               <Button variant={format === 'csv' ? 'default' : 'outline'} size="sm" onClick={() => setFormat('csv')}>CSV</Button>
               <Button variant={format === 'json' ? 'default' : 'outline'} size="sm" onClick={() => setFormat('json')}>JSON</Button>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                <Switch checked={autoNumber} onCheckedChange={setAutoNumber} className="scale-75" />
+                自动编号
+              </label>
               <div className="flex-1" />
               <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => setShowSample(!showSample)}>
                 <Code2 className="h-3.5 w-3.5" />
@@ -256,7 +268,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         )}
 
         {state === 'preview' && (
-          <div className="space-y-4 min-w-0 overflow-hidden">
+          <div className="space-y-4">
             <p className="text-sm">解析到 <strong>{parsed.length}</strong> 道有效题目</p>
             {errors.length > 0 && (
               <div className="rounded-md bg-destructive/10 p-3 text-xs text-destructive space-y-0.5 max-h-24 overflow-auto">
