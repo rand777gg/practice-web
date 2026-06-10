@@ -356,7 +356,7 @@ export function Component() {
           answer_explanation: null,
           seq_number: null,
         })),
-      ).select('id')
+      )
 
       if (insertErr) throw insertErr
       setImportCount(toImport.length)
