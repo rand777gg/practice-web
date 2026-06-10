@@ -179,13 +179,13 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
           </DropdownMenu>
         </div>
 
-        <div className="flex-1 overflow-auto -mx-6 px-6 mt-3">
+        <div className="flex-1 overflow-auto scrollbar-visible -mx-6 px-6 mt-3">
           {loading ? (
             <LoadingTips compact className="py-8" />
           ) : questions.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-8">暂无题目</p>
           ) : (
-            <Table className="table-fixed w-full">
+            <Table className="table-fixed w-full min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40px]">
@@ -196,7 +196,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                     </button>
                   </TableHead>
                   <TableHead className="text-xs w-[50%]">题目</TableHead>
-                  <TableHead className="text-xs w-[80px]">学科</TableHead>
+                  <TableHead className="text-xs w-[90px]">学科</TableHead>
                   <TableHead className="text-xs w-[120px]">分类</TableHead>
                   <TableHead className="text-xs w-[80px]">类型</TableHead>
                 </TableRow>
