@@ -460,9 +460,10 @@ export function Component() {
                   <TableRow>
                     <TableHead className="text-xs">文件名</TableHead>
                     <TableHead className="text-xs w-[72px]">模式</TableHead>
-                    <TableHead className="text-xs w-[60px]">题目</TableHead>
-                    <TableHead className="text-xs w-[80px]">状态</TableHead>
-                    <TableHead className="text-xs w-[140px]">时间</TableHead>
+                    <TableHead className="text-xs w-[70px]">页码</TableHead>
+                    <TableHead className="text-xs w-[52px]">题目</TableHead>
+                    <TableHead className="text-xs w-[72px]">状态</TableHead>
+                    <TableHead className="text-xs w-[130px]">时间</TableHead>
                     <TableHead className="text-xs w-[40px]" />
                   </TableRow>
                 </TableHeader>
@@ -480,6 +481,9 @@ export function Component() {
                         </TableCell>
                         <TableCell className="text-xs py-2 text-muted-foreground">
                           {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}
+                        </TableCell>
+                        <TableCell className="text-xs py-2 text-muted-foreground font-mono">
+                          {h.page_ranges || '全部'}
                         </TableCell>
                         <TableCell className="text-xs py-2 tabular-nums">{qCount > 0 ? `${qCount}` : '-'}</TableCell>
                         <TableCell className="text-xs py-2">
