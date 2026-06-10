@@ -833,13 +833,11 @@ export function Component() {
                         </div>
                       </div>
 
-                      {!genFileText && (
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">知识点范围 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
-                          <Input placeholder="如：三段论、假言推理、选言推理"
-                            value={genTopic} onChange={(e) => setGenTopic(e.target.value)} />
-                        </div>
-                      )}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">知识点范围</label>
+                        <Input placeholder="如：三段论、假言推理、选言推理"
+                          value={genTopic} onChange={(e) => setGenTopic(e.target.value)} />
+                      </div>
                     </CardContent>
                   </Card>
 
