@@ -688,25 +688,45 @@ export function Component() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-sm font-medium">学科 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
-                          <div className="relative">
-                            <Input placeholder="如：逻辑学、数学、英语" value={genSubject}
-                              onChange={(e) => setGenSubject(e.target.value)} autoComplete="off" />
-                            {genSubject && existingSubjects.filter(s => s.includes(genSubject)).length > 0 && (
-                              <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
-                                {existingSubjects.filter(s => s.includes(genSubject)).slice(0, 6).map((s) => (
-                                  <button key={s} type="button"
-                                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
-                                    onMouseDown={() => setGenSubject(s)}>{s}</button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                                {genSubject || '选择学科'}
+                                <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                              <DropdownMenuItem onClick={() => setGenSubject('')}>
+                                <span className="text-muted-foreground">不限学科</span>
+                                {!genSubject && <Check className="h-4 w-4 ml-auto" />}
+                              </DropdownMenuItem>
+                              {existingSubjects.map((s) => (
+                                <DropdownMenuItem key={s} onClick={() => setGenSubject(s)}>
+                                  {s}
+                                  {genSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                         <div className="space-y-2">
                           <label className="text-sm font-medium">题目数量</label>
-                          <Input type="number" className="w-24" min={1} max={30}
-                            value={genCount}
-                            onChange={(e) => setGenCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                                {genCount} 题
+                                <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                              {[1, 3, 5, 10, 15, 20, 25, 30].map((n) => (
+                                <DropdownMenuItem key={n} onClick={() => setGenCount(n)}>
+                                  {n} 题
+                                  {genCount === n && <Check className="h-4 w-4 ml-auto" />}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
 
