@@ -14,7 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { QuestionType } from '@/types'
@@ -181,7 +181,28 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
 
         <div className="flex-1 overflow-auto scrollbar-visible -mx-6 px-6 mt-3">
           {loading ? (
-            <LoadingTips compact className="py-8" />
+            <Table className="table-fixed w-full min-w-[640px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40px]" />
+                  <TableHead className="text-xs w-[50%]">题目</TableHead>
+                  <TableHead className="text-xs w-[90px]">学科</TableHead>
+                  <TableHead className="text-xs w-[120px]">分类</TableHead>
+                  <TableHead className="text-xs w-[80px]">类型</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...Array(pageSize)].map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-3/4" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell className="py-2"><Skeleton className="h-4 w-10" /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           ) : questions.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-8">暂无题目</p>
           ) : (
