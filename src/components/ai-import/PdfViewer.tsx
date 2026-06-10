@@ -30,7 +30,6 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   const [loading, setLoading] = useState(true)
   const [containerW, setContainerW] = useState(700)
   const renderScale = 1.2 // must match scale used in render effect
-  const isNormalized = blocks.length > 0 && blocks.every(b => b.bbox.every(v => v <= 1000))
 
   // Track container width for responsive scaling
   useEffect(() => {
@@ -44,6 +43,7 @@ export function PdfViewer({ pdfUrl, jsonData, activePage, activeBbox, onPageChan
   }, [])
 
   const blocks = jsonData ? parseLayoutBlocks(jsonData) : []
+  const isNormalized = blocks.length > 0 && blocks.every(b => b.bbox.every(v => v <= 1000))
 
   // Sync activePage
   useEffect(() => {
