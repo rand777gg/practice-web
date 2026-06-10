@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 
+// Don't throw at module level — it would white-screen the entire app.
+// Instead, supabase calls will fail with a clear error at runtime.
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase environment variables')
+  console.error('Missing Supabase environment variables (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY)')
 }
 
 // Retry wrapper for unstable mobile networks
@@ -38,19 +40,34 @@ async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit, retr
   throw new Error('fetchWithRetry: unreachable')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
+// Create client only when env vars are present — otherwise use a no-op
+// placeholder that won't crash the app. Auth / data calls will fail
+// gracefully at call sites.
+function createSafeClient(url: string, key: string) {
+  if (!url || !key) {
+    return new Proxy({} as ReturnType<typeof createClient>, {
+      get(_, prop) {
+        if (prop === 'auth') return { getSession: () => Promise.resolve({ data: { session: null }, error: null }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({ error: null }) }
+        return () => Promise.resolve({ data: null, error: new Error('Supabase not configured') })
+      },
+    })
+  }
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
     },
-  },
-  global: {
-    headers: { apikey: supabaseKey },
-    fetch: fetchWithRetry,
-  },
-})
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+    },
+    global: {
+      headers: { apikey: key },
+      fetch: fetchWithRetry,
+    },
+  })
+}
+
+export const supabase = createSafeClient(supabaseUrl, supabaseKey)
