@@ -8,6 +8,7 @@ import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { QuestionPicker } from './QuestionPicker'
 import { ArrowLeft, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 
 function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | null; alt: string; className?: string; fallbackClassName?: string }) {
   const [loaded, setLoaded] = useState(false)
@@ -124,7 +125,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                       <TableCell className="text-xs py-2 max-w-[300px] truncate">{q?.question_text as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{((q as any)?.categories?.length ? (q as any).categories.join(', ') : q?.category as string) || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{q?.question_type as string || '—'}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q?.question_type as keyof typeof QUESTION_TYPE_LABELS] || '—'}</TableCell>
                       <TableCell className="text-xs py-2">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
                           onClick={() => handleRemove(item.id)}>

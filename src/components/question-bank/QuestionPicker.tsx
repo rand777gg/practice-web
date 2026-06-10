@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
-import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { QuestionType } from '@/types'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -216,7 +216,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       </TableCell>
                       <TableCell className="text-xs py-2 max-w-[280px] truncate">{q.question_text}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground">{q.subject || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{q.question_type}</TableCell>
+                      <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q.question_type as keyof typeof QUESTION_TYPE_LABELS] || q.question_type}</TableCell>
                       <TableCell className="text-xs py-2">
                         {saving ? <span className="text-[10px] text-muted-foreground">添加中</span> :
                           alreadyAdded ? <span className="text-[10px] text-muted-foreground">已添加</span> : null}
