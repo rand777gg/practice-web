@@ -70,10 +70,8 @@ Deno.serve(async (req) => {
       ContentType: file.type,
     }))
 
-    // Return proxy URL — served by r2-image edge function
-    // Use request origin to auto-detect correct URL (more reliable than env var)
-    const origin = new URL(req.url).origin
-    const url = `${origin}/functions/v1/r2-image?key=${encodeURIComponent(key)}`
+    // Direct R2 custom domain URL — no proxy needed
+    const url = `https://r2-rpw.pguide.dev/${key}`
 
     return new Response(JSON.stringify({ url, key, name: file.name, type: file.type, size: file.size }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
