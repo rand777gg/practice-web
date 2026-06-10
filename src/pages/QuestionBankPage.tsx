@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { BankCard } from '@/components/question-bank/BankCard'
 import { BankDialog } from '@/components/question-bank/BankDialog'
@@ -63,7 +63,24 @@ export function Component() {
       </div>
 
       {isLoading ? (
-        <LoadingTips className="py-12" compact />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="rounded-xl border bg-card p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-12 w-12 rounded-lg" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              </div>
+              <Skeleton className="h-3 w-full" />
+              <div className="flex justify-between">
+                <Skeleton className="h-4 w-12 rounded-full" />
+                <Skeleton className="h-4 w-12 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : banks.length === 0 ? (
         <div className="text-center py-20 space-y-4">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted">
