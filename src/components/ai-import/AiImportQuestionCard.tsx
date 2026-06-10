@@ -231,24 +231,30 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
             </Button>
           </div>
           {question.correct_answer !== true && (
-            <Input
-              value={typeof question.correct_answer === 'string' ? question.correct_answer : ''}
-              onChange={(e) => patch({ correct_answer: e.target.value })}
-              className="h-8 text-xs"
-              placeholder="修正后的正确表述"
-            />
+            <div>
+              <label className="text-[11px] text-muted-foreground mb-1 block">答案</label>
+              <Input
+                value={typeof question.correct_answer === 'string' ? question.correct_answer : ''}
+                onChange={(e) => patch({ correct_answer: e.target.value })}
+                className="h-8 text-xs"
+                placeholder="修正后的正确表述"
+              />
+            </div>
           )}
         </div>
       )}
 
-      {/* Fill blank / short answer / analysis expected answer */}
+      {/* Fill blank / short answer expected answer */}
       {['fill_blank','short_answer'].includes(type) && (
-        <Input
-          value={Array.isArray(question.correct_answer) ? question.correct_answer.join('; ') : String(question.correct_answer ?? '')}
-          onChange={(e) => patch({ correct_answer: e.target.value })}
-          className="h-8 text-xs"
+        <div>
+          <label className="text-[11px] text-muted-foreground mb-1 block">答案</label>
+          <Input
+            value={Array.isArray(question.correct_answer) ? question.correct_answer.join('; ') : String(question.correct_answer ?? '')}
+            onChange={(e) => patch({ correct_answer: e.target.value })}
+            className="h-8 text-xs"
           placeholder={type === 'fill_blank' ? '预期答案' : '可接受答案（多个用分号分隔）'}
         />
+        </div>
       )}
 
       {/* Analysis */}

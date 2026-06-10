@@ -352,7 +352,6 @@ export function Component() {
           subject: subject || null,
           analysis: q.analysis ?? null,
           key_points: q.key_points ?? null,
-          answer_explanation: q.answer_explanation ?? null,
         })),
       )
 
