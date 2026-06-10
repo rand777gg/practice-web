@@ -31,7 +31,7 @@ async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: stri
 
     // Find coordinate data — layout.json is the primary source (absolute PDF coords)
     let jsonData: string | undefined
-    const candidates = ['layout.json', 'content_list.json', 'middle.json', 'model.json']
+    const candidates = ['content_list.json', 'layout.json', 'middle.json', 'model.json']
     for (const name of candidates) {
       const f = zip.file(name)
       if (f) { jsonData = await f.async('text'); break }
