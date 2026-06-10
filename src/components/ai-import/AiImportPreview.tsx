@@ -96,7 +96,7 @@ export function AiImportPreview({
         </DropdownMenu>
       </div>
 
-      <ScrollArea className="max-h-[55vh] pr-1">
+      <ScrollArea className="max-h-[70vh] pr-1">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {questions.map((q, i) => (
             <AiImportQuestionCard
