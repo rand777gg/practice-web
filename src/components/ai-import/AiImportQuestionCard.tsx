@@ -15,12 +15,6 @@ import type { QuestionType } from '@/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 
-function circled(n: number): string {
-  if (n >= 1 && n <= 20) return String.fromCodePoint(0x245f + n)
-  if (n >= 21 && n <= 35) return String.fromCodePoint(0x3251 + n - 21)
-  return `#${n}`
-}
-
 interface Props {
   question: ParsedQuestion
   index: number
@@ -75,7 +69,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           {selected && <Check className="h-3 w-3" />}
         </button>
 
-        <span className="text-xs text-muted-foreground font-medium">{circled(index + 1)}</span>
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-sm font-bold tabular-nums">{index + 1}</span>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
