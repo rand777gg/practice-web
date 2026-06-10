@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
 import { QuestionPicker } from './QuestionPicker'
-import { ArrowLeft, Check, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 
@@ -41,6 +47,36 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+  const [filterSubject, setFilterSubject] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterType, setFilterType] = useState('')
+
+  const { subjects, categories, types } = useMemo(() => {
+    const subs = new Set<string>()
+    const cats = new Set<string>()
+    const typs = new Set<string>()
+    for (const item of items) {
+      const q = item.questions
+      if (q?.subject) subs.add(q.subject as string)
+      const qCats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]
+      for (const c of qCats) { if (c) cats.add(c) }
+      if (q?.question_type) typs.add(q.question_type as string)
+    }
+    return { subjects: [...subs].sort(), categories: [...cats].sort(), types: [...typs].sort() }
+  }, [items])
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const q = item.questions
+      if (filterSubject && q?.subject !== filterSubject) return false
+      if (filterType && q?.question_type !== filterType) return false
+      if (filterCategory) {
+        const qCats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]
+        if (!qCats.includes(filterCategory)) return false
+      }
+      return true
+    })
+  }, [items, filterSubject, filterCategory, filterType])
 
   const loadItems = async () => {
     setLoading(true)
@@ -84,12 +120,16 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
   }
 
   const toggleAll = () => {
-    if (selectedItems.size >= items.length) {
-      setSelectedItems(new Set())
+    const filteredIds = filteredItems.map((i) => i.id)
+    const allSelected = filteredIds.every((id) => selectedItems.has(id))
+    if (allSelected) {
+      setSelectedItems((prev) => { const next = new Set(prev); for (const id of filteredIds) next.delete(id); return next })
     } else {
-      setSelectedItems(new Set(items.map((i) => i.id)))
+      setSelectedItems((prev) => { const next = new Set(prev); for (const id of filteredIds) next.add(id); return next })
     }
   }
+
+  const filteredAllChecked = filteredItems.length > 0 && filteredItems.every((i) => selectedItems.has(i.id))
 
   return (
     <div className="space-y-4">
@@ -110,17 +150,81 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
       </div>
 
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground">共 {items.length} 道题目</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm text-muted-foreground">
+            共 {items.length} 道题目{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
+          </p>
           {selectedItems.size > 0 && (
             <Button variant="destructive" size="sm" onClick={handleBatchRemove}>
               <Trash2 className="h-3.5 w-3.5 mr-1" />删除选中 ({selectedItems.size})
             </Button>
           )}
         </div>
-        <Button size="sm" onClick={() => setPickerOpen(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1" />添加题目
-        </Button>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                {filterSubject || '学科'}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+              <DropdownMenuItem onClick={() => setFilterSubject('')}>
+                <span className="text-muted-foreground">全部学科</span>
+                {!filterSubject && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+              {subjects.map((s) => (
+                <DropdownMenuItem key={s} onClick={() => setFilterSubject(s)}>
+                  {s}
+                  {filterSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                {filterCategory || '分类'}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+              <DropdownMenuItem onClick={() => setFilterCategory('')}>
+                <span className="text-muted-foreground">全部分类</span>
+                {!filterCategory && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+              {categories.map((c) => (
+                <DropdownMenuItem key={c} onClick={() => setFilterCategory(c)}>
+                  {c}
+                  {filterCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                {filterType ? QUESTION_TYPE_LABELS[filterType as keyof typeof QUESTION_TYPE_LABELS] || filterType : '题型'}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => setFilterType('')}>
+                <span className="text-muted-foreground">全部题型</span>
+                {!filterType && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+              {types.map((t) => (
+                <DropdownMenuItem key={t} onClick={() => setFilterType(t)}>
+                  {QUESTION_TYPE_LABELS[t as keyof typeof QUESTION_TYPE_LABELS] || t}
+                  {filterType === t && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button size="sm" onClick={() => setPickerOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />添加题目
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -171,8 +275,8 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                 <TableRow>
                   <TableHead className="w-[40px]">
                     <button type="button" onClick={toggleAll} className="flex items-center">
-                      <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${selectedItems.size >= items.length && items.length > 0 ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
-                        {selectedItems.size >= items.length && items.length > 0 && <Check className="h-3 w-3" />}
+                      <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${filteredAllChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
+                        {filteredAllChecked && <Check className="h-3 w-3" />}
                       </div>
                     </button>
                   </TableHead>
@@ -184,7 +288,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item) => {
+                {filteredItems.map((item) => {
                   const q = item.questions
                   const checked = selectedItems.has(item.id)
                   return (
