@@ -12,7 +12,7 @@ export interface Database {
       }
       questions: {
         Row: Question
-        Insert: Omit<Question, 'id' | 'created_at' | 'created_by'> & { created_by?: string }
+        Insert: Omit<Question, 'id' | 'created_at' | 'created_by'> & { created_by?: string | null; answer_explanation?: string | null }
         Update: Partial<Omit<Question, 'id'>>
       }
       exam_sessions: {
