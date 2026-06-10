@@ -133,7 +133,8 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
             >
             <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
           </Button>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Options (for choice types) */}
