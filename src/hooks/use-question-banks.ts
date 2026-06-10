@@ -23,7 +23,7 @@ export function useQuestionBanks() {
     const { data } = await supabase
       .from('question_banks')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('name', { ascending: true })
     const banksData = (data ?? []) as QuestionBank[]
 
     // Fetch question counts
