@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS } from '@/lib/constants'
@@ -12,6 +12,30 @@ import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
 import { Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+
+function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
+          onClick={() => setOpen(!open)}
+        >
+          {yearCats.length}年真题
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
+        <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
+        <div className="flex flex-wrap gap-1">
+          {yearCats.map((y) => (
+            <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium">{y}</span>
+          ))}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
 
 const POINT_COLORS = [
   'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
@@ -68,27 +92,12 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           const cats = question.categories?.length ? question.categories : question.category ? [question.category] : []
           const yearPattern = /^\d{4}年真题$/
           const yearCats = cats.filter((c) => yearPattern.test(c))
-          // Multiple year categories → show "N年真题" with hover detail
+          // Multiple year categories → show "N年真题" badge, tap/hover to see details
           if (yearCats.length >= 2) {
             const otherCats = cats.filter((c) => !yearPattern.test(c))
             return (
               <>
-                <HoverCard openDelay={200} closeDelay={100}>
-                  <HoverCardTrigger asChild>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-default">
-                      <span className="flex h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      {yearCats.length}年真题
-                    </span>
-                  </HoverCardTrigger>
-                  <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                    <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
-                    <div className="flex flex-wrap gap-1">
-                      {yearCats.map((y) => (
-                        <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium">{y}</span>
-                      ))}
-                    </div>
-                  </HoverCardContent>
-                </HoverCard>
+                <MultiYearBadge yearCats={yearCats} />
                 {otherCats.map((cat) =>
                   cat === 'AI生成' ? (
                     <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
