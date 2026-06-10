@@ -56,8 +56,18 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
       formData.append('file', file)
       formData.append('folder', 'bank-logos')
       const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-      if (!error && data?.url) setLogoUrl(data.url as string)
-    } catch { /* ignore */ }
+      if (error) {
+        console.error('Logo upload failed:', error)
+        alert('Logo 上传失败: ' + (error.message || '未知错误'))
+      } else if (data?.url) {
+        setLogoUrl(data.url as string)
+      } else {
+        alert('Logo 上传失败: 未返回图片地址')
+      }
+    } catch (err) {
+      console.error('Logo upload error:', err)
+      alert('Logo 上传出错')
+    }
     setUploading(false)
   }
 
