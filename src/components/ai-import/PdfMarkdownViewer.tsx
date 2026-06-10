@@ -112,13 +112,11 @@ function matchMarkdownToPdf(md: string, blocks: PdfBlock[]): MdSection[] {
 // ---- Component ----
 
 export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const mdRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
+  const pageImgRefs = useRef<Map<number, HTMLImageElement>>(new Map())
 
-  const [totalPages, setTotalPages] = useState(0)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null)
+  const [renderedPages, setRenderedPages] = useState<{ p: number; w: number; h: number; src: string }[]>([])
   const [containerW, setContainerW] = useState(700)
   const [activeMdIdx, setActiveMdIdx] = useState<number | null>(null)
   const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
@@ -130,45 +128,33 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
     if (!jsonData || blocks.length === 0) return markdown.split(/\n\n+/).filter(p => p.trim()).map(p => ({ text: p, page: 1, bbox: null as [number,number,number,number] | null }))
     return matchMarkdownToPdf(markdown, blocks)
   })()
-
   const matched = sections.filter(s => s.bbox).length
 
-  // Parse page from sections for navigation
-  const sectionPages = sections.map(s => s.page)
-
-  // PDF metadata
-  useEffect(() => {
-    let c = false
-    ;(async () => {
-      const pdf = await pdfjsLib.getDocument(pdfUrl).promise
-      if (c) return
-      setTotalPages(pdf.numPages)
-      pdf.destroy()
-    })()
-    return () => { c = true }
-  }, [pdfUrl])
-
-  // Render current page
+  // Render all PDF pages as images
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const pdf = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
-      const page = await pdf.getPage(currentPage)
-      const renderScale = 1.2
-      const vp = page.getViewport({ scale: renderScale })
-      const cvs = canvasRef.current
-      if (!cvs || cancelled) { page.cleanup(); pdf.destroy(); return }
-      cvs.width = vp.width
-      cvs.height = vp.height
-      setPageSize({ w: vp.width, h: vp.height })
-      const ctx = cvs.getContext('2d')!
-      await page.render({ canvasContext: ctx, viewport: vp }).promise
-      page.cleanup()
+      const scale = 1.2
+      const pages: { p: number; w: number; h: number; src: string }[] = []
+      for (let i = 1; i <= pdf.numPages; i++) {
+        if (cancelled) return
+        const page = await pdf.getPage(i)
+        const vp = page.getViewport({ scale })
+        const cvs = document.createElement('canvas')
+        cvs.width = vp.width
+        cvs.height = vp.height
+        const ctx = cvs.getContext('2d')!
+        await page.render({ canvasContext: ctx, viewport: vp }).promise
+        pages.push({ p: i, w: vp.width, h: vp.height, src: cvs.toDataURL() })
+        page.cleanup()
+      }
       pdf.destroy()
+      if (!cancelled) setRenderedPages(pages)
     })()
     return () => { cancelled = true }
-  }, [pdfUrl, currentPage])
+  }, [pdfUrl])
 
   // ResizeObserver
   useEffect(() => {
@@ -179,22 +165,18 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
     return () => ro.disconnect()
   }, [])
 
-  const goPage = useCallback((p: number) => {
-    setCurrentPage(Math.max(1, Math.min(p, totalPages || 1)))
-  }, [totalPages])
-
-  const displayScale = pageSize && containerW ? containerW / pageSize.w : 1
-  const displayHeight = pageSize ? pageSize.h * displayScale : 0
-  const pageBlocks = blocks.filter(b => b.page_idx === currentPage - 1)
+  const firstPage = renderedPages[0]
+  const displayScale = firstPage && containerW ? containerW / firstPage.w : 1
 
   // MD click → navigate PDF
   const handleMdClick = useCallback((sec: MdSection, idx: number) => {
     setActiveMdIdx(idx)
     if (sec.bbox) {
       setActiveBbox(sec.bbox)
-      goPage(sec.page)
+      const el = pageImgRefs.current.get(sec.page)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }, [goPage])
+  }, [])
 
   // PDF block click → scroll MD
   const handlePdfBlockClick = useCallback((block: PdfBlock) => {
@@ -224,11 +206,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 py-2 px-1 shrink-0 text-[10px] text-muted-foreground flex-wrap">
-        <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-accent disabled:opacity-30"
-          disabled={currentPage <= 1} onClick={() => goPage(currentPage - 1)}>‹</button>
-        <span className="tabular-nums">{currentPage}/{totalPages || '?'}</span>
-        <button type="button" className="px-1.5 py-0.5 rounded border hover:bg-accent disabled:opacity-30"
-          disabled={currentPage >= totalPages} onClick={() => goPage(currentPage + 1)}>›</button>
+        <span>共 {renderedPages.length} 页</span>
         <span className="text-muted-foreground/60">|</span>
         <span>段落 {sections.length}</span>
         <span className={matched > 0 ? 'text-green-600' : 'text-amber-600'}>
@@ -245,41 +223,55 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, children }: Prop
 
       {/* Split view */}
       <div className="flex-1 grid grid-cols-2 gap-0 min-h-0">
-        {/* Left: PDF */}
-        <div ref={pdfContainerRef} className="overflow-auto border-r p-1">
-          <div className="relative mx-auto" style={{ width: containerW }}>
-            <canvas ref={canvasRef} className="w-full rounded border" style={{ height: displayHeight || 600 }} />
-            {pageSize && pageBlocks.map((b, i) => {
-              const [x0, y0, x1, y1] = b.bbox
-              const isActive = activeBbox &&
-                Math.abs(activeBbox[0] - x0) < 2 && Math.abs(activeBbox[1] - y0) < 2
-              let left: number, top: number, w: number, h: number
-              if (isNormalized) {
-                // content_list.json: 0-1000, Y from top (CSS-style)
-                const cw = containerW; const ch = displayHeight
-                left = (x0 / 1000) * cw
-                top = (y0 / 1000) * ch
-                w = Math.max(((x1 - x0) / 1000) * cw, 2)
-                h = Math.max(((y1 - y0) / 1000) * ch, 2)
-              } else {
-                // layout.json: absolute PDF points, Y from top
-                const s = 1.2 * displayScale
-                left = x0 * s; top = y0 * s
-                w = Math.max((x1 - x0) * s, 2); h = Math.max((y1 - y0) * s, 2)
-              }
-              return (
-                <div key={i}
-                  className={`absolute border transition-colors cursor-pointer ${
-                    isActive ? 'border-blue-500 bg-blue-500/25 z-10 ring-1 ring-blue-400'
-                    : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
-                  }`}
-                  style={{ left, top, width: w, height: h }}
-                  title={(b.text || '').slice(0, 120)}
-                  onClick={() => handlePdfBlockClick(b)}
+        {/* Left: All PDF pages */}
+        <div ref={pdfContainerRef} className="overflow-auto border-r p-2 space-y-3">
+          {renderedPages.map(rp => {
+            const cssW = containerW
+            const cssH = rp.h * (containerW / rp.w)
+            const pageBlocks = blocks.filter(b => b.page_idx === rp.p - 1)
+            const pageScale = containerW / rp.w
+
+            return (
+              <div key={rp.p} className="relative mx-auto" style={{ width: cssW, height: cssH }}>
+                <img
+                  ref={el => { if (el) pageImgRefs.current.set(rp.p, el) }}
+                  src={rp.src}
+                  alt={`Page ${rp.p}`}
+                  className="w-full h-full rounded border"
                 />
-              )
-            })}
-          </div>
+                {pageBlocks.map((b, i) => {
+                  const [x0, y0, x1, y1] = b.bbox
+                  const isActive = activeBbox &&
+                    Math.abs(activeBbox[0] - x0) < 2 && Math.abs(activeBbox[1] - y0) < 2
+                  let left: number, top: number, w: number, h: number
+                  if (isNormalized) {
+                    left = (x0 / 1000) * cssW
+                    top = (y0 / 1000) * cssH
+                    w = Math.max(((x1 - x0) / 1000) * cssW, 2)
+                    h = Math.max(((y1 - y0) / 1000) * cssH, 2)
+                  } else {
+                    const s = 1.2 * pageScale
+                    left = x0 * s; top = y0 * s
+                    w = Math.max((x1 - x0) * s, 2); h = Math.max((y1 - y0) * s, 2)
+                  }
+                  return (
+                    <div key={i}
+                      className={`absolute border transition-colors cursor-pointer ${
+                        isActive ? 'border-blue-500 bg-blue-500/25 z-10 ring-1 ring-blue-400'
+                        : 'border-transparent hover:border-amber-400/60 hover:bg-amber-400/15'
+                      }`}
+                      style={{ left, top, width: w, height: h }}
+                      title={(b.text || '').slice(0, 120)}
+                      onClick={() => handlePdfBlockClick(b)}
+                    />
+                  )
+                })}
+                <span className="absolute bottom-1 right-2 text-[9px] text-muted-foreground/40 bg-background/70 px-1 rounded">
+                  {rp.p}
+                </span>
+              </div>
+            )
+          })}
         </div>
 
         {/* Right: Markdown */}
