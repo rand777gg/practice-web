@@ -41,8 +41,9 @@ const JSON_SAMPLE = `[
     "key_points": "HTML, Web基础"
   }
 ]`
-const CSV_SAMPLE = `question_text,option_a,option_b,option_c,option_d,correct_answer,category,subject,analysis,key_points
-HTML 的全称是什么？,Hyper Text Markup Language,High Tech Modern Language,Hyper Transfer Markup Language,Home Tool Markup Language,0,前端基础,计算机,HTML 是超文本标记语言的缩写。,HTML; Web基础`
+const CSV_SAMPLE = `question_text,option_a,option_b,option_c,option_d,correct_answer,subject,key_points
+HTML 的全称是什么？,Hyper Text Markup Language,High Tech Modern Language,Hyper Transfer Markup Language,Home Tool Markup Language,0,计算机,HTML; Web基础
+CSS 的全称是什么？,Cascading Style Sheets,Computer Style System,Creative Style Sheets,Colorful Style Sheets,0,计算机,CSS; Web基础`
 
 function parseQuestions(text: string, format: 'json' | 'csv'): { questions: ImportedQuestion[]; errors: string[] } {
   const errors: string[] = []
@@ -195,7 +196,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             </div>
 
             {showSample && (
-              <div className="space-y-3 max-w-full overflow-hidden">
+              <div className="space-y-3 max-w-full overflow-x-auto">
                 <pre className="rounded-lg border bg-muted/30 p-3 text-xs overflow-x-auto max-h-44 font-mono leading-relaxed whitespace-nowrap">
                   <code>{format === 'json' ? JSON_SAMPLE : CSV_SAMPLE}</code>
                 </pre>
