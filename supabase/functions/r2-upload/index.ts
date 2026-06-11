@@ -17,7 +17,7 @@ const SUPABASE_URL = requireEnv('SUPABASE_URL')
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']
 const ALLOWED_FILE_TYPES = [...ALLOWED_IMAGE_TYPES, 'application/pdf', 'text/plain',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-const MAX_SIZE = 10 * 1024 * 1024
+const MAX_SIZE = 200 * 1024 * 1024
 
 const s3 = new S3Client({
   region: 'auto',
