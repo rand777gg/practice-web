@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
@@ -64,6 +64,9 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   const siteTheme = useThemeStore((s) => s.theme)
   const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
 
+  const onImageActionRef = useRef(onImageAction)
+  useEffect(() => { onImageActionRef.current = onImageAction }, [onImageAction])
+
   const components = useMemo(() => ({
     // Inline code
     code({ className: cls, children, ...props }: any) {
@@ -83,8 +86,8 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
     // Images — resizable + alignment tools when onImageAction is provided
     img({ src, alt, ...props }: any) {
       if (!src) return null
-      if (onImageAction) {
-        return <ResizableImage src={src} alt={alt || ''} onAction={onImageAction} />
+      if (onImageActionRef.current) {
+        return <ResizableImage src={src} alt={alt || ''} onAction={onImageActionRef.current} />
       }
       return (
         <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block">
