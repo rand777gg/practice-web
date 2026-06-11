@@ -77,12 +77,23 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
   },
 ]
 
+const DEFAULT_PROVIDERS = [...OFFICIAL_PROVIDERS, ...COMMUNITY_PROVIDERS]
+
 function loadProviders(): AiProviderConfig[] {
   try {
     const stored = localStorage.getItem('ai_providers')
-    if (stored) return JSON.parse(stored) as AiProviderConfig[]
+    if (stored) {
+      const saved = JSON.parse(stored) as AiProviderConfig[]
+      // Merge new default providers not yet in saved data
+      for (const def of DEFAULT_PROVIDERS) {
+        if (!saved.find((s) => s.id === def.id)) {
+          saved.push(def)
+        }
+      }
+      return saved
+    }
   } catch { /* noop */ }
-  return [...OFFICIAL_PROVIDERS, ...COMMUNITY_PROVIDERS]
+  return [...DEFAULT_PROVIDERS]
 }
 
 interface AiState {
