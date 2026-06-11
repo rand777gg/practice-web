@@ -164,35 +164,38 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   // Load MathJax from CDN + typeset after content changes
   useEffect(() => {
     if (!content) return
+    const win = window as any
     const doTypeset = () => {
-      const win = window as any
       if (win.MathJax?.typesetPromise) {
         win.MathJax.typesetPromise([containerRef.current]).catch(() => {})
       }
     }
     if (mathJaxLoaded.current) {
-      // MathJax already loaded, just retypeset after a frame
       requestAnimationFrame(doTypeset)
       return
     }
-    // First load: inject CDN script with mhchem config
+    // Prevent double-load
+    if (document.getElementById('mathjax-script')) {
+      mathJaxLoaded.current = true
+      requestAnimationFrame(doTypeset)
+      return
+    }
+    // Config must be set BEFORE script loads
+    win.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], packages: { '[+]': ['mhchem'] } },
+      loader: { load: ['[tex]/mhchem'] },
+      startup: { typeset: false },
+    }
     const script = document.createElement('script')
     script.id = 'mathjax-script'
     script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
     script.async = true
     script.onload = () => {
       mathJaxLoaded.current = true
+      win.MathJax.startup.defaultReady()
       doTypeset()
     }
-    // MathJax config must be set BEFORE the script loads
-    ;(window as any).MathJax = {
-      tex: { packages: { '[+]': ['mhchem'] }, inlineMath: [['$', '$'], ['\\(', '\\)']] },
-      loader: { load: ['[tex]/mhchem'] },
-    }
     document.head.appendChild(script)
-    return () => {
-      // Don't remove on unmount — MathJax is global
-    }
   }, [content])
 
   const components = useMemo(() => ({
