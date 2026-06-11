@@ -2,10 +2,31 @@ import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import katex from 'katex'
-import 'katex/contrib/mhchem/mhchem.js'
-import 'katex/dist/katex.min.css'
+import { visit } from 'unist-util-visit'
+import { useEffect, useRef } from 'react'
+
+// rehype plugin: remark-math inline-math nodes → MathJax \(...\) delimiters
+function rehypeMathJax() {
+  return (tree: any) => {
+    visit(tree, 'element', (node: any, idx: number, parent: any) => {
+      const cls = node.properties?.className
+      if (Array.isArray(cls) && cls.includes('math') && node.tagName === 'span') {
+        const text = extractText(node)
+        parent.children[idx] = { type: 'raw', value: `\\(${text}\\)` }
+      }
+      if (Array.isArray(cls) && cls.includes('math-display') && node.tagName === 'div') {
+        const text = extractText(node)
+        parent.children[idx] = { type: 'raw', value: `\\[${text}\\]` }
+      }
+    })
+  }
+}
+
+function extractText(node: any): string {
+  if (node.type === 'text') return node.value
+  if (node.children) return node.children.map((c: any) => extractText(c)).join('')
+  return ''
+}
 import { useSettingsStore } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { langDisplay } from '@/lib/lang-names'
@@ -138,6 +159,43 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   const onImageActionRef = useRef(onImageAction)
   useEffect(() => { onImageActionRef.current = onImageAction }, [onImageAction])
 
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mathJaxLoaded = useRef(false)
+
+  // Load MathJax from CDN + typeset after content changes
+  useEffect(() => {
+    if (!content) return
+    const doTypeset = () => {
+      const win = window as any
+      if (win.MathJax?.typesetPromise) {
+        win.MathJax.typesetPromise([containerRef.current]).catch(() => {})
+      }
+    }
+    if (mathJaxLoaded.current) {
+      // MathJax already loaded, just retypeset after a frame
+      requestAnimationFrame(doTypeset)
+      return
+    }
+    // First load: inject CDN script with mhchem config
+    const script = document.createElement('script')
+    script.id = 'mathjax-script'
+    script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
+    script.async = true
+    script.onload = () => {
+      mathJaxLoaded.current = true
+      doTypeset()
+    }
+    // MathJax config must be set BEFORE the script loads
+    ;(window as any).MathJax = {
+      tex: { packages: { '[+]': ['mhchem'] }, inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      loader: { load: ['[tex]/mhchem'] },
+    }
+    document.head.appendChild(script)
+    return () => {
+      // Don't remove on unmount — MathJax is global
+    }
+  }, [content])
+
   const components = useMemo(() => ({
     // Inline code
     code({ className: cls, children, ...props }: any) {
@@ -201,8 +259,8 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   if (!content) return null
 
   return (
-    <div className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
-      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, trust: true, katex }]]} components={components}>
+    <div ref={containerRef} className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeMathJax]} components={components}>
         {content}
       </ReactMarkdown>
     </div>
