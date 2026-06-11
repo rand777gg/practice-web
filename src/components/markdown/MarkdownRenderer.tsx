@@ -3,7 +3,6 @@ import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
 import { visit } from 'unist-util-visit'
-import { useEffect, useRef } from 'react'
 
 // rehype plugin: remark-math inline-math nodes → MathJax \(...\) delimiters
 function rehypeMathJax() {
