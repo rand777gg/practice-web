@@ -370,7 +370,7 @@ function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: s
         const h = hl.codeToHtml(code, { lang, theme })
         setHtml(h)
       } catch {
-        setHtml(`<pre><code>${escapeHtml(code)}</code></pre>`)
+        setHtml(`<div class="rounded-lg bg-muted p-3 overflow-x-auto"><code class="text-xs">${escapeHtml(code)}</code></div>`)
       }
     })
     return () => { cancelled = true }
@@ -382,9 +382,9 @@ function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: s
         <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
           {langDisplay(lang)}
         </span>
-        <pre className="rounded-lg bg-muted p-3 pt-7 overflow-x-auto text-xs">
-          <code>{code}</code>
-        </pre>
+        <div className="rounded-lg bg-muted p-3 pt-7 overflow-x-auto text-xs">
+          <pre className="text-xs">{code}</pre>
+        </div>
       </div>
     )
   }
