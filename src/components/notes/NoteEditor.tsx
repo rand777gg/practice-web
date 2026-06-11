@@ -196,9 +196,9 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           placeholder={placeholder}
           rows={10}
           spellCheck={false}
-          className="block min-h-[280px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+          className="block min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
         />
-        <div className="rounded-lg border bg-muted/30 p-3 min-h-[280px] max-h-[500px] overflow-auto">
+        <div className="rounded-lg border bg-muted/30 p-3 min-h-[120px] max-h-[500px] overflow-auto">
           {previewValue ? (
             <MarkdownRenderer content={previewValue} onImageAction={handleImageAction} />
           ) : (
