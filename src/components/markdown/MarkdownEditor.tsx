@@ -177,6 +177,8 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
           onDrop={handleDrop}
         >
           <Textarea
+            id="markdown-editor"
+            name="markdown-editor"
             ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -184,6 +186,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
             className="font-mono text-sm resize-y"
             style={{ minHeight }}
             spellCheck={false}
+            autoComplete="off"
           />
           {dragOver && (
             <div className="absolute inset-0 bg-primary/10 rounded-lg flex items-center justify-center pointer-events-none">

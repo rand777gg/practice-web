@@ -131,10 +131,13 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
   return (
     <div className="space-y-2">
       <Textarea
-        defaultValue={value}
+        id="note-editor"
+        name="note-editor"
+        value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
+        autoComplete="off"
       />
       {imagePreview && (
         <div className="relative inline-block">
