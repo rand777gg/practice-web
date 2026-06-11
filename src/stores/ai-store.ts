@@ -51,13 +51,13 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
   {
     id: 'qwen',
     name: '通义千问',
-    description: '阿里云通义千问系列模型，支持多模态视觉识别（公式、表格、OCR）。通过 DashScope API 接入。',
+    description: '阿里云通义千问 Qwen3.7-Plus，支持图片、文字输入输出的多模态模型。通过 DashScope API 接入。',
     type: 'community',
     enabled: false,
     apiKey: '',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     models: [
-      { id: 'qwen3.7-plus', name: 'Qwen3.7-Plus', enabled: false },
+      { id: 'qwen3.7-plus', name: 'Qwen3.7-Plus（多模态）', enabled: false },
     ],
   },
   {
