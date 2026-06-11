@@ -208,9 +208,7 @@ export function PracticeSession() {
 
   const handleNoteChange = useCallback((value: string) => {
     setNote(value)
-    const aid = answerIdRef.current
-    if (aid) updateNote(aid, value, isPublicRef.current)
-  }, [updateNote])
+  }, [])
 
   const handlePublicToggle = useCallback(async (pub: boolean) => {
     setIsPublic(pub)
