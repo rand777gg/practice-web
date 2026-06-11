@@ -57,6 +57,7 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
     apiKey: '',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     models: [
+      { id: 'qwen-vl-plus', name: 'Qwen-VL-Plus（轻量多模态）', enabled: false },
       { id: 'qwen3.7-plus', name: 'Qwen3.7-Plus（多模态）', enabled: false },
     ],
   },
