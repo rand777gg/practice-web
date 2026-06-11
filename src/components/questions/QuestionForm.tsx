@@ -335,8 +335,8 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </CardHeader>
               <CardContent>
                 <Textarea
-                  value={answerExplanation}
-                  onChange={(e) => setAnswerExplanation(e.target.value)}
+                  value={analysis}
+                  onChange={(e) => setAnalysis(e.target.value)}
                   placeholder="输入参考答案或解析思路..."
                   rows={5}
                 />
