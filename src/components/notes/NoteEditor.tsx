@@ -131,7 +131,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
   return (
     <div className="space-y-2">
       <Textarea
-        value={value}
+        defaultValue={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
