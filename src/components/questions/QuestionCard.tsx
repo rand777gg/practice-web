@@ -317,11 +317,9 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               <span className="font-medium">{t('questions.analysis')}: </span>{question.analysis}
             </div>
           )}
-          {note && (
-            <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-              <span className="font-medium">{t('practice.note')}: </span>{note}
-            </div>
-          )}
+          <div className={`rounded-lg bg-muted/50 p-3 text-sm leading-relaxed ${note ? '' : 'hidden'}`}>
+            <span className="font-medium">{t('practice.note')}: </span>{note || ''}
+          </div>
         </>
       )}
 
