@@ -152,7 +152,10 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
       </ScrollArea>
       <ScrollArea scrollbars="horizontal">
         <p className="text-xs text-muted-foreground text-center mb-1">科目 × 题型 正确率热力图</p>
-        <ReactECharts echarts={echarts} option={heatmapOption} style={{ height: 320, minWidth: 360 }} />
+        <ReactECharts echarts={echarts} option={heatmapOption} style={{
+          height: Math.max(200, heatmapData.length > 0 ? [...new Set(heatmapData.map((d) => d.subject))].length * 36 + 80 : 320),
+          minWidth: Math.max(280, heatmapData.length > 0 ? [...new Set(heatmapData.map((d) => d.questionType))].length * 64 + 60 : 360),
+        }} />
       </ScrollArea>
     </div>
   )
