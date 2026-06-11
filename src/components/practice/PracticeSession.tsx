@@ -201,16 +201,18 @@ export function PracticeSession() {
     setIsSubmitted(true)
   }
 
-  const answerIdRef = useRef(answerId)
-  answerIdRef.current = answerId
+  const noteSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isPublicRef = useRef(isPublic)
   isPublicRef.current = isPublic
 
-  const handleNoteChange = useCallback((value: string) => {
-    setNote(value)
-    const aid = answerIdRef.current
-    if (aid) updateNote(aid, value, isPublicRef.current)
-  }, [updateNote])
+  useEffect(() => {
+    if (!answerId) return
+    if (noteSaveRef.current) clearTimeout(noteSaveRef.current)
+    noteSaveRef.current = setTimeout(() => {
+      updateNote(answerId, note, isPublicRef.current)
+    }, 1000)
+    return () => { if (noteSaveRef.current) clearTimeout(noteSaveRef.current) }
+  }, [note, answerId, updateNote])
 
   const handlePublicToggle = useCallback(async (pub: boolean) => {
     setIsPublic(pub)
@@ -441,7 +443,7 @@ export function PracticeSession() {
               <NoteEditor
                 placeholder={t('practice.notePlaceholder')}
                 value={note}
-                onChange={handleNoteChange}
+                onChange={setNote}
               />
               <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                 <input
