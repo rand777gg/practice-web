@@ -56,30 +56,34 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
     setIsRecognizing(true)
     try {
       if (noteRecognitionMode === 'ai') {
-        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型（如 GPT-4o 或 Qwen-VL-Max）')
+        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型（如 Qwen3.7-Plus）')
         const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
         const promptText = value
           ? `已有笔记：\n${value}\n\n请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。`
           : '请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。'
 
-        const { createOpenAI } = await import('@ai-sdk/openai')
-        const { generateText } = await import('ai')
-        const client = createOpenAI({
-          apiKey: activeProvider.apiKey,
-          baseURL: activeProvider.baseUrl,
-          compatibility: 'compatible',
+        const res = await fetch(`${activeProvider.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${activeProvider.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: modelId,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'text', text: promptText },
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } },
+              ],
+            }],
+          }),
         })
-        const { text } = await generateText({
-          model: client(modelId),
-          messages: [{
-            role: 'user' as const,
-            content: [
-              { type: 'text' as const, text: promptText },
-              { type: 'image' as const, image: imageBase64 },
-            ],
-          }],
-        })
-        setRecognitionResult(text.trim())
+        const data = await res.json() as any
+        if (data.error) throw new Error(data.error?.message || data.error?.code || 'API error')
+        const text = data.choices?.[0]?.message?.content
+        if (text) setRecognitionResult(text.trim())
+        else throw new Error('No content in response')
       } else {
         const token = getMinerUToken()
         if (!token) throw new Error('请先在设置中配置 MinerU Token')
