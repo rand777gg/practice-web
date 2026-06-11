@@ -30,13 +30,11 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
 
-  // Uncontrolled textarea: only sync externally (insert, recognition result)
   useEffect(() => {
     const ta = textareaRef.current
     if (ta && ta.value !== value) ta.value = value
   }, [value])
 
-  // Debounced preview
   useEffect(() => {
     const t = setTimeout(() => setPreviewValue(value), 300)
     return () => clearTimeout(t)
@@ -143,6 +141,16 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   const textareaClass = 'block min-h-[280px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y'
 
+  const handleImageAction = (action: 'left' | 'center' | 'right', src: string) => {
+    const current = textareaRef.current?.value || value
+    const escaped = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const newMd = current.replace(
+      new RegExp(`!\\[([^\\]]*)\\]\\(${escaped}(?:\\s+"[^"]*")?\\)`, 'g'),
+      `![$1](${src} "align:${action}")`
+    )
+    if (newMd !== current) onChange(newMd)
+  }
+
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
@@ -157,17 +165,8 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         />
         <div className="rounded-lg border bg-muted/30 p-3 min-h-[280px] max-h-[500px] overflow-auto">
           {previewValue ? (
-            <MarkdownRenderer content={previewValue}
-              onImageAction={(action, src) => {
-                const current = textareaRef.current?.value || value
-                // Replace ![alt](src) or ![alt](src "align:xxx") with aligned version
-                const newMd = current.replace(
-                  new RegExp(`!\\[([^\\]]*)\\]\\(${src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+"[^"]*")?\\)`, 'g'),
-                  `![$1](${src} "align:${action}")`
-                )
-                if (newMd !== current) onChange(newMd)
-              }}
-            />
+            <MarkdownRenderer content={previewValue} onImageAction={handleImageAction} />
+          ) : (
             <p className="text-xs text-muted-foreground">预览区域，编辑内容后实时显示...</p>
           )}
         </div>
