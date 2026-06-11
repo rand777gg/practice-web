@@ -61,6 +61,7 @@ export function Component() {
   const [enableFormula, setEnableFormula] = useState(true)
   const [enableTable, setEnableTable] = useState(true)
   const [batchMode, setBatchMode] = useState(false)
+  const [useR2Upload, setUseR2Upload] = useState(true)
   const [pageRanges, setPageRanges] = useState('')
   const [extraFormats, setExtraFormats] = useState<string[]>([])
   const [noCache, setNoCache] = useState(false)
@@ -255,7 +256,9 @@ export function Component() {
       setParsingDone(true)
       saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
     } else if (file) {
-      const result = await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
+      const result = useR2Upload
+        ? await mineru.uploadAndParsePrecisionR2(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
+        : await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
       saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
@@ -705,6 +708,13 @@ export function Component() {
                         </div>
                       </>
                     )}
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div>
+                      <p className="text-sm">使用 R2 上传</p>
+                      <p className="text-xs text-muted-foreground">大文件（＞50MB）通过 Cloudflare R2 上传，无大小限制</p>
+                    </div>
+                    <Switch checked={useR2Upload} onCheckedChange={setUseR2Upload} />
+                  </div>
                   </div>
                 </div>
               )}

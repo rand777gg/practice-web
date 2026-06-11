@@ -359,6 +359,61 @@ export class MinerUClient {
     }
   }
 
+  // Upload file to Cloudflare R2 (bypasses Supabase size limits)
+  async uploadToR2(file: File, folder = 'mineru-temp'): Promise<string> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('folder', folder)
+    const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+    if (error) throw new Error(`R2 upload failed: ${error.message}`)
+    const url = (data as { url: string }).url
+    if (!url) throw new Error('R2 upload returned no URL')
+    return url
+  }
+
+  // Precision parsing via R2 upload (no Supabase size limit)
+  async uploadAndParsePrecisionR2(
+    file: File,
+    options: MinerUPrecisionOptions,
+    onProgress?: (msg: string) => void,
+    onStatus?: (status: MinerUTaskResult) => void,
+  ): Promise<DocumentParseResult> {
+    onProgress?.('正在上传到 R2...')
+    const publicUrl = await this.uploadToR2(file)
+    onProgress?.('正在创建精准解析任务...')
+
+    try {
+      const taskResult = await this.createTask(publicUrl, options)
+      onStatus?.(taskResult)
+
+      for (let i = 0; i < 100; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        const pollResult = await this.pollTask(taskResult.taskId, options.token)
+        onStatus?.(pollResult)
+
+        if (pollResult.state === 'done' && pollResult.fullZipUrl) {
+          onProgress?.('正在提取解析结果...')
+          const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
+          return { markdown, fileName: file.name, jsonData }
+        }
+        if (pollResult.state === 'failed') {
+          throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
+        }
+        if (i % 5 === 0) {
+          const progress = pollResult.extractProgress
+          if (progress) {
+            onProgress?.(`精准解析中... ${progress.extractedPages}/${progress.totalPages} 页 (${pollResult.state})`)
+          } else {
+            onProgress?.(`精准解析中... ${pollResult.state}`)
+          }
+        }
+      }
+      throw new Error('MinerU precision parsing timed out')
+    } catch (err) {
+      throw err
+    }
+  }
+
   // Recognize an image and return markdown
   async recognizeImage(
     imageBase64: string,
