@@ -359,20 +359,26 @@ export class MinerUClient {
     }
   }
 
-  // Upload file to Cloudflare R2 via edge function
+  // Upload file directly to R2 via pre-signed URL (bypasses Supabase payload limit)
   async uploadToR2(file: File, folder = 'pdf'): Promise<string> {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('folder', folder)
-    const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-    if (error) {
-      const ctx = (error as any)?.context
-      const status = ctx?.status ? ` HTTP ${ctx.status}` : ''
-      throw new Error(`R2 upload failed${status}: ${error.message}`)
-    }
-    const url = (data as { url: string }).url
-    if (!url) throw new Error('R2 upload returned no URL')
-    return url
+    const ext = file.name.split('.').pop() || 'bin'
+    const key = `${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`
+
+    const { data, error } = await supabase.functions.invoke('r2-upload-url', {
+      body: { key, contentType: file.type },
+    })
+    if (error) throw new Error(`Failed to get upload URL: ${error.message}`)
+    const { url: presignedUrl, publicUrl } = data as { url: string; publicUrl: string }
+    if (!presignedUrl || !publicUrl) throw new Error('No pre-signed URL returned')
+
+    const uploadRes = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    })
+    if (!uploadRes.ok) throw new Error(`R2 direct upload failed: HTTP ${uploadRes.status}`)
+
+    return publicUrl
   }
 
   // Precision parsing via R2 upload (no Supabase size limit)
