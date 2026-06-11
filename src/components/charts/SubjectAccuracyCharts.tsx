@@ -6,7 +6,8 @@ import { useThemeStore } from '@/stores/theme-store'
 
 const TYPE_LABELS: Record<string, string> = {
   single_choice: '单选', multi_select: '多选', true_false: '判断',
-  fill_blank: '填空', short_answer: '简答',
+  fill_blank: '填空', short_answer: '简答', judge_correct: '判断改错',
+  analysis: '分析',
 }
 
 interface Props {
