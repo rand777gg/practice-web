@@ -59,6 +59,7 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
     models: [
       { id: 'qwen-vl-max', name: 'Qwen-VL-Max（多模态）', enabled: false },
       { id: 'qwen-vl-plus', name: 'Qwen-VL-Plus（多模态）', enabled: false },
+      { id: 'qwen3.7-plus', name: 'Qwen3.7-Plus', enabled: false },
       { id: 'qwen-plus', name: 'Qwen-Plus', enabled: false },
       { id: 'qwen-max', name: 'Qwen-Max', enabled: false },
     ],
