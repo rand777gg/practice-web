@@ -365,7 +365,11 @@ export class MinerUClient {
     formData.append('file', file)
     formData.append('folder', folder)
     const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-    if (error) throw new Error(`R2 upload failed: ${error.message}`)
+    if (error) {
+      const ctx = (error as any)?.context
+      const status = ctx?.status ? ` HTTP ${ctx.status}` : ''
+      throw new Error(`R2 upload failed${status}: ${error.message}`)
+    }
     const url = (data as { url: string }).url
     if (!url) throw new Error('R2 upload returned no URL')
     return url
