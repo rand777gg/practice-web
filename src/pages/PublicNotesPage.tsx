@@ -23,7 +23,9 @@ import {
   Check, ChevronDown, Globe, Lock, Pencil, Trash2, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { UserAnswer, Question, QuestionType } from '@/types'
+import { isAnswerCorrect } from '@/lib/answer-utils'
+import { OPTION_LABELS } from '@/lib/constants'
+import type { UserAnswer, Question, QuestionType, CorrectAnswer } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
@@ -43,6 +45,60 @@ interface NoteCardProps {
   onSaveEdit: (noteId: string) => void
   onTogglePublic: (note: NoteWithQuestion) => void
   onDeleteRequest: (noteId: string) => void
+}
+
+function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
+  const type = q.question_type
+  const correct = q.correct_answer
+  const isChoice = type === 'single_choice' || type === 'multi_select'
+  if (isChoice && q.options.length > 0) {
+    return (
+      <div className="text-xs space-y-0.5">
+        {q.options.map((opt, i) => {
+          const isCorrect = type === 'single_choice' ? correct === i : Array.isArray(correct) && (correct as number[]).includes(i)
+          const isSelected = type === 'single_choice' ? selected === i : Array.isArray(selected) && (selected as number[]).includes(i)
+          return (
+            <div key={i} className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 ${
+              isCorrect ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+              isSelected && !isCorrect ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
+              'text-muted-foreground'
+            }`}>
+              <span className="w-4 shrink-0 font-medium text-[10px]">{OPTION_LABELS[i]}</span>
+              <span className="truncate">{opt}</span>
+              {isCorrect && <span className="ml-auto text-[10px] shrink-0">✓</span>}
+              {isSelected && !isCorrect && <span className="ml-auto text-[10px] shrink-0">✗</span>}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+  if (type === 'true_false') {
+    const userAns = selected ? '正确' : '错误'
+    const realAns = correct ? '正确' : '错误'
+    const ok = selected === correct
+    return (
+      <div className="text-xs space-y-0.5">
+        <div className={`rounded px-1.5 py-0.5 ${ok ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+          你的答案：{userAns} {ok ? '✓' : '✗'}
+        </div>
+        {!ok && <div className="rounded px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">正确答案：{realAns}</div>}
+      </div>
+    )
+  }
+  return (
+    <div className="text-xs space-y-0.5">
+      <div className="rounded px-1.5 py-0.5 bg-muted/50">
+        <span className="text-muted-foreground">答案：</span>
+        {Array.isArray(correct) ? (correct as string[]).join('；') || '（无）' : String(correct ?? '（无）')}
+      </div>
+      <div className={`rounded px-1.5 py-0.5 ${isAnswerCorrect(selected, correct, type) ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+        <span className="text-muted-foreground">你的答案：</span>
+        {Array.isArray(selected) ? (selected as string[]).join('；') || '（无）' : String(selected ?? '（无）')}
+        {' '}{isAnswerCorrect(selected, correct, type) ? '✓' : '✗'}
+      </div>
+    </div>
+  )
 }
 
 function NoteCard({
@@ -74,6 +130,10 @@ function NoteCard({
         ))}
 
         <p className="text-sm font-medium leading-relaxed">{note.questions?.question_text || t('notes.untitled')}</p>
+
+        {note.questions && style === 'my' && (
+          <AnswerInfo q={note.questions} selected={note.selected_answer} />
+        )}
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           {style === 'my' && (
