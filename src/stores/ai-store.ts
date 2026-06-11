@@ -61,18 +61,6 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
       { id: 'qwen3.7-plus', name: 'Qwen3.7-Plus（多模态）', enabled: false },
     ],
   },
-  {
-    id: 'dify',
-    name: 'Dify',
-    description: '开源的 LLM 应用开发平台，支持可视化编排 AI 工作流和自定义应用。',
-    type: 'community',
-    enabled: false,
-    apiKey: '',
-    baseUrl: 'https://api.dify.ai/v1',
-    models: [
-      { id: 'dify-default', name: 'Dify App', enabled: false },
-    ],
-  },
 ]
 
 const DEFAULT_PROVIDERS = [...OFFICIAL_PROVIDERS, ...COMMUNITY_PROVIDERS]
@@ -100,11 +88,12 @@ function loadProviders(): AiProviderConfig[] {
           }
         }
       }
-      // Auto-fill env keys for providers that don't have a saved key
+      // Auto-fill env keys and auto-enable providers that have env keys
       for (const p of saved) {
-        if (!p.apiKey) {
-          const envKey = (import.meta.env as Record<string, string>)[`VITE_${p.id.toUpperCase()}_API_KEY`]
-          if (envKey) p.apiKey = envKey
+        const envKey = (import.meta.env as Record<string, string>)[`VITE_${p.id.toUpperCase()}_API_KEY`]
+        if (envKey) {
+          if (!p.apiKey) p.apiKey = envKey
+          p.enabled = true
         }
       }
       // Remove providers that no longer exist in defaults
