@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { ImagePlus, Sparkles, Loader2, X, ImageUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAiStore } from '@/stores/ai-store'
 import { MinerUClient } from '@/lib/ai/mineru'
 import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -24,7 +25,9 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
-  const { noteRecognitionMode, multimodalAIConfig } = useSettingsStore()
+  const { noteRecognitionMode } = useSettingsStore()
+  const providers = useAiStore((s) => s.providers)
+  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -53,14 +56,14 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
     setIsRecognizing(true)
     try {
       if (noteRecognitionMode === 'ai') {
-        const { apiKey, baseURL, model } = multimodalAIConfig
-        if (!apiKey) throw new Error('请先在设置中配置多模态 AI 模型')
+        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型（如 GPT-4o）')
+        const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
 
         const { createOpenAI } = await import('@ai-sdk/openai')
         const { generateText } = await import('ai')
-        const client = createOpenAI({ apiKey, baseURL })
+        const client = createOpenAI({ apiKey: activeProvider.apiKey, baseURL: activeProvider.baseUrl })
         const { text } = await generateText({
-          model: client(model || 'gpt-4o'),
+          model: client(modelId),
           messages: [{
             role: 'user' as const,
             content: [
@@ -111,7 +114,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
   }
 
   const canRecognize = noteRecognitionMode === 'ai'
-    ? !!multimodalAIConfig.apiKey
+    ? !!activeProvider?.apiKey
     : !!getMinerUToken()
 
   return (

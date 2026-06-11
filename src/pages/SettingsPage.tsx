@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
+import { useAiStore } from '@/stores/ai-store'
 import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
+import { ProviderIcon } from '@lobehub/icons'
 import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, RotateCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -55,7 +57,9 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, multimodalAIConfig, setMultimodalAIConfig } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode } = useSettingsStore()
+  const providers = useAiStore((s) => s.providers)
+  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
   const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
   const siteTheme = useThemeStore((s) => s.theme)
   const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
@@ -623,25 +627,31 @@ export function Component() {
                   {noteRecognitionMode === 'mineru' ? '使用 MinerU VLM 模型，支持公式、表格、OCR' : '使用自配置的多模态大模型进行识别'}
                 </p>
                 {noteRecognitionMode === 'ai' && (
-                  <div className="space-y-2 mt-2 p-3 rounded-lg border bg-muted/30">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-muted-foreground">API Key</label>
-                      <Input type="password" value={multimodalAIConfig.apiKey}
-                        onChange={(e) => setMultimodalAIConfig({ ...multimodalAIConfig, apiKey: e.target.value })}
-                        placeholder="sk-..." className="h-8 text-xs" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-muted-foreground">Base URL</label>
-                      <Input value={multimodalAIConfig.baseURL}
-                        onChange={(e) => setMultimodalAIConfig({ ...multimodalAIConfig, baseURL: e.target.value })}
-                        placeholder="https://api.openai.com/v1" className="h-8 text-xs" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-muted-foreground">模型名称</label>
-                      <Input value={multimodalAIConfig.model}
-                        onChange={(e) => setMultimodalAIConfig({ ...multimodalAIConfig, model: e.target.value })}
-                        placeholder="gpt-4o" className="h-8 text-xs" />
-                    </div>
+                  <div className="mt-2 p-3 rounded-lg border bg-muted/30 flex items-center gap-3">
+                    {activeProvider ? (
+                      <>
+                        <ProviderIcon provider={activeProvider.id} size={28} type="avatar" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{activeProvider.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {activeProvider.models.filter((m) => m.enabled).map((m) => m.name).join('、') || '未启用模型'}
+                          </p>
+                        </div>
+                        <Button variant="ghost" size="sm" className="shrink-0 text-xs" asChild>
+                          <Link to="/admin/ai">管理</Link>
+                        </Button>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-3 w-full">
+                        <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center">
+                          <Sparkles className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <p className="text-xs text-muted-foreground flex-1">未启用多模态 AI 模型</p>
+                        <Button variant="outline" size="sm" className="shrink-0 text-xs" asChild>
+                          <Link to="/admin/ai">前往配置</Link>
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
