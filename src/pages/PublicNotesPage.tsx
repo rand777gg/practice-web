@@ -177,8 +177,8 @@ function NoteCard({
           )}
         </div>
 
-        {/* Action buttons — fixed at bottom */}
-        <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0">
+        {/* Action buttons — fixed at bottom, right-aligned */}
+        <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0 justify-end">
           {isEditing ? (
             <>
               <Button variant="ghost" size="sm" onClick={onCancelEdit} className="text-xs h-7">

@@ -272,8 +272,9 @@ function PlantUMLBlock({ code }: { code: string }) {
     setSvg(null); setErr(null)
     ;(async () => {
       try {
-        const hex = [...new TextEncoder().encode(code)].map(b => b.toString(16).padStart(2, '0')).join('')
-        const res = await fetch(`https://kroki.io/plantuml/svg/${hex}`)
+        const { encode } = await import('plantuml-encoder')
+        const encoded = encode(code)
+        const res = await fetch(`https://www.plantuml.com/plantuml/svg/${encoded}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const text = await res.text()
         if (!cancelled) setSvg(text)
