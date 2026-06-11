@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { ImagePlus, Sparkles, Loader2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -22,10 +22,25 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [isUploading, setIsUploading] = useState(false)
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const user = useAuthStore((s) => s.user)
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
+
+  // Uncontrolled textarea — only sync when value changes externally (insert, recognition)
+  useEffect(() => {
+    const ta = textareaRef.current
+    if (ta && ta.value !== value) {
+      ta.value = value
+    }
+  }, [value])
+
+  const handleChange = () => {
+    if (textareaRef.current) {
+      onChange(textareaRef.current.value)
+    }
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -53,11 +68,12 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     if (!imageBase64) return
     setIsRecognizing(true)
     try {
+      const currentValue = textareaRef.current?.value || value
       if (noteRecognitionMode === 'ai') {
         if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型')
         const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
-        const promptText = value
-          ? `已有笔记：\n${value}\n\n请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。`
+        const promptText = currentValue
+          ? `已有笔记：\n${currentValue}\n\n请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。`
           : '请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。'
 
         const res = await fetch(`${activeProvider.baseUrl}/chat/completions`, {
@@ -106,7 +122,8 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       if (error) throw new Error(error.message || '上传失败')
       const imageUrl = (data as { url: string }).url
       if (!imageUrl) throw new Error('未返回图片地址')
-      onChange(value ? `${value}\n\n![图片](${imageUrl})` : `![图片](${imageUrl})`)
+      const current = textareaRef.current?.value || value
+      onChange(current ? `${current}\n\n![图片](${imageUrl})` : `![图片](${imageUrl})`)
       clearImage()
     } catch (err) {
       alert(err instanceof Error ? err.message : '上传失败')
@@ -116,8 +133,9 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   const handleInsert = () => {
     if (!recognitionResult) return
-    const sep = value ? '\n\n---\n识别结果：\n' : ''
-    onChange(value + sep + recognitionResult)
+    const current = textareaRef.current?.value || value
+    const sep = current ? '\n\n---\n识别结果：\n' : ''
+    onChange(current + sep + recognitionResult)
     clearImage()
   }
 
@@ -128,8 +146,9 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   return (
     <div className="space-y-2">
       <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        ref={textareaRef}
+        defaultValue={value}
+        onChange={handleChange}
         placeholder={placeholder}
         rows={3}
         spellCheck={false}
