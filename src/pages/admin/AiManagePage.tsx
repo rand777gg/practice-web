@@ -113,7 +113,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
   const effectiveKey = provider.apiKey || envKey || ''
   const hasKey = !!effectiveKey
   const hasEnvKey = !!envKey
-  const [expanded, setExpanded] = useState(provider.enabled && hasKey)
+  const [expanded, setExpanded] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testing, setTesting] = useState(false)
 
@@ -144,7 +144,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
   return (
     <Card
       className={`cursor-pointer transition-all duration-200 ${provider.enabled ? 'border-primary/30' : 'opacity-70 hover:opacity-90'}`}
-      onClick={() => provider.enabled && setExpanded(!expanded)}
+      onClick={() => setExpanded(!expanded)}
     >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
@@ -152,9 +152,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
             <div className="flex items-center gap-2">
               <ProviderIcon provider={provider.id} size={20} type="avatar" />
               <CardTitle className="text-sm">{provider.name}</CardTitle>
-              {provider.enabled && (
-                expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              )}
+              {expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
             </div>
             <CardDescription className="text-xs mt-1 line-clamp-2">{provider.description}</CardDescription>
           </div>
