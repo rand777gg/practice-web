@@ -154,25 +154,22 @@ function NoteCard({
 
       {/* ── Right: Preview / Editor ──────────────────────────────── */}
       <div className={cn(
-        'border-t lg:border-t-0 lg:border-l border-border overflow-hidden transition-all duration-500 ease-in-out',
+        'border-t lg:border-t-0 lg:border-l border-border flex flex-col overflow-hidden transition-all duration-500 ease-in-out',
         isEditing ? 'max-h-[800px]' : 'max-h-[400px]',
       )}>
-        <div className={cn(
-          'transition-all duration-500 ease-in-out',
-          isEditing ? 'grid grid-rows-[1fr_auto_1fr] h-full' : '',
-        )}>
+        <div className="flex-1 overflow-auto transition-all duration-500 ease-in-out">
           {isEditing ? (
-            <div className="p-3 overflow-auto">
+            <div className="p-3">
               <NoteEditor value={editText} onChange={onEditText} placeholder={t('practice.notePlaceholder')} />
             </div>
           ) : (
-            <div className="p-4 space-y-2 h-full flex flex-col">
+            <div className="p-4 h-full">
               {note.note ? (
-                <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed flex-1 overflow-auto">
+                <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
                   <MarkdownRenderer content={note.note} />
                 </div>
               ) : (
-                <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground flex-1">
+                <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
                   {t('notes.noNote')}
                 </div>
               )}
@@ -180,11 +177,8 @@ function NoteCard({
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className={cn(
-          'flex gap-1 px-3 pb-3',
-          isEditing ? 'justify-end' : 'justify-end',
-        )}>
+        {/* Action buttons — fixed at bottom */}
+        <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0">
           {isEditing ? (
             <>
               <Button variant="ghost" size="sm" onClick={onCancelEdit} className="text-xs h-7">
