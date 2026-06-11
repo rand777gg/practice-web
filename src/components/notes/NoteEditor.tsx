@@ -30,11 +30,13 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
 
+  // Uncontrolled textarea — only sync when value changes externally
   useEffect(() => {
     const ta = textareaRef.current
     if (ta && ta.value !== value) ta.value = value
   }, [value])
 
+  // Debounced preview
   useEffect(() => {
     const t = setTimeout(() => setPreviewValue(value), 300)
     return () => clearTimeout(t)
@@ -135,12 +137,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     clearImage()
   }
 
-  const canRecognize = noteRecognitionMode === 'ai'
-    ? !!activeProvider?.apiKey
-    : !!getMinerUToken()
-
-  const textareaClass = 'block min-h-[280px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y'
-
   const handleImageAction = (action: 'left' | 'center' | 'right', src: string) => {
     const current = textareaRef.current?.value || value
     const escaped = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -150,6 +146,10 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     )
     if (newMd !== current) onChange(newMd)
   }
+
+  const canRecognize = noteRecognitionMode === 'ai'
+    ? !!activeProvider?.apiKey
+    : !!getMinerUToken()
 
   return (
     <div className="space-y-2">
@@ -161,7 +161,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           placeholder={placeholder}
           rows={10}
           spellCheck={false}
-          className={textareaClass}
+          className="block min-h-[280px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
         />
         <div className="rounded-lg border bg-muted/30 p-3 min-h-[280px] max-h-[500px] overflow-auto">
           {previewValue ? (
