@@ -55,7 +55,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, multimodalAIConfig, setMultimodalAIConfig } = useSettingsStore()
   const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
   const siteTheme = useThemeStore((s) => s.theme)
   const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
@@ -600,6 +600,50 @@ export function Component() {
                     English
                   </Button>
                 </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">笔记图片识别方式</p>
+                <div className="flex rounded-md border border-input bg-background w-fit">
+                  {(['mineru', 'ai'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setNoteRecognitionMode(mode)}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-md last:rounded-r-md ${
+                        noteRecognitionMode === mode
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {mode === 'mineru' ? 'MinerU 精准' : 'AI 多模态'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {noteRecognitionMode === 'mineru' ? '使用 MinerU VLM 模型，支持公式、表格、OCR' : '使用自配置的多模态大模型进行识别'}
+                </p>
+                {noteRecognitionMode === 'ai' && (
+                  <div className="space-y-2 mt-2 p-3 rounded-lg border bg-muted/30">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-muted-foreground">API Key</label>
+                      <Input type="password" value={multimodalAIConfig.apiKey}
+                        onChange={(e) => setMultimodalAIConfig({ ...multimodalAIConfig, apiKey: e.target.value })}
+                        placeholder="sk-..." className="h-8 text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-muted-foreground">Base URL</label>
+                      <Input value={multimodalAIConfig.baseURL}
+                        onChange={(e) => setMultimodalAIConfig({ ...multimodalAIConfig, baseURL: e.target.value })}
+                        placeholder="https://api.openai.com/v1" className="h-8 text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-muted-foreground">模型名称</label>
+                      <Input value={multimodalAIConfig.model}
+                        onChange={(e) => setMultimodalAIConfig({ ...multimodalAIConfig, model: e.target.value })}
+                        placeholder="gpt-4o" className="h-8 text-xs" />
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <div>

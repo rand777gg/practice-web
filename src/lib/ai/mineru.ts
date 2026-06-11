@@ -358,4 +358,53 @@ export class MinerUClient {
       }
     }
   }
+
+  // Recognize an image and return markdown
+  async recognizeImage(
+    imageBase64: string,
+    token: string,
+    options?: { language?: string; isOcr?: boolean },
+  ): Promise<string> {
+    const fileName = `note-images/${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+    const mimeMatch = imageBase64.match(/^data:(image\/\w+);base64,/)
+    const mime = mimeMatch?.[1] || 'image/png'
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
+    const byteStr = atob(base64Data)
+    const bytes = new Uint8Array(byteStr.length)
+    for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
+
+    const { error: uploadErr } = await supabase.storage
+      .from('files')
+      .upload(fileName, bytes, { contentType: mime, upsert: false })
+    if (uploadErr) throw new Error(`Image upload failed: ${uploadErr.message}`)
+
+    try {
+      const urlRes = supabase.storage.from('files').getPublicUrl(fileName)
+      const imageUrl = urlRes.data.publicUrl
+
+      const task = await this.createTask(imageUrl, {
+        token,
+        modelVersion: 'vlm',
+        language: options?.language || 'ch',
+        isOcr: options?.isOcr ?? true,
+        enableFormula: true,
+        enableTable: true,
+      })
+
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        const result = await this.pollTask(task.taskId, token)
+        if (result.state === 'done') {
+          const { markdown } = await fetchZipAndExtractFiles(result.fullZipUrl!)
+          return markdown
+        }
+        if (result.state === 'failed') {
+          throw new Error(`MinerU recognition failed: ${result.errMsg}`)
+        }
+      }
+      throw new Error('MinerU recognition timed out')
+    } finally {
+      supabase.storage.from('files').remove([fileName]).catch(() => {})
+    }
+  }
 }

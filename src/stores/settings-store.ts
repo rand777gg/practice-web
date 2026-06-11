@@ -9,6 +9,8 @@ export interface AiFeatureFlags {
 }
 
 const FLAGS_KEY = 'ai_feature_flags'
+const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
+const MULTIMODAL_AI_KEY = 'multimodal_ai_config'
 const OFFLINE_KEY = 'offline_mode'
 const EYE_CARE_KEY = 'eye_care'
 const DARK_CODE_THEME_KEY = 'dark_code_theme'
@@ -46,6 +48,14 @@ export const EYE_CARE_PALETTES = [
   { value: 'bamboo', label: '竹青',   preview: '#EFF3E7' },
 ] as const
 
+export interface MultimodalAIConfig {
+  apiKey: string
+  baseURL: string
+  model: string
+}
+
+export type NoteRecognitionMode = 'mineru' | 'ai'
+
 function loadFlags(): AiFeatureFlags {
   try {
     const raw = localStorage.getItem(FLAGS_KEY)
@@ -56,6 +66,18 @@ function loadFlags(): AiFeatureFlags {
 
 function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
+}
+
+function loadNoteRecognitionMode(): NoteRecognitionMode {
+  return (localStorage.getItem(NOTE_RECOGNITION_MODE_KEY) as NoteRecognitionMode) || 'mineru'
+}
+
+function loadMultimodalAIConfig(): MultimodalAIConfig {
+  try {
+    const raw = localStorage.getItem(MULTIMODAL_AI_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return { apiKey: '', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' }
 }
 
 function loadDarkCodeTheme(): string {
@@ -76,6 +98,8 @@ interface SettingsState {
   fontFamily: string
   fontSize: number
   fontWeight: number
+  noteRecognitionMode: NoteRecognitionMode
+  multimodalAIConfig: MultimodalAIConfig
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -84,6 +108,8 @@ interface SettingsState {
   setFontFamily: (value: string) => void
   setFontSize: (value: number) => void
   setFontWeight: (value: number) => void
+  setNoteRecognitionMode: (value: NoteRecognitionMode) => void
+  setMultimodalAIConfig: (value: MultimodalAIConfig) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -109,6 +135,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   fontFamily: loadFontFamily(),
   fontSize: loadFontSize(),
   fontWeight: loadFontWeight(),
+  noteRecognitionMode: loadNoteRecognitionMode(),
+  multimodalAIConfig: loadMultimodalAIConfig(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -149,6 +177,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setFontWeight: (value) => {
     localStorage.setItem(FONT_WEIGHT_KEY, String(value))
     set({ fontWeight: value })
+  },
+  setNoteRecognitionMode: (value) => {
+    localStorage.setItem(NOTE_RECOGNITION_MODE_KEY, value)
+    set({ noteRecognitionMode: value })
+  },
+  setMultimodalAIConfig: (value) => {
+    localStorage.setItem(MULTIMODAL_AI_KEY, JSON.stringify(value))
+    set({ multimodalAIConfig: value })
   },
   isEnabled: (key) => get().flags[key],
 }))
