@@ -477,6 +477,19 @@
   background: transparent;
 }
 
+/* Resizable images in markdown preview — drag bottom-right corner to resize */
+.markdown-preview-img-wrap {
+  display: inline-block;
+  max-width: 100%;
+  resize: both;
+  overflow: hidden;
+}
+.markdown-preview-img-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* Visible themed scrollbar for table containers */
 .scrollbar-visible {
   scrollbar-width: auto;

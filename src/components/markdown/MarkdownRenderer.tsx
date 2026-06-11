@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
@@ -35,17 +35,16 @@ export function MarkdownRenderer({ content, className }: Props) {
       const text = String(children).replace(/\n$/, '')
       return <CodeBlock lang={lang} code={text} theme={codeTheme} />
     },
-    // Images from R2 or other sources
-    img({ src, alt, ...props }: any) {
+    // Images — resizable by dragging bottom-right corner
+    img({ src, alt, title, ...props }: any) {
       if (!src) return null
+      const align = title?.match(/align:(left|center|right)/)?.[1]
       return (
-        <img
-          src={src}
-          alt={alt || ''}
-          className="rounded-lg max-w-full h-auto my-2"
-          loading="lazy"
-          {...props}
-        />
+        <div className={`my-2 ${align === 'center' ? 'flex justify-center' : align === 'right' ? 'flex justify-end' : ''}`}>
+          <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors">
+            <img src={src} alt={alt || ''} className="rounded-lg" loading="lazy" {...props} />
+          </span>
+        </div>
       )
     },
     // Links open in new tab
