@@ -99,6 +99,13 @@ function loadProviders(): AiProviderConfig[] {
           }
         }
       }
+      // Auto-fill env keys for providers that don't have a saved key
+      for (const p of saved) {
+        if (!p.apiKey) {
+          const envKey = (import.meta.env as Record<string, string>)[`VITE_${p.id.toUpperCase()}_API_KEY`]
+          if (envKey) p.apiKey = envKey
+        }
+      }
       // Remove providers that no longer exist in defaults
       return saved.filter((s) => DEFAULT_PROVIDERS.find((d) => d.id === s.id))
     }
