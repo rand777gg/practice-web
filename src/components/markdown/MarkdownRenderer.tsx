@@ -152,6 +152,7 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
       const text = String(children).replace(/\n$/, '')
       if (lang === 'mermaid') return <MermaidBlock code={text} />
       if (lang === 'plantuml') return <PlantUMLBlock code={text} />
+      return <CodeBlock lang={lang} code={text} theme={codeTheme} />
     },
     // Images — resizable + alignment tools when onImageAction is provided
     img({ src, alt, title, ...props }: any) {
