@@ -61,7 +61,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
 
         const { createOpenAI } = await import('@ai-sdk/openai')
         const { generateText } = await import('ai')
-        const client = createOpenAI({ apiKey: activeProvider.apiKey, baseURL: activeProvider.baseUrl })
+        const client = createOpenAI({ apiKey: activeProvider.apiKey, baseURL: activeProvider.baseUrl, compatibility: 'compatible' })
         const { text } = await generateText({
           model: client(modelId),
           messages: [{
