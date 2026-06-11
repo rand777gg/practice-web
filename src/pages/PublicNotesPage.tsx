@@ -162,22 +162,9 @@ function NoteCard({
           isEditing ? 'grid grid-rows-[1fr_auto_1fr] h-full' : '',
         )}>
           {isEditing ? (
-            <>
-              {/* Top half: Editor */}
-              <div className="p-3 pb-1 overflow-auto">
-                <NoteEditor value={editText} onChange={onEditText} placeholder={t('practice.notePlaceholder')} />
-              </div>
-              {/* Divider */}
-              <div className="border-t border-border mx-3" />
-              {/* Bottom half: Live preview */}
-              <div className="p-3 pt-1 overflow-auto">
-                <div className="rounded-lg bg-muted/30 p-3 min-h-[120px] max-h-[240px] overflow-auto">
-                  {editText ? <MarkdownRenderer content={editText} /> : (
-                    <p className="text-xs text-muted-foreground">预览</p>
-                  )}
-                </div>
-              </div>
-            </>
+            <div className="p-3 overflow-auto">
+              <NoteEditor value={editText} onChange={onEditText} placeholder={t('practice.notePlaceholder')} />
+            </div>
           ) : (
             <div className="p-4 space-y-2 h-full flex flex-col">
               {note.note ? (
