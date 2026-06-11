@@ -56,55 +56,30 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
     setIsRecognizing(true)
     try {
       if (noteRecognitionMode === 'ai') {
-        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型（如 GPT-4o）')
+        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型（如 GPT-4o 或 Qwen-VL-Max）')
         const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
         const promptText = value
           ? `已有笔记：\n${value}\n\n请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。`
           : '请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。'
 
-        if (activeProvider.id === 'qwen') {
-          // DashScope native API
-          const res = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${activeProvider.apiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: modelId,
-              input: {
-                messages: [{
-                  role: 'user',
-                  content: [
-                    { text: promptText },
-                    { image: `data:image/png;base64,${imageBase64}` },
-                  ],
-                }],
-              },
-            }),
-          })
-          const data = await res.json() as any
-          if (data.code) throw new Error(data.message || `DashScope error ${data.code}`)
-          const text = data.output?.choices?.[0]?.message?.content?.[0]?.text
-            || data.output?.text
-            || JSON.stringify(data.output)
-          setRecognitionResult(typeof text === 'string' ? text.trim() : '识别成功，但无法解析返回内容')
-        } else {
-          const { createOpenAI } = await import('@ai-sdk/openai')
-          const { generateText } = await import('ai')
-          const client = createOpenAI({ apiKey: activeProvider.apiKey, baseURL: activeProvider.baseUrl, compatibility: 'compatible' })
-          const { text } = await generateText({
-            model: client(modelId),
-            messages: [{
-              role: 'user' as const,
-              content: [
-                { type: 'text' as const, text: promptText },
-                { type: 'image' as const, image: imageBase64 },
-              ],
-            }],
-          })
-          setRecognitionResult(text.trim())
-        }
+        const { createOpenAI } = await import('@ai-sdk/openai')
+        const { generateText } = await import('ai')
+        const client = createOpenAI({
+          apiKey: activeProvider.apiKey,
+          baseURL: activeProvider.baseUrl,
+          compatibility: 'compatible',
+        })
+        const { text } = await generateText({
+          model: client(modelId),
+          messages: [{
+            role: 'user' as const,
+            content: [
+              { type: 'text' as const, text: promptText },
+              { type: 'image' as const, image: imageBase64 },
+            ],
+          }],
+        })
+        setRecognitionResult(text.trim())
       } else {
         const token = getMinerUToken()
         if (!token) throw new Error('请先在设置中配置 MinerU Token')
