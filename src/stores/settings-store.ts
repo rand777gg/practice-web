@@ -93,7 +93,6 @@ interface SettingsState {
   setFontSize: (value: number) => void
   setFontWeight: (value: number) => void
   setNoteRecognitionMode: (value: NoteRecognitionMode) => void
-  setMultimodalAIConfig: (value: MultimodalAIConfig) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 

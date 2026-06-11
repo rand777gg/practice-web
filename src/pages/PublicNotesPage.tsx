@@ -273,7 +273,6 @@ export function Component() {
               value={editText}
               onChange={setEditText}
               placeholder={t('practice.notePlaceholder')}
-              rows={3}
             />
             <div className="flex gap-1 justify-end">
               <Button variant="ghost" size="sm" onClick={() => setEditingNoteId(null)}>

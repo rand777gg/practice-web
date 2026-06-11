@@ -232,7 +232,6 @@ export function Component() {
                     value={editText}
                     onChange={setEditText}
                     placeholder={t('practice.notePlaceholder')}
-                    rows={3}
                   />
                   <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                     <input
