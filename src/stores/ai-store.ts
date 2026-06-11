@@ -49,6 +49,21 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
     ],
   },
   {
+    id: 'qwen',
+    name: '通义千问',
+    description: '阿里云通义千问系列模型，支持多模态视觉识别（公式、表格、OCR）。通过 DashScope API 接入。',
+    type: 'community',
+    enabled: false,
+    apiKey: '',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: [
+      { id: 'qwen-vl-max', name: 'Qwen-VL-Max（多模态）', enabled: false },
+      { id: 'qwen-vl-plus', name: 'Qwen-VL-Plus（多模态）', enabled: false },
+      { id: 'qwen-plus', name: 'Qwen-Plus', enabled: false },
+      { id: 'qwen-max', name: 'Qwen-Max', enabled: false },
+    ],
+  },
+  {
     id: 'dify',
     name: 'Dify',
     description: '开源的 LLM 应用开发平台，支持可视化编排 AI 工作流和自定义应用。',
