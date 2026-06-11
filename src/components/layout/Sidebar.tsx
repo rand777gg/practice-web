@@ -53,9 +53,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       <NavItem to="/exam" icon={<Clock className="h-4 w-4" />} label={t('nav.exam')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/favorites" icon={<Star className="h-4 w-4" />} label={t('nav.favorites')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/review" icon={<RotateCcw className="h-4 w-4" />} label={t('nav.wrongReview')} collapsed={collapsed} onClick={handleClick} />
-      <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick}
-        badge={!collapsed ? <span className="ml-auto text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 px-1.5 py-0.5 rounded">BUG</span> : undefined}
-      />
+      <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/question-bank" icon={<Library className="h-4 w-4" />} label={t('nav.questionBank')} collapsed={collapsed} onClick={handleClick} />
 
       {isAdmin && (
