@@ -1,6 +1,9 @@
 import { useMemo, useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { langDisplay } from '@/lib/lang-names'
@@ -79,7 +82,7 @@ export function MarkdownRenderer({ content, className }: Props) {
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
-      <ReactMarkdown rehypePlugins={[rehypeRaw]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={components}>
         {content}
       </ReactMarkdown>
     </div>
