@@ -219,6 +219,9 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
                   {testResult.msg}
                 </div>
               )}
+              {['deepseek', 'openai'].includes(provider.id) && (
+                <p className="text-[10px] text-muted-foreground text-center">▲ Powered by Vercel AI SDK</p>
+              )}
             </CardContent>
           )}
         </>
