@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
@@ -11,9 +11,54 @@ import { langDisplay } from '@/lib/lang-names'
 interface Props {
   content: string
   className?: string
+  onImageAction?: (action: 'left' | 'center' | 'right', src: string) => void
 }
 
-export function MarkdownRenderer({ content, className }: Props) {
+function ResizableImage({ src, alt, onAction }: { src: string; alt: string; onAction?: (action: 'left' | 'center' | 'right', src: string) => void }) {
+  const [showTools, setShowTools] = useState(false)
+  const [align, setAlign] = useState<'left' | 'center' | 'right' | null>(null)
+
+  const handleAlign = useCallback((a: 'left' | 'center' | 'right') => {
+    setAlign(a)
+    setShowTools(false)
+    onAction?.(a, src)
+  }, [onAction, src])
+
+  const alignClass = align === 'center' ? 'mx-auto' : align === 'right' ? 'ml-auto' : ''
+
+  // Click outside to dismiss
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowTools((v) => !v)
+  }
+
+  return (
+    <div className="relative my-2" onMouseLeave={() => setShowTools(false)}>
+      <span className={`markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block ${alignClass}`}>
+        <img src={src} alt={alt || ''} className="rounded-lg cursor-pointer" loading="lazy" onClick={handleClick} />
+      </span>
+      {showTools && (
+        <div className="absolute top-0 left-0 z-10 flex gap-0.5 bg-background border rounded-lg shadow-md p-1 -translate-y-full -mt-1">
+          {(['left', 'center', 'right'] as const).map((a) => (
+            <button key={a} type="button"
+              className={`px-2 py-1 text-[10px] rounded border border-dashed transition-colors ${
+                align === a
+                  ? 'border-primary text-primary bg-primary/10'
+                  : 'border-blue-300 dark:border-blue-700 text-muted-foreground hover:border-primary hover:text-primary'
+              }`}
+              onClick={(e) => { e.stopPropagation(); handleAlign(a) }}
+              title={`${a === 'left' ? '靠左' : a === 'center' ? '居中' : '靠右'}`}
+            >
+              {a === 'left' ? '⬅' : a === 'center' ? '⬆' : '➡'}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   const darkCodeTheme = useSettingsStore((s) => s.darkCodeTheme)
   const lightCodeTheme = useSettingsStore((s) => s.lightCodeTheme)
   const siteTheme = useThemeStore((s) => s.theme)
@@ -35,16 +80,16 @@ export function MarkdownRenderer({ content, className }: Props) {
       const text = String(children).replace(/\n$/, '')
       return <CodeBlock lang={lang} code={text} theme={codeTheme} />
     },
-    // Images — resizable by dragging bottom-right corner
-    img({ src, alt, title, ...props }: any) {
+    // Images — resizable + alignment tools when onImageAction is provided
+    img({ src, alt, ...props }: any) {
       if (!src) return null
-      const align = title?.match(/align:(left|center|right)/)?.[1]
+      if (onImageAction) {
+        return <ResizableImage src={src} alt={alt || ''} onAction={onImageAction} />
+      }
       return (
-        <div className={`my-2 ${align === 'center' ? 'flex justify-center' : align === 'right' ? 'flex justify-end' : ''}`}>
-          <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors">
-            <img src={src} alt={alt || ''} className="rounded-lg" loading="lazy" {...props} />
-          </span>
-        </div>
+        <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block">
+          <img src={src} alt={alt || ''} className="rounded-lg" loading="lazy" {...props} />
+        </span>
       )
     },
     // Links open in new tab

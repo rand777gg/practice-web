@@ -157,8 +157,17 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         />
         <div className="rounded-lg border bg-muted/30 p-3 min-h-[280px] max-h-[500px] overflow-auto">
           {previewValue ? (
-            <MarkdownRenderer content={previewValue} />
-          ) : (
+            <MarkdownRenderer content={previewValue}
+              onImageAction={(action, src) => {
+                const current = textareaRef.current?.value || value
+                // Replace ![alt](src) or ![alt](src "align:xxx") with aligned version
+                const newMd = current.replace(
+                  new RegExp(`!\\[([^\\]]*)\\]\\(${src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s+"[^"]*")?\\)`, 'g'),
+                  `![$1](${src} "align:${action}")`
+                )
+                if (newMd !== current) onChange(newMd)
+              }}
+            />
             <p className="text-xs text-muted-foreground">预览区域，编辑内容后实时显示...</p>
           )}
         </div>
