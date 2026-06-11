@@ -7,6 +7,7 @@ import 'katex/dist/katex.min.css'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { langDisplay } from '@/lib/lang-names'
+import { cn } from '@/lib/utils'
 
 interface Props {
   content: string
@@ -14,44 +15,112 @@ interface Props {
   onImageAction?: (action: 'left' | 'center' | 'right', src: string) => void
 }
 
-function ResizableImage({ src, alt, onAction }: { src: string; alt: string; onAction?: (action: 'left' | 'center' | 'right', src: string) => void }) {
-  const [showTools, setShowTools] = useState(false)
-  const [align, setAlign] = useState<'left' | 'center' | 'right' | null>(null)
+function parseAlignFromTitle(title?: string): 'left' | 'center' | 'right' | null {
+  if (!title) return null
+  const m = title.match(/align:(left|center|right)/)
+  return m ? (m[1] as 'left' | 'center' | 'right') : null
+}
+
+function ResizableImage({ src, alt, title, onAction }: { src: string; alt: string; title?: string; onAction?: (action: 'left' | 'center' | 'right', src: string) => void }) {
+  const [align, setAlign] = useState<'left' | 'center' | 'right' | null>(() => parseAlignFromTitle(title))
+  const [dragOverZone, setDragOverZone] = useState<'left' | 'center' | 'right' | null>(null)
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAlign(parseAlignFromTitle(title))
+  }, [title])
 
   const handleAlign = useCallback((a: 'left' | 'center' | 'right') => {
     setAlign(a)
-    setShowTools(false)
     onAction?.(a, src)
   }, [onAction, src])
 
-  const alignClass = align === 'center' ? 'mx-auto' : align === 'right' ? 'ml-auto' : ''
-
-  // Click outside to dismiss
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowTools((v) => !v)
+  const handleDragStart = (e: React.DragEvent<HTMLImageElement>) => {
+    e.dataTransfer.effectAllowed = 'move'
+    setIsDragging(true)
   }
 
+  const handleDragEnd = () => {
+    setIsDragging(false)
+    setDragOverZone(null)
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, zone: 'left' | 'center' | 'right') => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverZone(zone)
+  }
+
+  const handleDragLeave = () => setDragOverZone(null)
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, zone: 'left' | 'center' | 'right') => {
+    e.preventDefault()
+    setDragOverZone(null)
+    setIsDragging(false)
+    handleAlign(zone)
+  }
+
+  const handleImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const el = e.currentTarget
+    if (el.offsetWidth && el.offsetHeight) {
+      setImgSize({ w: el.offsetWidth, h: el.offsetHeight })
+    }
+  }
+
+  const justifyClass = align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'
+  const zoneH = imgSize ? imgSize.h : 120
+
   return (
-    <div className="relative my-2" onMouseLeave={() => setShowTools(false)}>
-      <span className={`markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block ${alignClass}`}>
-        <img src={src} alt={alt || ''} className="rounded-lg cursor-pointer" loading="lazy" onClick={handleClick} />
-      </span>
-      {showTools && (
-        <div className="absolute top-0 left-0 z-10 flex gap-0.5 bg-background border rounded-lg shadow-md p-1 -translate-y-full -mt-1">
-          {(['left', 'center', 'right'] as const).map((a) => (
-            <button key={a} type="button"
-              className={`px-2 py-1 text-[10px] rounded border border-dashed transition-colors ${
-                align === a
-                  ? 'border-primary text-primary bg-primary/10'
-                  : 'border-blue-300 dark:border-blue-700 text-muted-foreground hover:border-primary hover:text-primary'
-              }`}
-              onClick={(e) => { e.stopPropagation(); handleAlign(a) }}
-              title={`${a === 'left' ? '靠左' : a === 'center' ? '居中' : '靠右'}`}
-            >
-              {a === 'left' ? '⬅' : a === 'center' ? '⬆' : '➡'}
-            </button>
-          ))}
+    <div className="relative my-2 w-full">
+      <div className={`flex w-full ${justifyClass}`}>
+        <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors">
+          <img
+            src={src}
+            alt={alt || ''}
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onLoad={handleImgLoad}
+            className="rounded-lg cursor-grab active:cursor-grabbing"
+            loading="lazy"
+          />
+        </span>
+      </div>
+      {isDragging && (
+        <div className="flex gap-1.5 mt-1.5 w-full" style={{ height: zoneH }}>
+          {(['left', 'center', 'right'] as const).map((zone) => {
+            const isActive = align === zone
+            const isOver = dragOverZone === zone
+            return (
+              <div
+                key={zone}
+                onDragOver={(e) => handleDragOver(e, zone)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, zone)}
+                style={{ flex: '1 1 0', height: zoneH, minWidth: 0 }}
+                className={cn(
+                  'relative flex flex-col items-center justify-center rounded-md border-2 border-dashed cursor-pointer select-none transition-all duration-150 overflow-hidden',
+                  isActive && !isOver && 'border-blue-400 bg-blue-50 dark:bg-blue-950/30',
+                  isOver && 'border-blue-500 bg-blue-100 dark:bg-blue-900/40 scale-[0.98]',
+                  !isActive && !isOver && 'border-muted-foreground/30 hover:border-blue-300 hover:bg-muted/40',
+                )}
+              >
+                {isActive ? (
+                  <img
+                    src={src}
+                    alt={alt || ''}
+                    className="max-h-full max-w-full rounded object-contain"
+                  />
+                ) : (
+                  <span className="text-[11px] font-medium text-muted-foreground/70 pointer-events-none">
+                    {{ left: '靠左', center: '居中', right: '靠右' }[zone]}
+                  </span>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -84,10 +153,10 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
       return <CodeBlock lang={lang} code={text} theme={codeTheme} />
     },
     // Images — resizable + alignment tools when onImageAction is provided
-    img({ src, alt, ...props }: any) {
+    img({ src, alt, title, ...props }: any) {
       if (!src) return null
       if (onImageActionRef.current) {
-        return <ResizableImage src={src} alt={alt || ''} onAction={onImageActionRef.current} />
+        return <ResizableImage src={src} alt={alt || ''} title={title} onAction={onImageActionRef.current} />
       }
       return (
         <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block">

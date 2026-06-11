@@ -8,12 +8,16 @@ import { useAiStore } from '@/stores/ai-store'
 import { MinerUClient } from '@/lib/ai/mineru'
 import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
+import { cn } from '@/lib/utils'
 
 interface Props {
   value: string
   onChange: (value: string) => void
   placeholder?: string
 }
+
+type Align = 'left' | 'center' | 'right'
+type InsertMode = 'html' | 'markdown'
 
 export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -23,6 +27,11 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [isUploading, setIsUploading] = useState(false)
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
   const [previewValue, setPreviewValue] = useState(value)
+
+  // Drag-to-align state
+  const [selectedAlign, setSelectedAlign] = useState<Align>('center')
+  const [insertMode, setInsertMode] = useState<InsertMode>('html')
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const user = useAuthStore((s) => s.user)
@@ -46,6 +55,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     if (textareaRef.current) onChange(textareaRef.current.value)
   }
 
+  // ── File select ────────────────────────────────────────────────────────
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -56,6 +66,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       setImagePreview(dataUrl)
       setImageBase64(dataUrl.split(',')[1])
       setRecognitionResult(null)
+      setSelectedAlign('center')
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -68,6 +79,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     setRecognitionResult(null)
   }
 
+  // ── Recognize ──────────────────────────────────────────────────────────
   const handleRecognize = async () => {
     if (!imageBase64) return
     setIsRecognizing(true)
@@ -79,7 +91,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         const promptText = currentValue
           ? `已有笔记：\n${currentValue}\n\n请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。`
           : '请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。'
-
         const res = await fetch(`${activeProvider.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${activeProvider.apiKey}` },
@@ -109,6 +120,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     setIsRecognizing(false)
   }
 
+  // ── Upload & insert ────────────────────────────────────────────────────
   const handleUploadToCloud = async () => {
     if (!imageFile || !user) return
     setIsUploading(true)
@@ -121,7 +133,8 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       const url = (data as { url: string }).url
       if (!url) throw new Error('未返回图片地址')
       const current = textareaRef.current?.value || value
-      onChange(current ? `${current}\n\n![图片](${url})` : `![图片](${url})`)
+      const snippet = buildSnippet(url, selectedAlign, insertMode)
+      onChange(current ? `${current}\n\n${snippet}` : snippet)
       clearImage()
     } catch (err) {
       alert(err instanceof Error ? err.message : '上传失败')
@@ -153,6 +166,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   return (
     <div className="space-y-2">
+      {/* ── Main editor / preview split ──────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         <textarea
           ref={textareaRef}
@@ -172,17 +186,63 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         </div>
       </div>
 
+      {/* ── Image preview & alignment for upload ────────────────────────── */}
       {imagePreview && (
-        <div className="relative inline-block">
-          <img src={imagePreview} alt="preview" className="max-h-32 rounded border" />
-          <button type="button"
-            className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-muted border shadow-sm flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
-            onClick={clearImage}>
-            <X className="h-3 w-3" />
-          </button>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground mr-1">插入格式：</span>
+            {(['html', 'markdown'] as InsertMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setInsertMode(m)}
+                className={cn(
+                  'text-xs px-2 py-0.5 rounded border transition-colors',
+                  insertMode === m
+                    ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                    : 'border-input text-muted-foreground hover:border-blue-300'
+                )}
+              >
+                {m === 'html' ? '<img> HTML' : '![  ] Markdown'}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground mr-1">对齐：</span>
+            {(['left', 'center', 'right'] as Align[]).map((zone) => (
+              <button
+                key={zone}
+                type="button"
+                onClick={() => setSelectedAlign(zone)}
+                className={cn(
+                  'text-xs px-2 py-0.5 rounded border transition-colors',
+                  selectedAlign === zone
+                    ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                    : 'border-input text-muted-foreground hover:border-blue-300'
+                )}
+              >
+                {{ left: '靠左', center: '居中', right: '靠右' }[zone]}
+              </button>
+            ))}
+          </div>
+          <div className="relative border rounded-md overflow-hidden bg-muted/20">
+            <img
+              src={imagePreview}
+              alt="preview"
+              className="max-h-[300px] mx-auto rounded"
+            />
+            <button
+              type="button"
+              onClick={clearImage}
+              className="absolute top-1 right-1 h-5 w-5 rounded-full bg-muted border shadow-sm flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
         </div>
       )}
 
+      {/* ── Recognition result ────────────────────────────────────────── */}
       {recognitionResult && (
         <div className="space-y-1">
           <textarea
@@ -199,8 +259,10 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         </div>
       )}
 
+      {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div className="flex gap-1 flex-wrap">
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+        {/* Direct insert to markdown (upload then insert URL immediately) */}
         <Button variant="outline" size="sm" className="text-xs h-7"
           disabled={isUploading}
           onClick={async () => {
@@ -230,6 +292,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           }}>
           {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}插入图片
         </Button>
+        {/* Upload for OCR recognition */}
         <Button variant="outline" size="sm" className="text-xs h-7"
           title="支持手写笔记、图片、表格等内容识别"
           onClick={() => fileInputRef.current?.click()}>
@@ -246,7 +309,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
               <Button variant="outline" size="sm" className="text-xs h-7"
                 disabled={isUploading} onClick={handleUploadToCloud}>
                 {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}
-                存为图片
+                存为图片并插入
               </Button>
             )}
           </>
@@ -254,4 +317,19 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       </div>
     </div>
   )
+}
+
+// ── Helper: build snippet ──────────────────────────────────────────────────
+function buildSnippet(url: string, align: Align, mode: InsertMode): string {
+  if (mode === 'markdown') {
+    if (align === 'center') return `<p align="center">\n\n![图片](${url})\n\n</p>`
+    if (align === 'left') return `<img src="${url}" align="left" style="margin: 0 12px 8px 0;" />`
+    return `<img src="${url}" align="right" style="margin: 0 0 8px 12px;" />`
+  }
+  const styleMap: Record<Align, string> = {
+    left:   'display:block; float:left; margin:0 12px 8px 0;',
+    center: 'display:block; margin:0 auto 8px;',
+    right:  'display:block; float:right; margin:0 0 8px 12px;',
+  }
+  return `<img src="${url}" style="${styleMap[align]}" />`
 }

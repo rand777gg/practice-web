@@ -28,6 +28,118 @@ import { useT } from '@/i18n/use-t'
 
 type NoteWithQuestion = UserAnswer & { questions: Question }
 
+// ---- NoteCard 必须定义在父组件外部，防止每次 re-render 时被当作全新组件类型卸载重建 ----
+interface NoteCardProps {
+  note: NoteWithQuestion
+  showAuthor?: boolean
+  style: 'my' | 'public'
+  editingNoteId: string | null
+  editText: string
+  userNicknames: Record<string, string>
+  onEditText: (v: string) => void
+  onStartEdit: (note: NoteWithQuestion) => void
+  onCancelEdit: () => void
+  onSaveEdit: (noteId: string) => void
+  onTogglePublic: (note: NoteWithQuestion) => void
+  onDeleteRequest: (noteId: string) => void
+}
+
+function NoteCard({
+  note,
+  showAuthor,
+  style,
+  editingNoteId,
+  editText,
+  userNicknames,
+  onEditText,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onTogglePublic,
+  onDeleteRequest,
+}: NoteCardProps) {
+  const { t } = useT()
+  const isEditing = style === 'my' && editingNoteId === note.id
+  return (
+    <div className="rounded-xl border bg-card p-4 space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {note.questions?.subject && (
+          <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+            {note.questions.subject}
+          </span>
+        )}
+        {(note.questions?.categories?.length ? note.questions.categories : note.questions?.category ? [note.questions.category] : []).map((cat: string) => (
+          <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+            {cat}
+          </span>
+        ))}
+        {style === 'my' && (
+          <span className={note.is_public
+            ? 'inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs text-green-700 dark:text-green-300'
+            : 'inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
+          }>
+            {note.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+            {note.is_public ? t('notes.publicLabel') : t('notes.privateLabel')}
+          </span>
+        )}
+        {showAuthor && (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            {t('notes.author')}: {userNicknames[note.user_id] || t('notes.anonymous')}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">
+          {new Date(note.answered_at).toLocaleDateString()}
+        </span>
+      </div>
+
+      <p className="text-sm font-medium">{note.questions?.question_text || t('notes.untitled')}</p>
+
+      {isEditing ? (
+        <div className="space-y-2">
+          <NoteEditor
+            value={editText}
+            onChange={onEditText}
+            placeholder={t('practice.notePlaceholder')}
+          />
+          <div className="flex gap-1 justify-end">
+            <Button variant="ghost" size="sm" onClick={onCancelEdit}>
+              <X className="h-3 w-3" />
+              {t('plan.cancel')}
+            </Button>
+            <Button variant="default" size="sm" onClick={() => onSaveEdit(note.id)}>
+              <Check className="h-3 w-3" />
+              {t('plan.save')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        note.note && (
+          <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
+            {note.note}
+          </div>
+        )
+      )}
+
+      {style === 'my' && !isEditing && (
+        <div className="flex gap-1 justify-end">
+          <Button variant="ghost" size="sm" onClick={() => onTogglePublic(note)} className="text-xs h-7">
+            {note.is_public ? <Lock className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}
+            {note.is_public ? t('notes.setPrivate') : t('notes.setPublic')}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => onStartEdit(note)} className="text-xs h-7">
+            <Pencil className="h-3 w-3 mr-1" />
+            {t('practice.note')}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => onDeleteRequest(note.id)} className="text-xs h-7 text-destructive hover:text-destructive">
+            <Trash2 className="h-3 w-3 mr-1" />
+            {t('notes.delete')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Component() {
   const { t } = useT()
   const { user } = useAuthStore()
@@ -230,89 +342,6 @@ export function Component() {
     if (activeTab === 'public') fetchPublicNotes()
   }, [activeTab, fetchPublicNotes])
 
-  // ---- Note Card (shared) ----
-  function NoteCard({ note, showAuthor, style }: { note: NoteWithQuestion; showAuthor?: boolean; style: 'my' | 'public' }) {
-    const isEditing = style === 'my' && editingNoteId === note.id
-    return (
-      <div className="rounded-xl border bg-card p-4 space-y-2">
-        <div className="flex flex-wrap gap-1.5">
-          {note.questions?.subject && (
-            <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-              {note.questions.subject}
-            </span>
-          )}
-          {(note.questions?.categories?.length ? note.questions.categories : note.questions?.category ? [note.questions.category] : []).map((cat: string) => (
-            <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-              {cat}
-            </span>
-          ))}
-          {style === 'my' && (
-            <span className={note.is_public
-              ? 'inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs text-green-700 dark:text-green-300'
-              : 'inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
-            }>
-              {note.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-              {note.is_public ? t('notes.publicLabel') : t('notes.privateLabel')}
-            </span>
-          )}
-          {showAuthor && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              {t('notes.author')}: {userNicknames[note.user_id] || t('notes.anonymous')}
-            </span>
-          )}
-          <span className="text-xs text-muted-foreground">
-            {new Date(note.answered_at).toLocaleDateString()}
-          </span>
-        </div>
-
-        <p className="text-sm font-medium">{note.questions?.question_text || t('notes.untitled')}</p>
-
-        {isEditing ? (
-          <div className="space-y-2">
-            <NoteEditor
-              value={editText}
-              onChange={setEditText}
-              placeholder={t('practice.notePlaceholder')}
-            />
-            <div className="flex gap-1 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setEditingNoteId(null)}>
-                <X className="h-3 w-3" />
-                {t('plan.cancel')}
-              </Button>
-              <Button variant="default" size="sm" onClick={() => handleSaveEdit(note.id)}>
-                <Check className="h-3 w-3" />
-                {t('plan.save')}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          note.note && (
-            <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-              {note.note}
-            </div>
-          )
-        )}
-
-        {style === 'my' && !isEditing && (
-          <div className="flex gap-1 justify-end">
-            <Button variant="ghost" size="sm" onClick={() => handleTogglePublic(note)} className="text-xs h-7">
-              {note.is_public ? <Lock className="h-3 w-3 mr-1" /> : <Globe className="h-3 w-3 mr-1" />}
-              {note.is_public ? t('notes.setPrivate') : t('notes.setPublic')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => handleStartEdit(note)} className="text-xs h-7">
-              <Pencil className="h-3 w-3 mr-1" />
-              {t('practice.note')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteNoteId(note.id)} className="text-xs h-7 text-destructive hover:text-destructive">
-              <Trash2 className="h-3 w-3 mr-1" />
-              {t('notes.delete')}
-            </Button>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   // ---- Tab change handler ----
   const handleTabChange = (v: string) => {
     if (v !== activeTab) {
@@ -398,7 +427,11 @@ export function Component() {
                   {publicNotes
                     .filter((n) => !pubCategory || n.questions?.category === pubCategory || (n.questions?.categories as string[])?.includes(pubCategory))
                     .map((note) => (
-                      <NoteCard key={note.id} note={note} showAuthor style="public" />
+                      <NoteCard key={note.id} note={note} showAuthor style="public"
+                        editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames}
+                        onEditText={setEditText} onStartEdit={handleStartEdit} onCancelEdit={() => setEditingNoteId(null)}
+                        onSaveEdit={handleSaveEdit} onTogglePublic={handleTogglePublic} onDeleteRequest={setDeleteNoteId}
+                      />
                     ))}
                 </div>
               )}
@@ -516,7 +549,11 @@ export function Component() {
                     .filter((n) => !myCategory || n.questions?.category === myCategory || (n.questions?.categories as string[])?.includes(myCategory))
                     .filter((n) => !myType || n.questions?.question_type === myType)
                     .map((note) => (
-                      <NoteCard key={note.id} note={note} style="my" />
+                      <NoteCard key={note.id} note={note} style="my"
+                        editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames}
+                        onEditText={setEditText} onStartEdit={handleStartEdit} onCancelEdit={() => setEditingNoteId(null)}
+                        onSaveEdit={handleSaveEdit} onTogglePublic={handleTogglePublic} onDeleteRequest={setDeleteNoteId}
+                      />
                     ))}
                 </div>
               )}
