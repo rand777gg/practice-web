@@ -194,6 +194,35 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       <div className="flex gap-1 flex-wrap">
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
         <Button variant="outline" size="sm" className="text-xs h-7"
+          disabled={isUploading}
+          onClick={async () => {
+            const input = document.createElement('input')
+            input.type = 'file'
+            input.accept = 'image/*'
+            input.onchange = async (e) => {
+              const file = (e.target as HTMLInputElement).files?.[0]
+              if (!file) return
+              setIsUploading(true)
+              try {
+                const formData = new FormData()
+                formData.append('file', file)
+                formData.append('folder', 'images')
+                const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+                if (error) throw new Error(error.message || '上传失败')
+                const url = (data as { url: string }).url
+                if (!url) throw new Error('未返回图片地址')
+                const current = textareaRef.current?.value || value
+                onChange(current ? `${current}\n\n![图片](${url})` : `![图片](${url})`)
+              } catch (err) {
+                alert(err instanceof Error ? err.message : '上传失败')
+              }
+              setIsUploading(false)
+            }
+            input.click()
+          }}>
+          {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}插入图片
+        </Button>
+        <Button variant="outline" size="sm" className="text-xs h-7"
           title="支持手写笔记、图片、表格等内容识别"
           onClick={() => fileInputRef.current?.click()}>
           <ImagePlus className="h-3 w-3 mr-1" />上传手写笔记
