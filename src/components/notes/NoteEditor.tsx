@@ -1,7 +1,6 @@
-import { useState, useRef, memo } from 'react'
-import { Textarea } from '@/components/ui/textarea'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { ImagePlus, Sparkles, Loader2, X, ImageUp } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -13,10 +12,9 @@ interface Props {
   value: string
   onChange: (value: string) => void
   placeholder?: string
-  rows?: number
 }
 
-export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
+export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -41,14 +39,14 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
       setRecognitionResult(null)
     }
     reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
-  const handleRemoveImage = () => {
+  const clearImage = () => {
     setImagePreview(null)
     setImageBase64(null)
     setImageFile(null)
     setRecognitionResult(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleRecognize = async () => {
@@ -56,7 +54,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
     setIsRecognizing(true)
     try {
       if (noteRecognitionMode === 'ai') {
-        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型（如 Qwen3.7-Plus）')
+        if (!activeProvider) throw new Error('请先在 AI 管理页启用一个多模态模型')
         const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
         const promptText = value
           ? `已有笔记：\n${value}\n\n请识别图片中的全部内容（文字、公式、表格、图表），输出 markdown 格式。`
@@ -80,7 +78,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
           }),
         })
         const data = await res.json() as any
-        if (data.error) throw new Error(data.error?.message || data.error?.code || 'API error')
+        if (data.error) throw new Error(data.error?.message || 'API error')
         const text = data.choices?.[0]?.message?.content
         if (text) setRecognitionResult(text.trim())
         else throw new Error('No content in response')
@@ -108,20 +106,19 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
       if (error) throw new Error(error.message || '上传失败')
       const imageUrl = (data as { url: string }).url
       if (!imageUrl) throw new Error('未返回图片地址')
-      const md = `![图片](${imageUrl})`
-      onChange(value ? `${value}\n\n${md}` : md)
-      handleRemoveImage()
+      onChange(value ? `${value}\n\n![图片](${imageUrl})` : `![图片](${imageUrl})`)
+      clearImage()
     } catch (err) {
       alert(err instanceof Error ? err.message : '上传失败')
     }
     setIsUploading(false)
   }
 
-  const handleInsertResult = () => {
+  const handleInsert = () => {
     if (!recognitionResult) return
-    const separator = value ? '\n\n---\n识别结果：\n' : ''
-    onChange(value + separator + recognitionResult)
-    handleRemoveImage()
+    const sep = value ? '\n\n---\n识别结果：\n' : ''
+    onChange(value + sep + recognitionResult)
+    clearImage()
   }
 
   const canRecognize = noteRecognitionMode === 'ai'
@@ -130,92 +127,61 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
 
   return (
     <div className="space-y-2">
-      <Textarea
-        id="note-editor"
-        name="note-editor"
+      <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        rows={rows}
-        autoComplete="off"
+        rows={3}
+        spellCheck={false}
+        className="block min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
       />
+
       {imagePreview && (
         <div className="relative inline-block">
           <img src={imagePreview} alt="preview" className="max-h-32 rounded border" />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-muted border shadow-sm"
-            onClick={handleRemoveImage}
+          <button type="button"
+            className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-muted border shadow-sm flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
+            onClick={clearImage}
           >
             <X className="h-3 w-3" />
-          </Button>
+          </button>
         </div>
       )}
+
       {recognitionResult && (
         <div className="space-y-1">
-          <Textarea
+          <textarea
             value={recognitionResult}
             onChange={(e) => setRecognitionResult(e.target.value)}
-            className="text-xs min-h-[80px] resize-y"
+            className="block min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm resize-y"
             rows={5}
+            spellCheck={false}
           />
           <div className="flex gap-1">
-            <Button size="sm" className="text-xs h-7" onClick={handleInsertResult}>
-              插入笔记
-            </Button>
-            <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setRecognitionResult(null)}>
-              放弃
-            </Button>
+            <Button size="sm" className="text-xs h-7" onClick={handleInsert}>插入笔记</Button>
+            <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setRecognitionResult(null)}>放弃</Button>
           </div>
         </div>
       )}
+
       <div className="flex gap-1 flex-wrap">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-xs h-7"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <ImagePlus className="h-3 w-3 mr-1" />
-          上传图片
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+        <Button variant="outline" size="sm" className="text-xs h-7"
+          onClick={() => fileInputRef.current?.click()}>
+          <ImagePlus className="h-3 w-3 mr-1" />上传图片
         </Button>
         {imageBase64 && (
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs h-7"
+            <Button variant="outline" size="sm" className="text-xs h-7"
               disabled={isRecognizing || !canRecognize}
-              onClick={handleRecognize}
-            >
-              {isRecognizing ? (
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              ) : (
-                <Sparkles className="h-3 w-3 mr-1" />
-              )}
+              onClick={handleRecognize}>
+              {isRecognizing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
               {noteRecognitionMode === 'ai' ? 'AI识别' : 'MinerU识别'}
             </Button>
             {user && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs h-7"
-                disabled={isUploading}
-                onClick={handleUploadToCloud}
-              >
-                {isUploading ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <ImageUp className="h-3 w-3 mr-1" />
-                )}
+              <Button variant="outline" size="sm" className="text-xs h-7"
+                disabled={isUploading} onClick={handleUploadToCloud}>
+                {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}
                 存为图片
               </Button>
             )}
@@ -224,4 +190,4 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
       </div>
     </div>
   )
-})
+}

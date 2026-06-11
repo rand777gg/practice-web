@@ -201,12 +201,16 @@ export function PracticeSession() {
     setIsSubmitted(true)
   }
 
-  const handleNoteChange = useCallback(async (value: string, pub?: boolean) => {
+  const answerIdRef = useRef(answerId)
+  answerIdRef.current = answerId
+  const isPublicRef = useRef(isPublic)
+  isPublicRef.current = isPublic
+
+  const handleNoteChange = useCallback((value: string) => {
     setNote(value)
-    if (answerId) {
-      await updateNote(answerId, value, pub !== undefined ? pub : isPublic)
-    }
-  }, [answerId, isPublic, updateNote])
+    const aid = answerIdRef.current
+    if (aid) updateNote(aid, value, isPublicRef.current)
+  }, [updateNote])
 
   const handlePublicToggle = useCallback(async (pub: boolean) => {
     setIsPublic(pub)
@@ -437,8 +441,7 @@ export function PracticeSession() {
               <NoteEditor
                 placeholder={t('practice.notePlaceholder')}
                 value={note}
-                onChange={(v) => handleNoteChange(v)}
-                rows={3}
+                onChange={handleNoteChange}
               />
               <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                 <input
