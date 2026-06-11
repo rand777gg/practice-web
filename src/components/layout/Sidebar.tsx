@@ -62,9 +62,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
           {!collapsed && <p className="px-3 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">{t('nav.admin')}</p>}
           <NavItem to="/admin/questions" icon={<FileQuestion className="h-4 w-4" />} label={t('nav.questions')} collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/users" icon={<Users className="h-4 w-4" />} label={t('nav.users')} collapsed={collapsed} onClick={handleClick} />
-          <NavItem to="/admin/ai" icon={<Sparkles className="h-4 w-4" />} label={t('nav.ai')} collapsed={collapsed} onClick={handleClick}
-            badge={!collapsed ? <span className="ml-auto text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">BETA</span> : undefined}
-          />
+          <NavItem to="/admin/ai" icon={<Sparkles className="h-4 w-4" />} label={t('nav.ai')} collapsed={collapsed} onClick={handleClick} />
         </>
       )}
     </nav>
