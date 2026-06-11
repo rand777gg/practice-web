@@ -140,6 +140,7 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
     // Inline code
     code({ className: cls, children, ...props }: any) {
       const match = /language-(\w+)/.exec(cls || '')
+      const lang = match?.[1]
       const inline = !match
       if (inline) {
         return (
@@ -148,9 +149,9 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
           </code>
         )
       }
-      const lang = match[1]
       const text = String(children).replace(/\n$/, '')
-      return <CodeBlock lang={lang} code={text} theme={codeTheme} />
+      if (lang === 'mermaid') return <MermaidBlock code={text} />
+      if (lang === 'plantuml') return <PlantUMLBlock code={text} />
     },
     // Images — resizable + alignment tools when onImageAction is provided
     img({ src, alt, title, ...props }: any) {
@@ -198,7 +199,7 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
-      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, [rehypeKatex, { strict: false, trust: true }]]} components={components}>
         {content}
       </ReactMarkdown>
     </div>
@@ -231,6 +232,64 @@ async function getHighlighter() {
   return _highlighterLoading
 }
 
+// ── Mermaid diagram renderer ─────────────────────────────────────────
+function MermaidBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    setSvg(null)
+    setErr(null)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const mermaid = await import('mermaid')
+        mermaid.default.initialize({ startOnLoad: false, theme: 'default' })
+        const id = `mermaid-${Math.random().toString(36).slice(2, 8)}`
+        const { svg: s } = await mermaid.default.render(id, code)
+        if (!cancelled && mountedRef.current) setSvg(s)
+      } catch (e) {
+        if (!cancelled && mountedRef.current) setErr(e instanceof Error ? e.message : 'Mermaid error')
+      }
+    })()
+    return () => { cancelled = true; mountedRef.current = false }
+  }, [code])
+
+  if (err) return <pre className="text-xs text-red-500 p-2 rounded bg-red-50 dark:bg-red-950">{err}</pre>
+  if (!svg) return <div className="h-20 bg-muted/30 rounded animate-pulse" />
+  return <div className="my-2 flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+// ── PlantUML renderer (via kroki.io) ────────────────────────────────
+function PlantUMLBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setSvg(null); setErr(null)
+    ;(async () => {
+      try {
+        const hex = [...new TextEncoder().encode(code)].map(b => b.toString(16).padStart(2, '0')).join('')
+        const res = await fetch(`https://kroki.io/plantuml/svg/${hex}`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const text = await res.text()
+        if (!cancelled) setSvg(text)
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : 'PlantUML error')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [code])
+
+  if (err) return <pre className="text-xs text-red-500 p-2 rounded bg-red-50 dark:bg-red-950">{err}</pre>
+  if (!svg) return <div className="h-20 bg-muted/30 rounded animate-pulse" />
+  return <div className="my-2 flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+// ── Shiki code highlighter ───────────────────────────────────────────
 function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: string }) {
   const [html, setHtml] = useState<string | null>(null)
 
