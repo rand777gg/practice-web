@@ -160,6 +160,27 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     if (newMd !== current) onChange(newMd)
   }
 
+  // Insert markdown template at cursor position
+  const insertMarkdown = (type: 'mermaid' | 'plantuml' | 'math', body?: string) => {
+    const ta = textareaRef.current
+    const templates: Record<string, string> = {
+      mermaid: '```mermaid\n' + (body || 'graph TD\n  A[开始] --> B[结束]') + '\n```\n',
+      plantuml: '```plantuml\n' + (body || '@startuml\nA -> B: hello\n@enduml') + '\n```\n',
+      math: '$' + (body || 'E=mc^2') + '$',
+    }
+    const insert = templates[type]
+    if (ta) {
+      const s = ta.selectionStart; const e = ta.selectionEnd
+      const before = ta.value.slice(0, s); const after = ta.value.slice(e)
+      ta.value = before + insert + after
+      ta.selectionStart = ta.selectionEnd = s + insert.length
+      ta.focus()
+      onChange(ta.value)
+    } else {
+      onChange(value + insert)
+    }
+  }
+
   const canRecognize = noteRecognitionMode === 'ai'
     ? !!activeProvider?.apiKey
     : !!getMinerUToken()
@@ -292,12 +313,18 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           }}>
           {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}插入图片
         </Button>
-        {/* Upload for OCR recognition */}
         <Button variant="outline" size="sm" className="text-xs h-7"
           title="支持手写笔记、图片、表格等内容识别"
           onClick={() => fileInputRef.current?.click()}>
           <ImagePlus className="h-3 w-3 mr-1" />上传手写笔记
         </Button>
+        <span className="w-px h-4 bg-border mx-0.5 self-center hidden sm:block" />
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+          onClick={() => insertMarkdown('mermaid')}>Mermaid</Button>
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+          onClick={() => insertMarkdown('plantuml')}>PlantUML</Button>
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+          onClick={() => insertMarkdown('math')}>$公式$</Button>
         {imageBase64 && (
           <>
             <Button variant="outline" size="sm" className="text-xs h-7"
