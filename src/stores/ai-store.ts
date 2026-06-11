@@ -81,13 +81,26 @@ function loadProviders(): AiProviderConfig[] {
     const stored = localStorage.getItem('ai_providers')
     if (stored) {
       const saved = JSON.parse(stored) as AiProviderConfig[]
-      // Merge new default providers not yet in saved data
+      // Merge: add new providers, prune removed models, sync existing
       for (const def of DEFAULT_PROVIDERS) {
-        if (!saved.find((s) => s.id === def.id)) {
+        const existing = saved.find((s) => s.id === def.id)
+        if (!existing) {
           saved.push(def)
+        } else {
+          // Keep only models that still exist in defaults
+          existing.models = existing.models.filter((m) =>
+            def.models.some((dm) => dm.id === m.id),
+          )
+          // Add new models
+          for (const dm of def.models) {
+            if (!existing.models.find((m) => m.id === dm.id)) {
+              existing.models.push({ ...dm })
+            }
+          }
         }
       }
-      return saved
+      // Remove providers that no longer exist in defaults
+      return saved.filter((s) => DEFAULT_PROVIDERS.find((d) => d.id === s.id))
     }
   } catch { /* noop */ }
   return [...DEFAULT_PROVIDERS]
