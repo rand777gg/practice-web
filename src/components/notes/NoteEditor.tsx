@@ -1,7 +1,9 @@
 import { useState, useRef, memo } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { ImagePlus, Sparkles, Loader2, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, X, ImageUp } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth-store'
 import { MinerUClient } from '@/lib/ai/mineru'
 import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -16,14 +18,18 @@ interface Props {
 export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholder, rows = 3 }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [isRecognizing, setIsRecognizing] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const user = useAuthStore((s) => s.user)
   const { noteRecognitionMode, multimodalAIConfig } = useSettingsStore()
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setImageFile(file)
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string
@@ -37,6 +43,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
   const handleRemoveImage = () => {
     setImagePreview(null)
     setImageBase64(null)
+    setImageFile(null)
     setRecognitionResult(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -76,14 +83,31 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
     setIsRecognizing(false)
   }
 
+  const handleUploadToCloud = async () => {
+    if (!imageFile || !user) return
+    setIsUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', imageFile)
+      formData.append('folder', `notes/${user.id}`)
+      const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+      if (error) throw new Error(error.message || '上传失败')
+      const imageUrl = (data as { url: string }).url
+      if (!imageUrl) throw new Error('未返回图片地址')
+      const md = `![图片](${imageUrl})`
+      onChange(value ? `${value}\n\n${md}` : md)
+      handleRemoveImage()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '上传失败')
+    }
+    setIsUploading(false)
+  }
+
   const handleInsertResult = () => {
     if (!recognitionResult) return
     const separator = value ? '\n\n---\n识别结果：\n' : ''
     onChange(value + separator + recognitionResult)
-    setImagePreview(null)
-    setImageBase64(null)
-    setRecognitionResult(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
+    handleRemoveImage()
   }
 
   const canRecognize = noteRecognitionMode === 'ai'
@@ -129,7 +153,7 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
           </div>
         </div>
       )}
-      <div className="flex gap-1">
+      <div className="flex gap-1 flex-wrap">
         <input
           ref={fileInputRef}
           type="file"
@@ -147,20 +171,38 @@ export const NoteEditor = memo(function NoteEditor({ value, onChange, placeholde
           上传图片
         </Button>
         {imageBase64 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs h-7"
-            disabled={isRecognizing || !canRecognize}
-            onClick={handleRecognize}
-          >
-            {isRecognizing ? (
-              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-            ) : (
-              <Sparkles className="h-3 w-3 mr-1" />
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+              disabled={isRecognizing || !canRecognize}
+              onClick={handleRecognize}
+            >
+              {isRecognizing ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-1" />
+              )}
+              {noteRecognitionMode === 'ai' ? 'AI识别' : 'MinerU识别'}
+            </Button>
+            {user && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7"
+                disabled={isUploading}
+                onClick={handleUploadToCloud}
+              >
+                {isUploading ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <ImageUp className="h-3 w-3 mr-1" />
+                )}
+                存为图片
+              </Button>
             )}
-            {noteRecognitionMode === 'ai' ? 'AI识别' : 'MinerU识别'}
-          </Button>
+          </>
         )}
       </div>
     </div>
