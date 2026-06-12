@@ -928,9 +928,12 @@ export function Component() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto max-w-md">
                             {r2Pdfs.map((f) => (
-                              <DropdownMenuItem key={f.key} onClick={() => { setManualPdfUrl(f.url); setFile(null); setFiles([]) }}>
+                              <DropdownMenuItem key={f.key} className="flex items-center gap-1" onClick={() => { setManualPdfUrl(f.url); setFile(null); setFiles([]) }}>
                                 <span className="truncate text-xs">{f.key.replace('pdf/', '')}</span>
                                 <span className="ml-2 text-[10px] text-muted-foreground shrink-0">{formatSize(f.size)}</span>
+                                <a href={f.url} target="_blank" rel="noopener noreferrer"
+                                  className="ml-auto shrink-0 text-[10px] text-primary hover:underline"
+                                  onClick={(e) => e.stopPropagation()}>预览</a>
                               </DropdownMenuItem>
                             ))}
                           </DropdownMenuContent>
