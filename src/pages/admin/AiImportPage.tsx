@@ -74,19 +74,6 @@ export function Component() {
       .catch(() => {})
   }, [])
 
-  // Inject dedup context into prompt when selection changes
-  useEffect(() => {
-    const dedupRecords = history.filter((h) => dedupHistoryIds.has(h.id) && h.questions_json)
-    if (dedupRecords.length === 0) {
-      setGenerateDocPrompt(basePromptRef.current)
-      return
-    }
-    const dedupText = `\n\n⚠️ 重要：以下是你之前根据相同资料生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
-      dedupRecords.map((h, i) => `【历史记录${i + 1}】${h.questions_json}`).join('\n')
-    }`
-    setGenerateDocPrompt(basePromptRef.current + dedupText)
-  }, [dedupHistoryIds, history])
-
   const [noCache, setNoCache] = useState(false)
   const [cacheTolerance, setCacheTolerance] = useState('')
   const [dataId, setDataId] = useState('')
@@ -114,6 +101,20 @@ export function Component() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [dedupHistoryIds, setDedupHistoryIds] = useState<Set<number>>(new Set())
+
+  // Inject dedup context into prompt when selection changes
+  useEffect(() => {
+    const dedupRecords = history.filter((h) => dedupHistoryIds.has(h.id) && h.questions_json)
+    if (dedupRecords.length === 0) {
+      setGenerateDocPrompt(basePromptRef.current)
+      return
+    }
+    const dedupText = `\n\n⚠️ 重要：以下是你之前根据相同资料生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
+      dedupRecords.map((h, i) => `【历史记录${i + 1}】${h.questions_json}`).join('\n')
+    }`
+    setGenerateDocPrompt(basePromptRef.current + dedupText)
+  }, [dedupHistoryIds, history])
+
   const user = useAuthStore((s) => s.user)
 
   const loadHistoryList = async () => {
