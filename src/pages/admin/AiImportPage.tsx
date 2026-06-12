@@ -98,6 +98,7 @@ export function Component() {
   const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
+  const [dedupHistoryIds, setDedupHistoryIds] = useState<Set<number>>(new Set())
   const user = useAuthStore((s) => s.user)
 
   const loadHistoryList = async () => {
@@ -339,6 +340,15 @@ export function Component() {
     setGenerating(true)
     setError('')
     try {
+      // Build dedup context from selected history
+      const dedupRecords = history.filter((h) => dedupHistoryIds.has(h.id) && h.questions_json)
+      const dedupPrompt = dedupRecords.length > 0
+        ? `\n\n⚠️ 重要：以下是你之前根据相同资料生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
+            dedupRecords.map((h, i) => `【历史记录${i + 1}】${h.questions_json}`).join('\n')
+          }`
+        : ''
+      const finalSysPrompt = generateDocPrompt + dedupPrompt
+
       let result
       if (genFileText) {
         result = await generateFromText({
@@ -346,14 +356,14 @@ export function Component() {
           subject: genSubject || undefined,
           questionTypes: [...genTypes],
           count: genCount,
-        }, generateDocPrompt)
+        }, finalSysPrompt)
       } else {
         result = await generateQuestions({
           subject: genSubject,
           questionTypes: [...genTypes],
           count: genCount,
           topicDescription: genTopic || undefined,
-        }, generateDocPrompt)
+        }, finalSysPrompt)
       }
       const questions = genTopic
         ? result.questions.map((q) => ({ ...q, key_points: genTopic }))
@@ -382,6 +392,9 @@ export function Component() {
     try {
       const text = await extractFileText(f)
       setGenFileText(text)
+      // Auto-select history records with same file name for dedup
+      const matched = history.filter((h) => h.file_name === f.name && h.questions_json)
+      if (matched.length > 0) setDedupHistoryIds(new Set(matched.map((h) => h.id)))
     } catch (err) {
       setError(err instanceof Error ? err.message : '文件读取失败')
       setGenFile(null)
@@ -909,6 +922,35 @@ export function Component() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* Dedup: select history records to avoid */}
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1 font-medium">
+                      避免重复 {dedupHistoryIds.size > 0 ? `(已选 ${dedupHistoryIds.size})` : ''}
+                    </summary>
+                    {history.filter((h) => h.questions_json).length === 0 ? (
+                      <p className="text-muted-foreground py-1">暂无历史生成记录</p>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1 pl-1 border-l-2 border-muted">
+                        {history.filter((h) => h.questions_json).map((h) => (
+                          <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
+                            <input type="checkbox" checked={dedupHistoryIds.has(h.id)}
+                              onChange={() => {
+                                setDedupHistoryIds((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(h.id)) next.delete(h.id)
+                                  else next.add(h.id)
+                                  return next
+                                })
+                              }}
+                              className="rounded shrink-0" />
+                            <span className="truncate">{h.file_name}</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </details>
 
                 </div>
               ) : (
