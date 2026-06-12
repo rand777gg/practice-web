@@ -7,7 +7,8 @@ import { visit } from 'unist-util-visit'
 // rehype plugin: remark-math inline-math nodes → MathJax \(...\) delimiters
 function rehypeMathJax() {
   return (tree: any) => {
-    visit(tree, 'element', (node: any, idx: number, parent: any) => {
+    visit(tree, 'element', (node: any, idx: number | undefined, parent: any) => {
+      if (idx == null) return
       const cls = node.properties?.className
       if (Array.isArray(cls) && cls.includes('math') && node.tagName === 'span') {
         const text = extractText(node)
