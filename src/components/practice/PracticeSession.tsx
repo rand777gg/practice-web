@@ -511,10 +511,22 @@ export function PracticeSession() {
                 </Button>
               </>
             ) : (
-              <Button onClick={handleNext}>
-                <Shuffle className="h-4 w-4" />
-                {t('practice.nextQuestion')}
-              </Button>
+              <>
+                {question && !question.verified && (
+                  <Button variant="outline" size="sm"
+                    onClick={async () => {
+                      await supabase.from('questions').update({ verified: true }).eq('id', question!.id)
+                      setQuestion({ ...question!, verified: true })
+                    }}>
+                    <Check className="h-4 w-4 mr-1" />
+                    确认验证
+                  </Button>
+                )}
+                <Button onClick={handleNext}>
+                  <Shuffle className="h-4 w-4" />
+                  {t('practice.nextQuestion')}
+                </Button>
+              </>
             )}
           </div>
         </>
