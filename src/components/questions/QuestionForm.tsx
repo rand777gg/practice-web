@@ -18,7 +18,8 @@ import {
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
-import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
+import { generateKeyPoints, hasAiConfig, DeepSeekParser } from '@/lib/ai'
+import { getAiConfig } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
@@ -50,6 +51,9 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
   const [keyPointsAnimating, setKeyPointsAnimating] = useState(false)
   const [keyPointsLoading, setKeyPointsLoading] = useState(false)
+  const [stemExtracting, setStemExtracting] = useState(false)
+  const [stemGlow, setStemGlow] = useState(false)
+  const [stemFade, setStemFade] = useState(false)
   const typewriterRef = useRef<{ text: string; timer: ReturnType<typeof setInterval> | null }>({ text: '', timer: null })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -138,6 +142,40 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     setCorrectAnswer(arr)
   }
 
+  const handleExtractStem = async () => {
+    if (!questionText.trim()) return
+    setStemExtracting(true)
+    setStemGlow(true)
+    try {
+      const config = getAiConfig()
+      if (!config.apiKey) return
+      const parser = new DeepSeekParser(config as any)
+      const result = await (parser as any).extractStem?.(questionText.trim()) ??
+        await (async () => {
+          const { generateText } = await import('ai')
+          const { createDeepSeek } = await import('@ai-sdk/deepseek')
+          const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+          const model = client(config.model || 'deepseek-chat')
+          const { text } = await generateText({
+            model,
+            system: '你是一个题目格式化助手。只提取题干部分，去掉所有选项（A. B. C. D. ①②③④等）和分析/解析内容。直接返回提取后的纯题干，不要加任何额外说明。',
+            prompt: questionText.trim(),
+            temperature: 0.1,
+          })
+          return text.trim()
+        })()
+      if (result && result !== questionText.trim()) setQuestionText(result)
+    } catch { /* ignore */ }
+    setStemExtracting(false)
+    setTimeout(() => {
+      setStemFade(true)
+      requestAnimationFrame(() => {
+        setStemGlow(false)
+        setTimeout(() => setStemFade(false), 1500)
+      })
+    }, 300)
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -193,12 +231,31 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <CardTitle className="text-sm">{t('questions.questionText')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <MarkdownEditor
-                value={questionText}
-                onChange={setQuestionText}
-                placeholder={t('questions.questionPlaceholder')}
-                minHeight="160px"
-              />
+              <div className="relative">
+                <MarkdownEditor
+                  value={questionText}
+                  onChange={setQuestionText}
+                  placeholder={t('questions.questionPlaceholder')}
+                  minHeight="160px"
+                />
+                {hasAiConfig() && (
+                  <Button type="button" variant="ghost" size="icon"
+                    className="absolute right-1 bottom-1 h-7 w-7"
+                    disabled={stemExtracting || !questionText.trim()}
+                    onClick={handleExtractStem}
+                    title="AI 提取题干"
+                  >
+                    <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
+                  </Button>
+                )}
+                {(stemGlow || stemFade) && (
+                  <div className={cn(
+                    'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
+                    stemGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
+                    stemFade && 'border-2 border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
+                  )} />
+                )}
+              </div>
             </CardContent>
           </Card>
 
