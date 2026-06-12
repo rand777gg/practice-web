@@ -163,7 +163,7 @@ export function Component() {
   const genReady = parseMode === 'generate' && !!genSubject && genTypes.size > 0 && aiConfigured
   const canStart = parseMode === 'generate'
     ? genReady
-    : !!pdfUrl && precisionReady
+    : !!manualPdfUrl && precisionReady
       ? true
       : parseMode === 'precision'
         ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
@@ -211,7 +211,7 @@ export function Component() {
     setParseStatus({ state: 'connecting' })
 
     try {
-      if (pdfUrl) {
+      if (manualPdfUrl) {
         await runUrlParse()
       } else if (parseMode === 'precision') {
         await runPrecisionParse()
@@ -239,7 +239,7 @@ export function Component() {
       cacheTolerance: cacheTolerance ? Number(cacheTolerance) : undefined,
     }
     setParseMsg('正在创建解析任务...')
-    const task = await mineru.createTask(pdfUrl, options)
+    const task = await mineru.createTask(manualPdfUrl, options)
     setParseStatus({ ...task, state: 'running' } as unknown as Record<string, unknown>)
 
     for (let i = 0; i < 100; i++) {
@@ -250,9 +250,9 @@ export function Component() {
         setParseMsg('正在提取解析结果...')
         const { fetchZipAndExtractFiles } = await import('@/lib/ai/mineru')
         const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
-        setParseResult({ markdown, fileName: pdfUrl.split('/').pop() || 'document', jsonData })
+        setParseResult({ markdown, fileName: manualPdfUrl.split('/').pop() || 'document', jsonData })
         setParsingDone(true)
-        saveToHistory({ fileName: pdfUrl.split('/').pop() || 'document', markdown, jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (pollResult as any)?.extractProgress?.totalPages })
+        saveToHistory({ fileName: manualPdfUrl.split('/').pop() || 'document', markdown, jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (pollResult as any)?.extractProgress?.totalPages })
         return
       }
       if (pollResult.state === 'failed') throw new Error(`解析失败: ${(pollResult as any).errMsg}`)
