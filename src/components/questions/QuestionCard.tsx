@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Pencil, Star, Sparkles } from 'lucide-react'
+import { Check, Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 function MultiYearBadge({ yearCats }: { yearCats: string[] }) {

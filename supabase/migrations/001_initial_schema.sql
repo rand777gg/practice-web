@@ -622,6 +622,9 @@ BEGIN
 END;
 $$;
 
+-- 人工验证标识
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false;
+
 -- 查询用户最后登录时间
 CREATE OR REPLACE FUNCTION public.get_user_last_sign_in(user_id UUID)
 RETURNS TIMESTAMPTZ

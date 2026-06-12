@@ -86,6 +86,7 @@ export interface Question {
   seq_number: number | null
   created_at: string
   created_by: string | null
+  verified: boolean
 }
 
 export interface ExamSession {

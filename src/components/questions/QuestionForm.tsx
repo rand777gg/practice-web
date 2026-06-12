@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
@@ -45,6 +46,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [analysis, setAnalysis] = useState(initialData?.analysis ?? '')
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
+  const [verified, setVerified] = useState(initialData?.verified ?? false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [keyPointsGlow, setKeyPointsGlow] = useState(false)
   const [keyPointsFade, setKeyPointsFade] = useState(false)
@@ -213,6 +215,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         analysis: analysis.trim() || null,
         key_points: keyPoints.trim() || null,
         seq_number: seqNumber ? Number(seqNumber) : null,
+        verified,
       })
     } catch {
       setError(t('questions.saveFailed'))
@@ -448,6 +451,14 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   <Input type="number" value={seqNumber} onChange={(e) => setSeqNumber(e.target.value)}
                     placeholder="#" className="text-sm text-center" />
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <Label className="text-sm">人工验证</Label>
+                  <p className="text-xs text-muted-foreground">标记该题目已通过人工审核</p>
+                </div>
+                <Switch checked={verified} onCheckedChange={setVerified} />
               </div>
 
               <div className="space-y-2">
