@@ -621,3 +621,13 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- 查询用户最后登录时间
+CREATE OR REPLACE FUNCTION public.get_user_last_sign_in(user_id UUID)
+RETURNS TIMESTAMPTZ
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT last_sign_in_at FROM auth.users WHERE id = user_id;
+$$;

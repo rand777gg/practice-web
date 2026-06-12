@@ -13,7 +13,7 @@ export function Component() {
   const { t } = useT()
   const onlineIds = useOnlineUsers()
   const { user: currentUser, profile: myProfile } = useAuthStore()
-  const [profiles, setProfiles] = useState<(Profile & { email?: string; providers?: string[] })[]>([])
+  const [profiles, setProfiles] = useState<(Profile & { email?: string; providers?: string[]; lastSignIn?: string })[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export function Component() {
 
       const list = (data ?? []) as (Profile & { email?: string; providers?: string[] })[]
 
-      const [emails, providers] = await Promise.all([
+      const [emails, providers, signIns] = await Promise.all([
         Promise.all(list.map(async (p) => {
           const { data } = await supabase.rpc('get_user_email', { user_id: p.id })
           return { id: p.id, email: (data as string) ?? '' }
@@ -34,12 +34,18 @@ export function Component() {
           const { data } = await supabase.rpc('get_user_providers', { user_id: p.id })
           return { id: p.id, providers: (data as string[]) ?? [] }
         })),
+        Promise.all(list.map(async (p) => {
+          const { data } = await supabase.rpc('get_user_last_sign_in', { user_id: p.id })
+          return { id: p.id, lastSignIn: data as string | null }
+        })),
       ])
       const emailMap = new Map(emails.map((e) => [e.id, e.email]))
       const providerMap = new Map(providers.map((p) => [p.id, p.providers]))
+      const signInMap = new Map(signIns.map((s) => [s.id, s.lastSignIn]))
       for (const p of list) {
         p.email = emailMap.get(p.id) ?? ''
         p.providers = providerMap.get(p.id) ?? []
+        p.lastSignIn = signInMap.get(p.id) ?? undefined
       }
 
       setProfiles(list)
@@ -65,7 +71,7 @@ export function Component() {
           <Table>
             <TableHeader>
               <TableRow>
-                {[...Array(6)].map((_, i) => <TableHead key={i}><Skeleton className="h-4 w-12" /></TableHead>)}
+                {[...Array(7)].map((_, i) => <TableHead key={i}><Skeleton className="h-4 w-12" /></TableHead>)}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -93,6 +99,7 @@ export function Component() {
               <TableHead className="min-w-[160px]">{t('users.email')}</TableHead>
               <TableHead>{t('users.role')}</TableHead>
               <TableHead>{t('users.joined')}</TableHead>
+              <TableHead className="min-w-[160px]">最后登录</TableHead>
               <TableHead className="w-20">{t('users.action')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -116,6 +123,9 @@ export function Component() {
                 </TableCell>
                 <TableCell className="text-muted-foreground whitespace-nowrap">
                   {new Date(p.created_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell className="text-muted-foreground whitespace-nowrap text-xs font-mono">
+                  {p.lastSignIn ? new Date(p.lastSignIn).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '从未登录'}
                 </TableCell>
                 <TableCell>
                   <Button
