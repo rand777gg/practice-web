@@ -63,8 +63,16 @@ export function Component() {
   const [batchMode, setBatchMode] = useState(false)
   const [useR2Upload, setUseR2Upload] = useState(true)
   const [manualPdfUrl, setManualPdfUrl] = useState('')
+  const [r2Pdfs, setR2Pdfs] = useState<{ key: string; url: string; size: number }[]>([])
   const [pageRanges, setPageRanges] = useState('')
   const [extraFormats, setExtraFormats] = useState<string[]>([])
+
+  // Load existing PDFs from R2
+  useEffect(() => {
+    supabase.functions.invoke('r2-list', { body: { prefix: 'pdf/' } })
+      .then(({ data }) => { if (data?.files) setR2Pdfs(data.files) })
+      .catch(() => {})
+  }, [])
   const [noCache, setNoCache] = useState(false)
   const [cacheTolerance, setCacheTolerance] = useState('')
   const [dataId, setDataId] = useState('')
@@ -907,9 +915,28 @@ export function Component() {
                 <>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">PDF URL <span className="text-muted-foreground font-normal text-xs">(选填，直接填入 URL 无需上传)</span></label>
-                    <Input placeholder="https://example.com/document.pdf" value={manualPdfUrl}
-                      onChange={(e) => { setManualPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
-                      className="h-9 text-sm" />
+                    <div className="flex gap-2">
+                      <Input placeholder="https://example.com/document.pdf" value={manualPdfUrl}
+                        onChange={(e) => { setManualPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
+                        className="h-9 text-sm flex-1" />
+                      {r2Pdfs.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-9 gap-1 text-xs">
+                              R2 已有 <ChevronDown className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto max-w-md">
+                            {r2Pdfs.map((f) => (
+                              <DropdownMenuItem key={f.key} onClick={() => { setManualPdfUrl(f.url); setFile(null); setFiles([]) }}>
+                                <span className="truncate text-xs">{f.key.replace('pdf/', '')}</span>
+                                <span className="ml-2 text-[10px] text-muted-foreground shrink-0">{formatSize(f.size)}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   </div>
                   <AiImportUpload
                     onFile={handleFile}
@@ -1100,6 +1127,12 @@ export function Component() {
       </Card>
     </div>
   )
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function PromptEditor({ label, value, onChange, onReset }: { label: string; value: string; onChange: (v: string) => void; onReset: () => void }) {
