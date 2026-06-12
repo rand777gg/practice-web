@@ -73,6 +73,20 @@ export function Component() {
       .then(({ data }) => { if (data?.files) setR2Pdfs(data.files) })
       .catch(() => {})
   }, [])
+
+  // Inject dedup context into prompt when selection changes
+  useEffect(() => {
+    const dedupRecords = history.filter((h) => dedupHistoryIds.has(h.id) && h.questions_json)
+    if (dedupRecords.length === 0) {
+      setGenerateDocPrompt(basePromptRef.current)
+      return
+    }
+    const dedupText = `\n\n⚠️ 重要：以下是你之前根据相同资料生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
+      dedupRecords.map((h, i) => `【历史记录${i + 1}】${h.questions_json}`).join('\n')
+    }`
+    setGenerateDocPrompt(basePromptRef.current + dedupText)
+  }, [dedupHistoryIds, history])
+
   const [noCache, setNoCache] = useState(false)
   const [cacheTolerance, setCacheTolerance] = useState('')
   const [dataId, setDataId] = useState('')
@@ -92,6 +106,7 @@ export function Component() {
   // Custom prompts
   const [extractPrompt, setExtractPrompt] = useState(() => getPrompt('extract'))
   const [generateDocPrompt, setGenerateDocPrompt] = useState(() => getPrompt('generate_doc'))
+  const basePromptRef = useRef(generateDocPrompt)
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
@@ -340,15 +355,6 @@ export function Component() {
     setGenerating(true)
     setError('')
     try {
-      // Build dedup context from selected history
-      const dedupRecords = history.filter((h) => dedupHistoryIds.has(h.id) && h.questions_json)
-      const dedupPrompt = dedupRecords.length > 0
-        ? `\n\n⚠️ 重要：以下是你之前根据相同资料生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
-            dedupRecords.map((h, i) => `【历史记录${i + 1}】${h.questions_json}`).join('\n')
-          }`
-        : ''
-      const finalSysPrompt = generateDocPrompt + dedupPrompt
-
       let result
       if (genFileText) {
         result = await generateFromText({
@@ -356,14 +362,14 @@ export function Component() {
           subject: genSubject || undefined,
           questionTypes: [...genTypes],
           count: genCount,
-        }, finalSysPrompt)
+        }, generateDocPrompt)
       } else {
         result = await generateQuestions({
           subject: genSubject,
           questionTypes: [...genTypes],
           count: genCount,
           topicDescription: genTopic || undefined,
-        }, finalSysPrompt)
+        }, generateDocPrompt)
       }
       const questions = genTopic
         ? result.questions.map((q) => ({ ...q, key_points: genTopic }))
@@ -864,7 +870,7 @@ export function Component() {
                     </CardContent>
                   </Card>
 
-                  <PromptEditor label="预设" value={generateDocPrompt}
+                  <PromptEditor label="提示词" value={generateDocPrompt}
                     onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
                     onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
                   />
