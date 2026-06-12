@@ -822,12 +822,44 @@ export function Component() {
                           <Spinner /> 正在提取文本...
                         </div>
                       )}
-                      {genFileText && !extracting && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        {genFileText && !extracting && (
+                          <details className="text-xs">
+                            <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1 font-medium">预览提取内容</summary>
+                            <pre className="mt-1 p-3 bg-muted/50 rounded-lg border max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
+                          </details>
+                        )}
                         <details className="text-xs">
-                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1">预览提取内容</summary>
-                          <pre className="mt-1 p-3 bg-muted/50 rounded-lg border max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed">{genFileText.slice(0, 2000)}{genFileText.length > 2000 ? '\n\n... 内容过长，已截断预览' : ''}</pre>
+                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1 font-medium">
+                            避免重复 {dedupHistoryIds.size > 0 ? `(已选 ${dedupHistoryIds.size})` : ''}
+                          </summary>
+                          {history.filter((h) => h.questions_json).length === 0 ? (
+                            <p className="text-muted-foreground py-1">暂无历史生成记录</p>
+                          ) : (
+                            <div className="max-h-40 overflow-y-auto space-y-0.5 mt-1 rounded border p-1.5">
+                              {history.filter((h) => h.questions_json).map((h) => (
+                                <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
+                                  <input type="checkbox" checked={dedupHistoryIds.has(h.id)}
+                                    onChange={() => {
+                                      setDedupHistoryIds((prev) => {
+                                        const next = new Set(prev)
+                                        if (next.has(h.id)) next.delete(h.id)
+                                        else next.add(h.id)
+                                        return next
+                                      })
+                                    }}
+                                    className="rounded shrink-0" />
+                                  <span className="truncate flex-1">{h.file_name}</span>
+                                  <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          {dedupHistoryIds.size > 0 && (
+                            <p className="text-[10px] text-muted-foreground mt-1">✓ 已将 {dedupHistoryIds.size} 条历史题目的题干加入提示词，AI 将避免重复</p>
+                          )}
                         </details>
-                      )}
+                      </div>
                     </CardContent>
                   </Card>
 
@@ -922,35 +954,6 @@ export function Component() {
                       </div>
                     </CardContent>
                   </Card>
-
-                  {/* Dedup: select history records to avoid */}
-                  <details className="text-xs">
-                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1 font-medium">
-                      避免重复 {dedupHistoryIds.size > 0 ? `(已选 ${dedupHistoryIds.size})` : ''}
-                    </summary>
-                    {history.filter((h) => h.questions_json).length === 0 ? (
-                      <p className="text-muted-foreground py-1">暂无历史生成记录</p>
-                    ) : (
-                      <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1 pl-1 border-l-2 border-muted">
-                        {history.filter((h) => h.questions_json).map((h) => (
-                          <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
-                            <input type="checkbox" checked={dedupHistoryIds.has(h.id)}
-                              onChange={() => {
-                                setDedupHistoryIds((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(h.id)) next.delete(h.id)
-                                  else next.add(h.id)
-                                  return next
-                                })
-                              }}
-                              className="rounded shrink-0" />
-                            <span className="truncate">{h.file_name}</span>
-                            <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </details>
 
                 </div>
               ) : (
