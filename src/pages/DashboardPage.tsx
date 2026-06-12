@@ -117,12 +117,16 @@ export function Component() {
             .then(({ data }) => { if (data) dashboardStore.setQMetaCache(data as QMeta[]); return null })
 
       // Pre-aggregated daily stats (lightweight — replaces raw user_answers for charts)
-      const [{ data: statsRows }] = await Promise.all([
+      const [{ data: statsRows }, { data: kgAnswers }] = await Promise.all([
         supabase
           .from('user_daily_stats')
           .select('date, subject, question_type, total, correct, hourly')
           .eq('user_id', user!.id)
           .gte('date', start12wk.toISOString().slice(0, 10)),
+        supabase
+          .from('user_answers')
+          .select('question_id')
+          .eq('user_id', user!.id),
         qFetchPromise,
       ])
       if (isStale(myGen)) { setIsRefreshing(false); return }
