@@ -23,7 +23,7 @@ export function Component() {
         .select('*')
         .order('created_at', { ascending: true })
 
-      const list = (data ?? []) as (Profile & { email?: string; providers?: string[] })[]
+      const list = (data ?? []) as (Profile & { email?: string; providers?: string[]; lastSignIn?: string })[]
 
       const [emails, providers, signIns] = await Promise.all([
         Promise.all(list.map(async (p) => {
