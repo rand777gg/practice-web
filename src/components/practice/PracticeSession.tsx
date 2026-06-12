@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Shuffle } from 'lucide-react'
+import { Check, ChevronDown, Globe, Lock, Shuffle } from 'lucide-react'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
@@ -486,15 +486,20 @@ export function PracticeSession() {
                 value={note}
                 onChange={setNote}
               />
-              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isPublic}
-                  onChange={(e) => handlePublicToggle(e.target.checked)}
-                  className="rounded"
-                />
-                {t('notes.makePublic')}
-              </label>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{t('notes.makePublic')}</span>
+                <button type="button"
+                  onClick={() => handlePublicToggle(!isPublic)}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    isPublic
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {isPublic ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+                  {isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}
+                </button>
+              </div>
             </div>
           )}
           <div className="flex gap-2 justify-end">
