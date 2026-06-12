@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useAiStore } from '@/stores/ai-store'
-import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,7 +57,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile, signOut, refreshProfile } = useAuthStore()
   const { lang, setLang } = useLangStore()
-  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode } = useSettingsStore()
+  const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
   const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -661,6 +661,31 @@ export function Component() {
                   <p className="text-xs text-muted-foreground">{t('settings.offlineModeDesc')}</p>
                 </div>
                 <Switch checked={offlineMode} onCheckedChange={setOfflineMode} />
+              </div>
+              <div className="pt-2 border-t">
+                <p className="text-sm mb-1">{t('settings.bottomNav')}</p>
+                <p className="text-xs text-muted-foreground mb-3">{t('settings.bottomNavDesc')}</p>
+                <div className="space-y-2">
+                  {BOTTOM_NAV_TABS.map((tab) => {
+                    const checked = bottomNavTabs.includes(tab.key)
+                    return (
+                      <div key={tab.key} className="flex items-center justify-between">
+                        <span className="text-sm">{lang === 'en' ? tab.labelEn : tab.labelZh}</span>
+                        <Switch
+                          checked={checked}
+                          disabled={bottomNavTabs.length <= 1 && checked}
+                          onCheckedChange={() => {
+                            if (checked) {
+                              setBottomNavTabs(bottomNavTabs.filter((k) => k !== tab.key))
+                            } else {
+                              setBottomNavTabs([...bottomNavTabs, tab.key])
+                            }
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </CardContent>
           </Card>

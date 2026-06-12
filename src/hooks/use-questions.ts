@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Question, QuestionType } from '@/types'
 
-const PAGE_SIZE = 20
+const DEFAULT_PAGE_SIZE = 20
 
 export interface FetchParams {
   page?: number
+  pageSize?: number
   search?: string
   subject?: string
   category?: string
   questionType?: QuestionType | ''
+  importMode?: string
+  verified?: '' | 'true' | 'false'
 }
 
 export function useQuestions() {
@@ -18,18 +21,19 @@ export function useQuestions() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const paramsRef = useRef<FetchParams>({})
 
-  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(count / pageSize))
 
   const fetchQuestions = useCallback(async (params: FetchParams = {}) => {
-    const { page: p = 1, search, subject, category, questionType } = params
-    paramsRef.current = params
+    const { page: p = 1, pageSize: ps = pageSize, search, subject, category, questionType, importMode, verified } = params
+    paramsRef.current = { ...params, pageSize: ps }
     setIsLoading(true)
     setError(null)
 
-    const from = (p - 1) * PAGE_SIZE
-    const to = from + PAGE_SIZE - 1
+    const from = (p - 1) * ps
+    const to = from + ps - 1
 
     let query = supabase
       .from('questions')
@@ -39,6 +43,9 @@ export function useQuestions() {
     if (subject) query = query.eq('subject', subject)
     if (category) query = query.contains('categories', [category])
     if (questionType) query = query.eq('question_type', questionType)
+    if (importMode) query = query.eq('import_mode', importMode)
+    if (verified === 'true') query = query.eq('verified', true)
+    else if (verified === 'false') query = query.eq('verified', false)
 
     query = query.order('created_at', { ascending: false }).range(from, to)
 
@@ -51,8 +58,9 @@ export function useQuestions() {
       if (total !== null) setCount(total)
     }
     setPage(p)
+    if (ps !== pageSize) setPageSize(ps)
     setIsLoading(false)
-  }, [])
+  }, [pageSize])
 
   useEffect(() => {
     fetchQuestions()
@@ -78,6 +86,11 @@ export function useQuestions() {
     await fetchQuestions({ ...paramsRef.current, page: nextPage })
   }
 
+  const handleSetPageSize = useCallback((ps: number) => {
+    setPageSize(ps)
+    fetchQuestions({ ...paramsRef.current, pageSize: ps, page: 1 })
+  }, [fetchQuestions])
+
   return {
     questions,
     count,
@@ -85,6 +98,8 @@ export function useQuestions() {
     error,
     page,
     totalPages,
+    pageSize,
+    setPageSize: handleSetPageSize,
     createQuestion,
     updateQuestion,
     deleteQuestion,

@@ -131,20 +131,18 @@ function NoteCard({
 
         <p className="text-sm font-medium leading-relaxed">{note.questions?.question_text || t('notes.untitled')}</p>
 
-        {note.questions && style === 'my' && (
+        {note.questions && (
           <AnswerInfo q={note.questions} selected={note.selected_answer} />
         )}
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          {style === 'my' && (
-            <span className={note.is_public
-              ? 'inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs text-green-700 dark:text-green-300'
-              : 'inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
-            }>
-              {note.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-              {note.is_public ? t('notes.publicLabel') : t('notes.privateLabel')}
-            </span>
-          )}
+          <span className={note.is_public
+            ? 'inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs text-green-700 dark:text-green-300'
+            : 'inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
+          }>
+            {note.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+            {note.is_public ? t('notes.publicLabel') : t('notes.privateLabel')}
+          </span>
           {showAuthor && (
             <span>{t('notes.author')}: {userNicknames[note.user_id] || t('notes.anonymous')}</span>
           )}

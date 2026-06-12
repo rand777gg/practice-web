@@ -33,7 +33,7 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
     const maxVal = Math.max(...seriesData.map((d) => d[1]), 1)
     const isDark = theme === 'dark'
     const colors = isDark ? COLORS_DARK : COLORS_LIGHT
-    const bgColor = isDark ? 'transparent' : '#ffffff'
+    const bgColor = 'transparent'
     const textColor = isDark ? '#9ca3af' : '#57606a'
     const monthColor = isDark ? '#9ca3af' : '#57606a'
 
@@ -64,8 +64,8 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
         orient: 'horizontal',
         left: 'center',
         bottom: 8,
-        itemWidth: 10,
-        itemHeight: 10,
+        itemWidth: 12,
+        itemHeight: 12,
         itemGap: 4,
         showLabel: true,
         text: ['', ''],
@@ -74,16 +74,16 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
       },
       calendar: {
         top: 20,
-        left: 35,
-        right: 15,
+        left: 40,
+        right: 20,
         bottom: 40,
-        cellSize: [10, 10],
+        cellSize: [15, 15],
         range: [start, end],
         itemStyle: {
           color: colors[0],
           borderColor: bgColor,
-          borderWidth: 4,
-          borderRadius: 8,
+          borderWidth: 2,
+          borderRadius: 6,
         },
         yearLabel: { show: false },
         dayLabel: {
@@ -119,7 +119,7 @@ export function DailyGoalHeatmap({ data, dailyGoal }: Props) {
 
   return (
     <ScrollArea scrollbars="horizontal">
-      <ReactECharts echarts={echarts} option={option} style={{ height: 175, minWidth: 750 }} />
+      <ReactECharts echarts={echarts} option={option} style={{ height: 185, minWidth: 800 }} />
     </ScrollArea>
   )
 }

@@ -166,6 +166,8 @@ export const zh = {
     offline: '同步',
     offlineMode: '离线模式',
     offlineModeDesc: '开启后答案仅保存在本地，不自动上传',
+    bottomNav: '底部导航栏',
+    bottomNavDesc: '在移动端底部显示的导航选项',
   },
   questions: {
     questionType: '类型',
@@ -550,6 +552,8 @@ export const en = {
     offline: 'Sync',
     offlineMode: 'Offline Mode',
     offlineModeDesc: 'Save answers locally without auto-upload',
+    bottomNav: 'Bottom Navigation',
+    bottomNavDesc: 'Navigation tabs shown on mobile bottom bar',
   },
   questions: {
     questionType: 'Type',

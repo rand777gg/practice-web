@@ -177,7 +177,7 @@ export function TimeDistributionHistogram({ data }: Props) {
               fontSize={10}
               fontWeight={600}
             >
-              {h}h
+              {String(h).padStart(2, '0')}:00
             </text>
           )
         })}

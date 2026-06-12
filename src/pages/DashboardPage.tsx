@@ -7,7 +7,7 @@ import { useDashboardStore } from '@/stores/dashboard-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, GitBranch, BookOpen, ListChecks } from 'lucide-react'
+import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, BookOpen, ListChecks } from 'lucide-react'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { DashboardEbbinghaus } from '@/components/layout/DashboardEbbinghaus'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -17,13 +17,12 @@ import { useT } from '@/i18n/use-t'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
-const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
 const SubjectAccuracyCharts = lazy(() => import('@/components/charts/SubjectAccuracyCharts').then(m => ({ default: m.SubjectAccuracyCharts })))
-const SubjectRankChart = lazy(() => import('@/components/charts/SubjectRankChart').then(m => ({ default: m.SubjectRankChart })))
+const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
+const SubjectTreemap = lazy(() => import('@/components/charts/SubjectTreemap').then(m => ({ default: m.SubjectTreemap })))
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
 const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/AnswerTimeScatterHistogram').then(m => ({ default: m.AnswerTimeScatterHistogram })))
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
-const KnowledgeGraph = lazy(() => import('@/components/charts/KnowledgeGraph').then(m => ({ default: m.KnowledgeGraph })))
 const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').then(m => ({ default: m.AiChartInsight })))
 
 const ChartFallback = () => (
@@ -431,23 +430,19 @@ export function Component() {
             <TabsList className="justify-center">
               <TabsTrigger value="plan" className="gap-1.5">
                 <ListChecks className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabPlan')}</span>
+                <span className="hidden md:inline">{t('dashboard.tabPlan')}</span>
               </TabsTrigger>
               <TabsTrigger value="stats" className="gap-1.5">
                 <Target className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabStats')}</span>
+                <span className="hidden md:inline">{t('dashboard.tabStats')}</span>
               </TabsTrigger>
               <TabsTrigger value="subjects" className="gap-1.5">
                 <PieChart className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabSubjects')}</span>
+                <span className="hidden md:inline">{t('dashboard.tabSubjects')}</span>
               </TabsTrigger>
               <TabsTrigger value="journey" className="gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabJourney')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="knowledge" className="gap-1.5">
-                <GitBranch className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('dashboard.tabKnowledge')}</span>
+                <span className="hidden md:inline">{t('dashboard.tabJourney')}</span>
               </TabsTrigger>
             </TabsList>
           </ScrollArea>
@@ -456,7 +451,7 @@ export function Component() {
             <div className="space-y-4">
               <DashboardPlanCards />
               <DashboardEbbinghaus />
-              <div className="flex items-center gap-2 overflow-x-auto" ref={btnRowRef}>
+              <div className="xl:hidden flex items-center gap-2 overflow-x-auto" ref={btnRowRef}>
                 {([
                   { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
                   { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
@@ -588,7 +583,7 @@ export function Component() {
                           <SubjectDonutCharts data={chartData.sunburstData} />
                         </Suspense>
                         <Suspense fallback={<ChartFallback />}>
-                          <SubjectRankChart data={chartData.sunburstData} />
+                          <SubjectTreemap data={chartData.sunburstData} />
                         </Suspense>
                       </div>
                       <Suspense fallback={null}>
@@ -687,33 +682,6 @@ export function Component() {
             )}
           </TabsContent>
 
-          <TabsContent value="knowledge">
-            {visitedTabs.has('knowledge') ? (
-              <LazyChart rootMargin="400px">
-                <Card className="border-0 shadow-none">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-muted-foreground">{t('dashboard.knowledgeGraph')}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {!chartData.knowledgeGraph ? (
-                      <ChartFallback />
-                    ) : chartData.knowledgeGraph.nodes.length > 0 ? (
-                      <Suspense fallback={<ChartFallback />}>
-                        <KnowledgeGraph
-                          nodes={chartData.knowledgeGraph.nodes}
-                          edges={chartData.knowledgeGraph.edges}
-                        />
-                      </Suspense>
-                    ) : (
-                      <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </LazyChart>
-            ) : (
-              <SkeletonCard />
-            )}
-          </TabsContent>
         </Tabs>
       )}
     </div>

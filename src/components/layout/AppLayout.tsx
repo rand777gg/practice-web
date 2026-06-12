@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
+import { MobileBottomNav } from './MobileBottomNav'
 import { OnlinePresenceTracker } from './OnlinePresenceTracker'
 import { useSettingsStore } from '@/stores/settings-store'
 
@@ -26,9 +27,10 @@ export function AppLayout() {
       />
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 p-4 lg:p-6">
+        <main className="flex-1 p-4 xl:p-6 pb-20 xl:pb-6">
           <Outlet />
         </main>
+        <MobileBottomNav />
       </div>
     </div>
   )

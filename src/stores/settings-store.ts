@@ -9,6 +9,7 @@ export interface AiFeatureFlags {
 }
 
 const FLAGS_KEY = 'ai_feature_flags'
+const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
 const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
 const OFFLINE_KEY = 'offline_mode'
 const EYE_CARE_KEY = 'eye_care'
@@ -49,6 +50,17 @@ export const EYE_CARE_PALETTES = [
 
 export type NoteRecognitionMode = 'mineru' | 'ai'
 
+export const BOTTOM_NAV_TABS = [
+  { key: 'dashboard' as const, labelZh: '仪表盘', labelEn: 'Dashboard' },
+  { key: 'practice' as const, labelZh: '练习', labelEn: 'Practice' },
+  { key: 'exam' as const, labelZh: '考试', labelEn: 'Exam' },
+  { key: 'favorites' as const, labelZh: '收藏', labelEn: 'Favorites' },
+  { key: 'review' as const, labelZh: '错题回顾', labelEn: 'Wrong Review' },
+]
+
+export type BottomNavTabKey = (typeof BOTTOM_NAV_TABS)[number]['key']
+const DEFAULT_BOTTOM_NAV_TABS: BottomNavTabKey[] = ['dashboard', 'practice', 'exam', 'favorites', 'review']
+
 function loadFlags(): AiFeatureFlags {
   try {
     const raw = localStorage.getItem(FLAGS_KEY)
@@ -59,6 +71,14 @@ function loadFlags(): AiFeatureFlags {
 
 function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
+}
+
+function loadBottomNavTabs(): BottomNavTabKey[] {
+  try {
+    const raw = localStorage.getItem(BOTTOM_NAV_TABS_KEY)
+    if (raw) return JSON.parse(raw) as BottomNavTabKey[]
+  } catch { /* ignore */ }
+  return [...DEFAULT_BOTTOM_NAV_TABS]
 }
 
 function loadNoteRecognitionMode(): NoteRecognitionMode {
@@ -84,6 +104,7 @@ interface SettingsState {
   fontSize: number
   fontWeight: number
   noteRecognitionMode: NoteRecognitionMode
+  bottomNavTabs: BottomNavTabKey[]
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -93,6 +114,7 @@ interface SettingsState {
   setFontSize: (value: number) => void
   setFontWeight: (value: number) => void
   setNoteRecognitionMode: (value: NoteRecognitionMode) => void
+  setBottomNavTabs: (tabs: BottomNavTabKey[]) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -119,6 +141,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   fontSize: loadFontSize(),
   fontWeight: loadFontWeight(),
   noteRecognitionMode: loadNoteRecognitionMode(),
+  bottomNavTabs: loadBottomNavTabs(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -163,6 +186,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setNoteRecognitionMode: (value) => {
     localStorage.setItem(NOTE_RECOGNITION_MODE_KEY, value)
     set({ noteRecognitionMode: value })
+  },
+  setBottomNavTabs: (tabs) => {
+    localStorage.setItem(BOTTOM_NAV_TABS_KEY, JSON.stringify(tabs))
+    set({ bottomNavTabs: tabs })
   },
   isEnabled: (key) => get().flags[key],
 }))

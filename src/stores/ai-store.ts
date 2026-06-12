@@ -34,21 +34,6 @@ const OFFICIAL_PROVIDERS: AiProviderConfig[] = [
 
 const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
   {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    description: '统一的 LLM 路由网关，提供对 OpenAI、Anthropic、Google 等多个厂商模型的统一 API 访问。',
-    type: 'community',
-    enabled: false,
-    apiKey: '',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    models: [
-      { id: 'openai/gpt-4o', name: 'OpenAI GPT-4o', enabled: false },
-      { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', enabled: false },
-      { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', enabled: false },
-      { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', enabled: false },
-    ],
-  },
-  {
     id: 'qwen',
     name: '通义千问',
     description: '阿里云通义千问 Qwen3.7-Plus，支持图片、文字输入输出的多模态模型。通过 DashScope API 接入。',

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import type { QuestionType } from '@/types'
-import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { QUESTION_TYPE_OPTIONS, IMPORT_MODE_OPTIONS, PAGE_SIZE_OPTIONS } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -17,17 +17,16 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { Pagination } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown, Sparkles, Trash2 } from 'lucide-react'
+import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2 } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
-  const { questions, count, isLoading, page, totalPages, deleteQuestion, fetchQuestions, refetch } = useQuestions()
+  const { questions, count, isLoading, page, totalPages, pageSize, setPageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
@@ -36,6 +35,8 @@ export function Component() {
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
+  const [selectedImportMode, setSelectedImportMode] = useState('')
+  const [selectedVerified, setSelectedVerified] = useState<'' | 'true' | 'false'>('')
 
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const btnRowRef = useRef<HTMLDivElement>(null)
@@ -75,10 +76,12 @@ export function Component() {
         subject: selectedSubject,
         category: selectedCategory,
         questionType: selectedType,
+        importMode: selectedImportMode,
+        verified: selectedVerified,
       })
     }, 300)
     return () => { if (debounceRef.current !== null) clearTimeout(debounceRef.current) }
-  }, [search, selectedSubject, selectedCategory, selectedType, fetchQuestions])
+  }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, fetchQuestions])
 
   // Update filtered categories when subject changes
   useEffect(() => {
@@ -266,6 +269,48 @@ export function Component() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {selectedImportMode ? IMPORT_MODE_OPTIONS.find((m) => m.value === selectedImportMode)?.label : '导入模式'}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSelectedImportMode('')}>
+              <span className="text-muted-foreground">导入模式</span>
+              {!selectedImportMode && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {IMPORT_MODE_OPTIONS.map((m) => (
+              <DropdownMenuItem key={m.value} onClick={() => setSelectedImportMode(m.value)}>
+                {m.label}
+                {selectedImportMode === m.value && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {selectedVerified === 'true' ? '已验证' : selectedVerified === 'false' ? '待验证' : '验证状态'}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSelectedVerified('')}>
+              <span className="text-muted-foreground">验证状态</span>
+              {!selectedVerified && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedVerified('true')}>
+              已验证
+              {selectedVerified === 'true' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedVerified('false')}>
+              待验证
+              {selectedVerified === 'false' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <Input
@@ -358,13 +403,63 @@ export function Component() {
               </div>
             </div>
           )}
-          <Pagination page={page} totalPages={totalPages} onPageChange={(p) => fetchQuestions({
-            page: p,
-            search,
-            subject: selectedSubject,
-            category: selectedCategory,
-            questionType: selectedType,
-          })} />
+          <div className="flex items-center justify-center gap-2 pt-4">
+            {totalPages > 1 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => fetchQuestions({
+                    page: page - 1,
+                    search,
+                    subject: selectedSubject,
+                    category: selectedCategory,
+                    questionType: selectedType,
+                    importMode: selectedImportMode,
+                    verified: selectedVerified,
+                  })}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground px-3 tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => fetchQuestions({
+                    page: page + 1,
+                    search,
+                    subject: selectedSubject,
+                    category: selectedCategory,
+                    questionType: selectedType,
+                    importMode: selectedImportMode,
+                    verified: selectedVerified,
+                  })}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                  {pageSize} 条/页
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <DropdownMenuItem key={n} onClick={() => setPageSize(n)}>
+                    {n} 条/页
+                    {pageSize === n && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </>
       )}
 

@@ -18,24 +18,26 @@ A comprehensive question practice platform built with React + Supabase. Supports
 
 | Feature | Description |
 |---|---|
-| **Dashboard Analytics** | ECharts-rich charts: calendar heatmap, concentric-circle time distribution (7 rings × 24h), daily stacked bar (subjects + correct/wrong), time scatter (today's hourly bubbles), accuracy horizontal bar + subject×type heatmap, nested donut (category→subject→type), subject rank bar, Sankey flow (subject↔category) |
+| **Dashboard Analytics** | ECharts-rich charts: calendar heatmap, concentric-circle time distribution (7 rings × 24h), daily stacked bar (subjects + correct/wrong), time scatter (today's hourly bubbles), accuracy horizontal bar + subject×type heatmap, nested donut + treemap (zhongguose palette, drill-down), Sankey flow (subject↔category) |
+| **Plan Progress** | Header progress bar with long-term & daily goal tracking, congratulatory messages when goals are completed |
+| **Mobile Bottom Nav** | iOS-style bottom tab bar (Dashboard / Practice / Exam / Favorites / Wrong Review), visible on mobile & tablet, frosted glass effect, customizable in Preferences |
 | **AI Study Summary** | Click the ✨ button in the header to get a friend-style AI summary of today's performance, weak areas, and personalized study suggestions — with typewriter reveal animation |
 | **AI Question Import** | Upload documents (PDF, Word, images), auto-extract questions via MinerU OCR + DeepSeek parsing, 6-step wizard with preview and batch import |
 | **AI Key Points** | One-click generate knowledge points for any question, with color-shift border animation and typewriter text reveal |
 | **AI Smart Exam** | Analyzes practice history via DeepSeek, auto-recommends subjects/categories/types/count/duration for exams — with border glow animation |
 | **AI Learning Plan** | Ebbinghaus forgetting curve analysis + subject urgency scoring + AI-generated personalized study advice, cached for session |
 | **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets with per-subject progress bars. Click dashboard cards to edit directly. |
-| **Practice Mode** | Goal-based question scoping (daily targets / plan subjects), subject/category/type multi-filter, skip button, persistent notes with public/private toggle, swipe navigation |
+| **Practice Mode** | Scope filter (all / favorites-only / wrong-only), priority mode (mixed / new-first / wrong-first), subject/category/type multi-filter, skip button, persistent notes with public/private toggle, swipe navigation |
 | **Exam Mode** | Configurable question count and duration, multi-select subject/category/type filter, grid question navigator, resume detection, auto-submit on timeout, ECharts gauge + donut + bar chart score report |
 | **Wrong Answer Review** | Filter by mode, inline note editing, favorites, answer highlighted |
-| **Question Management** | CRUD with dynamic option count, subject/category/type tagging, analysis & key points fields |
+| **Question Management** | CRUD with dynamic option count, subject/category/type/import-mode/verified filtering, page size selector, bulk edit/delete, analysis & key points fields |
 | **Bulk Import** | CSV, JSON, or AI-powered document import |
 | **User Roles** | Admin (CRUD questions, manage users, AI config) and User (practice only) |
 | **First-user Auto-admin** | First registered user automatically becomes admin via DB trigger |
 | **Mobile Responsive** | Collapsible sidebar, responsive charts (horizontal scroll for Sankey), swipe navigation |
 | **PWA** | Service worker with offline caching, installable |
 | **Dark Mode** | System-preference detection, localStorage persistence, toggle in header and login page |
-| **Public Notes** | Share notes with other users; shown with author info |
+| **Public Notes** | Share notes with other users; unified card layout with answer comparison, visibility badges, and author info |
 | **Favorites** | Star questions, sync to Supabase, accessible from sidebar |
 | **I18n** | Chinese/English toggle in sidebar footer |
 | **Loading Tips** | Rotating tips with fade transitions during loading states |

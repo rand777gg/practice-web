@@ -71,6 +71,7 @@ export function PracticeSession() {
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
   const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>('mixed')
+  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>('all')
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -106,11 +107,28 @@ export function PracticeSession() {
 
     const currentUser = useAuthStore.getState().user
 
-    // Pick question based on mode
+    // Pick question based on scope + mode
     let pickedId: string | null = null
 
-    if (currentUser && questionMode === 'wrong') {
-      // Wrong mode: pick from previously wrong-answered questions
+    // Scope: favorites — pick from user's favorited questions
+    if (currentUser && questionScope === 'favorites') {
+      const { data: favRows } = await supabase.from('favorites')
+        .select('question_id, questions!inner(subject, category, question_type)')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      if (fetchGenRef.current !== myGen) return
+      if (favRows?.length) {
+        let filtered = favRows
+        if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
+        if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
+        if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
+        if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+      }
+    }
+
+    // Scope: wrong — pick from previously wrong-answered questions
+    if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
       const { data: wrongRows } = await supabase.from('user_answers')
         .select('question_id, questions!inner(subject, category, question_type)')
         .eq('user_id', currentUser.id)
@@ -127,7 +145,8 @@ export function PracticeSession() {
       }
     }
 
-    if (!pickedId && currentUser) {
+    // Scope: all with mixed/new mode — RPC random pick
+    if (!pickedId && currentUser && questionScope === 'all' && questionMode !== 'wrong') {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
@@ -198,7 +217,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, planSubjectSet])
+  }, [selectedSubjects, selectedCategory, selectedType, planSubjectSet, questionMode, questionScope])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -409,6 +428,28 @@ export function PracticeSession() {
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="w-px h-4 bg-border mx-1 hidden sm:block" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {{ all: '全部题目', favorites: '仅收藏题目', wrong: '仅错题' }[questionScope]}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setQuestionScope('all')}>
+              全部题目
+              {questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>
+              仅收藏题目
+              {questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>
+              仅错题
+              {questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">

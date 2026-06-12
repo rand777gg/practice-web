@@ -19,3 +19,16 @@ export const QUESTION_TYPE_OPTIONS = [
 export const QUESTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   QUESTION_TYPE_OPTIONS.map(o => [o.value, o.label])
 )
+
+export const IMPORT_MODE_OPTIONS = [
+  { value: 'manual' as const, label: '手动' },
+  { value: 'lightweight' as const, label: '轻量' },
+  { value: 'precision' as const, label: '精准' },
+  { value: 'generate' as const, label: 'AI生成' },
+]
+
+export const IMPORT_MODE_LABELS: Record<string, string> = Object.fromEntries(
+  IMPORT_MODE_OPTIONS.map(o => [o.value, o.label])
+)
+
+export const PAGE_SIZE_OPTIONS = [10, 20, 30, 50]

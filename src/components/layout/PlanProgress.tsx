@@ -7,6 +7,7 @@ import { PlanDialog } from './PlanDialog'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { Check } from 'lucide-react'
 
 function todayStart(): string {
   const d = new Date()
@@ -168,9 +169,14 @@ export function PlanProgress() {
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
   const dailyPct = totalDaily > 0 ? Math.min(Math.round((doneDaily / totalDaily) * 100), 100) : 0
   const dailyDone = doneDaily >= totalDaily && totalDaily > 0
-  const longDone = dailyGoal > 0 && todayLongDone >= dailyGoal
 
-  const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 0
+  const hasDeadline = !!deadline
+  const longDone = hasDeadline && (dailyGoal === 0 || (dailyGoal > 0 && todayLongDone >= dailyGoal))
+  const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 100
+
+  const longCompleted = !hasDeadline || longDone
+  const dailyCompleted = !hasDailyTargets || dailyDone
+  const bothCompleted = longCompleted && dailyCompleted
 
   if (!deadline && !hasDailyTargets) {
     return (
@@ -194,23 +200,41 @@ export function PlanProgress() {
         onClick={() => setDialogOpen(true)}
         className="flex items-center gap-3 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors min-w-0"
       >
-        {deadline && dailyGoal > 0 && (
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
-            <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
-            <span className="tabular-nums shrink-0 text-[10px]">
-              {longDone ? '✓' : `${todayLongDone}/${dailyGoal}`}
-            </span>
-          </div>
-        )}
-        {hasDailyTargets && (
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.daily')}</span>
-            <Progress value={dailyPct} className="w-10 h-2 [&>div]:bg-pink-500" />
-            <span className="tabular-nums shrink-0 text-[10px]">
-              {dailyDone ? '✓' : `${doneDaily}/${totalDaily}`}
-            </span>
-          </div>
+        {bothCompleted ? (
+          <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
+            <Check className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">恭喜，你已经完成所有目标！</span>
+            <span className="sm:hidden">全部完成！</span>
+          </span>
+        ) : (
+          <>
+            {hasDeadline && (longDone ? (
+              <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
+                <Check className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">长期目标完成</span>
+                <span className="sm:hidden">长期✓</span>
+              </span>
+            ) : (
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
+                <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
+                <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
+              </div>
+            ))}
+            {hasDailyTargets && (dailyDone ? (
+              <span className="flex items-center gap-1 text-pink-600 dark:text-pink-400 font-medium">
+                <Check className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">自定义目标完成</span>
+                <span className="sm:hidden">自定义✓</span>
+              </span>
+            ) : (
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.daily')}</span>
+                <Progress value={dailyPct} className="w-10 h-2 [&>div]:bg-pink-500" />
+                <span className="tabular-nums shrink-0 text-[10px]">{doneDaily}/{totalDaily}</span>
+              </div>
+            ))}
+          </>
         )}
       </button>
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
