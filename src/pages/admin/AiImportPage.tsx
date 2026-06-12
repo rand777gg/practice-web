@@ -62,7 +62,7 @@ export function Component() {
   const [enableTable, setEnableTable] = useState(true)
   const [batchMode, setBatchMode] = useState(false)
   const [useR2Upload, setUseR2Upload] = useState(true)
-  const [pdfUrl, setPdfUrl] = useState('')
+  const [manualPdfUrl, setManualPdfUrl] = useState('')
   const [pageRanges, setPageRanges] = useState('')
   const [extraFormats, setExtraFormats] = useState<string[]>([])
   const [noCache, setNoCache] = useState(false)
