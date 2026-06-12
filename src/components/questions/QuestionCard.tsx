@@ -83,6 +83,15 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       </div>
       <div className="flex flex-wrap gap-1.5">
         <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{typeLabel}</span>
+        {question.verified ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
+            <Check className="h-3 w-3" />已验证
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
+            待验证
+          </span>
+        )}
         {question.subject && (
           <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
             {question.subject}
