@@ -907,8 +907,8 @@ export function Component() {
                 <>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">PDF URL <span className="text-muted-foreground font-normal text-xs">(选填，直接填入 URL 无需上传)</span></label>
-                    <Input placeholder="https://example.com/document.pdf" value={pdfUrl}
-                      onChange={(e) => { setPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
+                    <Input placeholder="https://example.com/document.pdf" value={manualPdfUrl}
+                      onChange={(e) => { setManualPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
                       className="h-9 text-sm" />
                   </div>
                   <AiImportUpload
