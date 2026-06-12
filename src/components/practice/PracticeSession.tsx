@@ -69,6 +69,7 @@ export function PracticeSession() {
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
+  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>('mixed')
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -104,11 +105,28 @@ export function PracticeSession() {
 
     const currentUser = useAuthStore.getState().user
 
-    // Use server-side RPC to pick a random unanswered question in a single round-trip.
-    // Falls back to client-side filter + IndexedDB when offline or RPC fails.
+    // Pick question based on mode
     let pickedId: string | null = null
 
-    if (currentUser) {
+    if (currentUser && questionMode === 'wrong') {
+      // Wrong mode: pick from previously wrong-answered questions
+      const { data: wrongRows } = await supabase.from('user_answers')
+        .select('question_id, questions!inner(subject, category, question_type)')
+        .eq('user_id', currentUser.id)
+        .eq('is_correct', false)
+        .order('answered_at', { ascending: false })
+        .limit(200)
+      if (fetchGenRef.current !== myGen) return
+      if (wrongRows?.length) {
+        let filtered = wrongRows
+        if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
+        if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
+        if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
+        if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+      }
+    }
+
+    if (!pickedId && currentUser) {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
@@ -387,6 +405,29 @@ export function PracticeSession() {
                 {selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
             ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="w-px h-4 bg-border mx-1 hidden sm:block" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {{ new: '新题优先', wrong: '错题优先', mixed: '混合模式' }[questionMode]}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setQuestionMode('mixed')}>
+              混合模式
+              {questionMode === 'mixed' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionMode('new')}>
+              新题优先
+              {questionMode === 'new' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionMode('wrong')}>
+              错题优先
+              {questionMode === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
