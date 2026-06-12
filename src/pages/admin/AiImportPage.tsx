@@ -421,6 +421,7 @@ export function Component() {
           key_points: q.key_points?.trim() || null,
           answer_explanation: null,
           seq_number: null,
+          import_mode: parseMode,
         })),
       )
 

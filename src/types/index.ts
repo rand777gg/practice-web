@@ -87,6 +87,7 @@ export interface Question {
   created_at: string
   created_by: string | null
   verified: boolean
+  import_mode: string | null
 }
 
 export interface ExamSession {

@@ -625,6 +625,9 @@ $$;
 -- 人工验证标识
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false;
 
+-- 导入方式
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS import_mode TEXT;
+
 -- 查询用户最后在线时间（最近一次答题时间，fallback 到登录时间）
 CREATE OR REPLACE FUNCTION public.get_user_last_online(user_id UUID)
 RETURNS TIMESTAMPTZ

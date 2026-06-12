@@ -48,6 +48,8 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
             <TableHead>{t('questions.subject')}</TableHead>
             <TableHead>{t('questions.category')}</TableHead>
             <TableHead>{t('questions.questionType')}</TableHead>
+            <TableHead className="w-[70px]">导入</TableHead>
+            <TableHead className="w-[70px]">验证</TableHead>
             <TableHead className="w-20">{t('questions.actions')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -70,6 +72,20 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
                   <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
                     {t(`questionTypes.${q.question_type}` as any) || q.question_type}
                   </span>
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <span className="text-[10px] text-muted-foreground">
+                    {{ manual: '手动', lightweight: '轻量', precision: '精准', generate: 'AI生成' }[q.import_mode || 'manual'] || q.import_mode || '手动'}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  {q.verified ? (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+                      <Check className="h-3 w-3" />
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400">待验证</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">

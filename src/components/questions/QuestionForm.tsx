@@ -216,6 +216,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         key_points: keyPoints.trim() || null,
         seq_number: seqNumber ? Number(seqNumber) : null,
         verified,
+        import_mode: 'manual',
       })
     } catch {
       setError(t('questions.saveFailed'))
