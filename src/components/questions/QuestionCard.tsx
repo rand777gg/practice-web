@@ -359,7 +359,6 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               )}
             </div>
           )}
-          {!showResult && onToggleFavorite && (
         </div>
       )}
     </div>
