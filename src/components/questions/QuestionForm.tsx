@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
 import {
-  Plus, Trash2, Check, ChevronDown, Sparkles, Save, X,
+  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X,
 } from 'lucide-react'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
@@ -249,7 +249,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                         onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
                         title="还原"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <RotateCcw className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     <Button type="button" variant="ghost" size="icon"
