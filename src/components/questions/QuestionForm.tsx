@@ -142,8 +142,11 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     setCorrectAnswer(arr)
   }
 
+  const prevQuestionTextRef = useRef<string | null>(null)
+
   const handleExtractStem = async () => {
     if (!questionText.trim()) return
+    prevQuestionTextRef.current = questionText
     setStemExtracting(true)
     setStemGlow(true)
     try {
@@ -239,14 +242,25 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   minHeight="160px"
                 />
                 {hasAiConfig() && (
-                  <Button type="button" variant="ghost" size="icon"
-                    className="absolute right-1 bottom-1 h-7 w-7"
-                    disabled={stemExtracting || !questionText.trim()}
-                    onClick={handleExtractStem}
-                    title="AI 提取题干"
-                  >
-                    <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
-                  </Button>
+                  <div className="absolute right-1 bottom-1 flex gap-0.5">
+                    {prevQuestionTextRef.current && (
+                      <Button type="button" variant="ghost" size="icon"
+                        className="h-7 w-7"
+                        onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
+                        title="还原"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button type="button" variant="ghost" size="icon"
+                      className="h-7 w-7"
+                      disabled={stemExtracting || !questionText.trim()}
+                      onClick={handleExtractStem}
+                      title="AI 提取题干"
+                    >
+                      <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
+                    </Button>
+                  </div>
                 )}
                 {(stemGlow || stemFade) && (
                   <div className={cn(
