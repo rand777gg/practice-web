@@ -62,6 +62,7 @@ export function Component() {
   const [enableTable, setEnableTable] = useState(true)
   const [batchMode, setBatchMode] = useState(false)
   const [useR2Upload, setUseR2Upload] = useState(true)
+  const [pdfUrl, setPdfUrl] = useState('')
   const [pageRanges, setPageRanges] = useState('')
   const [extraFormats, setExtraFormats] = useState<string[]>([])
   const [noCache, setNoCache] = useState(false)
@@ -162,9 +163,11 @@ export function Component() {
   const genReady = parseMode === 'generate' && !!genSubject && genTypes.size > 0 && aiConfigured
   const canStart = parseMode === 'generate'
     ? genReady
-    : parseMode === 'precision'
-      ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
-      : !!file && aiConfigured
+    : !!pdfUrl && precisionReady
+      ? true
+      : parseMode === 'precision'
+        ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
+        : !!file && aiConfigured
 
   useEffect(() => {
     async function loadMeta() {
@@ -208,7 +211,9 @@ export function Component() {
     setParseStatus({ state: 'connecting' })
 
     try {
-      if (parseMode === 'precision') {
+      if (pdfUrl) {
+        await runUrlParse()
+      } else if (parseMode === 'precision') {
         await runPrecisionParse()
       } else {
         await runLightweightParse()
@@ -217,6 +222,43 @@ export function Component() {
       setError(err instanceof Error ? err.message : '解析失败')
       setStep('upload')
     }
+  }
+
+  const runUrlParse = async () => {
+    const mineru = new MinerUClient()
+    const options = {
+      token: mineruToken,
+      modelVersion,
+      isOcr: enableOcr,
+      enableFormula,
+      enableTable,
+      language: 'ch',
+      pageRanges: pageRanges || undefined,
+      extraFormats: extraFormats.length > 0 ? extraFormats : undefined,
+      noCache: noCache || undefined,
+      cacheTolerance: cacheTolerance ? Number(cacheTolerance) : undefined,
+    }
+    setParseMsg('正在创建解析任务...')
+    const task = await mineru.createTask(pdfUrl, options)
+    setParseStatus({ ...task, state: 'running' } as unknown as Record<string, unknown>)
+
+    for (let i = 0; i < 100; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const pollResult = await mineru.pollTask(task.taskId, options.token)
+      setParseStatus(pollResult as unknown as Record<string, unknown>)
+      if (pollResult.state === 'done' && pollResult.fullZipUrl) {
+        setParseMsg('正在提取解析结果...')
+        const { fetchZipAndExtractFiles } = await import('@/lib/ai/mineru')
+        const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
+        setParseResult({ markdown, fileName: pdfUrl.split('/').pop() || 'document', jsonData })
+        setParsingDone(true)
+        saveToHistory({ fileName: pdfUrl.split('/').pop() || 'document', markdown, jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (pollResult as any)?.extractProgress?.totalPages })
+        return
+      }
+      if (pollResult.state === 'failed') throw new Error(`解析失败: ${(pollResult as any).errMsg}`)
+      if (i % 5 === 0) setParseMsg(`精准解析中... ${pollResult.state}`)
+    }
+    throw new Error('解析超时')
   }
 
   const runLightweightParse = async () => {
@@ -862,12 +904,20 @@ export function Component() {
 
                 </div>
               ) : (
-                <AiImportUpload
-                  onFile={handleFile}
-                  onFiles={handleFiles}
-                  disabled={!aiConfigured || (parseMode === 'precision' && !mineruToken)}
-                  multiple={parseMode === 'precision' && batchMode}
-                />
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">PDF URL <span className="text-muted-foreground font-normal text-xs">(选填，直接填入 URL 无需上传)</span></label>
+                    <Input placeholder="https://example.com/document.pdf" value={pdfUrl}
+                      onChange={(e) => { setPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
+                      className="h-9 text-sm" />
+                  </div>
+                  <AiImportUpload
+                    onFile={handleFile}
+                    onFiles={handleFiles}
+                    disabled={!aiConfigured || (parseMode === 'precision' && !mineruToken)}
+                    multiple={parseMode === 'precision' && batchMode}
+                  />
+                </>
               )}
 
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}

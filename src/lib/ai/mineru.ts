@@ -6,7 +6,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 const PROXY_BASE = `${SUPABASE_URL}/functions/v1/mineru-proxy`
 const AUTH_HEADER = { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
 
-async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: string; jsonData?: string }> {
+export async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: string; jsonData?: string }> {
   const res = await fetch(`${PROXY_BASE}/download-zip?url=${encodeURIComponent(zipUrl)}`, {
     headers: { ...AUTH_HEADER },
   })
