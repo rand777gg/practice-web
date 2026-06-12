@@ -60,9 +60,10 @@ interface Props {
   note?: string | null
   isFavorited?: boolean
   onToggleFavorite?: () => void
+  onVerify?: () => void
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onVerify }: Props) {
   const { t } = useT()
   const type = question.question_type
   const isSingle = type === 'single_choice'
@@ -334,7 +335,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
         </>
       )}
 
-      {(onToggleFavorite || (showResult && showEditLink)) && (
+      {(onToggleFavorite || showResult) && (
         <div className="flex items-center justify-between">
           {onToggleFavorite && (
             <Button variant="outline" size="sm" onClick={onToggleFavorite} className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}>
@@ -342,13 +343,23 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               {isFavorited ? t('favorites.remove') : t('favorites.add')}
             </Button>
           )}
-          {showResult && showEditLink && (
-            <Button variant="ghost" size="sm" asChild>
-              <Link to={`/admin/questions/${question.id}/edit`}>
-                <Pencil className="h-3 w-3" />{t('questions.reportError')}
-              </Link>
-            </Button>
+          {showResult && (
+            <div className="flex items-center gap-1">
+              {!question.verified && onVerify && (
+                <Button variant="outline" size="sm" onClick={onVerify}>
+                  <Check className="h-3 w-3 mr-1" />确认验证
+                </Button>
+              )}
+              {showEditLink && (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to={`/admin/questions/${question.id}/edit`}>
+                    <Pencil className="h-3 w-3" />{t('questions.reportError')}
+                  </Link>
+                </Button>
+              )}
+            </div>
           )}
+          {!showResult && onToggleFavorite && (
         </div>
       )}
     </div>
