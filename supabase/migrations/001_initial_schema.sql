@@ -625,12 +625,15 @@ $$;
 -- 人工验证标识
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false;
 
--- 查询用户最后登录时间
-CREATE OR REPLACE FUNCTION public.get_user_last_sign_in(user_id UUID)
+-- 查询用户最后在线时间（最近一次答题时间，fallback 到登录时间）
+CREATE OR REPLACE FUNCTION public.get_user_last_online(user_id UUID)
 RETURNS TIMESTAMPTZ
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-  SELECT last_sign_in_at FROM auth.users WHERE id = user_id;
+  SELECT COALESCE(
+    (SELECT answered_at FROM public.user_answers WHERE user_id = $1 ORDER BY answered_at DESC LIMIT 1),
+    (SELECT last_sign_in_at FROM auth.users WHERE id = $1)
+  );
 $$;
