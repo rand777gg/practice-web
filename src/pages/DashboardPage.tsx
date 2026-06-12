@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
+import { hasAiConfig } from '@/lib/ai'
+import { useSettingsStore } from '@/stores/settings-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, BookOpen, ListChecks } from 'lucide-react'
@@ -25,9 +27,19 @@ const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/Answer
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
 const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').then(m => ({ default: m.AiChartInsight })))
 
-const ChartFallback = () => (
-  <div className="flex items-center justify-center py-12">
-    <Spinner size="2" />
+const ChartSkeleton = ({ h = 360 }: { h?: number }) => (
+  <div className="animate-pulse space-y-3 p-4" style={{ height: h }}>
+    <div className="h-4 w-1/3 bg-muted rounded" />
+    <div className="flex gap-4 flex-1" style={{ height: h - 48 }}>
+      <div className="flex-1 space-y-2">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="h-8 bg-muted rounded" style={{ width: `${60 + Math.random() * 35}%` }} />
+        ))}
+      </div>
+      <div className="flex-1">
+        <div className="h-full w-full bg-muted rounded-xl" />
+      </div>
+    </div>
   </div>
 )
 
@@ -45,10 +57,6 @@ interface ChartData {
   todayHourlyData: number[] // 24 hours, count of answers today
   subjectAccuracy: { subject: string; correct: number; total: number }[]
   heatmapData: { subject: string; questionType: string; correctRate: number; total: number }[]
-  knowledgeGraph: {
-    nodes: { name: string; questionCount: number; correctRate: number | null; subject: string }[]
-    edges: { source: string; target: string; weight: number }[]
-  } | null
 }
 
 interface QMeta { id: string; subject: string; category: string; categories: string[]; question_type: string }
@@ -57,6 +65,8 @@ export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const navigate = useNavigate()
+  const { isEnabled } = useSettingsStore()
+  const showAiInsight = hasAiConfig() && isEnabled('analysis')
   const dashboardStore = useDashboardStore()
 
   const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
@@ -69,8 +79,6 @@ export function Component() {
   const btnRowRef = useRef<HTMLDivElement>(null)
   const loadGenRef = useRef(0)
   // Cache raw data for knowledge-graph reuse (avoids duplicate fetches)
-  const answersRef = useRef<{ is_correct: boolean; answered_at: string; question_id: string }[]>([])
-  const kpRef = useRef<{ id: string; key_points: string; subject: string }[] | null>(null)
 
   useEffect(() => {
     if (expandedBtn === null) return
@@ -86,6 +94,7 @@ export function Component() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
+    const isStale = (gen: number) => loadGenRef.current !== gen || cancelled
     async function load() {
       loadGenRef.current++
       const myGen = loadGenRef.current
@@ -108,30 +117,19 @@ export function Component() {
             .then(({ data }) => { if (data) dashboardStore.setQMetaCache(data as QMeta[]); return null })
 
       // Pre-aggregated daily stats (lightweight — replaces raw user_answers for charts)
-      // Also fetch key_points + question-level correctness for knowledge graph
-      const [{ data: statsRows }, , kpResult, { data: kgAnswers }] = await Promise.all([
+      const [{ data: statsRows }] = await Promise.all([
         supabase
           .from('user_daily_stats')
           .select('date, subject, question_type, total, correct, hourly')
           .eq('user_id', user!.id)
           .gte('date', start12wk.toISOString().slice(0, 10)),
         qFetchPromise,
-        supabase.from('questions').select('id, key_points, subject'),
-        // Lightweight query for knowledge graph: only question_id + is_correct
-        supabase
-          .from('user_answers')
-          .select('question_id, is_correct')
-          .eq('user_id', user!.id)
-          .gte('answered_at', start12wk.toISOString()),
       ])
-      if (loadGenRef.current !== myGen || cancelled) return
-
-      answersRef.current = (kgAnswers ?? []) as typeof answersRef.current
-      kpRef.current = (kpResult?.data ?? []) as typeof kpRef.current
+      if (isStale(myGen)) { setIsRefreshing(false); return }
 
       if (!questions) {
         const { data: fresh } = await supabase.from('questions').select('id, subject, category, question_type')
-        if (loadGenRef.current !== myGen || cancelled) return
+        if (isStale(myGen)) { setIsRefreshing(false); return }
         questions = (fresh ?? []) as QMeta[]
         dashboardStore.setQMetaCache(questions)
       }
@@ -285,13 +283,11 @@ export function Component() {
         totalAnswered, correctCount, wrongCount, checkinDays, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
-        knowledgeGraph: null,
       })
       dashboardStore.setChartCache({
         totalAnswered, correctCount, wrongCount, checkinDays, dailyAnswers, barData, sunburstData, dailyGoal, hourlyDistribution,
         dailySubjectData: { dates: dailySubjectDates, subjects: dailySubjectSubjects, data: dailySubjectData },
         todayHourlyData, subjectAccuracy, heatmapData,
-        knowledgeGraph: null,
       }, cacheKey)
       setIsRefreshing(false)
 
@@ -320,69 +316,6 @@ export function Component() {
     load()
     return () => { cancelled = true }
   }, [user?.id, profile?.deadline, profile?.plan_subjects])
-
-  // Compute knowledge graph from cached data (key_points + answers already prefetched in main load)
-  useEffect(() => {
-    if (!chartData || chartData.totalAnswered === 0) return
-    const kpData = kpRef.current
-    if (!kpData) return
-    const answers = answersRef.current
-    const kpByQ = new Map<string, string[]>()
-    const subjMap = new Map<string, string>()
-    for (const r of kpData) {
-      subjMap.set(r.id, r.subject ?? '')
-      if (r.key_points) kpByQ.set(r.id, r.key_points.split(',').map((s: string) => s.trim()).filter(Boolean))
-    }
-    const ansByQ = new Map<string, { correct: number; total: number }>()
-    for (const a of answers) {
-      if (!ansByQ.has(a.question_id)) ansByQ.set(a.question_id, { correct: 0, total: 0 })
-      const entry = ansByQ.get(a.question_id)!
-      entry.total++
-      if (a.is_correct) entry.correct++
-    }
-    const nm = new Map<string, { qIds: Set<string>; subs: Map<string, number>; corr: number; tot: number }>()
-    for (const [qId, kps] of kpByQ) {
-      if (kps.length === 0) continue
-      const subj = subjMap.get(qId) ?? ''
-      for (const kp of kps) {
-        if (!nm.has(kp)) nm.set(kp, { qIds: new Set(), subs: new Map(), corr: 0, tot: 0 })
-        const n = nm.get(kp)!
-        n.qIds.add(qId)
-        n.subs.set(subj, (n.subs.get(subj) ?? 0) + 1)
-      }
-    }
-    for (const [qId, stats] of ansByQ) {
-      const kps = kpByQ.get(qId)
-      if (!kps) continue
-      for (const kp of kps) {
-        const n = nm.get(kp)
-        if (!n) continue
-        n.corr += stats.correct
-        n.tot += stats.total
-      }
-    }
-    const nodes = [...nm.entries()]
-      .map(([name, info]) => {
-        const domSubj = [...info.subs.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
-        return { name, questionCount: info.qIds.size, correctRate: info.tot > 0 ? info.corr / info.tot : null, subject: domSubj }
-      })
-      .sort((a, b) => b.questionCount - a.questionCount)
-    const em = new Map<string, number>()
-    for (const [, kps] of kpByQ) {
-      if (kps.length < 2) continue
-      for (let i = 0; i < kps.length; i++) {
-        for (let j = i + 1; j < kps.length; j++) {
-          const key = kps[i] < kps[j] ? `${kps[i]}|||${kps[j]}` : `${kps[j]}|||${kps[i]}`
-          em.set(key, (em.get(key) ?? 0) + 1)
-        }
-      }
-    }
-    const nnSet = new Set(nodes.map((n) => n.name))
-    const edges = [...em.entries()]
-      .filter(([key, w]) => { const [s, t] = key.split('|||'); return w >= 2 && nnSet.has(s) && nnSet.has(t) })
-      .map(([key, w]) => { const [s, t] = key.split('|||'); return { source: s, target: t, weight: w } })
-    setChartData((prev) => prev ? { ...prev, knowledgeGraph: { nodes, edges } } : prev)
-  }, [chartData?.totalAnswered])
 
   return (
     <div className="space-y-6 w-full">
@@ -498,7 +431,7 @@ export function Component() {
                       <CardTitle className="text-sm text-muted-foreground">每日答题分布</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Suspense fallback={<ChartFallback />}>
+                      <Suspense fallback={<ChartSkeleton />}>
                         <AnswerTimeScatterHistogram
                           dates={chartData.dailySubjectData.dates}
                           subjects={chartData.dailySubjectData.subjects}
@@ -506,12 +439,14 @@ export function Component() {
                           barData={chartData.barData}
                         />
                       </Suspense>
+                      {showAiInsight && (
                       <Suspense fallback={null}>
                         <AiChartInsight
                           title="每日答题分布"
                           dataDesc={`最近15天每日各学科答题量。学科：${chartData.dailySubjectData.subjects.join('、')}。总答题${chartData.totalAnswered}道，正确${chartData.correctCount}道，错误${chartData.wrongCount}道。`}
                         />
                       </Suspense>
+                      )}
                     </CardContent>
                   </Card>
                 </LazyChart>
@@ -521,18 +456,20 @@ export function Component() {
                       <CardTitle className="text-sm text-muted-foreground">正确率分析</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Suspense fallback={<ChartFallback />}>
+                      <Suspense fallback={<ChartSkeleton />}>
                         <SubjectAccuracyCharts
                           subjectAccuracy={chartData.subjectAccuracy}
                           heatmapData={chartData.heatmapData}
                         />
                       </Suspense>
+                      {showAiInsight && (
                       <Suspense fallback={null}>
                         <AiChartInsight
                           title="正确率分析"
                           dataDesc={`各学科正确率：${chartData.subjectAccuracy.map(s => `${s.subject} ${Math.round((s.correct/s.total)*100)}%(${s.total}题)`).join('、')}`}
                         />
                       </Suspense>
+                      )}
                     </CardContent>
                   </Card>
                 </LazyChart>
@@ -556,15 +493,17 @@ export function Component() {
                     <CardContent>
                       {chartData.sunburstData.length > 0 ? (
                         <>
-                          <Suspense fallback={<ChartFallback />}>
+                          <Suspense fallback={<ChartSkeleton />}>
                             <SubjectCategorySunburst data={chartData.sunburstData} />
                           </Suspense>
+                          {showAiInsight && (
                           <Suspense fallback={null}>
                             <AiChartInsight
                               title={t('dashboard.subjectCategory')}
                               dataDesc={`${chartData.sunburstData.length}道题目的学科分类分布。`}
                             />
                           </Suspense>
+                          )}
                         </>
                       ) : (
                         <p className="text-xs text-muted-foreground text-center py-8">{t('dashboard.noData')}</p>
@@ -579,19 +518,21 @@ export function Component() {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <Suspense fallback={<ChartFallback />}>
+                        <Suspense fallback={<ChartSkeleton />}>
                           <SubjectDonutCharts data={chartData.sunburstData} />
                         </Suspense>
-                        <Suspense fallback={<ChartFallback />}>
+                        <Suspense fallback={<ChartSkeleton />}>
                           <SubjectTreemap data={chartData.sunburstData} />
                         </Suspense>
                       </div>
+                      {showAiInsight && (
                       <Suspense fallback={null}>
                         <AiChartInsight
                           title={t('dashboard.subjectBreakdown')}
                           dataDesc={`${chartData.sunburstData.length}道题目的类型和分类分布。`}
                         />
                       </Suspense>
+                      )}
                     </CardContent>
                   </Card>
                 </LazyChart>
@@ -621,15 +562,17 @@ export function Component() {
                         <CardTitle className="text-sm text-muted-foreground">做题时间分布</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <Suspense fallback={<ChartFallback />}>
+                        <Suspense fallback={<ChartSkeleton />}>
                           <TimeDistributionHistogram data={chartData.hourlyDistribution} />
                         </Suspense>
+                        {showAiInsight && (
                         <Suspense fallback={null}>
                           <AiChartInsight
                             title="做题时间分布"
                             dataDesc={`一周7天×24小时答题热力分布，总计${chartData.totalAnswered}次答题。`}
                           />
                         </Suspense>
+                        )}
                       </CardContent>
                     </Card>
                   </LazyChart>
@@ -639,15 +582,17 @@ export function Component() {
                         <CardTitle className="text-sm text-muted-foreground">做题时间散点</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <Suspense fallback={<ChartFallback />}>
+                        <Suspense fallback={<ChartSkeleton />}>
                           <TimeScatterChart data={chartData.todayHourlyData} />
                         </Suspense>
+                        {showAiInsight && (
                         <Suspense fallback={null}>
                           <AiChartInsight
                             title="做题时间散点"
                             dataDesc={`今日24小时各时段答题数量分布。`}
                           />
                         </Suspense>
+                        )}
                       </CardContent>
                     </Card>
                   </LazyChart>
@@ -658,15 +603,17 @@ export function Component() {
                       <CardTitle className="text-sm text-muted-foreground">{t('dashboard.dailyActivity')}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Suspense fallback={<ChartFallback />}>
+                      <Suspense fallback={<ChartSkeleton />}>
                         <DailyGoalHeatmap data={chartData.dailyAnswers} dailyGoal={chartData.dailyGoal} />
                       </Suspense>
+                      {showAiInsight && (
                       <Suspense fallback={null}>
                         <AiChartInsight
                           title="每日学习热力图"
                           dataDesc={`全年每日答题热力图，共${chartData.dailyAnswers.length}天有记录，每日目标${chartData.dailyGoal}题。`}
                         />
                       </Suspense>
+                      )}
                     </CardContent>
                   </Card>
                 </LazyChart>

@@ -15,10 +15,6 @@ interface ChartData {
   todayHourlyData: number[]
   subjectAccuracy: { subject: string; correct: number; total: number }[]
   heatmapData: { subject: string; questionType: string; correctRate: number; total: number }[]
-  knowledgeGraph: {
-    nodes: { name: string; questionCount: number; correctRate: number | null; subject: string }[]
-    edges: { source: string; target: string; weight: number }[]
-  } | null
 }
 
 interface QMeta {

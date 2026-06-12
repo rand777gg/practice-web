@@ -66,6 +66,8 @@ export function DashboardEbbinghaus() {
     }, 300)
   }, [expanded, data, user])
 
+  if (!hasAiConfig() || !isEnabled('suggestions')) return null
+
   return (
     <Card className={`border-0 shadow-none transition-[border-color,box-shadow] duration-1500 ease-out ${
       aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''
