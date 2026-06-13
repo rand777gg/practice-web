@@ -48,6 +48,8 @@ export function Component() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [parseMsg, setParseMsg] = useState('')
   const [parseStatus, setParseStatus] = useState<Record<string, unknown> | null>(null)
+  const parseStatusRef = useRef(parseStatus)
+  parseStatusRef.current = parseStatus
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
@@ -61,7 +63,7 @@ export function Component() {
   const [enableFormula, setEnableFormula] = useState(true)
   const [enableTable, setEnableTable] = useState(true)
   const [batchMode, setBatchMode] = useState(false)
-  const [useR2Upload, setUseR2Upload] = useState(true)
+  const [useR2Upload, setUseR2Upload] = useState(false)
   const [manualPdfUrl, setManualPdfUrl] = useState('')
   const [r2Pdfs, setR2Pdfs] = useState<{ key: string; url: string; size: number }[]>([])
   const [pageRanges, setPageRanges] = useState('')
@@ -94,25 +96,29 @@ export function Component() {
   const [extractPrompt, setExtractPrompt] = useState(() => getPrompt('extract'))
   const [generateDocPrompt, setGenerateDocPrompt] = useState(() => getPrompt('generate_doc'))
   const basePromptRef = useRef(generateDocPrompt)
+  const baseExtractPromptRef = useRef(extractPrompt)
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
+  const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(null)
   const [dedupHistoryIds, setDedupHistoryIds] = useState<Set<number>>(new Set())
 
-  // Inject dedup context into prompt when selection changes
+  // Inject dedup context into prompts when selection changes
   useEffect(() => {
     const dedupRecords = history.filter((h) => dedupHistoryIds.has(h.id) && h.questions_json)
     if (dedupRecords.length === 0) {
       setGenerateDocPrompt(basePromptRef.current)
+      setExtractPrompt(baseExtractPromptRef.current)
       return
     }
-    const dedupText = `\n\n⚠️ 重要：以下是你之前根据相同资料生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
+    const dedupText = `\n\n⚠️ 重要：以下是你之前生成过的题目，请务必避免重复，不要生成与以下题目相同或高度相似的题目：\n${
       dedupRecords.map((h, i) => `【历史记录${i + 1}】${h.questions_json}`).join('\n')
     }`
     setGenerateDocPrompt(basePromptRef.current + dedupText)
+    setExtractPrompt(baseExtractPromptRef.current + dedupText)
   }, [dedupHistoryIds, history])
 
   const user = useAuthStore((s) => s.user)
@@ -135,19 +141,20 @@ export function Component() {
   }
 
   const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string; extraFormats?: string[]; pdfTotalPages?: number }) => {
-    if (!user) return
-    await supabase.from('parse_history').insert({
+    if (!user) return null
+    const { data } = await supabase.from('parse_history').insert({
       user_id: user.id,
       file_name: record.fileName,
       markdown: record.markdown,
       json_data: record.jsonData || null,
       questions_json: record.questions ? JSON.stringify(record.questions) : null,
       mode: record.mode,
-      status_json: parseStatus ? JSON.stringify(parseStatus) : null,
+      status_json: parseStatusRef.current ? JSON.stringify(parseStatusRef.current) : null,
       page_ranges: record.pageRanges || null,
       extra_formats: record.extraFormats?.length ? JSON.stringify(record.extraFormats) : null,
       pdf_total_pages: record.pdfTotalPages || null,
-    })
+    }).select('id').single()
+    return data?.id ?? null
   }
 
   const loadHistory = async (id: number) => {
@@ -167,14 +174,9 @@ export function Component() {
         setParseStatus(null)
       }
       setShowHistory(false)
-      // If questions were already generated, go straight to preview
-      if (entry.questions_json) {
-        setStep('preview')
-      } else {
-        setParseMsg('已从历史记录加载')
-        setParsingDone(true)
-        setStep('parsing')
-      }
+      setParseMsg('已从历史记录加载')
+      setParsingDone(true)
+      setStep('parsing')
     }
   }
 
@@ -213,8 +215,8 @@ export function Component() {
     if (user) loadHistoryList()
   }, [user?.id])
 
-  const handleFile = (f: File) => { setFile(f); setFiles([]) }
-  const handleFiles = (fs: File[]) => { setFiles(fs); setFile(null) }
+  const handleFile = (f: File) => { setFile(f); setFiles([]); if (f.size > 50 * 1024 * 1024) setUseR2Upload(true) }
+  const handleFiles = (fs: File[]) => { setFiles(fs); setFile(null); if (fs.some(f => f.size > 50 * 1024 * 1024)) setUseR2Upload(true) }
 
   const handleTokenChange = (token: string) => {
     setMineruTokenState(token)
@@ -292,7 +294,7 @@ export function Component() {
     const result = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
     setParseResult(result)
     setParsingDone(true)
-    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRanges || undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
+    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRanges || undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
   }
 
   const runPrecisionParse = async () => {
@@ -321,14 +323,14 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
-      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
+      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
     } else if (file) {
       const result = useR2Upload
         ? await mineru.uploadAndParsePrecisionR2(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
         : await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
-      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatus as any)?.extractProgress?.totalPages })
+      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
     }
   }
 
@@ -348,7 +350,8 @@ export function Component() {
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
     setStep('preview')
     if (parseResult) {
-      saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+      const id = await saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+      if (id) setCurrentHistoryId(id)
     }
   }
 
@@ -380,11 +383,13 @@ export function Component() {
       setSubject(genSubject)
       setCategory('AI生成')
       setStep('preview')
+      let historyId: number | null = null
       if (genFile) {
-        saveToHistory({ fileName: genFile.name, markdown: genFileText, questions, mode: 'generate' })
+        historyId = await saveToHistory({ fileName: genFile.name, markdown: genFileText, questions, mode: 'generate' })
       } else {
-        saveToHistory({ fileName: genSubject || '手动生成', markdown: genTopic || '', questions, mode: 'generate' })
+        historyId = await saveToHistory({ fileName: genSubject || '手动生成', markdown: genTopic || '', questions, mode: 'generate' })
       }
+      if (historyId) setCurrentHistoryId(historyId)
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败')
     } finally {
@@ -434,6 +439,9 @@ export function Component() {
 
       if (insertErr) throw insertErr
       setImportCount(toImport.length)
+      if (currentHistoryId) {
+        await supabase.from('parse_history').update({ status_json: JSON.stringify({ state: 'imported' }) }).eq('id', currentHistoryId)
+      }
       setStep('done')
     } catch (err) {
       setError(err instanceof Error ? err.message : '导入失败')
@@ -523,7 +531,7 @@ export function Component() {
                   <TableRow>
                     <TableHead className="text-xs">文件名</TableHead>
                     <TableHead className="text-xs w-[72px]">模式</TableHead>
-                    <TableHead className="text-xs w-[70px]">页码</TableHead>
+                    <TableHead className="text-xs w-[88px]">页码范围</TableHead>
                     <TableHead className="text-xs w-[52px]">题目</TableHead>
                     <TableHead className="text-xs w-[72px]">状态</TableHead>
                     <TableHead className="text-xs w-[130px]">时间</TableHead>
@@ -546,7 +554,7 @@ export function Component() {
                           {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}
                         </TableCell>
                         <TableCell className="text-xs py-2 text-muted-foreground font-mono whitespace-nowrap">
-                          {h.page_ranges ? `${h.page_ranges}` : '全部'}{h.pdf_total_pages ? ` / ${h.pdf_total_pages}页` : ''}
+                          {h.mode === 'generate' ? '全部' : (h.page_ranges || '全部')}{h.pdf_total_pages ? ` / ${h.pdf_total_pages}页` : ''}
                         </TableCell>
                         <TableCell className="text-xs py-2 tabular-nums">
                           {qCount > 0 ? (
@@ -572,17 +580,6 @@ export function Component() {
                         </TableCell>
                         <TableCell className="text-xs py-2">
                           <div className="flex items-center gap-0.5">
-                            {h.json_data && (
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                onClick={() => {
-                                  sessionStorage.setItem('pdf_test_json', h.json_data!)
-                                  sessionStorage.setItem('pdf_test_md', h.markdown)
-                                  sessionStorage.removeItem('pdf_test_url')
-                                  window.open('/admin/pdf-test', '_blank')
-                                }}>
-                                <Play className="h-3 w-3" />
-                              </Button>
-                            )}
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                               onClick={() => deleteHistory(h.id)}>
                               <Trash2 className="h-3.5 w-3.5" />
@@ -845,26 +842,32 @@ export function Component() {
                             <p className="text-muted-foreground py-1">暂无历史生成记录</p>
                           ) : (
                             <div className="max-h-40 overflow-y-auto space-y-0.5 mt-1 rounded border p-1.5">
-                              {history.filter((h) => h.questions_json).map((h) => (
+                              {history.filter((h) => h.questions_json).map((h) => {
+                                const checked = dedupHistoryIds.has(h.id)
+                                return (
                                 <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
-                                  <input type="checkbox" checked={dedupHistoryIds.has(h.id)}
-                                    onChange={() => {
-                                      setDedupHistoryIds((prev) => {
-                                        const next = new Set(prev)
-                                        if (next.has(h.id)) next.delete(h.id)
-                                        else next.add(h.id)
-                                        return next
-                                      })
-                                    }}
-                                    className="rounded shrink-0" />
+                                  <button type="button" onClick={() => {
+                                    setDedupHistoryIds((prev) => {
+                                      const next = new Set(prev)
+                                      if (next.has(h.id)) next.delete(h.id)
+                                      else next.add(h.id)
+                                      return next
+                                    })
+                                  }} className={cn(
+                                    'h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                                    checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'
+                                  )}>
+                                    {checked && <Check className="h-3 w-3" />}
+                                  </button>
                                   <span className="truncate flex-1">{h.file_name}</span>
                                   <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
                                 </label>
-                              ))}
+                                )
+                              })}
                             </div>
                           )}
                           {dedupHistoryIds.size > 0 && (
-                            <p className="text-[10px] text-muted-foreground mt-1">✓ 已将 {dedupHistoryIds.size} 条历史题目的题干加入提示词，AI 将避免重复</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">已选 {dedupHistoryIds.size} 条历史题目加入提示词，AI 将避免重复</p>
                           )}
                         </details>
                       </div>
@@ -1031,13 +1034,72 @@ export function Component() {
           {/* Step 2: Parsing */}
           {step === 'parsing' && (
             <div className="space-y-4">
-              <ParsingProgress msg={parseMsg} status={parseStatus} />
+              <ParsingProgress msg={parseMsg} status={parseStatus} parsingDone={parsingDone} hasQuestions={questions.length > 0} />
 
               {parsingDone && parseResult && (
                 <>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
+                      重新解析
+                    </Button>
+                    <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
+                      <ArrowRight className="h-4 w-4" />
+                      AI 提取题目
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <PromptEditor
+                      label="提取题目"
+                      value={extractPrompt}
+                      onChange={(v) => { setExtractPrompt(v); setPrompt('extract', v) }}
+                      onReset={() => setExtractPrompt(resetPrompt('extract'))}
+                    />
+                    <Card>
+                      <CardContent className="py-3">
+                        <details className="text-xs" open>
+                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium">
+                            避免重复 {dedupHistoryIds.size > 0 ? `(已选 ${dedupHistoryIds.size})` : ''}
+                          </summary>
+                          {history.filter((h) => h.questions_json).length === 0 ? (
+                            <p className="text-muted-foreground py-1 mt-2">暂无历史生成记录</p>
+                          ) : (
+                            <div className="max-h-40 overflow-y-auto space-y-0.5 mt-2 rounded border p-1.5">
+                              {history.filter((h) => h.questions_json).map((h) => {
+                                const checked = dedupHistoryIds.has(h.id)
+                                return (
+                                  <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
+                                    <button type="button" onClick={() => {
+                                      setDedupHistoryIds((prev) => {
+                                        const next = new Set(prev)
+                                        if (next.has(h.id)) next.delete(h.id)
+                                        else next.add(h.id)
+                                        return next
+                                      })
+                                    }} className={cn(
+                                      'h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                                      checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'
+                                    )}>
+                                      {checked && <Check className="h-3 w-3" />}
+                                    </button>
+                                    <span className="truncate flex-1">{h.file_name}</span>
+                                    <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          )}
+                          {dedupHistoryIds.size > 0 && (
+                            <p className="text-[10px] text-muted-foreground mt-1">已选 {dedupHistoryIds.size} 条历史题目加入提示词，AI 将避免重复</p>
+                          )}
+                        </details>
+                      </CardContent>
+                    </Card>
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <p className="text-sm font-medium">解析结果</p>
+                      <p className="text-sm font-medium">MinerU 解析结果</p>
                       <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1058,12 +1120,12 @@ export function Component() {
                       <CardContent className="p-0 h-[calc(100vh-120px)]">
                         <PdfMarkdownViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges}>
                           <button type="button" className="text-[10px] underline text-muted-foreground hover:text-foreground" onClick={() => {
-                            sessionStorage.setItem('pdf_test_url', pdfUrl)
-                            sessionStorage.setItem('pdf_test_json', parseResult.jsonData!)
-                            sessionStorage.setItem('pdf_test_md', parseResult.markdown)
-                            window.open('/admin/pdf-test', '_blank')
+                            const w = window.open('', '_blank', 'width=800,height=600')
+                            if (w) {
+                              w.document.write(`<pre style="white-space:pre-wrap;word-break:break-all;font-size:12px;font-family:monospace;padding:16px">${parseResult.jsonData!.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`)
+                            }
                           }}>
-                            调试
+                            预览 JSON
                           </button>
                         </PdfMarkdownViewer>
                       </CardContent>
@@ -1094,29 +1156,6 @@ export function Component() {
                       </CardContent>
                     </Card>
                   )}
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
-                      重新解析
-                    </Button>
-                    <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
-                      <ArrowRight className="h-4 w-4" />
-                      AI 提取题目
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <PromptEditor
-                      label="提取题目"
-                      value={extractPrompt}
-                      onChange={(v) => { setExtractPrompt(v); setPrompt('extract', v) }}
-                      onReset={() => setExtractPrompt(resetPrompt('extract'))}
-                    />
-                    <PromptEditor
-                      label="根据资料生成"
-                      value={generateDocPrompt}
-                      onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
-                      onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
-                    />
-                  </div>
                 </>
               )}
 
@@ -1229,6 +1268,7 @@ function s(v: unknown): string { return v != null ? String(v) : '' }
 
 function stateLabel2(s: unknown) {
   if (s === 'done') return '已完成'
+  if (s === 'imported') return '已导入'
   if (s === 'failed') return '失败'
   if (s === 'running') return '处理中'
   if (s === 'pending') return '排队中'
@@ -1238,21 +1278,31 @@ function stateLabel2(s: unknown) {
 
 function stateColor2(s: unknown) {
   if (s === 'done') return 'text-green-600 bg-green-100 dark:bg-green-900/30'
+  if (s === 'imported') return 'text-green-600 bg-green-100 dark:bg-green-900/30'
   if (s === 'failed') return 'text-red-500 bg-red-100 dark:bg-red-900/30'
   return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30'
 }
 
-function ParsingProgress({ msg, status }: { msg: string; status: Record<string, unknown> | null }) {
+function ParsingProgress({ msg, status, parsingDone, hasQuestions }: { msg: string; status: Record<string, unknown> | null; parsingDone: boolean; hasQuestions: boolean }) {
   const steps = [
     { label: '上传文档', key: 'upload' },
     { label: '文档解析', key: 'mineru' },
     { label: 'AI 提取', key: 'ai' },
   ]
 
+  // Determine current active step from msg
   let activeIdx = -1
   if (msg.includes('上传') || msg.includes('批量任务')) activeIdx = 0
   else if (msg.includes('MinerU') || msg.includes('解析') || msg.includes('Batch')) activeIdx = 1
   else if (msg.includes('AI') || msg.includes('提取')) activeIdx = 2
+
+  const stepDone = (i: number) => {
+    if (i === 0) return parsingDone || activeIdx > 0
+    if (i === 1) return parsingDone || activeIdx > 1
+    if (i === 2) return hasQuestions
+    return false
+  }
+  const stepActive = (i: number) => i === activeIdx && !stepDone(i)
 
   const stateLabel = (s: unknown) => {
     if (s === 'done') return '已完成'
@@ -1277,26 +1327,30 @@ function ParsingProgress({ msg, status }: { msg: string; status: Record<string, 
         <CardContent className="py-6">
           <div className="flex flex-col items-center gap-6">
             <div className="flex items-center w-full max-w-xs">
-              {steps.map((s, i) => (
+              {steps.map((s, i) => {
+                const done = stepDone(i)
+                const active = stepActive(i)
+                return (
                 <div key={s.key} className="flex items-center flex-1 last:flex-[0]">
                   <div className="flex flex-col items-center gap-1.5">
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500
-                      ${i <= activeIdx ? 'bg-primary text-primary-foreground scale-110 shadow-md' : 'bg-muted text-muted-foreground'}`}>
-                      {i < activeIdx ? '✓' : i + 1}
+                      ${done || active ? 'bg-primary text-primary-foreground scale-110 shadow-md' : 'bg-muted text-muted-foreground'}`}>
+                      {done ? '✓' : i + 1}
                     </div>
                     <span className={`text-[10px] whitespace-nowrap transition-colors duration-500
-                      ${i <= activeIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                      ${done || active ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
                       {s.label}
                     </span>
                   </div>
                   {i < steps.length - 1 && (
                     <div className="flex-1 h-0.5 mx-2 mt-[-12px] rounded bg-muted transition-all duration-700">
                       <div className="h-full rounded bg-primary transition-all duration-700 ease-out"
-                        style={{ width: i < activeIdx ? '100%' : i === activeIdx ? '50%' : '0%' }} />
+                        style={{ width: done ? '100%' : active ? '50%' : '0%' }} />
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
             <p className="text-sm font-medium shimmer-text">{msg || '正在解析...'}</p>
           </div>

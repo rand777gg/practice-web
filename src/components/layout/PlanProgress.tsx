@@ -171,10 +171,9 @@ export function PlanProgress() {
   const dailyDone = doneDaily >= totalDaily && totalDaily > 0
 
   const hasDeadline = !!deadline
-  const longDone = hasDeadline && (dailyGoal === 0 || (dailyGoal > 0 && todayLongDone >= dailyGoal))
   const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 100
 
-  const longCompleted = !hasDeadline || longDone
+  const longCompleted = !hasDeadline
   const dailyCompleted = !hasDailyTargets || dailyDone
   const bothCompleted = longCompleted && dailyCompleted
 
@@ -202,28 +201,22 @@ export function PlanProgress() {
       >
         {bothCompleted ? (
           <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
-            <Check className="h-3.5 w-3.5" />
+            <Check className="hidden sm:inline h-3.5 w-3.5" />
             <span className="hidden sm:inline">恭喜，你已经完成所有目标！</span>
-            <span className="sm:hidden">全部完成！</span>
+            <span className="sm:hidden">✓全部完成！</span>
           </span>
         ) : (
           <>
-            {hasDeadline && (longDone ? (
-              <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
-                <Check className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">长期目标完成</span>
-                <span className="sm:hidden">长期✓</span>
-              </span>
-            ) : (
+            {hasDeadline && (
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
                 <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
                 <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
               </div>
-            ))}
+            )}
             {hasDailyTargets && (dailyDone ? (
               <span className="flex items-center gap-1 text-pink-600 dark:text-pink-400 font-medium">
-                <Check className="h-3.5 w-3.5" />
+                <Check className="hidden sm:inline h-3.5 w-3.5" />
                 <span className="hidden sm:inline">自定义目标完成</span>
                 <span className="sm:hidden">自定义✓</span>
               </span>

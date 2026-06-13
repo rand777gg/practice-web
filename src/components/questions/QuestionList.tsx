@@ -78,7 +78,7 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
                     {{ manual: '手动', lightweight: '轻量', precision: '精准', generate: 'AI生成' }[q.import_mode || 'manual'] || q.import_mode || '手动'}
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
                   {q.verified ? (
                     <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
                       <Check className="h-3 w-3" />
