@@ -22,7 +22,7 @@ interface MdSection {
 }
 
 interface Props {
-  pdfUrl: string
+  pdfUrl: string | null
   jsonData?: string | Record<string, unknown>
   markdown: string
   pageRanges?: string
