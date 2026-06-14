@@ -15,6 +15,8 @@ import type { QuestionType } from '@/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 
+const BLANK_RE = /_{2,}/g
+
 interface Props {
   question: ParsedQuestion
   index: number
@@ -251,7 +253,7 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         <div>
           <label className="text-[11px] text-muted-foreground mb-1 block">答案</label>
           {type === 'fill_blank' ? (() => {
-            const blankCount = (question.question_text.match(/_{2,}/g) || ['____']).length
+            const blankCount = (question.question_text.match(BLANK_RE) || ['____']).length
             const answers = Array.isArray(question.correct_answer) ? question.correct_answer as string[] : blankCount > 1 ? [] : [String(question.correct_answer ?? '')]
             return (
               <div className="space-y-1.5">
@@ -281,8 +283,6 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
               placeholder="可接受答案（多个用分号分隔）"
             />
           )}
-        </div>
-      )}
         </div>
       )}
 

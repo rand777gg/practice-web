@@ -13,6 +13,8 @@ import { useT } from '@/i18n/use-t'
 import { Check, Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
+const BLANK_RE = /_{2,}/g
+
 function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
   const [open, setOpen] = useState(false)
   return (
@@ -284,7 +286,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               rows={4}
             />
           ) : isFillBlank ? (() => {
-            const blankCount = (question.question_text.match(/_{2,}/g) || ['____']).length
+            const blankCount = (question.question_text.match(BLANK_RE) || ['____']).length
             const userAnswers = Array.isArray(selectedAnswer) ? selectedAnswer as string[] : selectedAnswer ? [String(selectedAnswer)] : Array(blankCount).fill('')
             return (
               <div className="space-y-2">
