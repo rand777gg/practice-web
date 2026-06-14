@@ -216,35 +216,68 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
   const displaySections = sections.length > 0 ? sections : fallbackSections
   const matched = sections.filter(s => s.bbox).length
 
-  const RENDER_SCALE = 2.0
+  // Adaptive render scale: lower on mobile to prevent OOM
+  const renderScale = Math.min(2.0, Math.max(1.0, window.innerWidth / 700))
+
+  // Lazy-loading: render pages on demand with IntersectionObserver
+  const [loadedCount, setLoadedCount] = useState(5)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  const visiblePages = renderedPages.slice(0, loadedCount)
+  const hasMore = loadedCount < renderedPages.length
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore) return
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setLoadedCount(prev => Math.min(prev + 3, renderedPages.length))
+      }
+    }, { rootMargin: '200px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, renderedPages.length])
 
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      if (!pdfUrl) return
+    setLoadedCount(5)  // reset on new pdfUrl
+    setRenderedPages([])
+    if (!pdfUrl) return
+
+    const renderInBatches = async () => {
       const pdf = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
-      const scale = RENDER_SCALE
+      const scale = renderScale
       const includedPages = parsePageRanges(pageRanges, pdf.numPages)
+      const sortedPages = Array.from(includedPages).sort((a, b) => a - b)
       const pages: { p: number; w: number; h: number; src: string }[] = []
-      for (let i = 1; i <= pdf.numPages; i++) {
-        if (!includedPages.has(i)) continue
+
+      for (let i = 0; i < sortedPages.length; i++) {
         if (cancelled) return
-        const page = await pdf.getPage(i)
+        const p = sortedPages[i]
+        const page = await pdf.getPage(p)
         const vp = page.getViewport({ scale })
         const cvs = document.createElement('canvas')
         cvs.width = vp.width
         cvs.height = vp.height
         const ctx = cvs.getContext('2d')!
         await page.render({ canvasContext: ctx, viewport: vp }).promise
-        pages.push({ p: i, w: vp.width, h: vp.height, src: cvs.toDataURL() })
+        pages.push({ p, w: vp.width, h: vp.height, src: cvs.toDataURL() })
         page.cleanup()
+
+        // Yield to UI every 3 pages to avoid blocking
+        if (i % 3 === 2) {
+          setRenderedPages([...pages])
+          await new Promise(r => setTimeout(r, 0))
+        }
       }
       pdf.destroy()
       if (!cancelled) setRenderedPages(pages)
-    })()
+    }
+
+    renderInBatches()
     return () => { cancelled = true }
-  }, [pdfUrl])
+  }, [pdfUrl, renderScale])
 
   useEffect(() => {
     const el = pdfContainerRef.current
@@ -296,7 +329,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
               <Skeleton className="h-[50vh] w-full rounded" />
             </div>
           ) : (
-            renderedPages.map(rp => {
+            visiblePages.map(rp => {
               const cssW = containerW
               const cssH = rp.h * (containerW / rp.w)
               const pageBlocks = blocks.filter(b => b.page_idx === rp.p - 1)
@@ -338,6 +371,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
               )
             })
           )}
+          {hasMore && <div ref={sentinelRef} className="h-4" />}
         </div>
 
         <ScrollArea className="p-3">
