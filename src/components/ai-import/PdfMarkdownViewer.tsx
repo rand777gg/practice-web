@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -288,9 +289,14 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
         {children}
       </div>
 
-      <div className="flex-1 grid grid-cols-2 gap-0 min-h-0">
-        <div ref={pdfContainerRef} className="overflow-auto border-r p-2 space-y-3">
-          {renderedPages.map(rp => {
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 min-h-0">
+        <div ref={pdfContainerRef} className="overflow-auto lg:border-r p-2 space-y-3">
+          {renderedPages.length === 0 ? (
+            <div className="space-y-4 p-2">
+              <Skeleton className="h-[50vh] w-full rounded" />
+            </div>
+          ) : (
+            renderedPages.map(rp => {
               const cssW = containerW
               const cssH = rp.h * (containerW / rp.w)
               const pageBlocks = blocks.filter(b => b.page_idx === rp.p - 1)
@@ -330,7 +336,8 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
                   </span>
                 </div>
               )
-            })}
+            })
+          )}
         </div>
 
         <ScrollArea className="p-3">

@@ -1176,15 +1176,15 @@ export function Component() {
                                       )}>
                                         {checked && <Check className="h-3 w-3" />}
                                       </button>
-                                      <span className="truncate flex-1">{h.file_name}</span>
-                                      <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
+                                      <span className="truncate flex-1 text-[10px]">{h.file_name}</span>
+                                      <span className="text-[9px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
                                     </label>
                                   )
                                 })}
                               </div>
                             )}
                             {dedupHistoryIds.size > 0 && (
-                              <p className="text-[10px] text-muted-foreground">已选 {dedupHistoryIds.size} 条历史题目加入提示词，AI 将避免重复</p>
+                              <p className="text-[9px] text-muted-foreground">已选 {dedupHistoryIds.size} 条历史题目加入提示词，AI 将避免重复</p>
                             )}
                           </>
                         )}
@@ -1204,7 +1204,7 @@ export function Component() {
                           setShowSplitView(next)
                           if (next) setSidebarCollapsed(true)
                         }}>
-                          {showSplitView ? '隐藏原文' : '对照原文'}
+                          {showSplitView ? '收起侧边栏' : '对照原文'}
                         </button>
                       )}
                     </div>
@@ -1212,7 +1212,7 @@ export function Component() {
 
                   {(historyPdfUrl || pdfUrl) && parseResult.jsonData ? (
                     <Card className="border-0 shadow-none">
-                      <CardContent className="p-0 h-[calc(100vh-40px)]">
+                      <CardContent className="p-0 h-[calc(100vh-100px)]">
                         <PdfMarkdownViewer pdfUrl={historyPdfUrl || pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges}>
                           <button type="button" className="text-[10px] underline text-muted-foreground hover:text-foreground" onClick={() => {
                             const w = window.open('', '_blank', 'width=800,height=600')
@@ -1229,7 +1229,7 @@ export function Component() {
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
                         <p className="text-xs text-muted-foreground">MinerU 解析结果</p>
-                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-40px)]">
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-100px)]">
                           <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
                             {(() => {
                               const start = parsePage * CHARS_PER_PAGE
