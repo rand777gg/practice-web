@@ -346,7 +346,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
                     const [x0, y0, x1, y1] = b.bbox
                     const isActive = activeBbox &&
                       Math.abs(activeBbox[0] - x0) < 2 && Math.abs(activeBbox[1] - y0) < 2
-                    const s = RENDER_SCALE * pageScale
+                    const s = renderScale * pageScale
                     const left = x0 * s
                     const top = y0 * s
                     const w = Math.max((x1 - x0) * s, 2)
