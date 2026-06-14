@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function MarkdownEditor({ value, onChange, placeholder, className, minHeight = '120px' }: Props) {
-  const [preview, setPreview] = useState(false)
+  const [preview, setPreview] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)

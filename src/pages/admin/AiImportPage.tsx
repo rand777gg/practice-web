@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -20,6 +20,7 @@ import {
 import { AiImportUpload } from '@/components/ai-import/AiImportUpload'
 import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { PdfMarkdownViewer } from '@/components/ai-import/PdfMarkdownViewer'
 import {
@@ -33,7 +34,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, Clock, Play, Trash2, Upload, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Play, Trash2, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision' | 'generate'
@@ -65,8 +66,11 @@ export function Component() {
   const [batchMode, setBatchMode] = useState(false)
   const [useR2Upload, setUseR2Upload] = useState(false)
   const [manualPdfUrl, setManualPdfUrl] = useState('')
+  const [historyPdfUrl, setHistoryPdfUrl] = useState<string | null>(null)
   const [r2Pdfs, setR2Pdfs] = useState<{ key: string; url: string; size: number }[]>([])
   const [pageRanges, setPageRanges] = useState('')
+  const pageRangesRef = useRef(pageRanges)
+  pageRangesRef.current = pageRanges
   const [extraFormats, setExtraFormats] = useState<string[]>([])
 
   // Load existing PDFs from R2
@@ -105,6 +109,7 @@ export function Component() {
   const [historyError, setHistoryError] = useState('')
   const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(null)
   const [dedupHistoryIds, setDedupHistoryIds] = useState<Set<number>>(new Set())
+  const [dedupOpen, setDedupOpen] = useState(true)
 
   // Inject dedup context into prompts when selection changes
   useEffect(() => {
@@ -157,6 +162,13 @@ export function Component() {
     return data?.id ?? null
   }
 
+  const updateHistoryEntry = async (id: number, updates: { questions?: ParsedQuestion[]; status?: Record<string, unknown> }) => {
+    const payload: Record<string, unknown> = {}
+    if (updates.questions) payload.questions_json = JSON.stringify(updates.questions)
+    if (updates.status) payload.status_json = JSON.stringify(updates.status)
+    await supabase.from('parse_history').update(payload).eq('id', id)
+  }
+
   const loadHistory = async (id: number) => {
     const entry = history.find(h => h.id === id)
     if (entry) {
@@ -172,6 +184,18 @@ export function Component() {
         try { setParseStatus(JSON.parse(entry.status_json)) } catch { /* ignore */ }
       } else {
         setParseStatus(null)
+      }
+      // Detect if file_name is a URL → use for PDF viewer
+      if (entry.file_name.startsWith('http')) {
+        const isOwnStorage = entry.file_name.includes('/storage/v1/object/') || entry.file_name.includes('/r2/') || entry.file_name.includes('r2.dev')
+        if (isOwnStorage) {
+          setHistoryPdfUrl(entry.file_name)
+        } else {
+          const proxyBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mineru-proxy`
+          setHistoryPdfUrl(`${proxyBase}/pdf-proxy?url=${encodeURIComponent(entry.file_name)}`)
+        }
+      } else {
+        setHistoryPdfUrl(null)
       }
       setShowHistory(false)
       setParseMsg('已从历史记录加载')
@@ -195,6 +219,22 @@ export function Component() {
       : parseMode === 'precision'
         ? (batchMode ? files.length > 0 : !!file) && aiConfigured && precisionReady
         : !!file && aiConfigured
+
+  // Detect if current file/URL already has a parse result in history
+  const existingHistoryEntry = useMemo(() => {
+    if (!manualPdfUrl && !file && files.length === 0) return null
+    if (manualPdfUrl) {
+      return history.find(h => h.file_name === manualPdfUrl && h.markdown) || null
+    }
+    if (file) {
+      return history.find(h => h.file_name === file.name && h.markdown) || null
+    }
+    return null
+  }, [manualPdfUrl, file, files, history])
+
+  const handleViewExistingParse = () => {
+    if (existingHistoryEntry) loadHistory(existingHistoryEntry.id)
+  }
 
   useEffect(() => {
     async function loadMeta() {
@@ -235,6 +275,7 @@ export function Component() {
     setParsingDone(false)
     setParsePage(0)
     setQuestions([])
+    setHistoryPdfUrl(null)
     setParseStatus({ state: 'connecting' })
 
     try {
@@ -252,7 +293,35 @@ export function Component() {
   }
 
   const runUrlParse = async () => {
+    // Download PDF for local viewing (avoids CORS), then persist to R2 for history
+    setParseMsg('正在下载 PDF...')
+    const fileName = manualPdfUrl.split('/').pop()?.split('?')[0] || 'document.pdf'
+    const pdfRes = await fetch(manualPdfUrl)
+    if (!pdfRes.ok) throw new Error(`PDF 下载失败: ${pdfRes.status}`)
+    const pdfBlob = await pdfRes.blob()
+    const blobUrl = URL.createObjectURL(pdfBlob)
+
+    // Upload to R2 for history persistence — dedup by URL hash
     const mineru = new MinerUClient()
+    const pdfFile = new File([pdfBlob], fileName, { type: pdfBlob.type || 'application/pdf' })
+    let r2Url: string
+    try {
+      // Use URL hash as key so re-parsing the same URL overwrites same file
+      const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manualPdfUrl))
+      const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+      const dedupKey = `pdf/remote/${hashHex}_${fileName}`
+      const { data: presignData, error: presignErr } = await supabase.functions.invoke('r2-upload-url', {
+        body: { key: dedupKey, contentType: pdfFile.type },
+      })
+      if (presignErr) throw presignErr
+      const { url: presignedUrl, publicUrl } = presignData as { url: string; publicUrl: string }
+      if (!presignedUrl) throw new Error('No presigned URL')
+      await fetch(presignedUrl, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
+      r2Url = publicUrl
+    } catch {
+      // R2 upload failed — fall back to original URL (history will proxy it)
+      r2Url = manualPdfUrl
+    }
     const options = {
       token: mineruToken,
       modelVersion,
@@ -260,7 +329,7 @@ export function Component() {
       enableFormula,
       enableTable,
       language: 'ch',
-      pageRanges: pageRanges || undefined,
+      pageRanges: pageRangesRef.current || undefined,
       extraFormats: extraFormats.length > 0 ? extraFormats : undefined,
       noCache: noCache || undefined,
       cacheTolerance: cacheTolerance ? Number(cacheTolerance) : undefined,
@@ -277,9 +346,11 @@ export function Component() {
         setParseMsg('正在提取解析结果...')
         const { fetchZipAndExtractFiles } = await import('@/lib/ai/mineru')
         const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
-        setParseResult({ markdown, fileName: manualPdfUrl.split('/').pop() || 'document', jsonData })
+        setParseResult({ markdown, fileName, jsonData })
         setParsingDone(true)
-        saveToHistory({ fileName: manualPdfUrl.split('/').pop() || 'document', markdown, jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (pollResult as any)?.extractProgress?.totalPages })
+        setHistoryPdfUrl(blobUrl)  // show PDF immediately for fresh view
+        const historyId = await saveToHistory({ fileName: r2Url, markdown, jsonData, mode: 'precision', pageRanges: pageRangesRef.current || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (pollResult as any)?.extractProgress?.totalPages })
+        if (historyId) setCurrentHistoryId(historyId)
         return
       }
       if (pollResult.state === 'failed') throw new Error(`解析失败: ${(pollResult as any).errMsg}`)
@@ -291,10 +362,11 @@ export function Component() {
   const runLightweightParse = async () => {
     if (!file) return
     const mineru = new MinerUClient()
-    const result = await mineru.uploadAndParse(file, { pageRanges: pageRanges || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
+    const result = await mineru.uploadAndParse(file, { pageRanges: pageRangesRef.current || undefined }, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
     setParseResult(result)
     setParsingDone(true)
-    saveToHistory({ fileName: file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRanges || undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
+    const historyId = await saveToHistory({ fileName: result.pdfUrl || file!.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'lightweight', pageRanges: pageRangesRef.current || undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
+    if (historyId) setCurrentHistoryId(historyId)
   }
 
   const runPrecisionParse = async () => {
@@ -306,7 +378,7 @@ export function Component() {
       enableFormula,
       enableTable,
       language: 'ch',
-      pageRanges: pageRanges || undefined,
+      pageRanges: pageRangesRef.current || undefined,
       extraFormats: extraFormats.length > 0 ? extraFormats : undefined,
       noCache: noCache || undefined,
       cacheTolerance: cacheTolerance ? Number(cacheTolerance) : undefined,
@@ -323,14 +395,16 @@ export function Component() {
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
       setParseResult({ markdown: mergedMd, fileName: files.map(f => f.name).join(', '), jsonData: results[0]?.jsonData })
       setParsingDone(true)
-      saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
+      const historyId = await saveToHistory({ fileName: files.map(f => f.name).join(', '), markdown: mergedMd, jsonData: results[0]?.jsonData, mode: 'precision', pageRanges: pageRangesRef.current || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
+      if (historyId) setCurrentHistoryId(historyId)
     } else if (file) {
       const result = useR2Upload
         ? await mineru.uploadAndParsePrecisionR2(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
         : await mineru.uploadAndParsePrecision(file, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       setParseResult(result)
       setParsingDone(true)
-      saveToHistory({ fileName: file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRanges || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
+      const historyId = await saveToHistory({ fileName: result.pdfUrl || file.name, markdown: result.markdown, jsonData: result.jsonData, mode: 'precision', pageRanges: pageRangesRef.current || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (parseStatusRef.current as any)?.extractProgress?.totalPages })
+      if (historyId) setCurrentHistoryId(historyId)
     }
   }
 
@@ -350,8 +424,12 @@ export function Component() {
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
     setStep('preview')
     if (parseResult) {
-      const id = await saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
-      if (id) setCurrentHistoryId(id)
+      if (currentHistoryId) {
+        await updateHistoryEntry(currentHistoryId, { questions: result.questions, status: { state: 'questions_extracted' } })
+      } else {
+        const historyId = await saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+        if (historyId) setCurrentHistoryId(historyId)
+      }
     }
   }
 
@@ -434,6 +512,7 @@ export function Component() {
           answer_explanation: null,
           seq_number: null,
           import_mode: parseMode,
+          verified: q.verified ?? false,
         })),
       )
 
@@ -547,7 +626,7 @@ export function Component() {
                       <TableRow key={h.id}>
                         <TableCell className="text-xs py-2">
                           <button type="button" className="text-left hover:underline underline-offset-2 font-medium max-w-[300px] truncate block" onClick={() => loadHistory(h.id)}>
-                            {h.file_name}
+                            {h.file_name.startsWith('http') ? (h.file_name.split('/').pop() || h.file_name) : h.file_name}
                           </button>
                         </TableCell>
                         <TableCell className="text-xs py-2 text-muted-foreground">
@@ -1022,6 +1101,17 @@ export function Component() {
                     </>
                   )}
                 </Button>
+              ) : existingHistoryEntry ? (
+                <div className="flex gap-2 mt-4">
+                  <Button onClick={handleViewExistingParse} variant="default" className="flex-1">
+                    <ArrowRight className="h-4 w-4" />
+                    查看已有解析
+                  </Button>
+                  <Button onClick={startParse} disabled={!canStart} variant="outline" className="flex-1">
+                    <Play className="h-4 w-4" />
+                    重新解析
+                  </Button>
+                </div>
               ) : (
                 <Button onClick={startParse} disabled={!canStart} className="w-full mt-4">
                   <Play className="h-4 w-4" />
@@ -1036,7 +1126,7 @@ export function Component() {
             <div className="space-y-4">
               <ParsingProgress msg={parseMsg} status={parseStatus} parsingDone={parsingDone} hasQuestions={questions.length > 0} />
 
-              {parsingDone && parseResult && (
+              {parsingDone && parseResult ? (
                 <>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
@@ -1056,43 +1146,48 @@ export function Component() {
                       onReset={() => setExtractPrompt(resetPrompt('extract'))}
                     />
                     <Card>
-                      <CardContent className="py-3">
-                        <details className="text-xs" open>
-                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-medium">
-                            避免重复 {dedupHistoryIds.size > 0 ? `(已选 ${dedupHistoryIds.size})` : ''}
-                          </summary>
-                          {history.filter((h) => h.questions_json).length === 0 ? (
-                            <p className="text-muted-foreground py-1 mt-2">暂无历史生成记录</p>
-                          ) : (
-                            <div className="max-h-40 overflow-y-auto space-y-0.5 mt-2 rounded border p-1.5">
-                              {history.filter((h) => h.questions_json).map((h) => {
-                                const checked = dedupHistoryIds.has(h.id)
-                                return (
-                                  <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
-                                    <button type="button" onClick={() => {
-                                      setDedupHistoryIds((prev) => {
-                                        const next = new Set(prev)
-                                        if (next.has(h.id)) next.delete(h.id)
-                                        else next.add(h.id)
-                                        return next
-                                      })
-                                    }} className={cn(
-                                      'h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
-                                      checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'
-                                    )}>
-                                      {checked && <Check className="h-3 w-3" />}
-                                    </button>
-                                    <span className="truncate flex-1">{h.file_name}</span>
-                                    <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
-                                  </label>
-                                )
-                              })}
-                            </div>
-                          )}
-                          {dedupHistoryIds.size > 0 && (
-                            <p className="text-[10px] text-muted-foreground mt-1">已选 {dedupHistoryIds.size} 条历史题目加入提示词，AI 将避免重复</p>
-                          )}
-                        </details>
+                      <CardContent className="py-3 space-y-2">
+                        <button type="button"
+                          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 font-medium"
+                          onClick={() => setDedupOpen(!dedupOpen)}>
+                          <ChevronRight className={`h-3.5 w-3.5 transition-transform ${dedupOpen ? 'rotate-90' : ''}`} />
+                          避免重复 {dedupHistoryIds.size > 0 ? `(已选 ${dedupHistoryIds.size})` : ''}
+                        </button>
+                        {dedupOpen && (
+                          <>
+                            {history.filter((h) => h.questions_json).length === 0 ? (
+                              <p className="text-muted-foreground py-1">暂无历史生成记录</p>
+                            ) : (
+                              <div className="max-h-40 overflow-y-auto space-y-0.5 rounded border p-1.5">
+                                {history.filter((h) => h.questions_json).map((h) => {
+                                  const checked = dedupHistoryIds.has(h.id)
+                                  return (
+                                    <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
+                                      <button type="button" onClick={() => {
+                                        setDedupHistoryIds((prev) => {
+                                          const next = new Set(prev)
+                                          if (next.has(h.id)) next.delete(h.id)
+                                          else next.add(h.id)
+                                          return next
+                                        })
+                                      }} className={cn(
+                                        'h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                                        checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'
+                                      )}>
+                                        {checked && <Check className="h-3 w-3" />}
+                                      </button>
+                                      <span className="truncate flex-1">{h.file_name}</span>
+                                      <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            {dedupHistoryIds.size > 0 && (
+                              <p className="text-[10px] text-muted-foreground">已选 {dedupHistoryIds.size} 条历史题目加入提示词，AI 将避免重复</p>
+                            )}
+                          </>
+                        )}
                       </CardContent>
                     </Card>
                   </div>
@@ -1103,7 +1198,7 @@ export function Component() {
                       <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      {pdfUrl && (
+                      {(historyPdfUrl || pdfUrl) && (
                         <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => {
                           const next = !showSplitView
                           setShowSplitView(next)
@@ -1115,10 +1210,10 @@ export function Component() {
                     </div>
                   </div>
 
-                  {pdfUrl && parseResult.jsonData ? (
+                  {(historyPdfUrl || pdfUrl) && parseResult.jsonData ? (
                     <Card className="border-0 shadow-none">
-                      <CardContent className="p-0 h-[calc(100vh-120px)]">
-                        <PdfMarkdownViewer pdfUrl={pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges}>
+                      <CardContent className="p-0 h-[calc(100vh-40px)]">
+                        <PdfMarkdownViewer pdfUrl={historyPdfUrl || pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges}>
                           <button type="button" className="text-[10px] underline text-muted-foreground hover:text-foreground" onClick={() => {
                             const w = window.open('', '_blank', 'width=800,height=600')
                             if (w) {
@@ -1134,7 +1229,7 @@ export function Component() {
                     <Card className="border-0 shadow-none">
                       <CardContent className="py-4 space-y-2">
                         <p className="text-xs text-muted-foreground">MinerU 解析结果</p>
-                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-120px)]">
+                        <ScrollArea className="bg-muted/50 rounded-lg p-3 h-[calc(100vh-40px)]">
                           <pre className="text-xs whitespace-pre-wrap break-all font-mono leading-relaxed">
                             {(() => {
                               const start = parsePage * CHARS_PER_PAGE
@@ -1157,6 +1252,36 @@ export function Component() {
                     </Card>
                   )}
                 </>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-end gap-2">
+                    <Skeleton className="h-8 w-20" />
+                    <Skeleton className="h-8 w-28" />
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <Card>
+                      <CardContent className="py-3 space-y-3">
+                        <Skeleton className="h-3 w-16" />
+                        <Skeleton className="h-40 w-full" />
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="py-3 space-y-2">
+                        <Skeleton className="h-3 w-12" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-2/3" />
+                      </CardContent>
+                    </Card>
+                  </div>
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Card>
+                      <CardContent className="py-4 space-y-2">
+                        <Skeleton className="h-64 w-full" />
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
               )}
 
               {error && <p className="text-sm text-destructive">{error}</p>}
@@ -1231,14 +1356,15 @@ function formatSize(bytes: number) {
 }
 
 function PromptEditor({ label, value, onChange, onReset }: { label: string; value: string; onChange: (v: string) => void; onReset: () => void }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   return (
     <Card>
       <CardContent className="py-3 space-y-3">
         <button type="button"
           className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 font-medium"
           onClick={() => setOpen(!open)}>
-          {open ? '▾' : '▸'} 提示词 {label && `— ${label}`}
+          <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-90' : ''}`} />
+          提示词 {label && `— ${label}`}
         </button>
         {open && (
           <>

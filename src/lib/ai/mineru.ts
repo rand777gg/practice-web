@@ -29,9 +29,9 @@ export async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdow
     if (!mdFile) throw new Error('full.md not found in zip archive')
     const markdown = await mdFile.async('text')
 
-    // Find coordinate data — layout.json is the primary source (absolute PDF coords)
+    // Find coordinate data — middle.json / layout.json for span-level blocks (PDF coords with y-flip)
     let jsonData: string | undefined
-    const candidates = ['content_list.json', 'layout.json', 'middle.json', 'model.json']
+    const candidates = ['layout.json', 'middle.json', 'content_list.json', 'model.json']
     for (const name of candidates) {
       const f = zip.file(name)
       if (f) { jsonData = await f.async('text'); break }
@@ -39,7 +39,7 @@ export async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdow
     if (!jsonData) {
       const allFiles: string[] = []
       zip.forEach((path) => allFiles.push(path))
-      const match = allFiles.find(f => f.endsWith('_layout.json') || f.endsWith('_content_list.json') || f.endsWith('_middle.json'))
+      const match = allFiles.find(f => f.endsWith('_layout.json') || f.endsWith('_middle.json') || f.endsWith('_content_list.json'))
       if (match) {
         const f = zip.file(match)
         if (f) jsonData = await f.async('text')
@@ -104,8 +104,8 @@ export class MinerUClient {
       if (pollData.data.state === 'done' && pollData.data.markdown_url) {
         const mdRes = await fetch(`${PROXY_BASE}/download?url=${encodeURIComponent(pollData.data.markdown_url)}`, { headers: { ...AUTH_HEADER } })
         const mdJson = await mdRes.json() as { text: string }
-        supabase.storage.from('files').remove([filePath]).catch(() => {})
-        return { markdown: mdJson.text, fileName: file.name }
+        // Keep file for history viewer
+        return { markdown: mdJson.text, fileName: file.name, pdfUrl: publicUrl }
       }
       if (pollData.data.state === 'failed') {
         supabase.storage.from('files').remove([filePath]).catch(() => {})
@@ -150,7 +150,7 @@ export class MinerUClient {
         if (pollResult.state === 'done' && pollResult.fullZipUrl) {
           onProgress?.('正在提取解析结果...')
           const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
-          return { markdown, fileName: file.name, jsonData }
+          return { markdown, fileName: file.name, jsonData, pdfUrl: publicUrl }
         }
         if (pollResult.state === 'failed') {
           throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
@@ -166,7 +166,7 @@ export class MinerUClient {
       }
       throw new Error('MinerU precision parsing timed out')
     } finally {
-      supabase.storage.from('files').remove([filePath]).catch(() => {})
+      // Keep file for history viewer — don't delete
     }
   }
 
@@ -353,9 +353,7 @@ export class MinerUClient {
 
       return results
     } finally {
-      for (const u of uploads) {
-        supabase.storage.from('files').remove([u.filePath]).catch(() => {})
-      }
+      // Keep files for history viewer — don't delete
     }
   }
 
@@ -404,7 +402,7 @@ export class MinerUClient {
         if (pollResult.state === 'done' && pollResult.fullZipUrl) {
           onProgress?.('正在提取解析结果...')
           const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
-          return { markdown, fileName: file.name, jsonData }
+          return { markdown, fileName: file.name, jsonData, pdfUrl: publicUrl }
         }
         if (pollResult.state === 'failed') {
           throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)

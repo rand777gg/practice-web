@@ -64,7 +64,8 @@ export function useQuestions() {
 
   useEffect(() => {
     fetchQuestions()
-  }, [fetchQuestions])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const createQuestion = async (question: Omit<Question, 'id' | 'created_at' | 'created_by'>) => {
     const { error: createError } = await supabase.from('questions').insert(question as Record<string, unknown>)
@@ -86,10 +87,13 @@ export function useQuestions() {
     await fetchQuestions({ ...paramsRef.current, page: nextPage })
   }
 
+  const fetchQuestionsRef = useRef(fetchQuestions)
+  fetchQuestionsRef.current = fetchQuestions
+
   const handleSetPageSize = useCallback((ps: number) => {
     setPageSize(ps)
-    fetchQuestions({ ...paramsRef.current, pageSize: ps, page: 1 })
-  }, [fetchQuestions])
+    fetchQuestionsRef.current({ ...paramsRef.current, pageSize: ps, page: 1 })
+  }, [])
 
   return {
     questions,

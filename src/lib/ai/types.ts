@@ -14,6 +14,7 @@ export interface ParsedQuestion {
   analysis?: string
   key_points?: string
   answer_explanation?: string
+  verified?: boolean
 }
 
 export interface AiParseResult {
@@ -24,6 +25,7 @@ export interface DocumentParseResult {
   markdown: string
   fileName: string
   jsonData?: string
+  pdfUrl?: string
 }
 
 export type MinerUModelVersion = 'pipeline' | 'vlm' | 'MinerU-HTML'

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
@@ -9,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { Check, ChevronDown, Sparkles, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, CheckCircle, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
@@ -63,6 +62,13 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
     setKpLoading(false)
   }
 
+  const handleCleanOptions = () => {
+    const re = /^[A-Za-z]\s*[.)、，,．:：]\s*/
+    const cleaned = question.options.map(opt => opt.replace(re, '').trim())
+    const hasChange = cleaned.some((c, i) => c !== question.options[i])
+    if (hasChange) patch({ options: cleaned })
+  }
+
   return (
     <div className={`rounded-xl border p-3 space-y-2 backdrop-blur-xl ${
       selected
@@ -104,6 +110,16 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <Button
+          variant={question.verified ? 'default' : 'ghost'}
+          size="icon"
+          className={`h-7 w-7 shrink-0 ${question.verified ? 'bg-green-500 hover:bg-green-600' : ''}`}
+          onClick={() => patch({ verified: !question.verified })}
+          title={question.verified ? '已验证' : '标记为已验证'}
+        >
+          <CheckCircle className={`h-3.5 w-3.5 ${question.verified ? 'text-white' : 'text-muted-foreground'}`} />
+        </Button>
+
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 ml-auto" onClick={onRemove}>
           <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
@@ -117,32 +133,6 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         minHeight="60px"
         className="text-sm"
       />
-
-      {/* Key points — right after question text, always visible */}
-      <div>
-        <label className="text-[11px] text-muted-foreground mb-1 block">知识点</label>
-        <div className="relative">
-          <Input
-            value={question.key_points || ''}
-            onChange={(e) => patch({ key_points: e.target.value })}
-            className={`h-8 text-xs pr-8 transition-[border-color,box-shadow] duration-1000 ${
-              kpGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' :
-              kpFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''
-            }`}
-            placeholder="逗号分隔"
-          />
-          {hasAiConfig() && isEnabled('keypoints') && (
-            <Button type="button" variant="ghost" size="icon"
-              className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
-              disabled={kpLoading || !question.question_text.trim()}
-              onClick={handleGenerateKeyPoints}
-              title="AI 生成知识点"
-            >
-            <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
-          </Button>
-          )}
-        </div>
-      </div>
 
       {/* Options (for choice types) */}
       {['single_choice','multi_select'].includes(type) && (
@@ -181,9 +171,21 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
               </div>
             )
           })}
-          <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => patch({ options: [...question.options, ''] })}>
-            + 添加选项
-          </Button>
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => patch({ options: [...question.options, ''] })}>
+              + 添加选项
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-6 gap-1 text-muted-foreground hover:text-foreground"
+              onClick={handleCleanOptions}
+              title="清理选项前缀（去除 A. B) C、等字母/序号标记）"
+            >
+              <Wand2 className="h-3 w-3" />
+              清理选项格式
+            </Button>
+          </div>
         </div>
       )}
 
@@ -257,16 +259,40 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
         </div>
       )}
 
-      {/* Analysis */}
+      {/* Key points */}
       <div>
-        <label className="text-[11px] text-muted-foreground mb-1 block">解析</label>
-        <Textarea
-          value={question.analysis || ''}
-          onChange={(e) => patch({ analysis: e.target.value })}
-          className="text-xs min-h-[60px] resize-y"
-          placeholder="解释正确答案..."
-        />
+        <label className="text-[11px] text-muted-foreground mb-1 block">知识点</label>
+        <div className="relative">
+          <Input
+            value={question.key_points || ''}
+            onChange={(e) => patch({ key_points: e.target.value })}
+            className={`h-8 text-xs pr-8 transition-[border-color,box-shadow] duration-1000 ${
+              kpGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' :
+              kpFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''
+            }`}
+            placeholder="逗号分隔"
+          />
+          {hasAiConfig() && isEnabled('keypoints') && (
+            <Button type="button" variant="ghost" size="icon"
+              className="absolute right-0.5 top-1/2 -translate-y-1/2 h-7 w-7"
+              disabled={kpLoading || !question.question_text.trim()}
+              onClick={handleGenerateKeyPoints}
+              title="AI 生成知识点"
+            >
+            <Sparkles className={`h-3.5 w-3.5 ${kpLoading ? 'animate-pulse' : ''}`} />
+          </Button>
+          )}
+        </div>
       </div>
+
+      {/* Analysis */}
+      <MarkdownEditor
+        value={question.analysis || ''}
+        onChange={(v) => patch({ analysis: v })}
+        placeholder="解释正确答案..."
+        minHeight="60px"
+        className="text-sm"
+      />
     </div>
   )
 }

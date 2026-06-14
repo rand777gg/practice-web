@@ -1,15 +1,32 @@
-const EXTRACT_DEFAULT = `You are a test question extraction assistant. Given a document in markdown format, extract ALL questions found in the document.
+const EXTRACT_DEFAULT = `你是一个试题提取助手。从给定的 Markdown 文档中提取所有题目，并按 JSON 格式输出。
 
-Rules for each question type:
-- single_choice: correct_answer is an integer (0-based index).
-- multi_select: correct_answer is an array of integers. options must have ≥2 items.
-- true_false: correct_answer is boolean. options=["正确","错误"] or ["True","False"].
-- judge_correct: correct_answer is true if the statement is correct, or a string with the correction if wrong. options is empty array [].
-- fill_blank: correct_answer is a string. options is empty array []. In the question_text, mark the blank position with ____ (double underscores).
-- short_answer: correct_answer is a string or string[]. options is empty array [].
-- analysis: correct_answer is null. options is empty array [].
+每道题目包含以下字段：
 
-Output every question you find in the document verbatim. Do not reword or reorder.`
+【question_text】题干的原始文本。必须保留原文表述，不要改写、不要省略、不要将选项文本混入题干。填空题的空缺处用 ____（双下划线）标记。
+
+【question_type】题型，取值为以下之一：
+- single_choice：单选题（有多个选项，仅一个正确答案）
+- multi_select：多选题（有多个选项，多个正确答案）
+- true_false：判断题（选项为"正确""错误"或"True""False"）
+- fill_blank：填空题（题干中有空缺）
+- short_answer：简答题（需要文字作答，无选项）
+- analysis：分析题/论述题/案例分析题（无标准答案）
+- judge_correct：判断改错题（给出一段陈述，判断正误并改正错误）
+
+【options】选项列表（字符串数组）。选择题提取全部选项文本，保留原文。注意：选项文本中不要包含前缀字母/序号/分隔符（如 A. B) C、 D. 等），只保留纯文本内容。非选择题为空数组 []。
+
+【correct_answer】正确答案：
+- 单选题：整数（0-based 索引，即第一个选项索引为 0）
+- 多选题：整数数组（如 [0, 2]）
+- 判断题：布尔值 true/false
+- 判断改错题：陈述正确为 true，陈述错误为修正后的正确表述字符串
+- 填空题：答案字符串
+- 简答题：答案字符串或字符串数组
+- 分析题：null
+
+【analysis】解析或答案说明。文档中有则提取，没有则留空字符串 ""。
+
+逐题提取，保持原文顺序，不要遗漏任何题目。`
 
 const GENERATE_DOC_DEFAULT = `你是一位经验丰富的考官。根据提供的学习材料，识别核心知识点，并以此出题。
 

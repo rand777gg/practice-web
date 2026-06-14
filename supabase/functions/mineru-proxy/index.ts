@@ -16,6 +16,31 @@ Deno.serve(async (req: Request) => {
   const pathname = url.pathname
 
   try {
+    // GET /pdf-proxy?url=<url> — proxy PDF binary with CORS (for pdfjsLib)
+    if (req.method === 'GET' && pathname.endsWith('/pdf-proxy')) {
+      const targetUrl = url.searchParams.get('url')
+      if (!targetUrl) {
+        return new Response(JSON.stringify({ error: 'missing url param' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const fetchHeaders: Record<string, string> = {}
+      // For Supabase storage URLs, forward auth to access private buckets
+      if (targetUrl.includes('/storage/v1/')) {
+        const anonKey = Deno.env.get('SUPABASE_PUBLISHABLE_KEY') || ''
+        if (anonKey) fetchHeaders['Authorization'] = `Bearer ${anonKey}`
+      }
+      const res = await fetch(targetUrl, { headers: fetchHeaders })
+      return new Response(res.body, {
+        status: res.status,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': res.headers.get('Content-Type') || 'application/pdf',
+          'Content-Length': res.headers.get('Content-Length') || '',
+        },
+      })
+    }
+
     // GET /download?url=<url> — proxy content download (for lightweight v1 markdown)
     if (req.method === 'GET' && pathname.endsWith('/download')) {
       const targetUrl = url.searchParams.get('url')
@@ -47,7 +72,7 @@ Deno.serve(async (req: Request) => {
       }
       const zipBytes = new Uint8Array(await res.arrayBuffer())
 
-      // Find and extract full.md and content_list.json from the zip
+      // Find and extract full.md and layout.json / content_list.json from the zip
       const { markdown, jsonData } = await extractZipFiles(zipBytes)
       return new Response(JSON.stringify({ text: markdown, jsonData }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -112,6 +137,7 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
 
   let markdown = ''
   let jsonData: string | undefined
+  let jsonPriority = 0  // 3=layout, 2=middle, 1=content_list
 
   let offset = 0
   while (offset < zipBytes.length - 30) {
@@ -144,12 +170,19 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
 
       if (fileName === 'full.md') {
         const text = await tryDecompress()
-        if (text) { markdown = text; if (jsonData) break }
+        if (text) markdown = text
       }
-      if (!jsonData && (fileName === 'content_list.json' || fileName.endsWith('_content_list.json') || fileName === 'middle.json' || fileName.endsWith('_middle.json'))) {
+      // Priority: layout(3) > middle(2) > content_list(1)
+      const isLayout = fileName === 'layout.json' || fileName.endsWith('_layout.json')
+      const isMiddle = fileName === 'middle.json' || fileName.endsWith('_middle.json')
+      const isContentList = fileName === 'content_list.json' || fileName.endsWith('_content_list.json')
+      const filePriority = isLayout ? 3 : isMiddle ? 2 : isContentList ? 1 : 0
+      if (filePriority > jsonPriority) {
         const text = await tryDecompress()
-        if (text) { jsonData = text; if (markdown) break }
+        if (text) { jsonData = text; jsonPriority = filePriority }
       }
+
+      if (markdown && jsonPriority >= 3) break
     }
 
     offset = dataEnd
@@ -192,4 +225,3 @@ async function inflateAsync(data: Uint8Array): Promise<Uint8Array | null> {
     return null
   }
 }
-
