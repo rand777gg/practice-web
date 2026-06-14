@@ -250,12 +250,39 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       {['fill_blank','short_answer'].includes(type) && (
         <div>
           <label className="text-[11px] text-muted-foreground mb-1 block">答案</label>
-          <Input
-            value={Array.isArray(question.correct_answer) ? question.correct_answer.join('; ') : String(question.correct_answer ?? '')}
-            onChange={(e) => patch({ correct_answer: e.target.value })}
-            className="h-8 text-xs"
-          placeholder={type === 'fill_blank' ? '预期答案' : '可接受答案（多个用分号分隔）'}
-        />
+          {type === 'fill_blank' ? (() => {
+            const blankCount = (question.question_text.match(/_{2,}/g) || ['____']).length
+            const answers = Array.isArray(question.correct_answer) ? question.correct_answer as string[] : blankCount > 1 ? [] : [String(question.correct_answer ?? '')]
+            return (
+              <div className="space-y-1.5">
+                {Array.from({ length: blankCount }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-muted-foreground shrink-0 w-8">空{i + 1}</span>
+                    <Input
+                      value={answers[i] || ''}
+                      onChange={(e) => {
+                        const next = [...answers]
+                        next[i] = e.target.value
+                        // Store as string if single blank, array if multiple
+                        patch({ correct_answer: blankCount > 1 ? next : next[0] || '' })
+                      }}
+                      className="h-7 text-xs"
+                      placeholder={`答案${i + 1}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )
+          })() : (
+            <Input
+              value={Array.isArray(question.correct_answer) ? question.correct_answer.join('; ') : String(question.correct_answer ?? '')}
+              onChange={(e) => patch({ correct_answer: e.target.value })}
+              className="h-8 text-xs"
+              placeholder="可接受答案（多个用分号分隔）"
+            />
+          )}
+        </div>
+      )}
         </div>
       )}
 

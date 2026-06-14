@@ -283,12 +283,34 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               placeholder="输入你的答案..."
               rows={4}
             />
-          ) : (
+          ) : isFillBlank ? (() => {
+            const blankCount = (question.question_text.match(/_{2,}/g) || ['____']).length
+            const userAnswers = Array.isArray(selectedAnswer) ? selectedAnswer as string[] : selectedAnswer ? [String(selectedAnswer)] : Array(blankCount).fill('')
+            return (
+              <div className="space-y-2">
+                {Array.from({ length: blankCount }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground shrink-0">第{i + 1}空</span>
+                    <Input
+                      value={userAnswers[i] || ''}
+                      onChange={(e) => {
+                        const next = [...userAnswers]
+                        next[i] = e.target.value
+                        onSelect?.(next)
+                      }}
+                      disabled={disabled || showResult}
+                      placeholder={`输入第${i + 1}个空`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )
+          })() : (
             <Input
               value={typeof selectedAnswer === 'string' ? selectedAnswer : ''}
               onChange={(e) => onSelect?.(e.target.value)}
               disabled={disabled || showResult}
-              placeholder={isFillBlank ? '输入填空答案' : '输入简答答案'}
+              placeholder="输入简答答案"
             />
           )}
         </div>
@@ -307,11 +329,13 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
           {isTextInput && selectedAnswer != null && (
             <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
-              <p><span className="font-medium">{t('practice.yourAnswer')}: </span>{String(selectedAnswer)}</p>
+              <p><span className="font-medium">{t('practice.yourAnswer')}: </span>
+                {Array.isArray(selectedAnswer) ? selectedAnswer.join('、') : String(selectedAnswer)}
+              </p>
               {!isAnalysis && !correct && (
                 <p className="mt-1">
                   <span className="font-medium">{t('practice.correct')}: </span>
-                  {Array.isArray(question.correct_answer) ? question.correct_answer.join(' / ') : String(question.correct_answer)}
+                  {Array.isArray(question.correct_answer) ? question.correct_answer.join('、') : String(question.correct_answer)}
                 </p>
               )}
               {isAnalysis && <p className="text-xs text-muted-foreground mt-1">分析题需人工批改</p>}

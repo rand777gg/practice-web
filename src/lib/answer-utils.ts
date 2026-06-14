@@ -19,8 +19,12 @@ export function isAnswerCorrect(
     }
     case 'true_false':
       return Boolean(selected) === Boolean(correct)
-    case 'fill_blank':
-      return String(selected).trim().toLowerCase() === String(correct).trim().toLowerCase()
+    case 'fill_blank': {
+      const selArr = Array.isArray(selected) ? selected.map(s => String(s).trim().toLowerCase()) : [String(selected).trim().toLowerCase()]
+      const corArr = Array.isArray(correct) ? correct.map(c => String(c).trim().toLowerCase()) : [String(correct).trim().toLowerCase()]
+      if (selArr.length !== corArr.length) return false
+      return selArr.every((s, i) => s === corArr[i])
+    }
     case 'short_answer': {
       const userAnswer = String(selected).trim().toLowerCase()
       const acceptable = Array.isArray(correct) ? correct : [correct]
@@ -39,7 +43,7 @@ export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
     case 'multi_select': return []
     case 'true_false': return true
     case 'judge_correct': return true
-    case 'fill_blank': return ''
+    case 'fill_blank': return [] as string[]
     case 'short_answer': return ''
     case 'analysis': return null
   }
