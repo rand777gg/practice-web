@@ -26,7 +26,8 @@ import { useT } from '@/i18n/use-t'
 export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
-  const { questions, count, isLoading, page, totalPages, pageSize, setPageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
+  const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
+  const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
@@ -452,7 +453,7 @@ export function Component() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 {PAGE_SIZE_OPTIONS.map((n) => (
-                  <DropdownMenuItem key={n} onClick={() => setPageSize(n)}>
+                  <DropdownMenuItem key={n} onClick={() => fetchQuestions({ ...currentFilterParams(), pageSize: n, page: 1 })}>
                     {n} 条/页
                     {pageSize === n && <Check className="h-4 w-4 ml-auto" />}
                   </DropdownMenuItem>
