@@ -1,11 +1,8 @@
 const MAX_DIM = 2000
 const WEBP_QUALITY = 0.8
-const COMPRESS_THRESHOLD = 300 * 1024  // 300KB
 
 export async function compressImage(file: File): Promise<File> {
-  if (!['image/jpeg', 'image/png'].includes(file.type) || file.size <= COMPRESS_THRESHOLD) {
-    return file
-  }
+  if (!['image/jpeg', 'image/png'].includes(file.type)) return file
   try {
     const img = await createImageBitmap(file)
     let { width, height } = img
