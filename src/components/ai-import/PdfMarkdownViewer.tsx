@@ -222,6 +222,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      if (!pdfUrl) return
       const pdf = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
       const scale = RENDER_SCALE
