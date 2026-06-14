@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/lib/supabase'
 import { MarkdownRenderer } from './MarkdownRenderer'
-import { Eye, PenLine, ImagePlus, Loader2 } from 'lucide-react'
+import { Eye, PenLine, ImagePlus, Clipboard, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -128,10 +128,11 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
     for (const f of files) handleFile(f)
   }
 
-  // Paste handling
+  // Clipboard paste (works in both edit and preview mode)
+  const containerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const ta = textareaRef.current
-    if (!ta) return
+    const el = containerRef.current
+    if (!el) return
     const onPaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items
       if (!items) return
@@ -144,12 +145,12 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
         }
       }
     }
-    ta.addEventListener('paste', onPaste)
-    return () => ta.removeEventListener('paste', onPaste)
+    el.addEventListener('paste', onPaste)
+    return () => el.removeEventListener('paste', onPaste)
   }, [handleFile])
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div ref={containerRef} className={cn('space-y-2', className)}>
       {/* Toolbar */}
       <div className="flex items-center gap-1">
         <button
@@ -179,6 +180,31 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
             >
               {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />}
               插入图片
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={async () => {
+                try {
+                  const items = await navigator.clipboard.read()
+                  for (const item of items) {
+                    for (const type of item.types) {
+                      if (type.startsWith('image/')) {
+                        const blob = await item.getType(type)
+                        const file = new File([blob], `clipboard.${type.split('/')[1]}`, { type })
+                        handleFile(file)
+                        return
+                      }
+                    }
+                  }
+                } catch {
+                  // Clipboard API not available or denied
+                }
+              }}
+              title="读取剪贴板中的图片并插入"
+            >
+              <Clipboard className="h-3 w-3" />
+              读取剪贴板
             </button>
             <input
               ref={fileInputRef}
