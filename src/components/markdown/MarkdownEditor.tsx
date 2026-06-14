@@ -13,40 +13,7 @@ interface Props {
   minHeight?: string
 }
 
-// ---- Client-side image compression & WebP conversion ----
-
-const MAX_DIM = 2000       // max width/height in px
-const WEBP_QUALITY = 0.8   // 0-1
-const COMPRESS_THRESHOLD = 300 * 1024  // only compress if > 300KB
-
-async function compressImage(file: File): Promise<File> {
-  // Only process JPEG/PNG; skip GIF, SVG, WebP, and tiny files
-  if (!['image/jpeg', 'image/png'].includes(file.type) || file.size <= COMPRESS_THRESHOLD) {
-    return file
-  }
-  try {
-    const img = await createImageBitmap(file)
-    let { width, height } = img
-    // Scale down if needed
-    if (width > MAX_DIM || height > MAX_DIM) {
-      const ratio = Math.min(MAX_DIM / width, MAX_DIM / height)
-      width = Math.round(width * ratio)
-      height = Math.round(height * ratio)
-    }
-    const cvs = document.createElement('canvas')
-    cvs.width = width
-    cvs.height = height
-    const ctx = cvs.getContext('2d')!
-    ctx.drawImage(img, 0, 0, width, height)
-    img.close()
-    const blob = await new Promise<Blob | null>(resolve => cvs.toBlob(resolve, 'image/webp', WEBP_QUALITY))
-    if (!blob || blob.size >= file.size) return file  // no benefit, keep original
-    const name = file.name.replace(/\.\w+$/, '.webp')
-    return new File([blob], name, { type: 'image/webp' })
-  } catch {
-    return file  // Canvas API not available (e.g. SSR), skip compression
-  }
-}
+import { compressImage } from '@/lib/image-compress'
 
 export function MarkdownEditor({ value, onChange, placeholder, className, minHeight = '120px' }: Props) {
   const [preview, setPreview] = useState(true)

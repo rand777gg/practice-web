@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
-import { ImagePlus, Sparkles, Loader2, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, Clipboard, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -9,6 +9,7 @@ import { MinerUClient } from '@/lib/ai/mineru'
 import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
+import { compressImage } from '@/lib/image-compress'
 
 interface Props {
   value: string
@@ -34,10 +35,51 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const user = useAuthStore((s) => s.user)
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
+
+  // Shared upload helper with compression
+  const uploadToR2 = useCallback(async (file: File) => {
+    setIsUploading(true)
+    try {
+      const compressed = await compressImage(file)
+      const formData = new FormData()
+      formData.append('file', compressed, compressed.name)
+      formData.append('folder', 'images')
+      const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+      if (error) throw new Error(error.message || '上传失败')
+      const url = (data as { url: string }).url
+      if (!url) throw new Error('未返回图片地址')
+      const current = textareaRef.current?.value || value
+      onChange(current ? `${current}\n\n![图片](${url})` : `![图片](${url})`)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '上传失败')
+    }
+    setIsUploading(false)
+  }, [value, onChange])
+
+  // Clipboard paste handler
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (file) uploadToR2(file)
+          return
+        }
+      }
+    }
+    el.addEventListener('paste', onPaste)
+    return () => el.removeEventListener('paste', onPaste)
+  }, [uploadToR2])
 
   // Uncontrolled textarea — only sync when value changes externally
   useEffect(() => {
@@ -125,8 +167,9 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     if (!imageFile || !user) return
     setIsUploading(true)
     try {
+      const compressed = await compressImage(imageFile)
       const formData = new FormData()
-      formData.append('file', imageFile)
+      formData.append('file', compressed, compressed.name)
       formData.append('folder', `notes/${user.id}`)
       const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
       if (error) throw new Error(error.message || '上传失败')
@@ -186,7 +229,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     : !!getMinerUToken()
 
   return (
-    <div className="space-y-2">
+    <div ref={containerRef} className="space-y-2">
       {/* ── Main editor / preview split ──────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         <textarea
@@ -284,6 +327,26 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       <div className="flex gap-1 flex-wrap">
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
         {/* Direct insert to markdown (upload then insert URL immediately) */}
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground"
+          title="读取剪贴板中的图片并插入"
+          onClick={async () => {
+            try {
+              const items = await navigator.clipboard.read()
+              for (const item of items) {
+                for (const type of item.types) {
+                  if (type.startsWith('image/')) {
+                    const blob = await item.getType(type)
+                    const file = new File([blob], `clipboard.${type.split('/')[1]}`, { type })
+                    uploadToR2(file)
+                    return
+                  }
+                }
+              }
+            } catch { /* Clipboard API not available */ }
+          }}>
+          <Clipboard className="h-3 w-3 mr-1" />读取剪贴板
+        </Button>
+        <span className="w-px h-4 bg-border mx-0.5 self-center" />
         <Button variant="outline" size="sm" className="text-xs h-7"
           disabled={isUploading}
           onClick={async () => {
@@ -292,22 +355,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
             input.accept = 'image/*'
             input.onchange = async (e) => {
               const file = (e.target as HTMLInputElement).files?.[0]
-              if (!file) return
-              setIsUploading(true)
-              try {
-                const formData = new FormData()
-                formData.append('file', file)
-                formData.append('folder', 'images')
-                const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-                if (error) throw new Error(error.message || '上传失败')
-                const url = (data as { url: string }).url
-                if (!url) throw new Error('未返回图片地址')
-                const current = textareaRef.current?.value || value
-                onChange(current ? `${current}\n\n![图片](${url})` : `![图片](${url})`)
-              } catch (err) {
-                alert(err instanceof Error ? err.message : '上传失败')
-              }
-              setIsUploading(false)
+              if (file) uploadToR2(file)
             }
             input.click()
           }}>
