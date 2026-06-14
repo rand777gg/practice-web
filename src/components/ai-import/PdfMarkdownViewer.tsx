@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Skeleton } from '@/components/ui/skeleton'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -215,7 +214,6 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
 
   const displaySections = sections.length > 0 ? sections : fallbackSections
   const matched = sections.filter(s => s.bbox).length
-  const loading = renderedPages.length === 0
 
   const RENDER_SCALE = 2.0
 
@@ -292,13 +290,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
 
       <div className="flex-1 grid grid-cols-2 gap-0 min-h-0">
         <div ref={pdfContainerRef} className="overflow-auto border-r p-2 space-y-3">
-          {loading ? (
-            <div className="space-y-4 p-2">
-              <Skeleton className="h-[40vh] w-full rounded" />
-              <Skeleton className="h-[40vh] w-full rounded" />
-            </div>
-          ) : (
-            renderedPages.map(rp => {
+          {renderedPages.map(rp => {
               const cssW = containerW
               const cssH = rp.h * (containerW / rp.w)
               const pageBlocks = blocks.filter(b => b.page_idx === rp.p - 1)
@@ -338,19 +330,11 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
                   </span>
                 </div>
               )
-            })
-          )}
+            })}
         </div>
 
         <ScrollArea className="p-3">
-          {loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <Skeleton key={i} className={`h-4 ${i % 3 === 0 ? 'w-3/4' : i % 3 === 1 ? 'w-full' : 'w-5/6'}`} />
-              ))}
-            </div>
-          ) : (
-            <div ref={mdRef} className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
+          <div ref={mdRef} className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
               {displaySections.map((sec, i) => (
                 <span
                   key={i}
@@ -371,7 +355,6 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
                 </span>
               ))}
             </div>
-          )}
         </ScrollArea>
       </div>
     </div>
