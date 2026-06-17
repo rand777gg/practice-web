@@ -355,7 +355,8 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
           {note ? (
             <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-              <span className="font-medium">{t('practice.note')}: </span>{note}
+              <span className="font-medium">{t('practice.note')}: </span>
+              <MarkdownRenderer content={note} />
             </div>
           ) : <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed invisible">placeholder</div>}
         </>
