@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
-import { ImagePlus, Sparkles, Loader2, Clipboard, X } from 'lucide-react'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
+import { ImagePlus, Sparkles, Loader2, Clipboard, Bold, Italic, Highlighter, Smile, WrapText, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -20,6 +23,36 @@ interface Props {
 type Align = 'left' | 'center' | 'right'
 type InsertMode = 'html' | 'markdown'
 
+// Common GitHub-style emoji shortcodes
+const EMOJI_LIST = [
+  'smile', 'laughing', 'blush', 'heart_eyes', 'wink', 'relieved', 'sweat_smile',
+  'joy', 'rofl', 'smiley', 'grin', 'innocent', 'slight_smile', 'upside_down',
+  'yum', 'relaxed', 'thinking', 'sunglasses', 'neutral_face', 'expressionless',
+  'unamused', 'rolling_eyes', 'flushed', 'disappointed', 'worried', 'angry',
+  'rage', 'cry', 'sob', 'scream', 'confused', 'dizzy_face', 'astonished',
+  'zipper_mouth', 'mask', 'face_with_thermometer', 'face_with_head_bandage',
+  'sleeping', 'zzz', 'poop', 'ghost', 'alien', 'robot', 'clap', 'thumbsup',
+  'thumbsdown', 'punch', 'wave', 'ok_hand', 'raised_hands', 'pray', 'muscle',
+  'fire', 'star', 'sparkles', 'zap', 'boom', 'exclamation', 'question',
+  'bulb', 'memo', 'book', 'rocket', 'tada', 'warning', 'white_check_mark',
+  'x', 'heavy_plus_sign', 'arrow_right', 'arrow_left',
+]
+
+function wrapSelection(value: string, ta: HTMLTextAreaElement | null, open: string, close: string): string {
+  if (!ta) return value
+  const s = ta.selectionStart, e = ta.selectionEnd
+  if (s === e) return value  // no selection, do nothing
+  const before = value.slice(0, s)
+  const selected = value.slice(s, e)
+  const after = value.slice(e)
+  const newValue = before + open + selected + close + after
+  requestAnimationFrame(() => {
+    ta.focus()
+    ta.setSelectionRange(s + open.length, e + open.length)
+  })
+  return newValue
+}
+
 export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
@@ -28,8 +61,8 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [isUploading, setIsUploading] = useState(false)
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
   const [previewValue, setPreviewValue] = useState(value)
+  const [isFormatting, setIsFormatting] = useState(false)
 
-  // Drag-to-align state
   const [selectedAlign, setSelectedAlign] = useState<Align>('center')
   const [insertMode, setInsertMode] = useState<InsertMode>('html')
 
@@ -40,6 +73,21 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
+
+  // Uncontrolled textarea — only sync when value changes externally
+  useEffect(() => {
+    const ta = textareaRef.current
+    if (ta && ta.value !== value) ta.value = value
+  }, [value])
+
+  useEffect(() => {
+    const t = setTimeout(() => setPreviewValue(value), 300)
+    return () => clearTimeout(t)
+  }, [value])
+
+  const handleChange = () => {
+    if (textareaRef.current) onChange(textareaRef.current.value)
+  }
 
   // Shared upload helper with compression
   const uploadToR2 = useCallback(async (file: File) => {
@@ -81,23 +129,66 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     return () => el.removeEventListener('paste', onPaste)
   }, [uploadToR2])
 
-  // Uncontrolled textarea — only sync when value changes externally
-  useEffect(() => {
+  // ── Text formatting helpers ──────────────────────────────────────────────
+
+  const applyFormat = (open: string, close: string) => {
     const ta = textareaRef.current
-    if (ta && ta.value !== value) ta.value = value
-  }, [value])
+    if (!ta) return
+    const v = wrapSelection(ta.value, ta, open, close)
+    ta.value = v
+    onChange(v)
+  }
 
-  // Debounced preview
-  useEffect(() => {
-    const t = setTimeout(() => setPreviewValue(value), 300)
-    return () => clearTimeout(t)
-  }, [value])
+  const handleBold = () => applyFormat('**', '**')
+  const handleItalic = () => applyFormat('*', '*')
+  const handleHighlight = () => applyFormat('<mark>', '</mark>')
+  const handleEmoji = (code: string) => {
+    const ta = textareaRef.current
+    if (!ta) { onChange(value + ` :${code}: `); return }
+    const s = ta.selectionStart
+    const before = ta.value.slice(0, s)
+    const after = ta.value.slice(s)
+    const newValue = before + ` :${code}: ` + after
+    ta.value = newValue
+    const pos = s + code.length + 4
+    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(pos, pos) })
+    onChange(newValue)
+  }
 
-  const handleChange = () => {
-    if (textareaRef.current) onChange(textareaRef.current.value)
+  const handleAiLineBreak = async () => {
+    if (!activeProvider) return
+    setIsFormatting(true)
+    try {
+      const current = textareaRef.current?.value || value
+      if (!current.trim()) return
+      const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
+      const res = await fetch(`${activeProvider.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${activeProvider.apiKey}` },
+        body: JSON.stringify({
+          model: modelId,
+          messages: [{ role: 'user', content:
+            `Format the following text with proper line breaks. Insert <br> at natural break points — between list items, before/after ordered/unordered lists, between paragraphs. Do NOT change any content, only add <br> tags for readability.\n\nTEXT:\n${current}`
+          }],
+          temperature: 0.1,
+          max_tokens: current.length * 2,
+        }),
+      })
+      const data = await res.json() as any
+      if (data.error) throw new Error(data.error?.message || 'API error')
+      const text = data.choices?.[0]?.message?.content
+      if (text) {
+        if (textareaRef.current) textareaRef.current.value = text
+        onChange(text)
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '格式化失败')
+    }
+    setIsFormatting(false)
   }
 
   // ── File select ────────────────────────────────────────────────────────
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -122,6 +213,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   }
 
   // ── Recognize ──────────────────────────────────────────────────────────
+
   const handleRecognize = async () => {
     if (!imageBase64) return
     setIsRecognizing(true)
@@ -163,6 +255,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   }
 
   // ── Upload & insert ────────────────────────────────────────────────────
+
   const handleUploadToCloud = async () => {
     if (!imageFile || !user) return
     setIsUploading(true)
@@ -203,7 +296,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     if (newMd !== current) onChange(newMd)
   }
 
-  // Insert markdown template at cursor position
   const insertMarkdown = (type: 'mermaid' | 'plantuml' | 'math', body?: string) => {
     const ta = textareaRef.current
     const templates: Record<string, string> = {
@@ -324,9 +416,57 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       )}
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
-      <div className="flex gap-1 flex-wrap">
+      <div className="flex gap-1 flex-wrap items-center">
+        {/* Formatting buttons */}
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+          title="加粗选中内容"
+          onClick={handleBold}>
+          <Bold className="h-3 w-3 mr-1" />加粗
+        </Button>
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+          title="斜体选中内容"
+          onClick={handleItalic}>
+          <Italic className="h-3 w-3 mr-1" />斜体
+        </Button>
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+          title="高亮选中内容"
+          onClick={handleHighlight}>
+          <Highlighter className="h-3 w-3 mr-1" />马克笔
+        </Button>
+
+        {/* GitHub Emoji dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground" title="插入 GitHub Emoji">
+              <Smile className="h-3 w-3 mr-1" />Emoji
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-56 overflow-y-auto w-48">
+            <div className="grid grid-cols-6 gap-0.5 p-1">
+              {EMOJI_LIST.map(code => (
+                <DropdownMenuItem key={code}
+                  className="p-1 flex items-center justify-center cursor-pointer hover:bg-muted rounded"
+                  onClick={() => handleEmoji(code)}
+                  title={`:${code}:`}>
+                  <span className="text-sm">{`:${code}:`}</span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* AI auto line break */}
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground"
+          title="AI 自动在列表、段落间插入换行符"
+          disabled={isFormatting || !activeProvider}
+          onClick={handleAiLineBreak}>
+          {isFormatting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <WrapText className="h-3 w-3 mr-1" />}
+          AI换行
+        </Button>
+
+        <span className="w-px h-4 bg-border mx-0.5 self-center" />
+
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
-        {/* Direct insert to markdown (upload then insert URL immediately) */}
         <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground"
           title="读取剪贴板中的图片并插入"
           onClick={async () => {
@@ -394,7 +534,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   )
 }
 
-// ── Helper: build snippet ──────────────────────────────────────────────────
 function buildSnippet(url: string, align: Align, mode: InsertMode): string {
   if (mode === 'markdown') {
     if (align === 'center') return `<p align="center">\n\n![图片](${url})\n\n</p>`
