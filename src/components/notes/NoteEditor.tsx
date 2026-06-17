@@ -13,6 +13,7 @@ import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import { compressImage } from '@/lib/image-compress'
+import { FormulaEditor } from './FormulaEditor'
 
 interface Props {
   value: string
@@ -62,6 +63,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
   const [previewValue, setPreviewValue] = useState(value)
   const [isFormatting, setIsFormatting] = useState(false)
+  const [formulaOpen, setFormulaOpen] = useState(false)
 
   const [selectedAlign, setSelectedAlign] = useState<Align>('center')
   const [insertMode, setInsertMode] = useState<InsertMode>('html')
@@ -153,6 +155,21 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     const pos = s + code.length + 4
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(pos, pos) })
     onChange(newValue)
+  }
+
+  const handleInsertFormula = (latex: string) => {
+    const ta = textareaRef.current
+    const md = `$${latex}$`
+    if (ta) {
+      const s = ta.selectionStart; const e = ta.selectionEnd
+      const before = ta.value.slice(0, s); const after = ta.value.slice(e)
+      ta.value = before + md + after
+      ta.selectionStart = ta.selectionEnd = s + md.length
+      ta.focus()
+      onChange(ta.value)
+    } else {
+      onChange(value + md)
+    }
   }
 
   const handleAiLineBreak = async () => {
@@ -512,7 +529,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
           onClick={() => insertMarkdown('plantuml')}>PlantUML</Button>
         <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
-          onClick={() => insertMarkdown('math')}>$公式$</Button>
+          onClick={() => setFormulaOpen(true)}>公式</Button>
         {imageBase64 && (
           <>
             <Button variant="outline" size="sm" className="text-xs h-7"
@@ -530,6 +547,12 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           </>
         )}
       </div>
+
+      <FormulaEditor
+        open={formulaOpen}
+        onClose={() => setFormulaOpen(false)}
+        onInsert={handleInsertFormula}
+      />
     </div>
   )
 }
