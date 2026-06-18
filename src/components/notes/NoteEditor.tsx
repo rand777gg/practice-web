@@ -382,12 +382,12 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
           <>
             {!hideImageTools && (
               <>
-                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+                <input ref={fileInputRef} type="file" accept={'image/*'} onChange={handleFileSelect} className="hidden" />
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
                   disabled={isUploading}
                   onClick={async () => {
                     const input = document.createElement('input')
-                    input.type = 'file'; input.accept = 'image/*'
+                    input.type = 'file'; input.accept = 'image/' + '*'
                     input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
                     input.click()
                   }}>
