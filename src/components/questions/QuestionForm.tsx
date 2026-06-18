@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
+import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { FormattingToolbar } from '@/components/notes/FormattingToolbar'
 import {
   DropdownMenu,
@@ -292,56 +292,65 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <CardTitle className="text-sm">{t('questions.questionText')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex gap-1 flex-wrap items-center">
-                <FormattingToolbar textareaRef={questionTextRef} value={questionText} onChange={setQuestionText} extraButtons={
-                  <>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
-                      disabled={isUploadingImg} onClick={handleUploadImage}>
-                      {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-                      title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
-                      {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
-                    </Button>
-                  </>
-                } />
-              </div>
-              <div className="relative">
-                <MarkdownEditor
-                  inputRef={questionTextRef}
-                  value={questionText}
-                  onChange={setQuestionText}
-                  placeholder={t('questions.questionPlaceholder')}
-                  minHeight="160px"
-                />
-                {hasAiConfig() && (
-                  <div className="absolute right-1 bottom-1 flex gap-0.5">
-                    {prevQuestionTextRef.current && (
+              <FormattingToolbar textareaRef={questionTextRef} value={questionText} onChange={setQuestionText} extraButtons={
+                <>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+                    disabled={isUploadingImg} onClick={handleUploadImage}>
+                    {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                    title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
+                    {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
+                  </Button>
+                </>
+              } />
+              <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-2">
+                <div className="relative">
+                  <textarea
+                    ref={questionTextRef}
+                    value={questionText}
+                    onChange={(e) => setQuestionText(e.target.value)}
+                    placeholder={t('questions.questionPlaceholder')}
+                    rows={8}
+                    spellCheck={false}
+                    className="block min-h-[200px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y font-mono"
+                  />
+                  {hasAiConfig() && (
+                    <div className="absolute right-1 bottom-1 flex gap-0.5">
+                      {prevQuestionTextRef.current && (
+                        <Button type="button" variant="ghost" size="icon"
+                          className="h-7 w-7"
+                          onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
+                          title="还原"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button type="button" variant="ghost" size="icon"
                         className="h-7 w-7"
-                        onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
-                        title="还原"
+                        disabled={stemExtracting || !questionText.trim()}
+                        onClick={handleExtractStem}
+                        title="AI 提取题干"
                       >
-                        <RotateCcw className="h-3.5 w-3.5" />
+                        <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
                       </Button>
-                    )}
-                    <Button type="button" variant="ghost" size="icon"
-                      className="h-7 w-7"
-                      disabled={stemExtracting || !questionText.trim()}
-                      onClick={handleExtractStem}
-                      title="AI 提取题干"
-                    >
-                      <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
-                    </Button>
-                  </div>
-                )}
-                {(stemGlow || stemFade) && (
-                  <div className={cn(
-                    'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
-                    stemGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
-                    stemFade && 'border-2 border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
-                  )} />
-                )}
+                    </div>
+                  )}
+                  {(stemGlow || stemFade) && (
+                    <div className={cn(
+                      'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
+                      stemGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
+                      stemFade && 'border-2 border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
+                    )} />
+                  )}
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-3 min-h-[200px] max-h-[500px] overflow-auto">
+                  {questionText ? (
+                    <MarkdownRenderer content={questionText} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">实时预览...</p>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
