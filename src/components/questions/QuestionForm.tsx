@@ -263,6 +263,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                       title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
                       {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
                     </Button>
+                  </>
                 } />
               </div>
               <div className="relative">
