@@ -233,6 +233,7 @@ export function Component() {
                     value={editText}
                     onChange={setEditText}
                     placeholder={t('practice.notePlaceholder')}
+                    hideImageTools
                   />
                   <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                     <Checkbox checked={editIsPublic} onCheckedChange={(v) => setEditIsPublic(v === true)} />

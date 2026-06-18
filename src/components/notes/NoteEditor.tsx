@@ -16,6 +16,7 @@ interface Props {
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  hideImageTools?: boolean
 }
 
 type Align = 'left' | 'center' | 'right'
@@ -36,7 +37,7 @@ const EMOJI_LIST = [
   'x', 'heavy_plus_sign', 'arrow_right', 'arrow_left',
 ]
 
-export function NoteEditor({ value, onChange, placeholder }: Props) {
+export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -379,19 +380,23 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
         onChange={onChange}
         extraButtons={
           <>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
-              disabled={isUploading}
-              onClick={async () => {
-                const input = document.createElement('input')
-                input.type = 'file'; input.accept = 'image/*'
-                input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
-                input.click()
-              }}>
-              {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-            </Button>
+            {!hideImageTools && (
+              <>
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+                  disabled={isUploading}
+                  onClick={async () => {
+                    const input = document.createElement('input')
+                    input.type = 'file'; input.accept = 'image/*'
+                    input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
+                    input.click()
+                  }}>
+                  {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+                </Button>
 
-            <span className="w-px h-4 bg-border mx-0.5 self-center" />
+                <span className="w-px h-4 bg-border mx-0.5 self-center" />
+              </>
+            )}
 
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
               title="AI 自动换行"
@@ -399,11 +404,13 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
               onClick={handleAiLineBreak}>
               {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-              title="识别手写笔记/图片"
-              onClick={() => fileInputRef.current?.click()}>
-              <ScanEye className="h-3.5 w-3.5" />
-            </Button>
+            {!hideImageTools && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                title="识别手写笔记/图片"
+                onClick={() => fileInputRef.current?.click()}>
+                <ScanEye className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </>
         }
       />
