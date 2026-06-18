@@ -22,7 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
-import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
@@ -539,7 +539,7 @@ export function PracticeSession() {
                     {isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}
                   </p>
                 </div>
-                <Switch checked={isPublic} onCheckedChange={handlePublicToggle} />
+                <Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} />
               </div>
             </div>
           )}
