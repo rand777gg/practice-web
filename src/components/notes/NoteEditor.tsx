@@ -4,7 +4,7 @@ import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { ImagePlus, Sparkles, Loader2, Clipboard, Bold, Italic, Highlighter, Smile, WrapText, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, Clipboard, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -142,6 +142,8 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   const handleBold = () => applyFormat('**', '**')
   const handleItalic = () => applyFormat('*', '*')
+  const handleUnderline = () => applyFormat('<u>', '</u>')
+  const handleStrikethrough = () => applyFormat('<s>', '</s>')
   const handleHighlight = () => applyFormat('<mark>', '</mark>')
   const handleEmoji = (emoji: string) => {
     const ta = textareaRef.current
@@ -427,6 +429,16 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           title="斜体选中内容"
           onClick={handleItalic}>
           <Italic className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="下划线选中内容"
+          onClick={handleUnderline}>
+          <Underline className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="删除线选中内容"
+          onClick={handleStrikethrough}>
+          <Strikethrough className="h-3.5 w-3.5" />
         </Button>
         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
           title="高亮选中内容"
