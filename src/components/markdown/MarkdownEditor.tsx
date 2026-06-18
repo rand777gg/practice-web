@@ -11,15 +11,21 @@ interface Props {
   placeholder?: string
   className?: string
   minHeight?: string
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>
 }
 
 import { compressImage } from '@/lib/image-compress'
 
-export function MarkdownEditor({ value, onChange, placeholder, className, minHeight = '120px' }: Props) {
+export function MarkdownEditor({ value, onChange, placeholder, className, minHeight = '120px', inputRef }: Props) {
   const [preview, setPreview] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Sync external ref
+  useEffect(() => {
+    if (inputRef) (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = textareaRef.current
+  }, [textareaRef.current])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
 

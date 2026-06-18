@@ -15,8 +15,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
 import {
-  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X,
+  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, WrapText, ScanEye, ImagePlus, Loader2, X,
 } from 'lucide-react'
+import { compressImage } from '@/lib/image-compress'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
@@ -50,6 +51,9 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [verified, setVerified] = useState(initialData?.verified ?? false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const analysisRef = useRef<HTMLTextAreaElement>(null)
+  const questionTextRef = useRef<HTMLTextAreaElement>(null)
+  const [isFormatting, setIsFormatting] = useState(false)
+  const [isUploadingImg, setIsUploadingImg] = useState(false)
   const [keyPointsGlow, setKeyPointsGlow] = useState(false)
   const [keyPointsFade, setKeyPointsFade] = useState(false)
   const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
@@ -183,6 +187,54 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     }, 300)
   }
 
+  const handleUploadImage = async () => {
+    const input = document.createElement('input')
+    input.type = 'file'; input.accept = 'image/*'
+    input.onchange = async (e) => {
+      const f = (e.target as HTMLInputElement).files?.[0]
+      if (!f) return
+      setIsUploadingImg(true)
+      try {
+        const compressed = await compressImage(f)
+        const formData = new FormData()
+        formData.append('file', compressed, compressed.name)
+        formData.append('folder', 'images')
+        const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+        if (error) throw new Error(error.message || '上传失败')
+        const url = (data as { url: string }).url
+        if (url) {
+          const current = questionTextRef.current?.value || questionText
+          const md = current ? `${current}\n\n![图片](${url})` : `![图片](${url})`
+          setQuestionText(md)
+        }
+      } catch (err) { alert(err instanceof Error ? err.message : '上传失败') }
+      setIsUploadingImg(false)
+    }
+    input.click()
+  }
+
+  const handleAiLineBreak = async () => {
+    const config = getAiConfig()
+    if (!config?.apiKey) return
+    setIsFormatting(true)
+    try {
+      const current = questionTextRef.current?.value || questionText
+      if (!current.trim()) return
+      const parser = new DeepSeekParser(config)
+      const { generateText } = await import('ai')
+      const { createDeepSeek } = await import('@ai-sdk/deepseek')
+      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+      const { text } = await generateText({
+        model: client(config.model || 'deepseek-chat'),
+        system: 'You are a text formatter. Add <br> at natural break points between paragraphs and list items. Do NOT change any content.',
+        prompt: current,
+        temperature: 0.1,
+      })
+      if (text) setQuestionText(text)
+    } catch { /* ignore */ }
+    setIsFormatting(false)
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -239,9 +291,34 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">{t('questions.questionText')}</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2">
+              <div className="flex gap-1 flex-wrap items-center">
+                <FormattingToolbar textareaRef={questionTextRef} value={questionText} onChange={setQuestionText} extraButtons={
+                  <>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+                      disabled={isUploadingImg} onClick={handleUploadImage}>
+                      {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                      title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
+                      {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                      title="AI 提取题干" disabled={stemExtracting || !questionText.trim()} onClick={handleExtractStem}>
+                      <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
+                    </Button>
+                    {prevQuestionTextRef.current && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7" title="还原"
+                        onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}>
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </>
+                } />
+              </div>
               <div className="relative">
                 <MarkdownEditor
+                  inputRef={questionTextRef}
                   value={questionText}
                   onChange={setQuestionText}
                   placeholder={t('questions.questionPlaceholder')}
