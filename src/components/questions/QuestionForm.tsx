@@ -49,7 +49,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [verified, setVerified] = useState(initialData?.verified ?? false)
-  const [analysisOpen, setAnalysisOpen] = useState(true)
+  const [analysisOpen, setAnalysisOpen] = useState(false)
   const analysisRef = useRef<HTMLTextAreaElement>(null)
   const questionTextRef = useRef<HTMLTextAreaElement>(null)
   const [isFormatting, setIsFormatting] = useState(false)
@@ -284,7 +284,9 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive mb-4">{error}</div>
       )}
 
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Left column — question content */}
+        <div className="lg:col-span-3 space-y-6">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">{t('questions.questionText')}</CardTitle>
@@ -494,6 +496,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </CardContent>
             </Card>
           )}
+        </div>
+
+        {/* Right column — metadata */}
+        <div className="lg:col-span-2 space-y-4">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">基本信息</CardTitle>
@@ -590,30 +596,22 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
             </CardContent>
           </Card>
 
-          {/* Analysis — left/right split preview */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">{t('questions.analysis')} (选填)</CardTitle>
+            <CardHeader className="py-2.5 px-4 cursor-pointer select-none"
+              onClick={() => setAnalysisOpen(!analysisOpen)}>
+              <CardTitle className="text-sm flex items-center justify-between">
+                {t('questions.analysis')} & {t('questions.keyPoints')}
+                <span className="text-muted-foreground text-xs">{analysisOpen ? '▾' : '▸'}</span>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <FormattingToolbar textareaRef={analysisRef} value={analysis} onChange={setAnalysis} />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                <textarea ref={analysisRef} value={analysis} onChange={(e) => setAnalysis(e.target.value)}
-                  placeholder={t('questions.analysisPlaceholder')} rows={4}
-                  className="block min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y font-mono" />
-                <div className="rounded-lg border bg-muted/30 p-3 min-h-[120px] max-h-[400px] overflow-auto">
-                  {analysis ? <MarkdownRenderer content={analysis} /> : <p className="text-xs text-muted-foreground">实时预览...</p>}
+            {analysisOpen && (
+              <CardContent className="pb-3 px-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{t('questions.analysis')} (选填)</Label>
+                  <FormattingToolbar textareaRef={analysisRef} value={analysis} onChange={setAnalysis} />
+                  <Textarea id="analysis" ref={analysisRef} value={analysis} onChange={(e) => setAnalysis(e.target.value)}
+                    placeholder={t('questions.analysisPlaceholder')} rows={3} />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Key Points */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">{t('questions.keyPoints')} (选填)</CardTitle>
-            </CardHeader>
-            <CardContent>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{t('questions.keyPoints')} (选填)</Label>
                   <div className="relative">
@@ -687,6 +685,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               {isSubmitting ? <><span className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />{t('questions.saving')}</> : <><Save className="h-4 w-4 mr-1.5" />{initialData ? t('questions.update') : t('questions.create')}</>}
             </Button>
           </div>
+        </div>
       </div>
     </form>
   )
