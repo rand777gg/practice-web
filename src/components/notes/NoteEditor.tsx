@@ -4,7 +4,7 @@ import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { ImagePlus, Sparkles, Loader2, Clipboard, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, Clipboard, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -145,6 +145,27 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const handleUnderline = () => applyFormat('<u>', '</u>')
   const handleStrikethrough = () => applyFormat('<s>', '</s>')
   const handleHighlight = () => applyFormat('<mark>', '</mark>')
+
+  // Line prefix — wrap each selected line
+  const applyLinePrefix = (prefix: string) => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const s = ta.selectionStart; const e = ta.selectionEnd
+    const before = ta.value.slice(0, s)
+    const selected = ta.value.slice(s, e)
+    const lines = selected ? selected.split('\n') : ['']
+    const formatted = lines.map(l => prefix + l).join('\n')
+    ta.value = before + formatted + ta.value.slice(e)
+    const newEnd = s + formatted.length
+    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(s, newEnd) })
+    onChange(ta.value)
+  }
+
+  const handleOrderedList = () => applyLinePrefix('1. ')
+  const handleUnorderedList = () => applyLinePrefix('- ')
+  const handleLineHeight = (lh: string) => applyFormat(`<span style="line-height:${lh}">`, '</span>')
+  const handleAlign = (align: string) => applyFormat(`<div align="${align}">`, '</div>')
+  const handleIndent = () => applyFormat('<blockquote>', '</blockquote>')
   const handleEmoji = (emoji: string) => {
     const ta = textareaRef.current
     if (!ta) { onChange(value + emoji); return }
@@ -444,6 +465,61 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           title="高亮选中内容"
           onClick={handleHighlight}>
           <Highlighter className="h-3.5 w-3.5" />
+        </Button>
+
+        <span className="w-px h-4 bg-border mx-0.5 self-center" />
+
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="有序列表"
+          onClick={handleOrderedList}>
+          <ListOrdered className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="无序列表"
+          onClick={handleUnorderedList}>
+          <List className="h-3.5 w-3.5" />
+        </Button>
+
+        {/* Line height */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="行高">
+              <span className="text-[11px] font-mono">1.5</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {['1.0', '1.25', '1.5', '1.75', '2.0'].map(lh => (
+              <DropdownMenuItem key={lh} onClick={() => handleLineHeight(lh)}>
+                <span className="text-xs">{lh}x</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Alignment */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="对齐方式">
+              <AlignLeft className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => handleAlign('left')}>
+              <AlignLeft className="h-3.5 w-3.5 mr-1" /><span className="text-xs">左对齐</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleAlign('center')}>
+              <AlignCenter className="h-3.5 w-3.5 mr-1" /><span className="text-xs">居中</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleAlign('right')}>
+              <AlignRight className="h-3.5 w-3.5 mr-1" /><span className="text-xs">右对齐</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="增加缩进"
+          onClick={handleIndent}>
+          <Indent className="h-3.5 w-3.5" />
         </Button>
 
         {/* Emoji picker */}
