@@ -46,8 +46,6 @@ export function EmojiPickerContent({ onSelect }: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const visible = useRef(new Set<string>()) // dedup across sets
-
   const handleSelect = (emoji: string) => {
     // Find a reasonable shortcode — use the emoji itself if no standard name
     onSelect(emoji)

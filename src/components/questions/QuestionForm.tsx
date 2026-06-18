@@ -15,8 +15,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
 import {
-  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, WrapText, ScanEye, ImagePlus, Loader2, X,
+  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, WrapText, ImagePlus, Loader2, X,
 } from 'lucide-react'
+import { compressImage } from '@/lib/image-compress'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
@@ -219,7 +220,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     try {
       const current = questionTextRef.current?.value || questionText
       if (!current.trim()) return
-      const parser = new DeepSeekParser(config)
       const { generateText } = await import('ai')
       const { createDeepSeek } = await import('@ai-sdk/deepseek')
       const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
