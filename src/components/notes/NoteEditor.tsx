@@ -4,7 +4,7 @@ import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { ImagePlus, Sparkles, Loader2, Clipboard, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, Sigma, ScanEye, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -440,47 +440,32 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div className="flex gap-1 flex-wrap items-center">
-        {/* Formatting buttons — icon only, label on hover */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="加粗选中内容"
-          onClick={handleBold}>
+        {/* ── Group 1: Text formatting ── */}
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="加粗" onClick={handleBold}>
           <Bold className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="斜体选中内容"
-          onClick={handleItalic}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="斜体" onClick={handleItalic}>
           <Italic className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="下划线选中内容"
-          onClick={handleUnderline}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="下划线" onClick={handleUnderline}>
           <Underline className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="删除线选中内容"
-          onClick={handleStrikethrough}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="删除线" onClick={handleStrikethrough}>
           <Strikethrough className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="高亮选中内容"
-          onClick={handleHighlight}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="高亮" onClick={handleHighlight}>
           <Highlighter className="h-3.5 w-3.5" />
         </Button>
 
         <span className="w-px h-4 bg-border mx-0.5 self-center" />
 
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="有序列表"
-          onClick={handleOrderedList}>
+        {/* ── Group 2: Paragraph ── */}
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="有序列表" onClick={handleOrderedList}>
           <ListOrdered className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="无序列表"
-          onClick={handleUnorderedList}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="无序列表" onClick={handleUnorderedList}>
           <List className="h-3.5 w-3.5" />
         </Button>
-
-        {/* Line height */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="行高">
@@ -495,8 +480,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {/* Alignment */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="对齐方式">
@@ -515,14 +498,13 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="增加缩进"
-          onClick={handleIndent}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="增加缩进" onClick={handleIndent}>
           <Indent className="h-3.5 w-3.5" />
         </Button>
 
-        {/* Emoji picker */}
+        <span className="w-px h-4 bg-border mx-0.5 self-center" />
+
+        {/* ── Group 3: Insert ── */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入 Emoji">
@@ -531,75 +513,53 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
           </DropdownMenuTrigger>
           <EmojiPickerContent onSelect={handleEmoji} />
         </DropdownMenu>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入公式"
+          onClick={() => insertMarkdown('math')}>
+          <Sigma className="h-3.5 w-3.5" />
+        </Button>
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+          disabled={isUploading}
+          onClick={async () => {
+            const input = document.createElement('input')
+            input.type = 'file'; input.accept = 'image/*'
+            input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
+            input.click()
+          }}>
+          {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+        </Button>
 
-        {/* AI auto line break */}
+        <span className="w-px h-4 bg-border mx-0.5 self-center" />
+
+        {/* ── Group 4: AI ── */}
         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="AI 自动在列表、段落间插入换行符"
+          title="AI 自动换行"
           disabled={isFormatting || !activeProvider}
           onClick={handleAiLineBreak}>
           {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
         </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground"
-          title="读取剪贴板中的图片并插入"
-          onClick={async () => {
-            try {
-              const items = await navigator.clipboard.read()
-              for (const item of items) {
-                for (const type of item.types) {
-                  if (type.startsWith('image/')) {
-                    const blob = await item.getType(type)
-                    const file = new File([blob], `clipboard.${type.split('/')[1]}`, { type })
-                    uploadToR2(file)
-                    return
-                  }
-                }
-              }
-            } catch { /* Clipboard API not available */ }
-          }}>
-          <Clipboard className="h-3 w-3 mr-1" />读取剪贴板
-        </Button>
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-        <Button variant="outline" size="sm" className="text-xs h-7"
-          disabled={isUploading}
-          onClick={async () => {
-            const input = document.createElement('input')
-            input.type = 'file'
-            input.accept = 'image/*'
-            input.onchange = async (e) => {
-              const file = (e.target as HTMLInputElement).files?.[0]
-              if (file) uploadToR2(file)
-            }
-            input.click()
-          }}>
-          {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}插入图片
-        </Button>
-        <Button variant="outline" size="sm" className="text-xs h-7"
-          title="支持手写笔记、图片、表格等内容识别"
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="识别手写笔记/图片"
           onClick={() => fileInputRef.current?.click()}>
-          <ImagePlus className="h-3 w-3 mr-1" />上传手写笔记
+          <ScanEye className="h-3.5 w-3.5" />
         </Button>
+
         <span className="w-px h-4 bg-border mx-0.5 self-center hidden sm:block" />
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
-          onClick={() => insertMarkdown('mermaid')}>Mermaid</Button>
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
-          onClick={() => insertMarkdown('plantuml')}>PlantUML</Button>
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
-          onClick={() => insertMarkdown('math')}>$公式$</Button>
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('mermaid')}>Mermaid</Button>
+        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('plantuml')}>PlantUML</Button>
+
         {imageBase64 && (
           <>
+            <span className="w-px h-4 bg-border mx-0.5 self-center" />
             <Button variant="outline" size="sm" className="text-xs h-7"
               disabled={isRecognizing || !canRecognize} onClick={handleRecognize}>
-              {isRecognizing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+              {isRecognizing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
               {noteRecognitionMode === 'ai' ? 'AI识别' : 'MinerU识别'}
             </Button>
             {user && (
               <Button variant="outline" size="sm" className="text-xs h-7"
                 disabled={isUploading} onClick={handleUploadToCloud}>
-                {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImagePlus className="h-3 w-3 mr-1" />}
+                {isUploading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5 mr-1" />}
                 存为图片并插入
               </Button>
             )}
