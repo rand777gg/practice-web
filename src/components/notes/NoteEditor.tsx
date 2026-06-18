@@ -4,7 +4,7 @@ import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { ImagePlus, Sparkles, Loader2, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, Sigma, ScanEye, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, Sigma, ScanEye, Undo2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -70,6 +70,8 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const undoStackRef = useRef<string[]>([])
+  const MAX_UNDO = 50
   const user = useAuthStore((s) => s.user)
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
@@ -132,9 +134,42 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   // ── Text formatting helpers ──────────────────────────────────────────────
 
+  const pushUndo = () => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const stack = undoStackRef.current
+    if (stack.length >= MAX_UNDO) stack.shift()
+    stack.push(ta.value)
+  }
+
+  const handleUndo = () => {
+    const ta = textareaRef.current
+    const stack = undoStackRef.current
+    if (!ta || stack.length === 0) return
+    const prev = stack.pop()!
+    ta.value = prev
+    ta.focus()
+    onChange(prev)
+  }
+
+  // Ctrl+Z listener
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        handleUndo()
+      }
+    }
+    el.addEventListener('keydown', onKey)
+    return () => el.removeEventListener('keydown', onKey)
+  })
+
   const applyFormat = (open: string, close: string) => {
     const ta = textareaRef.current
     if (!ta) return
+    pushUndo()
     const v = wrapSelection(ta.value, ta, open, close)
     ta.value = v
     onChange(v)
@@ -150,6 +185,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const applyLinePrefix = (prefix: string) => {
     const ta = textareaRef.current
     if (!ta) return
+    pushUndo()
     const s = ta.selectionStart; const e = ta.selectionEnd
     const before = ta.value.slice(0, s)
     const selected = ta.value.slice(s, e)
@@ -169,6 +205,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const handleEmoji = (emoji: string) => {
     const ta = textareaRef.current
     if (!ta) { onChange(value + emoji); return }
+    pushUndo()
     const s = ta.selectionStart
     const before = ta.value.slice(0, s)
     const after = ta.value.slice(s)
@@ -321,6 +358,7 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   const insertMarkdown = (type: 'mermaid' | 'plantuml' | 'math', body?: string) => {
     const ta = textareaRef.current
+    pushUndo()
     const templates: Record<string, string> = {
       mermaid: '```mermaid\n' + (body || 'graph TD\n  A[开始] --> B[结束]') + '\n```\n',
       plantuml: '```plantuml\n' + (body || '@startuml\nA -> B: hello\n@enduml') + '\n```\n',
@@ -440,6 +478,14 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div className="flex gap-1 flex-wrap items-center">
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+          title="撤销 (Ctrl+Z)"
+          onClick={handleUndo}>
+          <Undo2 className="h-3.5 w-3.5" />
+        </Button>
+
+        <span className="w-px h-4 bg-border mx-0.5 self-center" />
+
         {/* ── Group 1: Text formatting ── */}
         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="加粗" onClick={handleBold}>
           <Bold className="h-3.5 w-3.5" />
