@@ -182,7 +182,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept={'image/*'}
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0]

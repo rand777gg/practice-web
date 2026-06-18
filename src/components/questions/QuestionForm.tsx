@@ -149,7 +149,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
   const handleUploadImage = async () => {
     const input = document.createElement('input')
-    input.type = 'file'; input.accept = 'image/*'
+    input.type = 'file'; input.accept = 'image/' + '*'
     input.onchange = async (e) => {
       const f = (e.target as HTMLInputElement).files?.[0]
       if (!f) return

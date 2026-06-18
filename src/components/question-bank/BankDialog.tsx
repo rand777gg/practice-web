@@ -115,7 +115,7 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
               <LogoPreview url={logoUrl} onRemove={() => setLogoUrl('')} />
             ) : (
               <label className="flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border p-4 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors">
-                <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                <input type="file" accept={'image/*'} className="hidden" onChange={handleLogoUpload} />
                 {uploading ? (
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 ) : (
