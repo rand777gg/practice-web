@@ -13,6 +13,7 @@ import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import { compressImage } from '@/lib/image-compress'
+import { EmojiPickerContent } from './EmojiPickerContent'
 
 interface Props {
   value: string
@@ -142,17 +143,16 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const handleBold = () => applyFormat('**', '**')
   const handleItalic = () => applyFormat('*', '*')
   const handleHighlight = () => applyFormat('<mark>', '</mark>')
-  const handleEmoji = (code: string) => {
+  const handleEmoji = (emoji: string) => {
     const ta = textareaRef.current
-    if (!ta) { onChange(value + ` :${code}: `); return }
+    if (!ta) { onChange(value + emoji); return }
     const s = ta.selectionStart
     const before = ta.value.slice(0, s)
     const after = ta.value.slice(s)
-    const newValue = before + ` :${code}: ` + after
-    ta.value = newValue
-    const pos = s + code.length + 4
+    ta.value = before + emoji + after
+    const pos = s + emoji.length
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(pos, pos) })
-    onChange(newValue)
+    onChange(ta.value)
   }
 
   const handleAiLineBreak = async () => {
@@ -417,51 +417,39 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div className="flex gap-1 flex-wrap items-center">
-        {/* Formatting buttons */}
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+        {/* Formatting buttons — icon only, label on hover */}
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
           title="加粗选中内容"
           onClick={handleBold}>
-          <Bold className="h-3 w-3 mr-1" />加粗
+          <Bold className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
           title="斜体选中内容"
           onClick={handleItalic}>
-          <Italic className="h-3 w-3 mr-1" />斜体
+          <Italic className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono"
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
           title="高亮选中内容"
           onClick={handleHighlight}>
-          <Highlighter className="h-3 w-3 mr-1" />马克笔
+          <Highlighter className="h-3.5 w-3.5" />
         </Button>
 
-        {/* GitHub Emoji dropdown */}
+        {/* Emoji picker */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground" title="插入 GitHub Emoji">
-              <Smile className="h-3 w-3 mr-1" />Emoji
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入 Emoji">
+              <Smile className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-56 overflow-y-auto w-48">
-            <div className="grid grid-cols-6 gap-0.5 p-1">
-              {EMOJI_LIST.map(code => (
-                <DropdownMenuItem key={code}
-                  className="p-1 flex items-center justify-center cursor-pointer hover:bg-muted rounded"
-                  onClick={() => handleEmoji(code)}
-                  title={`:${code}:`}>
-                  <span className="text-sm">{`:${code}:`}</span>
-                </DropdownMenuItem>
-              ))}
-            </div>
-          </DropdownMenuContent>
+          <EmojiPickerContent onSelect={handleEmoji} />
         </DropdownMenu>
 
         {/* AI auto line break */}
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground"
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
           title="AI 自动在列表、段落间插入换行符"
           disabled={isFormatting || !activeProvider}
           onClick={handleAiLineBreak}>
-          {isFormatting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <WrapText className="h-3 w-3 mr-1" />}
-          AI换行
+          {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
         </Button>
 
         <span className="w-px h-4 bg-border mx-0.5 self-center" />
