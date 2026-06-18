@@ -5,6 +5,7 @@ import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
@@ -234,13 +235,8 @@ export function Component() {
                     placeholder={t('practice.notePlaceholder')}
                   />
                   <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editIsPublic}
-                      onChange={(e) => setEditIsPublic(e.target.checked)}
-                      className="rounded"
-                    />
-                    {t('notes.makePublic')}
+                    <Switch checked={editIsPublic} onCheckedChange={setEditIsPublic} />
+                    {editIsPublic ? t('notes.publicLabel') : t('notes.privateLabel')}
                   </label>
                 </div>
               )}
