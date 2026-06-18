@@ -59,6 +59,9 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
   const [keyPointsAnimating, setKeyPointsAnimating] = useState(false)
   const [keyPointsLoading, setKeyPointsLoading] = useState(false)
+  const [stemExtracting, setStemExtracting] = useState(false)
+  const [stemGlow, setStemGlow] = useState(false)
+  const [stemFade, setStemFade] = useState(false)
   const typewriterRef = useRef<{ text: string; timer: ReturnType<typeof setInterval> | null }>({ text: '', timer: null })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -145,6 +148,43 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     if (idx >= 0) arr.splice(idx, 1)
     else arr.push(index)
     setCorrectAnswer(arr)
+  }
+
+  const prevQuestionTextRef = useRef<string | null>(null)
+
+  const handleExtractStem = async () => {
+    if (!questionText.trim()) return
+    prevQuestionTextRef.current = questionText
+    setStemExtracting(true)
+    setStemGlow(true)
+    try {
+      const config = getAiConfig()
+      if (!config.apiKey) return
+      const parser = new DeepSeekParser(config as any)
+      const result = await (parser as any).extractStem?.(questionText.trim()) ??
+        await (async () => {
+          const { generateText } = await import('ai')
+          const { createDeepSeek } = await import('@ai-sdk/deepseek')
+          const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+          const model = client(config.model || 'deepseek-chat')
+          const { text } = await generateText({
+            model,
+            system: '你是一个题目格式化助手。只提取题干部分，去掉所有选项（A. B. C. D. ①②③④等）和分析/解析内容。直接返回提取后的纯题干，不要加任何额外说明。',
+            prompt: questionText.trim(),
+            temperature: 0.1,
+          })
+          return text.trim()
+        })()
+      if (result && result !== questionText.trim()) setQuestionText(result)
+    } catch { /* ignore */ }
+    setStemExtracting(false)
+    setTimeout(() => {
+      setStemFade(true)
+      requestAnimationFrame(() => {
+        setStemGlow(false)
+        setTimeout(() => setStemFade(false), 1500)
+      })
+    }, 300)
   }
 
   const handleUploadImage = async () => {
@@ -274,6 +314,34 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   placeholder={t('questions.questionPlaceholder')}
                   minHeight="160px"
                 />
+                {hasAiConfig() && (
+                  <div className="absolute right-1 bottom-1 flex gap-0.5">
+                    {prevQuestionTextRef.current && (
+                      <Button type="button" variant="ghost" size="icon"
+                        className="h-7 w-7"
+                        onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
+                        title="还原"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button type="button" variant="ghost" size="icon"
+                      className="h-7 w-7"
+                      disabled={stemExtracting || !questionText.trim()}
+                      onClick={handleExtractStem}
+                      title="AI 提取题干"
+                    >
+                      <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
+                    </Button>
+                  </div>
+                )}
+                {(stemGlow || stemFade) && (
+                  <div className={cn(
+                    'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
+                    stemGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
+                    stemFade && 'border-2 border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
+                  )} />
+                )}
               </div>
             </CardContent>
           </Card>
