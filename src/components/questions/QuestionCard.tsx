@@ -13,7 +13,7 @@ import { useT } from '@/i18n/use-t'
 import { Check, Pencil, Star, Sparkles } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
-const BLANK_RE = /_{2,}/g
+const BLANK_RE = new RegExp('_{2,}', 'g')
 
 function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
   const [open, setOpen] = useState(false)

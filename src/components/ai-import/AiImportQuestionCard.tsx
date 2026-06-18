@@ -15,7 +15,7 @@ import type { QuestionType } from '@/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 
-const BLANK_RE = /_{2,}/g
+const BLANK_RE = new RegExp('_{2,}', 'g')
 
 interface Props {
   question: ParsedQuestion
