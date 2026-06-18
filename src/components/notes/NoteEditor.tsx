@@ -1,10 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from '@/components/ui/dropdown-menu'
-import { ImagePlus, Sparkles, Loader2, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, Sigma, ScanEye, Undo2, X } from 'lucide-react'
+import { ImagePlus, Sparkles, Loader2, WrapText, ScanEye, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -13,7 +10,7 @@ import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import { compressImage } from '@/lib/image-compress'
-import { EmojiPickerContent } from './EmojiPickerContent'
+import { FormattingToolbar } from './FormattingToolbar'
 
 interface Props {
   value: string
@@ -39,21 +36,6 @@ const EMOJI_LIST = [
   'x', 'heavy_plus_sign', 'arrow_right', 'arrow_left',
 ]
 
-function wrapSelection(value: string, ta: HTMLTextAreaElement | null, open: string, close: string): string {
-  if (!ta) return value
-  const s = ta.selectionStart, e = ta.selectionEnd
-  if (s === e) return value  // no selection, do nothing
-  const before = value.slice(0, s)
-  const selected = value.slice(s, e)
-  const after = value.slice(e)
-  const newValue = before + open + selected + close + after
-  requestAnimationFrame(() => {
-    ta.focus()
-    ta.setSelectionRange(s + open.length, e + open.length)
-  })
-  return newValue
-}
-
 export function NoteEditor({ value, onChange, placeholder }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
@@ -70,8 +52,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const undoStackRef = useRef<string[]>([])
-  const MAX_UNDO = 50
   const user = useAuthStore((s) => s.user)
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
@@ -131,89 +111,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
     el.addEventListener('paste', onPaste)
     return () => el.removeEventListener('paste', onPaste)
   }, [uploadToR2])
-
-  // ── Text formatting helpers ──────────────────────────────────────────────
-
-  const pushUndo = () => {
-    const ta = textareaRef.current
-    if (!ta) return
-    const stack = undoStackRef.current
-    if (stack.length >= MAX_UNDO) stack.shift()
-    stack.push(ta.value)
-  }
-
-  const handleUndo = () => {
-    const ta = textareaRef.current
-    const stack = undoStackRef.current
-    if (!ta || stack.length === 0) return
-    const prev = stack.pop()!
-    ta.value = prev
-    ta.focus()
-    onChange(prev)
-  }
-
-  // Ctrl+Z listener
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault()
-        handleUndo()
-      }
-    }
-    el.addEventListener('keydown', onKey)
-    return () => el.removeEventListener('keydown', onKey)
-  })
-
-  const applyFormat = (open: string, close: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    pushUndo()
-    const v = wrapSelection(ta.value, ta, open, close)
-    ta.value = v
-    onChange(v)
-  }
-
-  const handleBold = () => applyFormat('**', '**')
-  const handleItalic = () => applyFormat('*', '*')
-  const handleUnderline = () => applyFormat('<u>', '</u>')
-  const handleStrikethrough = () => applyFormat('<s>', '</s>')
-  const handleHighlight = () => applyFormat('<mark>', '</mark>')
-
-  // Line prefix — wrap each selected line
-  const applyLinePrefix = (prefix: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    pushUndo()
-    const s = ta.selectionStart; const e = ta.selectionEnd
-    const before = ta.value.slice(0, s)
-    const selected = ta.value.slice(s, e)
-    const lines = selected ? selected.split('\n') : ['']
-    const formatted = lines.map(l => prefix + l).join('\n')
-    ta.value = before + formatted + ta.value.slice(e)
-    const newEnd = s + formatted.length
-    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(s, newEnd) })
-    onChange(ta.value)
-  }
-
-  const handleOrderedList = () => applyLinePrefix('1. ')
-  const handleUnorderedList = () => applyLinePrefix('- ')
-  const handleLineHeight = (lh: string) => applyFormat(`<span style="line-height:${lh}">`, '</span>')
-  const handleAlign = (align: string) => applyFormat(`<div align="${align}">`, '</div>')
-  const handleIndent = () => applyFormat('<blockquote>', '</blockquote>')
-  const handleEmoji = (emoji: string) => {
-    const ta = textareaRef.current
-    if (!ta) { onChange(value + emoji); return }
-    pushUndo()
-    const s = ta.selectionStart
-    const before = ta.value.slice(0, s)
-    const after = ta.value.slice(s)
-    ta.value = before + emoji + after
-    const pos = s + emoji.length
-    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(pos, pos) })
-    onChange(ta.value)
-  }
 
   const handleAiLineBreak = async () => {
     if (!activeProvider) return
@@ -358,7 +255,6 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
 
   const insertMarkdown = (type: 'mermaid' | 'plantuml' | 'math', body?: string) => {
     const ta = textareaRef.current
-    pushUndo()
     const templates: Record<string, string> = {
       mermaid: '```mermaid\n' + (body || 'graph TD\n  A[开始] --> B[结束]') + '\n```\n',
       plantuml: '```plantuml\n' + (body || '@startuml\nA -> B: hello\n@enduml') + '\n```\n',
@@ -477,118 +373,40 @@ export function NoteEditor({ value, onChange, placeholder }: Props) {
       )}
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
-      <div className="flex gap-1 flex-wrap items-center">
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="撤销 (Ctrl+Z)"
-          onClick={handleUndo}>
-          <Undo2 className="h-3.5 w-3.5" />
-        </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        {/* ── Group 1: Text formatting ── */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="加粗" onClick={handleBold}>
-          <Bold className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="斜体" onClick={handleItalic}>
-          <Italic className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="下划线" onClick={handleUnderline}>
-          <Underline className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="删除线" onClick={handleStrikethrough}>
-          <Strikethrough className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="高亮" onClick={handleHighlight}>
-          <Highlighter className="h-3.5 w-3.5" />
-        </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        {/* ── Group 2: Paragraph ── */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="有序列表" onClick={handleOrderedList}>
-          <ListOrdered className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="无序列表" onClick={handleUnorderedList}>
-          <List className="h-3.5 w-3.5" />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="行高">
-              <span className="text-[11px] font-mono">1.5</span>
+      <FormattingToolbar
+        textareaRef={textareaRef}
+        value={value}
+        onChange={onChange}
+        extraButtons={
+          <>
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+              disabled={isUploading}
+              onClick={async () => {
+                const input = document.createElement('input')
+                input.type = 'file'; input.accept = 'image/*'
+                input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
+                input.click()
+              }}>
+              {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {['1.0', '1.25', '1.5', '1.75', '2.0'].map(lh => (
-              <DropdownMenuItem key={lh} onClick={() => handleLineHeight(lh)}>
-                <span className="text-xs">{lh}x</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="对齐方式">
-              <AlignLeft className="h-3.5 w-3.5" />
+
+            <span className="w-px h-4 bg-border mx-0.5 self-center" />
+
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+              title="AI 自动换行"
+              disabled={isFormatting || !activeProvider}
+              onClick={handleAiLineBreak}>
+              {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => handleAlign('left')}>
-              <AlignLeft className="h-3.5 w-3.5 mr-1" /><span className="text-xs">左对齐</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleAlign('center')}>
-              <AlignCenter className="h-3.5 w-3.5 mr-1" /><span className="text-xs">居中</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleAlign('right')}>
-              <AlignRight className="h-3.5 w-3.5 mr-1" /><span className="text-xs">右对齐</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="增加缩进" onClick={handleIndent}>
-          <Indent className="h-3.5 w-3.5" />
-        </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        {/* ── Group 3: Insert ── */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入 Emoji">
-              <Smile className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+              title="识别手写笔记/图片"
+              onClick={() => fileInputRef.current?.click()}>
+              <ScanEye className="h-3.5 w-3.5" />
             </Button>
-          </DropdownMenuTrigger>
-          <EmojiPickerContent onSelect={handleEmoji} />
-        </DropdownMenu>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入公式"
-          onClick={() => insertMarkdown('math')}>
-          <Sigma className="h-3.5 w-3.5" />
-        </Button>
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
-          disabled={isUploading}
-          onClick={async () => {
-            const input = document.createElement('input')
-            input.type = 'file'; input.accept = 'image/*'
-            input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
-            input.click()
-          }}>
-          {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-        </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        {/* ── Group 4: AI ── */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="AI 自动换行"
-          disabled={isFormatting || !activeProvider}
-          onClick={handleAiLineBreak}>
-          {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="识别手写笔记/图片"
-          onClick={() => fileInputRef.current?.click()}>
-          <ScanEye className="h-3.5 w-3.5" />
-        </Button>
+          </>
+        }
+      />
 
         <span className="w-px h-4 bg-border mx-0.5 self-center hidden sm:block" />
         <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('mermaid')}>Mermaid</Button>

@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
+import { FormattingToolbar } from '@/components/notes/FormattingToolbar'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -48,6 +49,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [verified, setVerified] = useState(initialData?.verified ?? false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
+  const analysisRef = useRef<HTMLTextAreaElement>(null)
   const [keyPointsGlow, setKeyPointsGlow] = useState(false)
   const [keyPointsFade, setKeyPointsFade] = useState(false)
   const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
@@ -530,7 +532,8 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <CardContent className="pb-3 px-4 space-y-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{t('questions.analysis')} (选填)</Label>
-                  <Textarea id="analysis" value={analysis} onChange={(e) => setAnalysis(e.target.value)}
+                  <FormattingToolbar textareaRef={analysisRef} value={analysis} onChange={setAnalysis} />
+                  <Textarea id="analysis" ref={analysisRef} value={analysis} onChange={(e) => setAnalysis(e.target.value)}
                     placeholder={t('questions.analysisPlaceholder')} rows={3} />
                 </div>
                 <div className="space-y-1.5">
