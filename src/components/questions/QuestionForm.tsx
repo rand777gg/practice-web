@@ -677,7 +677,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   </div>
                 </div>
               </CardContent>
-            )}
           </Card>
 
           {/* Actions */}
