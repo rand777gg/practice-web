@@ -246,7 +246,7 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
 
   const handleImageAction = (action: 'left' | 'center' | 'right', src: string) => {
     const current = textareaRef.current?.value || value
-    const escaped = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escaped = src.replace(new RegExp('[.*+?^${}()|[\\]\\\\]', 'g'), '\\$&')
     const newMd = current.replace(
       new RegExp(`!\\[([^\\]]*)\\]\\(${escaped}(?:\\s+"[^"]*")?\\)`, 'g'),
       `![$1](${src} "align:${action}")`
