@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/lib/supabase'
 import { MarkdownRenderer } from './MarkdownRenderer'
-import { Eye, PenLine, ImagePlus, Clipboard, Loader2 } from 'lucide-react'
+import { Eye, PenLine } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Props {
