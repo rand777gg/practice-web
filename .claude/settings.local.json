@@ -41,7 +41,15 @@
       "WebFetch(domain:www.zhongguose.com)",
       "Bash(sed -i '27s/.*/\\\\\\\\tconst JSON_SAMPLE = `\\\\\\\\`\\\\\\\\`\\\\\\\\`json/' \"C:/vsc-workspace/fe-workspace/practice-web/src/components/questions/QuestionImportDialog.tsx\")",
       "Bash(sed -i '43s/.*/\\\\\\\\`\\\\\\\\`\\\\\\\\`\\\\\\\\`/' \"C:/vsc-workspace/fe-workspace/practice-web/src/components/questions/QuestionImportDialog.tsx\")",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(yarn install *)",
+      "Bash(npx taro *)",
+      "Bash(npx supabase *)",
+      "Bash(npx oxlint *)",
+      "Bash(git checkout *)",
+      "Bash(git tag *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git stash *)"
     ]
   }
 }

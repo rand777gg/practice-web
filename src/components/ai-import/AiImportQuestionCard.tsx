@@ -11,7 +11,6 @@ import {
 import { Check, ChevronDown, CheckCircle, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { normalizeChineseText } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
@@ -309,16 +308,15 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                     <Wand2 className="h-3 w-3 mr-1" />标准化
                   </Button>
                   {blankCount > 1 && (
-                    <>
+                    <div className="flex items-center gap-2 cursor-pointer" onClick={() => patch({ allow_unordered: !question.allow_unordered })}>
                       <Switch
                         checked={question.allow_unordered ?? false}
                         onCheckedChange={(v) => patch({ allow_unordered: v })}
-                        id={`allow-unordered-${index}`}
                       />
-                      <Label htmlFor={`allow-unordered-${index}`} className="text-[11px] text-muted-foreground cursor-pointer">
+                      <span className="text-[11px] text-muted-foreground select-none">
                         允许无序答案
-                      </Label>
-                    </>
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
