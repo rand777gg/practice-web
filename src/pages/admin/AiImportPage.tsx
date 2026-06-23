@@ -513,6 +513,7 @@ export function Component() {
           seq_number: null,
           import_mode: parseMode,
           verified: q.verified ?? false,
+          allow_unordered: q.allow_unordered ?? false,
         })),
       )
 

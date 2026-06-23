@@ -107,6 +107,8 @@ export function Component() {
 
   const [bulkSubject, setBulkSubject] = useState('')
   const [bulkCategory, setBulkCategory] = useState('')
+  const [newSubjectInput, setNewSubjectInput] = useState('')
+  const [newCategoryInput, setNewCategoryInput] = useState('')
   const [bulkUpdating, setBulkUpdating] = useState(false)
 
   const handleBulkDelete = async () => {
@@ -359,10 +361,42 @@ export function Component() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b" onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <Input
+                        value={newSubjectInput}
+                        onChange={(e) => setNewSubjectInput(e.target.value)}
+                        placeholder="新建学科"
+                        className="h-7 text-xs"
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (e.key === 'Enter' && newSubjectInput.trim()) {
+                            setBulkSubject(newSubjectInput.trim())
+                            setNewSubjectInput('')
+                            e.currentTarget.blur()
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs shrink-0"
+                        disabled={!newSubjectInput.trim()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => { setBulkSubject(newSubjectInput.trim()); setNewSubjectInput('') }}
+                      >
+                        新建
+                      </Button>
+                    </div>
                     <DropdownMenuItem onClick={() => setBulkSubject('')}>
                       <span className="text-muted-foreground">不设置</span>
                       {!bulkSubject && <Check className="h-4 w-4 ml-auto" />}
                     </DropdownMenuItem>
+                    {bulkSubject && !subjects.includes(bulkSubject) && (
+                      <DropdownMenuItem onClick={() => setBulkSubject(bulkSubject)}>
+                        {bulkSubject}
+                        <Check className="h-4 w-4 ml-auto" />
+                      </DropdownMenuItem>
+                    )}
                     {subjects.map((s) => (
                       <DropdownMenuItem key={s} onClick={() => setBulkSubject(s)}>
                         {s}
@@ -379,10 +413,42 @@ export function Component() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b" onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <Input
+                        value={newCategoryInput}
+                        onChange={(e) => setNewCategoryInput(e.target.value)}
+                        placeholder="新建分类"
+                        className="h-7 text-xs"
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (e.key === 'Enter' && newCategoryInput.trim()) {
+                            setBulkCategory(newCategoryInput.trim())
+                            setNewCategoryInput('')
+                            e.currentTarget.blur()
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs shrink-0"
+                        disabled={!newCategoryInput.trim()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => { setBulkCategory(newCategoryInput.trim()); setNewCategoryInput('') }}
+                      >
+                        新建
+                      </Button>
+                    </div>
                     <DropdownMenuItem onClick={() => setBulkCategory('')}>
                       <span className="text-muted-foreground">不设置</span>
                       {!bulkCategory && <Check className="h-4 w-4 ml-auto" />}
                     </DropdownMenuItem>
+                    {bulkCategory && !filteredCategories.includes(bulkCategory) && (
+                      <DropdownMenuItem onClick={() => setBulkCategory(bulkCategory)}>
+                        {bulkCategory}
+                        <Check className="h-4 w-4 ml-auto" />
+                      </DropdownMenuItem>
+                    )}
                     {filteredCategories.map((c) => (
                       <DropdownMenuItem key={c} onClick={() => setBulkCategory(c)}>
                         {c}

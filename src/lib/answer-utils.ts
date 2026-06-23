@@ -4,6 +4,7 @@ export function isAnswerCorrect(
   selected: CorrectAnswer | null | undefined,
   correct: CorrectAnswer | null | undefined,
   questionType: QuestionType,
+  allowUnordered?: boolean,
 ): boolean {
   if (selected == null || correct == null) return false
   switch (questionType) {
@@ -23,6 +24,10 @@ export function isAnswerCorrect(
       const selArr = Array.isArray(selected) ? selected.map(s => String(s).trim().toLowerCase()) : [String(selected).trim().toLowerCase()]
       const corArr = Array.isArray(correct) ? correct.map(c => String(c).trim().toLowerCase()) : [String(correct).trim().toLowerCase()]
       if (selArr.length !== corArr.length) return false
+      if (allowUnordered) {
+        selArr.sort()
+        corArr.sort()
+      }
       return selArr.every((s, i) => s === corArr[i])
     }
     case 'short_answer': {

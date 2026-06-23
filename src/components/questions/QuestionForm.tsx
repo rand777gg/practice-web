@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
 import {
-  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, WrapText, ImagePlus, Loader2, X,
+  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, WrapText, ImagePlus, Loader2, X, Wand2,
 } from 'lucide-react'
 import { compressImage } from '@/lib/image-compress'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
@@ -25,7 +25,7 @@ import { generateKeyPoints, hasAiConfig, DeepSeekParser } from '@/lib/ai'
 import { getAiConfig } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
-import { cn } from '@/lib/utils'
+import { cn, normalizeChineseText } from '@/lib/utils'
 
 interface Props {
   initialData?: Question
@@ -49,6 +49,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [verified, setVerified] = useState(initialData?.verified ?? false)
+  const [allowUnordered, setAllowUnordered] = useState(initialData?.allow_unordered ?? false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const analysisRef = useRef<HTMLTextAreaElement>(null)
   const questionTextRef = useRef<HTMLTextAreaElement>(null)
@@ -114,6 +115,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const handleTypeChange = (t: QuestionType) => {
     setQuestionType(t)
     setCorrectAnswer(getDefaultAnswer(t))
+    setAllowUnordered(false)
     if (t === 'true_false') setOptions(['正确', '错误'])
     else if (t === 'judge_correct' || t === 'fill_blank' || t === 'short_answer' || t === 'analysis') setOptions([])
     else if (options.length < 2) setOptions(['', ''])
@@ -269,6 +271,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         key_points: keyPoints.trim() || null,
         seq_number: seqNumber ? Number(seqNumber) : null,
         verified,
+        allow_unordered: allowUnordered,
         import_mode: 'manual',
       })
     } catch {
@@ -313,27 +316,37 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   placeholder={t('questions.questionPlaceholder')}
                   minHeight="160px"
                 />
-                {hasAiConfig() && (
-                  <div className="absolute right-1 bottom-1 flex gap-0.5">
-                    {prevQuestionTextRef.current && (
+                <div className="absolute right-1 bottom-1 flex gap-0.5">
+                  <Button type="button" variant="ghost" size="icon"
+                    className="h-7 w-7"
+                    disabled={!questionText.trim()}
+                    onClick={() => setQuestionText(normalizeChineseText(questionText))}
+                    title="文字标准化"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                  </Button>
+                  {hasAiConfig() && (
+                    <>
+                      {prevQuestionTextRef.current && (
+                        <Button type="button" variant="ghost" size="icon"
+                          className="h-7 w-7"
+                          onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
+                          title="还原"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button type="button" variant="ghost" size="icon"
                         className="h-7 w-7"
-                        onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
-                        title="还原"
+                        disabled={stemExtracting || !questionText.trim()}
+                        onClick={handleExtractStem}
+                        title="AI 提取题干"
                       >
-                        <RotateCcw className="h-3.5 w-3.5" />
+                        <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
                       </Button>
-                    )}
-                    <Button type="button" variant="ghost" size="icon"
-                      className="h-7 w-7"
-                      disabled={stemExtracting || !questionText.trim()}
-                      onClick={handleExtractStem}
-                      title="AI 提取题干"
-                    >
-                      <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
-                    </Button>
-                  </div>
-                )}
+                    </>
+                  )}
+                </div>
                 {(stemGlow || stemFade) && (
                   <div className={cn(
                     'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
@@ -356,9 +369,19 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                       {isSingle ? t('questions.correctHint') : '勾选所有正确答案'}
                     </p>
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={addOption}>
-                    <Plus className="h-3.5 w-3.5 mr-1" />添加选项
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={addOption}>
+                      <Plus className="h-3.5 w-3.5 mr-1" />添加选项
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm"
+                      className="h-7 text-xs"
+                      disabled={options.every(o => !o.trim())}
+                      onClick={() => setOptions(options.map(normalizeChineseText))}
+                      title="标准化全部选项文字"
+                    >
+                      <Wand2 className="h-3 w-3 mr-1" />标准化
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -457,10 +480,48 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                 <CardTitle className="text-sm">{isFillBlank ? '预期答案' : '可接受答案'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {isFillBlank && (
-                  <Input value={typeof correctAnswer === 'string' ? correctAnswer : ''}
-                    onChange={(e) => setCorrectAnswer(e.target.value)} placeholder="预期的正确答案" />
-                )}
+                {isFillBlank && (() => {
+                  const blankCount = (questionText.match(/_{2,}/g) || ['____']).length
+                  const answers = Array.isArray(correctAnswer) ? correctAnswer as string[] : blankCount > 1 ? [] : [String(correctAnswer ?? '')]
+                  return (
+                    <>
+                      <div className="space-y-2">
+                        {Array.from({ length: blankCount }).map((_, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground shrink-0 w-10">第{i + 1}空</span>
+                            <Input value={answers[i] || ''}
+                              onChange={(e) => {
+                                const next = [...answers]
+                                next[i] = e.target.value
+                                setCorrectAnswer(blankCount > 1 ? next : next[0] || '')
+                              }}
+                              placeholder={`答案${i + 1}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          <Label className="text-sm">允许无序答案</Label>
+                          <p className="text-xs text-muted-foreground">启用后，多个空的答案顺序不影响判分</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="ghost" size="sm"
+                            className="h-7 text-xs"
+                            disabled={answers.every(a => !a)}
+                            onClick={() => {
+                              const normalized = answers.map(normalizeChineseText)
+                              setCorrectAnswer(blankCount > 1 ? normalized : normalized[0] || '')
+                            }}
+                          >
+                            <Wand2 className="h-3 w-3 mr-1" />标准化
+                          </Button>
+                          <Switch checked={allowUnordered} onCheckedChange={setAllowUnordered} />
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
                 {isShortAnswer && (
                   <Textarea value={Array.isArray(correctAnswer) ? correctAnswer.join('\n') : typeof correctAnswer === 'string' ? correctAnswer : ''}
                     onChange={(e) => setCorrectAnswer(e.target.value.split('\n').filter(Boolean))}
@@ -598,7 +659,16 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <CardContent className="pb-3 px-4 space-y-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{t('questions.analysis')} (选填)</Label>
-                  <FormattingToolbar textareaRef={analysisRef} value={analysis} onChange={setAnalysis} />
+                  <FormattingToolbar textareaRef={analysisRef} value={analysis} onChange={setAnalysis} extraButtons={
+                    <Button type="button" variant="ghost" size="icon"
+                      className="h-7 w-7"
+                      disabled={!analysis.trim()}
+                      onClick={() => setAnalysis(normalizeChineseText(analysis))}
+                      title="文字标准化"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </Button>
+                  } />
                   <Textarea id="analysis" ref={analysisRef} value={analysis} onChange={(e) => setAnalysis(e.target.value)}
                     placeholder={t('questions.analysisPlaceholder')} rows={3} />
                 </div>

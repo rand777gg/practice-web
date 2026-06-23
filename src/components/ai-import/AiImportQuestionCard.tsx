@@ -9,6 +9,9 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Check, ChevronDown, CheckCircle, Sparkles, Trash2, Wand2 } from 'lucide-react'
+import { normalizeChineseText } from '@/lib/utils'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
@@ -128,13 +131,25 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       </div>
 
       {/* Question text */}
-      <MarkdownEditor
-        value={question.question_text}
-        onChange={(v) => patch({ question_text: v })}
-        placeholder="题干"
-        minHeight="60px"
-        className="text-sm"
-      />
+      <div className="relative">
+        <MarkdownEditor
+          value={question.question_text}
+          onChange={(v) => patch({ question_text: v })}
+          placeholder="题干"
+          minHeight="60px"
+          className="text-sm"
+        />
+        <div className="absolute right-1 bottom-1">
+          <Button type="button" variant="ghost" size="icon"
+            className="h-7 w-7"
+            disabled={!question.question_text.trim()}
+            onClick={() => patch({ question_text: normalizeChineseText(question.question_text) })}
+            title="文字标准化"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
 
       {/* Options (for choice types) */}
       {['single_choice','multi_select'].includes(type) && (
@@ -176,6 +191,16 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
           <div className="flex items-center justify-between">
             <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => patch({ options: [...question.options, ''] })}>
               + 添加选项
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-6 gap-1 text-muted-foreground hover:text-foreground"
+              onClick={() => patch({ options: question.options.map(normalizeChineseText) })}
+              title="标准化全部选项文字"
+            >
+              <Wand2 className="h-3 w-3" />
+              标准化选项
             </Button>
             <Button
               variant="ghost"
@@ -265,7 +290,6 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                       onChange={(e) => {
                         const next = [...answers]
                         next[i] = e.target.value
-                        // Store as string if single blank, array if multiple
                         patch({ correct_answer: blankCount > 1 ? next : next[0] || '' })
                       }}
                       className="h-7 text-xs"
@@ -273,6 +297,30 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                     />
                   </div>
                 ))}
+                <div className="flex items-center gap-2 pt-1">
+                  <Button type="button" variant="ghost" size="sm"
+                    className="h-7 text-xs"
+                    disabled={answers.every(a => !a)}
+                    onClick={() => {
+                      const normalized = answers.map(normalizeChineseText)
+                      patch({ correct_answer: blankCount > 1 ? normalized : normalized[0] || '' })
+                    }}
+                  >
+                    <Wand2 className="h-3 w-3 mr-1" />标准化
+                  </Button>
+                  {blankCount > 1 && (
+                    <>
+                      <Switch
+                        checked={question.allow_unordered ?? false}
+                        onCheckedChange={(v) => patch({ allow_unordered: v })}
+                        id={`allow-unordered-${index}`}
+                      />
+                      <Label htmlFor={`allow-unordered-${index}`} className="text-[11px] text-muted-foreground cursor-pointer">
+                        允许无序答案
+                      </Label>
+                    </>
+                  )}
+                </div>
               </div>
             )
           })() : (
@@ -313,13 +361,25 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
       </div>
 
       {/* Analysis */}
-      <MarkdownEditor
-        value={question.analysis || ''}
-        onChange={(v) => patch({ analysis: v })}
-        placeholder="解释正确答案..."
-        minHeight="60px"
-        className="text-sm"
-      />
+      <div className="relative">
+        <MarkdownEditor
+          value={question.analysis || ''}
+          onChange={(v) => patch({ analysis: v })}
+          placeholder="解释正确答案..."
+          minHeight="60px"
+          className="text-sm"
+        />
+        <div className="absolute right-1 bottom-1">
+          <Button type="button" variant="ghost" size="icon"
+            className="h-7 w-7"
+            disabled={!question.analysis?.trim()}
+            onClick={() => patch({ analysis: normalizeChineseText(question.analysis || '') })}
+            title="文字标准化"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

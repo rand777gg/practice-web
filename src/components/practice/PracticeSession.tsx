@@ -232,7 +232,7 @@ export function PracticeSession() {
 
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
-    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type)
+    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered)
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()

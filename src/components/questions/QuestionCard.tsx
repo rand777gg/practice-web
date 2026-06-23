@@ -76,7 +76,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isAnalysis = type === 'analysis'
   const isJudgeCorrect = type === 'judge_correct'
   const isTextInput = isFillBlank || isShort || isAnalysis
-  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type)
+  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered)
   const typeLabel = QUESTION_TYPE_LABELS[type]
 
   return (

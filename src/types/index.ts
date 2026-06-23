@@ -88,6 +88,7 @@ export interface Question {
   created_by: string | null
   verified: boolean
   import_mode: string | null
+  allow_unordered: boolean
 }
 
 export interface ExamSession {
@@ -146,6 +147,7 @@ export interface ImportedQuestion {
   analysis?: string
   key_points?: string
   answer_explanation?: string
+  allow_unordered?: boolean
 }
 
 /** Parse correct_answer from DB JSONB to typed CorrectAnswer */

@@ -144,41 +144,6 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
         </button>
         {!preview && (
           <>
-            <span className="w-px h-4 bg-border mx-1" />
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />}
-              插入图片
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={async () => {
-                try {
-                  const items = await navigator.clipboard.read()
-                  for (const item of items) {
-                    for (const type of item.types) {
-                      if (type.startsWith('image/')) {
-                        const blob = await item.getType(type)
-                        const file = new File([blob], `clipboard.${type.split('/')[1]}`, { type })
-                        handleFile(file)
-                        return
-                      }
-                    }
-                  }
-                } catch {
-                  // Clipboard API not available or denied
-                }
-              }}
-              title="读取剪贴板中的图片并插入"
-            >
-              <Clipboard className="h-3 w-3" />
-              读取剪贴板
-            </button>
             <input
               ref={fileInputRef}
               type="file"

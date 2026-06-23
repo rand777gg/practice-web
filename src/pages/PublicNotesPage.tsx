@@ -92,10 +92,10 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
         <span className="text-muted-foreground">答案：</span>
         {Array.isArray(correct) ? (correct as string[]).join('；') || '（无）' : String(correct ?? '（无）')}
       </div>
-      <div className={`rounded px-1.5 py-0.5 ${isAnswerCorrect(selected, correct, type) ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+      <div className={`rounded px-1.5 py-0.5 ${isAnswerCorrect(selected, correct, type, q.allow_unordered) ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
         <span className="text-muted-foreground">你的答案：</span>
         {Array.isArray(selected) ? (selected as string[]).join('；') || '（无）' : String(selected ?? '（无）')}
-        {' '}{isAnswerCorrect(selected, correct, type) ? '✓' : '✗'}
+        {' '}{isAnswerCorrect(selected, correct, type, q.allow_unordered) ? '✓' : '✗'}
       </div>
     </div>
   )

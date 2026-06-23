@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import { Trash2, Pencil, Check, X, Star, ChevronDown } from 'lucide-react'
+import { Trash2, Pencil, Check, X, Star, ChevronDown, ExternalLink } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import type { UserAnswer, Question, QuestionType } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { useFavorites } from '@/hooks/use-favorites'
@@ -202,6 +203,17 @@ export function Component() {
                   </>
                 ) : (
                   <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                      className="text-xs h-7"
+                    >
+                      <Link to={`/admin/questions/${ans.questions.id}/edit`}>
+                        <ExternalLink className="h-3 w-3" />
+                        编辑题目
+                      </Link>
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"

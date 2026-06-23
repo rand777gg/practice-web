@@ -173,6 +173,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
         subject: q.subject ?? null,
         analysis: q.analysis ?? null,
         key_points: q.key_points ?? null,
+        allow_unordered: q.allow_unordered ?? false,
       })),
     )
     if (error) { setMessage(error.message); setState('error') }

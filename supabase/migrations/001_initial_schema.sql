@@ -458,7 +458,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_random_question_id TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_random_question_id(UUID, TEXT[], TEXT, TEXT) TO authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 13. UPDATED_AT TRIGGER — 自动记录题目变更时间，支持增量同步
