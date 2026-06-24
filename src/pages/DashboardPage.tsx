@@ -301,7 +301,8 @@ export function Component() {
         try {
           const SYNC_TS_KEY = 'q_last_sync_ts'
           const lastSync = localStorage.getItem(SYNC_TS_KEY)
-          let query = supabase.from('questions').select('*')
+          // ponytail: exclude analysis/key_points/answer_explanation to cut ~60% egress; offline practice doesn't need them
+          let query = supabase.from('questions').select('id,question_type,question_text,options,correct_answer,category,categories,subject,seq_number,created_at,updated_at,created_by,verified,import_mode,allow_unordered')
           if (lastSync) {
             query = query.gte('updated_at', lastSync)
           }

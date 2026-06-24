@@ -9,6 +9,13 @@ import { MailCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
+function validatePassword(pw: string): string | null {
+  if (pw.length < 8) return 'passwordWeak'
+  if (!/[a-zA-Z]/.test(pw)) return 'passwordNeedLetter'
+  if (!/[0-9]/.test(pw)) return 'passwordNeedNumber'
+  return null
+}
+
 export function RegisterForm() {
   const { t } = useT()
   const [email, setEmail] = useState('')
@@ -16,6 +23,12 @@ export function RegisterForm() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value)
+    setPasswordError(value ? validatePassword(value) : null)
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -80,14 +93,19 @@ export function RegisterForm() {
               id="password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => handlePasswordChange(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
             />
+            {passwordError ? (
+              <p className="text-sm text-destructive">{t(`auth.${passwordError}`)}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('auth.passwordHint')}</p>
+            )}
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-2">
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="w-full" disabled={isSubmitting || password.length === 0 || passwordError !== null}>
             {isSubmitting ? t('auth.creatingAccount') : t('auth.createAccount')}
           </Button>
           <div className="relative w-full">
