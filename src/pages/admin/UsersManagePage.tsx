@@ -7,11 +7,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Profile } from '@/types'
 import { useT } from '@/i18n/use-t'
-import { useOnlineUsers } from '@/hooks/use-online-users'
+import { useOnlineStore } from '@/stores/online-store'
 
 export function Component() {
   const { t } = useT()
-  const onlineIds = useOnlineUsers()
+  const onlineIds = useOnlineStore((s) => s.onlineIds)
   const { user: currentUser, profile: myProfile } = useAuthStore()
   const [profiles, setProfiles] = useState<(Profile & { email?: string; providers?: string[]; lastSignIn?: string })[]>([])
   const [isLoading, setIsLoading] = useState(true)

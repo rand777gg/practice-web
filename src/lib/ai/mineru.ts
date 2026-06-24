@@ -136,38 +136,34 @@ export class MinerUClient {
     const { data: urlData } = supabase.storage.from('files').getPublicUrl(filePath)
     const publicUrl = urlData.publicUrl
 
-    try {
-      onProgress?.('正在创建精准解析任务...')
-      const taskResult = await this.createTask(publicUrl, options)
-      const taskId = taskResult.taskId
+    onProgress?.('正在创建精准解析任务...')
+    const taskResult = await this.createTask(publicUrl, options)
+    const taskId = taskResult.taskId
 
-      onProgress?.('精准解析中...')
-      for (let i = 0; i < 300; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        const pollResult = await this.pollTask(taskId, options.token)
-        onStatus?.(pollResult)
+    onProgress?.('精准解析中...')
+    for (let i = 0; i < 300; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const pollResult = await this.pollTask(taskId, options.token)
+      onStatus?.(pollResult)
 
-        if (pollResult.state === 'done' && pollResult.fullZipUrl) {
-          onProgress?.('正在提取解析结果...')
-          const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
-          return { markdown, fileName: file.name, jsonData, pdfUrl: publicUrl }
-        }
-        if (pollResult.state === 'failed') {
-          throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
-        }
-        if (i % 5 === 0) {
-          const progress = pollResult.extractProgress
-          if (progress) {
-            onProgress?.(`精准解析中... ${progress.extractedPages}/${progress.totalPages} 页 (${pollResult.state})`)
-          } else {
-            onProgress?.(`精准解析中... ${pollResult.state}`)
-          }
+      if (pollResult.state === 'done' && pollResult.fullZipUrl) {
+        onProgress?.('正在提取解析结果...')
+        const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
+        return { markdown, fileName: file.name, jsonData, pdfUrl: publicUrl }
+      }
+      if (pollResult.state === 'failed') {
+        throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
+      }
+      if (i % 5 === 0) {
+        const progress = pollResult.extractProgress
+        if (progress) {
+          onProgress?.(`精准解析中... ${progress.extractedPages}/${progress.totalPages} 页 (${pollResult.state})`)
+        } else {
+          onProgress?.(`精准解析中... ${pollResult.state}`)
         }
       }
-      throw new Error('MinerU precision parsing timed out')
-    } finally {
-      // Keep file for history viewer — don't delete
     }
+    throw new Error('MinerU precision parsing timed out')
   }
 
   // Create a precision parsing task (single URL)
@@ -306,55 +302,51 @@ export class MinerUClient {
       return { url: urlData.publicUrl, fileName: file.name, filePath }
     }))
 
-    try {
-      onProgress?.('正在创建批量精准解析任务...')
-      const batchId = await this.createBatchTask(
-        uploads.map(u => ({
-          url: u.url,
-          name: u.fileName,
-          pageRanges: options.pageRanges,
-          isOcr: options.isOcr,
-        })),
-        options,
-      )
-      onProgress?.(`批量任务已创建，Batch ID: ${batchId}`)
+    onProgress?.('正在创建批量精准解析任务...')
+    const batchId = await this.createBatchTask(
+      uploads.map(u => ({
+        url: u.url,
+        name: u.fileName,
+        pageRanges: options.pageRanges,
+        isOcr: options.isOcr,
+      })),
+      options,
+    )
+    onProgress?.(`批量任务已创建，Batch ID: ${batchId}`)
 
-      onProgress?.('批量精准解析中...')
-      const results: DocumentParseResult[] = []
+    onProgress?.('批量精准解析中...')
+    const results: DocumentParseResult[] = []
 
-      for (let i = 0; i < 300; i++) {
-        await new Promise(r => setTimeout(r, 3000))
-        const batchStatus = await this.pollBatch(batchId, options.token)
-        onStatus?.(batchStatus)
+    for (let i = 0; i < 300; i++) {
+      await new Promise(r => setTimeout(r, 3000))
+      const batchStatus = await this.pollBatch(batchId, options.token)
+      onStatus?.(batchStatus)
 
-        const batchResults = batchStatus.files
-        const done = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'done')
-        const failed = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'failed')
+      const batchResults = batchStatus.files
+      const done = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'done')
+      const failed = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'failed')
 
-        if (done.length + failed.length === batchResults.length) {
-          // All completed
-          for (const r of done) {
-            if (r.fullZipUrl) {
-              onProgress?.(`正在提取 ${r.fileName} 的解析结果...`)
-              const { markdown, jsonData } = await fetchZipAndExtractFiles(r.fullZipUrl)
-              results.push({ markdown, fileName: r.fileName, jsonData })
-            }
+      if (done.length + failed.length === batchResults.length) {
+        // All completed
+        for (const r of done) {
+          if (r.fullZipUrl) {
+            onProgress?.(`正在提取 ${r.fileName} 的解析结果...`)
+            const { markdown, jsonData } = await fetchZipAndExtractFiles(r.fullZipUrl)
+            results.push({ markdown, fileName: r.fileName, jsonData })
           }
-          if (failed.length > 0) {
-            const names = failed.map((r: MinerUBatchFileResult) => r.fileName).join(', ')
-            onProgress?.(`部分文件解析失败: ${names}`)
-          }
-          break
         }
-
-        const running = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'running').length
-        onProgress?.(`批量解析中... 完成 ${done.length}, 进行中 ${running}, 失败 ${failed.length}`)
+        if (failed.length > 0) {
+          const names = failed.map((r: MinerUBatchFileResult) => r.fileName).join(', ')
+          onProgress?.(`部分文件解析失败: ${names}`)
+        }
+        break
       }
 
-      return results
-    } finally {
-      // Keep files for history viewer — don't delete
+      const running = batchResults.filter((r: MinerUBatchFileResult) => r.state === 'running').length
+      onProgress?.(`批量解析中... 完成 ${done.length}, 进行中 ${running}, 失败 ${failed.length}`)
     }
+
+    return results
   }
 
   // Upload file directly to R2 via pre-signed URL (bypasses Supabase payload limit)
@@ -390,36 +382,32 @@ export class MinerUClient {
     const publicUrl = await this.uploadToR2(file)
     onProgress?.('正在创建精准解析任务...')
 
-    try {
-      const taskResult = await this.createTask(publicUrl, options)
-      onStatus?.(taskResult)
+    const taskResult = await this.createTask(publicUrl, options)
+    onStatus?.(taskResult)
 
-      for (let i = 0; i < 100; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        const pollResult = await this.pollTask(taskResult.taskId, options.token)
-        onStatus?.(pollResult)
+    for (let i = 0; i < 100; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const pollResult = await this.pollTask(taskResult.taskId, options.token)
+      onStatus?.(pollResult)
 
-        if (pollResult.state === 'done' && pollResult.fullZipUrl) {
-          onProgress?.('正在提取解析结果...')
-          const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
-          return { markdown, fileName: file.name, jsonData, pdfUrl: publicUrl }
-        }
-        if (pollResult.state === 'failed') {
-          throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
-        }
-        if (i % 5 === 0) {
-          const progress = pollResult.extractProgress
-          if (progress) {
-            onProgress?.(`精准解析中... ${progress.extractedPages}/${progress.totalPages} 页 (${pollResult.state})`)
-          } else {
-            onProgress?.(`精准解析中... ${pollResult.state}`)
-          }
+      if (pollResult.state === 'done' && pollResult.fullZipUrl) {
+        onProgress?.('正在提取解析结果...')
+        const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
+        return { markdown, fileName: file.name, jsonData, pdfUrl: publicUrl }
+      }
+      if (pollResult.state === 'failed') {
+        throw new Error(`MinerU precision parsing failed: ${pollResult.errMsg}`)
+      }
+      if (i % 5 === 0) {
+        const progress = pollResult.extractProgress
+        if (progress) {
+          onProgress?.(`精准解析中... ${progress.extractedPages}/${progress.totalPages} 页 (${pollResult.state})`)
+        } else {
+          onProgress?.(`精准解析中... ${pollResult.state}`)
         }
       }
-      throw new Error('MinerU precision parsing timed out')
-    } catch (err) {
-      throw err
     }
+    throw new Error('MinerU precision parsing timed out')
   }
 
   // Recognize an image and return markdown

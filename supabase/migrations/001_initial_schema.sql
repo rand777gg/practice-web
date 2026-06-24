@@ -640,3 +640,21 @@ AS $$
     (SELECT last_sign_in_at FROM auth.users WHERE id = $1)
   );
 $$;
+
+-- ----------------------------------------------------------------------------
+-- 19. DISTINCT 学科/分类查询 — 绕过 SELECT 默认 1000 行分页限制
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_question_meta(p_subject TEXT DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'subjects', (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
+    'categories', (SELECT jsonb_agg(DISTINCT category ORDER BY category) FROM public.questions WHERE category IS NOT NULL),
+    'key_points', (SELECT jsonb_agg(DISTINCT kp ORDER BY kp) FROM public.questions, LATERAL unnest(string_to_array(key_points, ', ')) AS kp WHERE key_points IS NOT NULL AND kp <> '' AND (p_subject IS NULL OR subject = p_subject))
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_question_meta() TO authenticated;

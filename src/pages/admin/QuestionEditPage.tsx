@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
 import { QuestionForm } from '@/components/questions/QuestionForm'
@@ -13,6 +13,8 @@ export function Component() {
   const { t } = useT()
   const { questionId } = useParams<{ questionId: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const returnTo = searchParams.get('from') || '/admin/questions'
   const { updateQuestion } = useQuestions()
   const [question, setQuestion] = useState<Question | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -40,13 +42,13 @@ export function Component() {
 
   const handleSubmit = async (data: Omit<Question, 'id' | 'created_at' | 'created_by'>) => {
     await updateQuestion(question.id, data)
-    navigate('/admin/questions')
+    navigate(returnTo)
   }
 
   return (
     <div className="max-w-6xl space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/admin/questions')}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(returnTo)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-xl font-bold">{t('questions.editTitle')}</h1>
@@ -54,7 +56,7 @@ export function Component() {
       <QuestionForm
         initialData={question}
         onSubmit={handleSubmit}
-        onCancel={() => navigate('/admin/questions')}
+        onCancel={() => navigate(returnTo)}
       />
     </div>
   )

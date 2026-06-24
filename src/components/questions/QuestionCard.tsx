@@ -379,7 +379,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               )}
               {showEditLink && (
                 <Button variant="ghost" size="sm" asChild>
-                  <Link to={`/admin/questions/${question.id}/edit`}>
+                  <Link to={`/admin/questions/${question.id}/edit?from=/practice`}>
                     <Pencil className="h-3 w-3" />{t('questions.reportError')}
                   </Link>
                 </Button>

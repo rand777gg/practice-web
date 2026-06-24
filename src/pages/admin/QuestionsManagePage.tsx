@@ -27,7 +27,7 @@ export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
   const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
-  const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified })
+  const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
@@ -38,6 +38,8 @@ export function Component() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
   const [selectedImportMode, setSelectedImportMode] = useState('')
   const [selectedVerified, setSelectedVerified] = useState<'' | 'true' | 'false'>('')
+  const [selectedKeyPoints, setSelectedKeyPoints] = useState('')
+  const [allKeyPoints, setAllKeyPoints] = useState<string[]>([])
 
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const btnRowRef = useRef<HTMLDivElement>(null)
@@ -67,6 +69,13 @@ export function Component() {
     [filteredCategories],
   )
 
+  // Load distinct key_points — re-fetch when subject changes
+  useEffect(() => {
+    supabase.rpc('get_question_meta', { p_subject: selectedSubject || null }).then(({ data, error }: any) => {
+      if (!error && data?.key_points) setAllKeyPoints(data.key_points)
+    })
+  }, [selectedSubject])
+
   // Trigger fetch when filters or search change
   useEffect(() => {
     if (debounceRef.current !== null) clearTimeout(debounceRef.current)
@@ -79,14 +88,16 @@ export function Component() {
         questionType: selectedType,
         importMode: selectedImportMode,
         verified: selectedVerified,
+        keyPoints: selectedKeyPoints,
       })
     }, 300)
     return () => { if (debounceRef.current !== null) clearTimeout(debounceRef.current) }
-  }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, fetchQuestions])
+  }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, fetchQuestions])
 
-  // Update filtered categories when subject changes
+  // Update filtered categories and reset key_points when subject changes
   useEffect(() => {
     updateFilteredCategories(selectedSubject)
+    setSelectedKeyPoints('')
   }, [selectedSubject, updateFilteredCategories])
 
   const toggleSelect = (id: string) => {
@@ -314,6 +325,28 @@ export function Component() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {allKeyPoints.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1 text-xs">
+                {selectedKeyPoints || '知识点'}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+              <DropdownMenuItem onClick={() => setSelectedKeyPoints('')}>
+                <span className="text-muted-foreground">知识点</span>
+                {!selectedKeyPoints && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+              {allKeyPoints.map((kp) => (
+                <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoints(kp)}>
+                  {kp}
+                  {selectedKeyPoints === kp && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <Input

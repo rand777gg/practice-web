@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useSettingsStore, FONT_OPTIONS } from '@/stores/settings-store'
 import type { Profile } from '@/types'
-import { LoadingScreen } from '@/components/layout/LoadingScreen'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -50,17 +50,50 @@ async function createProfile(userId: string): Promise<Profile | null> {
   return data as Profile | null
 }
 
-function ThemeInitializer({ children }: { children: ReactNode }) {
+function AppearanceInitializer({ children }: { children: ReactNode }) {
   const { theme } = useThemeStore()
+  const eyeCare = useSettingsStore((s) => s.eyeCare)
+  const fontFamily = useSettingsStore((s) => s.fontFamily)
+  const fontSize = useSettingsStore((s) => s.fontSize)
+  const fontWeight = useSettingsStore((s) => s.fontWeight)
 
   useEffect(() => {
     const root = document.documentElement
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
+    if (theme === 'dark') root.classList.add('dark')
+    else root.classList.remove('dark')
   }, [theme])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.remove('eye-care-silk', 'eye-care-celadon', 'eye-care-lotus', 'eye-care-tea', 'eye-care-bamboo')
+    if (eyeCare && theme !== 'dark') root.classList.add(`eye-care-${eyeCare}`)
+  }, [eyeCare, theme])
+
+  useEffect(() => {
+    const root = document.documentElement
+    const linkId = 'font-stylesheet'
+    const oldLink = document.getElementById(linkId) as HTMLLinkElement | null
+    if (oldLink) oldLink.remove()
+    const opt = FONT_OPTIONS.find((f) => f.value === fontFamily)
+    if (opt?.google) {
+      const link = document.createElement('link')
+      link.id = linkId
+      link.rel = 'stylesheet'
+      const { google, weights } = opt
+      link.href = `https://fonts.googleapis.com/css2?family=${google}:wght@${weights}&display=swap`
+      document.head.appendChild(link)
+    }
+    const fallback = 'system-ui, -apple-system, "Microsoft YaHei", sans-serif'
+    root.style.setProperty('--font-sans', fontFamily === 'system' ? fallback : `'${fontFamily}', ${fallback}`)
+  }, [fontFamily])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-size', `${fontSize}px`)
+  }, [fontSize])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-weight', String(fontWeight))
+  }, [fontWeight])
 
   return <>{children}</>
 }
@@ -138,81 +171,18 @@ function AuthInitializer({ children }: { children: ReactNode }) {
   }, [setUser, setProfile, setLoading, setInitialized])
 
   if (!isInitialized) {
-    return <LoadingScreen />
+    return <LoadingTips className="h-screen" />
   }
-
-  return <>{children}</>
-}
-
-function EyeCareInitializer({ children }: { children: ReactNode }) {
-  const eyeCare = useSettingsStore((s) => s.eyeCare)
-  const theme = useThemeStore((s) => s.theme)
-
-  useEffect(() => {
-    const root = document.documentElement
-    // Remove all eye-care classes
-    root.classList.remove('eye-care-silk', 'eye-care-celadon', 'eye-care-lotus', 'eye-care-tea', 'eye-care-bamboo')
-    // Add selected palette (only in light mode)
-    if (eyeCare && theme !== 'dark') {
-      root.classList.add(`eye-care-${eyeCare}`)
-    }
-  }, [eyeCare, theme])
-
-  return <>{children}</>
-}
-
-function FontInitializer({ children }: { children: ReactNode }) {
-  const fontFamily = useSettingsStore((s) => s.fontFamily)
-  const fontSize = useSettingsStore((s) => s.fontSize)
-  const fontWeight = useSettingsStore((s) => s.fontWeight)
-
-  useEffect(() => {
-    const root = document.documentElement
-    const linkId = 'font-stylesheet'
-
-    // Remove old font link
-    const oldLink = document.getElementById(linkId) as HTMLLinkElement | null
-    if (oldLink) oldLink.remove()
-
-    // Load new Google Font (unless system)
-    const opt = FONT_OPTIONS.find((f) => f.value === fontFamily)
-    if (opt?.google) {
-      const link = document.createElement('link')
-      link.id = linkId
-      link.rel = 'stylesheet'
-      const { google, weights } = opt
-      link.href = `https://fonts.googleapis.com/css2?family=${google}:wght@${weights}&display=swap`
-      document.head.appendChild(link)
-    }
-
-    // Apply font-family CSS variable
-    const fallback = 'system-ui, -apple-system, "Microsoft YaHei", sans-serif'
-    root.style.setProperty('--font-sans', fontFamily === 'system'
-      ? fallback
-      : `'${fontFamily}', ${fallback}`)
-  }, [fontFamily])
-
-  useEffect(() => {
-    document.documentElement.style.setProperty('--font-size', `${fontSize}px`)
-  }, [fontSize])
-
-  useEffect(() => {
-    document.documentElement.style.setProperty('--font-weight', String(fontWeight))
-  }, [fontWeight])
 
   return <>{children}</>
 }
 
 export default function App() {
   return (
-    <ThemeInitializer>
-      <EyeCareInitializer>
-        <FontInitializer>
-          <AuthInitializer>
-            <RouterProvider router={router} />
-          </AuthInitializer>
-        </FontInitializer>
-      </EyeCareInitializer>
-    </ThemeInitializer>
+    <AppearanceInitializer>
+      <AuthInitializer>
+        <RouterProvider router={router} />
+      </AuthInitializer>
+    </AppearanceInitializer>
   )
 }

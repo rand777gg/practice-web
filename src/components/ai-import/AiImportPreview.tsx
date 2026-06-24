@@ -10,12 +10,13 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { AiImportQuestionCard } from './AiImportQuestionCard'
-import { Check, ChevronDown, Plus, Sparkles, X } from 'lucide-react'
+import { Check, ChevronDown, Plus, Sparkles, Wand2, X } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 import { useSettingsStore } from '@/stores/settings-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { normalizeChineseText } from '@/lib/utils'
 
 interface Props {
   questions: ParsedQuestion[]
@@ -53,6 +54,19 @@ export function AiImportPreview({
     })
     setBatchManualKp('')
     setShowBatchManualKp(false)
+  }
+
+  const handleBatchNormalize = () => {
+    questions.forEach((q, i) => {
+      if (!selectedIds.has(i)) return
+      onChangeQuestion(i, {
+        ...q,
+        question_text: normalizeChineseText(q.question_text),
+        options: q.options.map(normalizeChineseText),
+        analysis: q.analysis ? normalizeChineseText(q.analysis) : q.analysis,
+        answer_explanation: q.answer_explanation ? normalizeChineseText(q.answer_explanation) : q.answer_explanation,
+      })
+    })
   }
 
   const handleBatchKeyPoints = async () => {
@@ -93,16 +107,16 @@ export function AiImportPreview({
 
   const handleAddSubject = () => {
     const v = newSubject.trim()
-    if (!v || allSubjects.includes(v)) return
-    setSubjectList(prev => [...prev, v])
+    if (!v) return
+    if (!allSubjects.includes(v)) setSubjectList(prev => [...prev, v])
     onSubjectChange(v)
     setNewSubject('')
   }
 
   const handleAddCategory = () => {
     const v = newCategory.trim()
-    if (!v || allCategories.includes(v)) return
-    setCategoryList(prev => [...prev, v])
+    if (!v) return
+    if (!allCategories.includes(v)) setCategoryList(prev => [...prev, v])
     onCategoryChange(v)
     setNewCategory('')
   }
@@ -139,6 +153,17 @@ export function AiImportPreview({
               批量生成知识点
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-6 gap-1"
+            disabled={selectedIds.size === 0}
+            onClick={handleBatchNormalize}
+            title="对选中题目的题干、选项、解析进行文字标准化（中英文间加空格、标点全角化）"
+          >
+            <Wand2 className="h-3 w-3" />
+            标准化
+          </Button>
           {showBatchManualKp ? (
             <div className="flex items-center gap-1">
               <Input

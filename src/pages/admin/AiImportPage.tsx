@@ -237,19 +237,15 @@ export function Component() {
   }
 
   useEffect(() => {
+    if (!user) return
     async function loadMeta() {
-      const { data } = await supabase.from('questions').select('subject, category')
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
-      }
-      setExistingSubjects([...subs].sort())
-      setExistingCategories([...cats].sort())
+      const { data, error } = await supabase.rpc('get_question_meta')
+      if (error) { console.warn('loadMeta error:', error); return }
+      setExistingSubjects((data as any)?.subjects ?? [])
+      setExistingCategories((data as any)?.categories ?? [])
     }
     loadMeta()
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
     if (user) loadHistoryList()

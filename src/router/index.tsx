@@ -1,11 +1,11 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
-import { LoadingScreen } from '@/components/layout/LoadingScreen'
+import { LoadingTips } from '@/components/layout/LoadingTips'
 
 export const router = createBrowserRouter([
   {
-    HydrateFallback: LoadingScreen,
+    HydrateFallback: () => <LoadingTips className="h-screen" />,
     children: [
       {
         path: '/login',

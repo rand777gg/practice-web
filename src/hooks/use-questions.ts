@@ -13,6 +13,7 @@ export interface FetchParams {
   questionType?: QuestionType | ''
   importMode?: string
   verified?: '' | 'true' | 'false'
+  keyPoints?: string
 }
 
 export function useQuestions() {
@@ -27,7 +28,7 @@ export function useQuestions() {
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
 
   const fetchQuestions = useCallback(async (params: FetchParams = {}) => {
-    const { page: p = 1, pageSize: ps = pageSize, search, subject, category, questionType, importMode, verified } = params
+    const { page: p = 1, pageSize: ps = pageSize, search, subject, category, questionType, importMode, verified, keyPoints } = params
     paramsRef.current = { ...params, pageSize: ps }
     setIsLoading(true)
     setError(null)
@@ -46,6 +47,7 @@ export function useQuestions() {
     if (importMode) query = query.eq('import_mode', importMode)
     if (verified === 'true') query = query.eq('verified', true)
     else if (verified === 'false') query = query.eq('verified', false)
+    if (keyPoints) query = query.ilike('key_points', `%${keyPoints}%`)
 
     query = query.order('created_at', { ascending: false }).range(from, to)
 
