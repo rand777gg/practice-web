@@ -7,6 +7,46 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-MinerU-Token',
 }
 
+// ponytail: gzip text responses to cut egress ~80% for markdown/JSON
+async function compressIfAccepted(body: string, req: Request): Promise<Uint8Array> {
+  const accept = req.headers.get('Accept-Encoding') || ''
+  if (!accept.includes('gzip')) return new TextEncoder().encode(body)
+
+  const stream = new CompressionStream('gzip')
+  const writer = stream.writable.getWriter()
+  const reader = stream.readable.getReader()
+  writer.write(new TextEncoder().encode(body))
+  writer.close()
+
+  const chunks: Uint8Array[] = []
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+  }
+  const total = chunks.reduce((s, c) => s + c.length, 0)
+  const out = new Uint8Array(total)
+  let pos = 0
+  for (const c of chunks) { out.set(c, pos); pos += c.length }
+  return out
+}
+
+function jsonResponse(body: string, req: Request, extraHeaders?: Record<string, string>): Promise<Response> {
+  return compressIfAccepted(body, req).then(compressed => {
+    const bodyBytes = new TextEncoder().encode(body)
+    const headers = new Headers({ ...corsHeaders, 'Content-Type': 'application/json' })
+    if (compressed.length < bodyBytes.length) {
+      headers.set('Content-Encoding', 'gzip')
+    } else {
+      return new Response(bodyBytes, { headers })
+    }
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) headers.set(k, v)
+    }
+    return new Response(compressed, { headers })
+  })
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders })
@@ -25,7 +65,6 @@ Deno.serve(async (req: Request) => {
         })
       }
       const fetchHeaders: Record<string, string> = {}
-      // For Supabase storage URLs, forward auth to access private buckets
       if (targetUrl.includes('/storage/v1/')) {
         const anonKey = Deno.env.get('SUPABASE_PUBLISHABLE_KEY') || ''
         if (anonKey) fetchHeaders['Authorization'] = `Bearer ${anonKey}`
@@ -37,6 +76,7 @@ Deno.serve(async (req: Request) => {
           ...corsHeaders,
           'Content-Type': res.headers.get('Content-Type') || 'application/pdf',
           'Content-Length': res.headers.get('Content-Length') || '',
+          'Cache-Control': 'public, max-age=3600',
         },
       })
     }
@@ -51,9 +91,7 @@ Deno.serve(async (req: Request) => {
       }
       const res = await fetch(targetUrl)
       const text = await res.text()
-      return new Response(JSON.stringify({ text }), {
-        status: res.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse(JSON.stringify({ text }), req)
     }
 
     // GET /download-zip?url=<url> — proxy zip download and extract full.md (for v4 precision)
@@ -71,12 +109,8 @@ Deno.serve(async (req: Request) => {
         })
       }
       const zipBytes = new Uint8Array(await res.arrayBuffer())
-
-      // Find and extract full.md and layout.json / content_list.json from the zip
       const { markdown, jsonData } = await extractZipFiles(zipBytes)
-      return new Response(JSON.stringify({ text: markdown, jsonData }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse(JSON.stringify({ text: markdown, jsonData }), req)
     }
 
     // Determine if this is a v4 precision request
@@ -102,10 +136,7 @@ Deno.serve(async (req: Request) => {
       }
       const res = await fetch(targetUrl, fetchOpts)
       const data = await res.text()
-      return new Response(data, {
-        status: res.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse(data, req)
     }
 
     // v1 lightweight routes (backward compatible)
@@ -119,10 +150,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === 'POST') fetchOpts.body = await req.text()
     const res = await fetch(targetUrl, fetchOpts)
     const data = await res.text()
-    return new Response(data, {
-      status: res.status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse(data, req)
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
@@ -172,7 +200,6 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
         const text = await tryDecompress()
         if (text) markdown = text
       }
-      // Priority: layout(3) > middle(2) > content_list(1)
       const isLayout = fileName === 'layout.json' || fileName.endsWith('_layout.json')
       const isMiddle = fileName === 'middle.json' || fileName.endsWith('_middle.json')
       const isContentList = fileName === 'content_list.json' || fileName.endsWith('_content_list.json')
@@ -189,7 +216,6 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
   }
 
   if (!markdown) {
-    // Fallback: return base64-encoded zip for frontend extraction
     let binary = ''
     for (let i = 0; i < zipBytes.length; i++) binary += String.fromCharCode(zipBytes[i])
     return { markdown: `__B64ZIP__${btoa(binary)}`, jsonData }

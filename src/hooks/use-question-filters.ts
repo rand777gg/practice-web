@@ -14,24 +14,19 @@ export function useQuestionFilters() {
     if (cacheSubs) return
     let cancelled = false
     async function load() {
-      const { data } = await supabase.from('questions').select('subject, category, categories')
+      // ponytail: question_meta_cache has 1 row, vs scanning 1281 questions rows
+      const { data } = await supabase
+        .from('question_meta_cache')
+        .select('subjects, categories')
+        .single()
       if (cancelled) return
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
-        if (row.categories) {
-          for (const c of row.categories as string[]) {
-            if (c) cats.add(c)
-          }
-        }
-      }
-      cacheSubs = [...subs].sort()
-      cacheCats = [...cats].sort()
-      setSubjects(cacheSubs)
-      setCategories(cacheCats)
-      setFilteredCategories(cacheCats)
+      const subs = (data?.subjects ?? []) as string[]
+      const cats = (data?.categories ?? []) as string[]
+      cacheSubs = subs
+      cacheCats = cats
+      setSubjects(subs)
+      setCategories(cats)
+      setFilteredCategories(cats)
       setLoading(false)
     }
     load()
@@ -43,6 +38,7 @@ export function useQuestionFilters() {
       setFilteredCategories(categories.length ? categories : cacheCats ?? [])
       return
     }
+    // ponytail: subject has an index now, query is fast on filtered subset
     const { data } = await supabase
       .from('questions')
       .select('category, categories')

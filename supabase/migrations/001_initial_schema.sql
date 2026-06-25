@@ -94,10 +94,6 @@ ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NUL
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS answer_explanation TEXT;
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS seq_number INTEGER;
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS status_json TEXT;
-ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS page_ranges TEXT;
-ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS extra_formats TEXT;
-ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS pdf_total_pages INTEGER;
 
 -- questions: filter dropdowns, random pick, dashboard metadata
 CREATE INDEX IF NOT EXISTS idx_questions_category       ON public.questions(category);
@@ -283,8 +279,12 @@ REVOKE EXECUTE ON FUNCTION public.is_admin()       FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.get_user_email(uuid) FROM anon;
 -- get_user_email 供认证用户（管理员页、公开笔记）使用，保留 authenticated 权限
 
--- 9b. 禁止 rls_auto_enable 被外部调用（Supabase 内部函数）
-REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;
+-- 9b. 禁止 rls_auto_enable 被外部调用（Supabase 内部函数，新版已移除）
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'rls_auto_enable') THEN
+    REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;
+  END IF;
+END $$;
 
 -- 9c. 收紧 files bucket 权限：认证用户可读写，禁止 anon 列出文件
 -- 文件仍可通过 publicUrl 访问，MinerU 上传不受影响
@@ -315,6 +315,11 @@ CREATE TABLE IF NOT EXISTS public.parse_history (
   mode           TEXT NOT NULL DEFAULT 'lightweight',
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS status_json TEXT;
+ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS page_ranges TEXT;
+ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS extra_formats TEXT;
+ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS pdf_total_pages INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_parse_history_user
   ON public.parse_history(user_id, created_at DESC);
@@ -458,7 +463,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_random_question_id(UUID, TEXT[], TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_random_question_id(UUID, TEXT[], TEXT[], TEXT) TO authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 13. UPDATED_AT TRIGGER — 自动记录题目变更时间，支持增量同步
@@ -627,6 +632,7 @@ ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL 
 
 -- 导入方式
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS import_mode TEXT;
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS allow_unordered BOOLEAN NOT NULL DEFAULT false;
 
 -- 查询用户最后在线时间（最近一次答题时间，fallback 到登录时间）
 CREATE OR REPLACE FUNCTION public.get_user_last_online(user_id UUID)
@@ -657,4 +663,4 @@ AS $$
   );
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_question_meta() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_question_meta(TEXT) TO authenticated;

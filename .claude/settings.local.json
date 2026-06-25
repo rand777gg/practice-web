@@ -51,5 +51,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git stash *)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
+  "enableAllProjectMcpServers": true
 }
