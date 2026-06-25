@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import {
@@ -174,15 +175,16 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
                     className="shrink-0 h-3.5 w-3.5 accent-primary cursor-pointer" />
                 )}
                 <span className="text-[11px] text-muted-foreground w-4 tabular-nums shrink-0">{String.fromCharCode(65 + oi)}</span>
-                <Input
+                <Textarea
                   value={opt}
                   onChange={(e) => {
                     const newOpts = [...question.options]
                     newOpts[oi] = e.target.value
                     patch({ options: newOpts })
                   }}
-                  className="h-6 text-[11px]"
+                  className="min-h-0 h-6 py-0.5 text-[11px] resize-none"
                   placeholder={`选项 ${String.fromCharCode(65 + oi)}`}
+                  rows={1}
                 />
               </div>
             )

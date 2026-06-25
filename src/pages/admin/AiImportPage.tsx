@@ -289,35 +289,38 @@ export function Component() {
   }
 
   const runUrlParse = async () => {
-    // Download PDF for local viewing (avoids CORS), then persist to R2 for history
-    setParseMsg('正在下载 PDF...')
     const fileName = manualPdfUrl.split('/').pop()?.split('?')[0] || 'document.pdf'
-    const pdfRes = await fetch(manualPdfUrl)
-    if (!pdfRes.ok) throw new Error(`PDF 下载失败: ${pdfRes.status}`)
-    const pdfBlob = await pdfRes.blob()
-    const blobUrl = URL.createObjectURL(pdfBlob)
-
-    // Upload to R2 for history persistence — dedup by URL hash
     const mineru = new MinerUClient()
-    const pdfFile = new File([pdfBlob], fileName, { type: pdfBlob.type || 'application/pdf' })
+
+    // Compute R2 dedup key (fast, no network)
+    const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manualPdfUrl))
+    const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+    const dedupKey = `pdf/remote/${hashHex}_${fileName}`
+
+    // Background: ensure PDF is persisted to R2 (skip if already cached)
     let r2Url: string
-    try {
-      // Use URL hash as key so re-parsing the same URL overwrites same file
-      const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manualPdfUrl))
-      const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
-      const dedupKey = `pdf/remote/${hashHex}_${fileName}`
-      const { data: presignData, error: presignErr } = await supabase.functions.invoke('r2-upload-url', {
-        body: { key: dedupKey, contentType: pdfFile.type },
-      })
-      if (presignErr) throw presignErr
-      const { url: presignedUrl, publicUrl } = presignData as { url: string; publicUrl: string }
-      if (!presignedUrl) throw new Error('No presigned URL')
-      await fetch(presignedUrl, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
-      r2Url = publicUrl
-    } catch {
-      // R2 upload failed — fall back to original URL (history will proxy it)
-      r2Url = manualPdfUrl
-    }
+    const ensureR2 = (async () => {
+      try {
+        // Check if already in R2
+        const check = await fetch(`https://r2-rpw.pguide.dev/${dedupKey}`, { method: 'HEAD' })
+        if (check.ok) return
+      } catch { /* HEAD may fail on CORS, proceed with upload */ }
+
+      try {
+        const pdfRes = await fetch(manualPdfUrl)
+        if (!pdfRes.ok) return
+        const pdfBlob = await pdfRes.blob()
+        const pdfFile = new File([pdfBlob], fileName, { type: pdfBlob.type || 'application/pdf' })
+        const { data: presignData, error: presignErr } = await supabase.functions.invoke('r2-upload-url', {
+          body: { key: dedupKey, contentType: pdfFile.type },
+        })
+        if (presignErr || !(presignData as any)?.url) return
+        await fetch((presignData as any).url, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
+      } catch { /* best-effort */ }
+    })()
+    r2Url = `https://r2-rpw.pguide.dev/${dedupKey}`
+
+    // Start MinerU immediately — don't wait for R2 upload
     const options = {
       token: mineruToken,
       modelVersion,
@@ -344,7 +347,8 @@ export function Component() {
         const { markdown, jsonData } = await fetchZipAndExtractFiles(pollResult.fullZipUrl)
         setParseResult({ markdown, fileName, jsonData })
         setParsingDone(true)
-        setHistoryPdfUrl(blobUrl)  // show PDF immediately for fresh view
+        await ensureR2  // wait for R2 upload to finish before showing preview
+        setHistoryPdfUrl(r2Url)
         const historyId = await saveToHistory({ fileName: r2Url, markdown, jsonData, mode: 'precision', pageRanges: pageRangesRef.current || undefined, extraFormats: extraFormats.length > 0 ? extraFormats : undefined, pdfTotalPages: (pollResult as any)?.extractProgress?.totalPages })
         if (historyId) setCurrentHistoryId(historyId)
         return

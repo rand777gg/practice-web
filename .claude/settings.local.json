@@ -49,11 +49,12 @@
       "Bash(git checkout *)",
       "Bash(git tag *)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "WebFetch(domain:openrouter.ai)"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "supabase"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

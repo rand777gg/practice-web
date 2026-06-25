@@ -123,9 +123,17 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
     setTestResult(null)
     try {
       const model = provider.models.find(m => m.enabled)?.id ?? provider.models[0].id
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${effectiveKey}`,
+      }
+      if (provider.id === 'openrouter') {
+        headers['HTTP-Referer'] = window.location.origin
+        headers['X-Title'] = 'Practice Web'
+      }
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${effectiveKey}` },
+        headers,
         body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
         signal: AbortSignal.timeout(10000),
       })
