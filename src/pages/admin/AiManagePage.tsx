@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useT } from '@/i18n/use-t'
 import { Zap, Globe, Key, Link, ChevronUp, ChevronDown, Wifi, CheckCircle, XCircle, Loader2 } from 'lucide-react'
-import { ProviderIcon } from '@lobehub/icons'
+import { ProviderIcon } from '@/components/ui/provider-icon'
 import type { AiProviderConfig } from '@/types'
 
 export function Component() {
@@ -158,7 +158,7 @@ function ProviderCard({ provider, onToggle, onToggleModel, onApiKeyChange, onBas
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <ProviderIcon provider={provider.id} size={20} type="avatar" />
+              <ProviderIcon provider={provider.id} size={20} />
               <CardTitle className="text-sm">{provider.name}</CardTitle>
               {expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
             </div>
