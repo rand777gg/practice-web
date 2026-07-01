@@ -35,6 +35,20 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         clientsClaim: true,
         skipWaiting: false,
+        // ponytail: only precache small chunks + main entry; large lazy chunks (>100KB) cached on first use
+        manifestTransforms: [
+          (manifest) => ({
+            manifest: manifest.filter((entry) => {
+              if (!entry.url.endsWith('.js')) return true
+              // Keep small UI chunks for instant offline
+              if (!entry.size || entry.size < 100_000) return true
+              // Keep main entry chunk
+              if (/\/index-/.test(entry.url)) return true
+              return false
+            }),
+            warnings: [],
+          }),
+        ],
         runtimeCaching: [
           {
             // Supabase API — network first, stale-while-revalidate cache
