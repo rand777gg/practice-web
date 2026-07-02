@@ -8,9 +8,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- ponytail: inline loading so mobile first-visit isn't a white screen while downloading 19 MB -->
-    <style>#preload{display:flex;align-items:center;justify-content:center;height:100dvh;background:#0f172a;color:#94a3b8;font-family:system-ui,sans-serif}#preload>div{text-align:center}.spinner{width:32px;height:32px;border:3px solid #334155;border-top-color:#6366f1;border-radius:50%;animation:s .8s linear infinite;margin:0 auto 16px}@keyframes s{to{transform:rotate(360deg)}}</style>
-    <div id="preload"><div><div class="spinner"></div><p style="font-size:14px">正在加载...</p></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -25,7 +25,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
-import { ProviderIcon } from '@/components/ui/provider-icon'
+import { ProviderIcon } from '@lobehub/icons'
 import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, RotateCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -850,11 +850,11 @@ function CodePreview({ theme, lang }: { theme: string; lang: string }) {
 }
 
 const PREVIEW_LANGS = [
-  'javascript', 'typescript', 'python', 'java', 'cpp', 'c',
-  'go', 'rust',
-  'sql', 'css', 'html', 'bash',
+  'javascript', 'typescript', 'python', 'java', 'cpp', 'csharp', 'c',
+  'go', 'rust', 'swift', 'kotlin', 'dart', 'ruby', 'php', 'scala', 'haskell', 'lua',
+  'sql', 'css', 'html', 'bash', 'powershell',
   'json', 'yaml', 'xml', 'markdown', 'latex',
-  'dockerfile', 'graphql', 'ini', 'toml', 'makefile', 'nginx', 'diff',
+  'r', 'dockerfile', 'graphql', 'ini', 'toml', 'makefile', 'nginx', 'diff', 'viml',
 ]
 
 const LANGS: Record<string, string> = {
