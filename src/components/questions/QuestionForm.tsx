@@ -50,7 +50,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [verified, setVerified] = useState(initialData?.verified ?? false)
   const [allowUnordered, setAllowUnordered] = useState(initialData?.allow_unordered ?? false)
-  const [analysisOpen, setAnalysisOpen] = useState(false)
+  const [analysisOpen, setAnalysisOpen] = useState(true)
   const analysisRef = useRef<HTMLTextAreaElement>(null)
   const questionTextRef = useRef<HTMLTextAreaElement>(null)
   const [isFormatting, setIsFormatting] = useState(false)
