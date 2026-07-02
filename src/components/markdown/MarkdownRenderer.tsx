@@ -284,10 +284,8 @@ async function getHighlighter() {
       themes: ['github-light', 'github-dark'],
       langs: [
         'javascript', 'typescript', 'jsx', 'tsx', 'css', 'html', 'json',
-        'python', 'java', 'c', 'cpp', 'csharp', 'go', 'rust',
-        'sql', 'bash', 'shell', 'yaml', 'xml', 'markdown',
-        'latex', 'r', 'swift', 'kotlin', 'dart', 'ruby', 'php',
-        'scala', 'haskell', 'lua', 'text',
+        'python', 'java', 'c', 'cpp', 'go', 'rust',
+        'sql', 'bash', 'yaml', 'xml', 'markdown', 'latex', 'text',
       ],
     })
     _highlighter = hl
