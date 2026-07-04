@@ -173,27 +173,6 @@ npm run build
 1. 在飞书群 → 设置 → 群机器人 → 编辑自定义机器人
 2. **安全设置** → 添加**自定义关键词**：`PR Review`（消息必须包含此关键词才能发送）
 
-### Build Fix Agent
-
-部署到 EdgeOne Pages 构建失败时，`cloud-functions/api/fix-build.ts` 自动运行：
-
-```
-EdgeOne 构建失败 → webhook → Cloud Function → DeepSeek 分析 → GitHub API 修复 → PR + 飞书通知
-```
-
-**EdgeOne Makers 配置：**
-1. 控制台 → Makers → 设置 → Webhooks → 添加 webhook
-2. URL 设为 `https://你的域名/cloud-functions/api/fix-build`
-3. 勾选事件：**部署失败 (deployment.failed)**
-4. 项目环境变量中配置：
-
-| 变量 | 说明 |
-|---|---|
-| `EO_API_TOKEN` | EdgeOne Pages API Token |
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥 |
-| `GITHUB_TOKEN` | GitHub PAT（repo 权限） |
-| `FEISHU_WEBHOOK_URL` | 飞书自定义机器人 Webhook URL |
-| `WEBHOOK_SECRET` | （可选）Webhook 签名密钥 |
 
 ## 开源协议
 
