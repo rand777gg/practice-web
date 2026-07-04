@@ -24,17 +24,20 @@ function ghJson(args) {
 
 async function sendFeishu(summary) {
   if (!FEISHU_URL) return
-  const body = { msg_type: 'interactive', card: { header: { title: { tag: 'plain_text', content: 'PR Review Report' } }, elements: [{ tag: 'markdown', content: summary }] } }
+  const text = `[PR Review] ${summary}`
+  const body = { msg_type: 'text', content: { text } }
   if (FEISHU_SECRET) {
     const ts = String(Math.floor(Date.now() / 1000))
-    const sign = createHmac('sha256', FEISHU_SECRET).update(ts + '\n' + FEISHU_SECRET, 'utf8').digest('base64')
+    const sign = createHmac('sha256', FEISHU_SECRET).update(`${ts}\n${FEISHU_SECRET}`).digest('base64')
     body.timestamp = ts
     body.sign = sign
   }
-  await fetch(FEISHU_URL, {
+  const res = await fetch(FEISHU_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  const result = await res.text()
+  console.log(`[pr-review] Feishu response: ${res.status} ${result}`)
 }
 
 async function reviewDiff(diff, title) {
