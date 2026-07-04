@@ -265,7 +265,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         seq_number: seqNumber ? Number(seqNumber) : null,
         verified,
         allow_unordered: allowUnordered,
-        import_mode: 'manual',
+        import_mode: initialData?.import_mode ?? 'manual',
       })
     } catch {
       setError(t('questions.saveFailed'))
