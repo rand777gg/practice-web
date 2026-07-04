@@ -3,12 +3,10 @@
  * Automated PR review script — runs via GitHub Actions on schedule.
  */
 import { execFileSync } from 'node:child_process'
-import { createHmac } from 'node:crypto'
 
 const REPO = process.env.GITHUB_REPOSITORY || 'rand777gg/react-practice-web'
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY
 const FEISHU_URL = process.env.FEISHU_WEBHOOK_URL
-const FEISHU_SECRET = process.env.FEISHU_WEBHOOK_SECRET || ''
 const LOOKBACK_HOURS = Number(process.env.LOOKBACK_HOURS || 4)
 
 if (!DEEPSEEK_KEY) { console.error('Missing DEEPSEEK_API_KEY'); process.exit(1) }
@@ -26,12 +24,6 @@ async function sendFeishu(summary) {
   if (!FEISHU_URL) return
   const text = `[PR Review] ${summary}`
   const body = { msg_type: 'text', content: { text } }
-  if (FEISHU_SECRET) {
-    const ts = String(Math.floor(Date.now() / 1000))
-    const sign = createHmac('sha256', FEISHU_SECRET).update(`${ts}\n${FEISHU_SECRET}`).digest('base64')
-    body.timestamp = ts
-    body.sign = sign
-  }
   const res = await fetch(FEISHU_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
