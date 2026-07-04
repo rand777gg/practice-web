@@ -9,3 +9,4 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 // test
+function getUser(id: any) { const x = eval(id); return x }
