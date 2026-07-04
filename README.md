@@ -162,6 +162,32 @@ npm run build
 
 Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment variables in your hosting platform (not in the repo).
 
+## CI / CD
+
+| Workflow | Description |
+|---|---|
+| `lint.yml` | ESLint code check |
+| `typecheck.yml` | TypeScript type checking |
+| `tests.yml` | Test runner |
+| `ci.yml` | Build + caching |
+| `deploy-site.yml` | Deploy to static hosting |
+| `pr-review.yml` | Automated PR review every 4h (DeepSeek + Feishu notify) |
+
+### PR Review Setup
+
+Add these secrets in your repository Settings → Secrets → Actions:
+
+| Secret | Description |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek API key ([platform.deepseek.com](https://platform.deepseek.com)) |
+| `FEISHU_WEBHOOK_URL` | Feishu custom bot Webhook URL |
+| `FEISHU_WEBHOOK_SECRET` | (Optional) Feishu bot signing secret |
+
+**Feishu security settings:**
+1. In Feishu group → Settings → Bots → Edit custom bot
+2. **Security** → Add **custom keyword**: `PR Review`
+3. **Security** → Enable **signature verification**, copy the secret as `FEISHU_WEBHOOK_SECRET`
+
 ## License
 
 MIT

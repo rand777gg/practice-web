@@ -148,6 +148,32 @@ npm run build
 
 在托管平台设置环境变量 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY`（不要放在仓库中）。
 
+## CI / CD
+
+| Workflow | 说明 |
+|---|---|
+| `lint.yml` | ESLint 代码检查 |
+| `typecheck.yml` | TypeScript 类型检查 |
+| `tests.yml` | 测试运行 |
+| `ci.yml` | 构建 + 缓存 |
+| `deploy-site.yml` | 部署到静态托管 |
+| `pr-review.yml` | 每 4 小时自动 PR 审查（DeepSeek + 飞书通知） |
+
+### PR Review 设置
+
+启用自动 PR 审查需要在仓库 Secrets 中配置：
+
+| Secret | 说明 |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek API 密钥（[platform.deepseek.com](https://platform.deepseek.com)） |
+| `FEISHU_WEBHOOK_URL` | 飞书自定义机器人 Webhook URL |
+| `FEISHU_WEBHOOK_SECRET` | （可选）飞书机器人签名校验密钥 |
+
+**飞书安全设置：**
+1. 在飞书群 → 设置 → 群机器人 → 编辑自定义机器人
+2. **安全设置** → 添加**自定义关键词**：`PR Review`（消息必须包含此关键词才能发送）
+3. **安全设置** → 开启**签名校验**，复制密钥设为 `FEISHU_WEBHOOK_SECRET`
+
 ## 开源协议
 
 MIT
