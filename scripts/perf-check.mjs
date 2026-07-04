@@ -39,7 +39,7 @@ async function sendFeishu(text) {
   const res = await fetch(FEISHU_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ msg_type: 'text', content: { text: `[Perf] ${text}` } }),
+    body: JSON.stringify({ msg_type: 'text', content: { text: `[PR Review] 📦 Bundle Report\n${text}` } }),
   })
   return { status: res.status, body: await res.text() }
 }
