@@ -182,6 +182,16 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     }, 300)
   }
 
+  const insertAtCursor = (text: string) => {
+    const el = questionTextRef.current
+    if (!el) return setQuestionText((prev) => prev + text)
+    const start = el.selectionStart; const end = el.selectionEnd
+    const before = questionText.slice(0, start); const after = questionText.slice(end)
+    const next = before + text + after
+    setQuestionText(next)
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + text.length; el.focus() })
+  }
+
   const handleUploadImage = async () => {
     const input = document.createElement('input')
     input.type = 'file'; input.accept = 'image/' + '*'
@@ -290,6 +300,14 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <div className="flex gap-1 flex-wrap items-center">
                 <FormattingToolbar textareaRef={questionTextRef} value={questionText} onChange={setQuestionText} extraButtons={
                   <>
+                    <span className="text-muted-foreground/40 text-xs mx-0.5">|</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground text-xs font-mono"
+                      title="插入下划线" onClick={() => insertAtCursor('___')}>_</Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground text-xs"
+                      title="插入「」" onClick={() => insertAtCursor('「」')}>「」</Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground text-xs"
+                      title="插入『』" onClick={() => insertAtCursor('『』')}>『』</Button>
+                    <span className="text-muted-foreground/40 text-xs mx-0.5">|</span>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
                       disabled={isUploadingImg} onClick={handleUploadImage}>
                       {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
