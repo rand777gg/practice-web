@@ -24,6 +24,7 @@ import type { Question, QuestionType, CorrectAnswer } from '@/types'
 import { generateKeyPoints, hasAiConfig, DeepSeekParser } from '@/lib/ai'
 import { getAiConfig } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useT } from '@/i18n/use-t'
 import { cn, normalizeChineseText } from '@/lib/utils'
 
@@ -67,34 +68,26 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  // Existing subjects/categories for autocomplete
-  const [existingSubjects, setExistingSubjects] = useState<string[]>([])
-  const [existingCategories, setExistingCategories] = useState<string[]>([])
-  const [subjectOpen, setSubjectOpen] = useState(false)
-  const [categoryOpen, setCategoryOpen] = useState(false)
-  const subjectFiltered = existingSubjects.filter((s) => !subject || s.includes(subject)).slice(0, 8)
-  const categoryFiltered = existingCategories.filter((c) => {
-    if (categories.includes(c)) return false
-    if (!categoryInput) return true
-    return c.includes(categoryInput)
-  }).slice(0, 8)
+  const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
+  const [newSubjectInput, setNewSubjectInput] = useState('')
+  const [allKeyPoints, setAllKeyPoints] = useState<string[]>([])
 
+  const availableSubjects = subject && !subjects.includes(subject)
+    ? [...subjects, subject].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    : [...subjects].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+
+  // Fetch key points filtered by subject
   useEffect(() => {
-    supabase.from('questions').select('subject, category, categories').then(({ data }) => {
-      const subs = new Set<string>(); const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
-        if (row.categories) {
-          for (const c of row.categories as string[]) {
-            if (c) cats.add(c)
-          }
-        }
-      }
-      setExistingSubjects([...subs].sort())
-      setExistingCategories([...cats].sort())
+    supabase.rpc('get_question_meta', { p_subject: subject || null }).then(({ data, error }: { data?: { key_points: string[] }; error?: unknown }) => {
+      if (!error && data?.key_points) setAllKeyPoints(data.key_points)
+      else setAllKeyPoints([])
     })
-  }, [])
+  }, [subject])
+
+  // Update filtered categories when subject changes
+  useEffect(() => {
+    updateFilteredCategories(subject)
+  }, [subject, updateFilteredCategories])
 
   useEffect(() => {
     return () => {
@@ -592,57 +585,77 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subject">{t('questions.subject')} <span className="text-muted-foreground font-normal">(选填)</span></Label>
-                <div className="relative">
-                  <Input id="subject" value={subject} onChange={(e) => { setSubject(e.target.value); setSubjectOpen(true) }}
-                    onFocus={() => setSubjectOpen(true)} onBlur={() => setTimeout(() => setSubjectOpen(false), 150)}
-                    placeholder={t('questions.subjectPlaceholder')} autoComplete="off" />
-                  {subject && <button type="button" onClick={() => setSubject('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-                  {subjectOpen && subjectFiltered.length > 0 && (
-                    <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
-                      {subjectFiltered.map((s) => (
-                        <button key={s} type="button" className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
-                          onMouseDown={() => { setSubject(s); setSubjectOpen(false) }}>{s}</button>
-                      ))}
+                <Label>{t('questions.subject')} <span className="text-muted-foreground font-normal">(选填)</span></Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                      {subject || t('questions.subjectPlaceholder')}
+                      <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b" onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <Input value={newSubjectInput} onChange={(e) => setNewSubjectInput(e.target.value)}
+                        placeholder="新建学科" className="h-7 text-xs"
+                        onKeyDown={(e) => { if (e.key === 'Enter' && newSubjectInput.trim()) { setSubject(newSubjectInput.trim()); setNewSubjectInput('') } }} />
+                      <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0"
+                        disabled={!newSubjectInput.trim()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => { setSubject(newSubjectInput.trim()); setNewSubjectInput('') }}>新建</Button>
                     </div>
-                  )}
-                </div>
+                    <DropdownMenuItem onClick={() => setSubject('')}>
+                      <span className="text-muted-foreground">不设置</span>
+                      {!subject && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                    {availableSubjects.map((s) => (
+                      <DropdownMenuItem key={s} onClick={() => setSubject(s)}>
+                        {s}
+                        {subject === s && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category">{t('questions.categoryLabel')}</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {categories.map((c) => (
-                    <span key={c} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs">
-                      {c}
-                      <button type="button" onClick={() => setCategories((prev) => prev.filter((x) => x !== c))} className="text-muted-foreground hover:text-foreground">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="relative">
-                  <Input id="category" value={categoryInput} onChange={(e) => { setCategoryInput(e.target.value); setCategoryOpen(true) }}
-                    onFocus={() => setCategoryOpen(true)} onBlur={() => setTimeout(() => setCategoryOpen(false), 150)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        const v = categoryInput.trim()
-                        if (v && !categories.includes(v)) setCategories((prev) => [...prev, v])
-                        setCategoryInput('')
-                      }
-                    }}
-                    placeholder="如：2022年真题, 2023年真题" autoComplete="off" />
-                  {categoryInput && <button type="button" onClick={() => setCategoryInput('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-                  {categoryOpen && categoryFiltered.length > 0 && (
-                    <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover shadow-md">
-                      {categoryFiltered.map((c) => (
-                        <button key={c} type="button" className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent first:rounded-t-md last:rounded-b-md"
-                          onMouseDown={() => { setCategories((prev) => prev.includes(c) ? prev : [...prev, c]); setCategoryInput(''); setCategoryOpen(false) }}>{c}</button>
-                      ))}
+                <Label>{t('questions.categoryLabel')}</Label>
+                {categories.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.map((c) => (
+                      <span key={c} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs">
+                        {c}
+                        <button type="button" onClick={() => setCategories((prev) => prev.filter((x) => x !== c))} className="text-muted-foreground hover:text-foreground">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between text-sm font-normal">
+                      {categories.length ? `${categories.length} 个分类` : '选择或新建分类'}
+                      <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b" onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <Input value={categoryInput} onChange={(e) => setCategoryInput(e.target.value)}
+                        placeholder="新建分类" className="h-7 text-xs"
+                        onKeyDown={(e) => { if (e.key === 'Enter' && categoryInput.trim()) { setCategories((prev) => prev.includes(categoryInput.trim()) ? prev : [...prev, categoryInput.trim()]); setCategoryInput('') } }} />
+                      <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0"
+                        disabled={!categoryInput.trim()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => { setCategories((prev) => prev.includes(categoryInput.trim()) ? prev : [...prev, categoryInput.trim()]); setCategoryInput('') }}>新建</Button>
                     </div>
-                  )}
-                </div>
+                    {filteredCategories.map((c) => (
+                      <DropdownMenuItem key={c} onClick={() => setCategories((prev) => prev.includes(c) ? prev : [...prev, c])}>
+                        {c}
+                        {categories.includes(c) && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </CardContent>
           </Card>
@@ -678,14 +691,14 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                     <Input id="keyPoints" value={keyPoints}
                       onChange={(e) => { setKeyPoints(e.target.value); setKeyPointsOpacity(1); setKeyPointsAnimating(false) }}
                       placeholder={t('questions.keyPointsPlaceholder')}
-                      className={cn('pr-10 transition-all duration-500',
+                      className={cn('pr-16 transition-all duration-500',
                         keyPointsGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
                         keyPointsFade && 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
                         keyPointsAnimating && 'text-transparent select-none',
                       )}
                       style={keyPointsAnimating ? undefined : { opacity: keyPointsOpacity }} />
                     {keyPointsAnimating && (
-                      <div className="absolute inset-0 flex items-center px-3 pr-10 pointer-events-none overflow-hidden text-sm" aria-hidden="true">
+                      <div className="absolute inset-0 flex items-center px-3 pr-16 pointer-events-none overflow-hidden text-sm" aria-hidden="true">
                         <span className="whitespace-pre">
                           {[...keyPoints].map((ch, i) => (
                             <span key={i} className="animate-[charReveal_0.3s_ease-out_both]" style={{ animationDelay: `${i * 0.03}s` }}>{ch}</span>
@@ -693,45 +706,63 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                         </span>
                       </div>
                     )}
-                    {hasAiConfig() && isEnabled('keypoints') && (
-                      <Button type="button" variant="ghost" size="icon"
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7"
-                        disabled={keyPointsLoading}
-                        onClick={async () => {
-                          if (!questionText.trim()) return
-                          setKeyPointsGlow(true); setKeyPointsLoading(true); setKeyPointsAnimating(true); setKeyPoints('')
-                          try {
-                            let answerStr = ''
-                            if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
-                            else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = (correctAnswer as number[]).map(i => options[i]).join('、')
-                            else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
-                            else if (isJudgeCorrect) answerStr = correctAnswer === true ? '正确' : `修正：${correctAnswer}`
-                            else if (typeof correctAnswer === 'string') answerStr = correctAnswer
-                            else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')
-                            const result = await generateKeyPoints({
-                              questionText: questionText.trim(),
-                              questionType: QUESTION_TYPE_LABELS[questionType] || questionType,
-                              options: isChoiceType ? options.filter(o => o.trim()) : undefined,
-                              correctAnswer: answerStr || undefined,
-                              analysis: analysis.trim() || undefined,
-                            })
-                            if (typewriterRef.current.timer) clearTimeout(typewriterRef.current.timer)
-                            const len = result.length; setKeyPointsOpacity(0.3); let i = 0
-                            const tick = () => {
-                              i++; const progress = Math.min(i / Math.max(len, 1), 1)
-                              setKeyPoints(result.slice(0, i)); setKeyPointsOpacity(0.3 + progress * 0.7)
-                              if (i >= len) { typewriterRef.current.timer = null; setKeyPointsOpacity(1); setTimeout(() => { setKeyPointsFade(true); requestAnimationFrame(() => { setKeyPointsGlow(false); setTimeout(() => { setKeyPointsFade(false); setKeyPointsAnimating(false) }, 1500) }) }, 500); return }
-                              const ch = result[i]; const baseDelay = 25; const randomDelay = Math.random() * 55; const punctDelay = /[，,。；;、]/.test(ch) ? 80 : 0
-                              typewriterRef.current.timer = setTimeout(tick, baseDelay + randomDelay + punctDelay)
-                            }
-                            typewriterRef.current.timer = setTimeout(tick, 60)
-                          } catch { /* ignore */ }
-                          setKeyPointsLoading(false)
-                        }}
-                        title="AI 生成知识点">
-                        <Sparkles className={cn('h-4 w-4', keyPointsLoading && 'animate-pulse')} />
-                      </Button>
-                    )}
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                      {allKeyPoints.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" title="选择已有知识点">
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
+                            {allKeyPoints.map((kp) => (
+                              <DropdownMenuItem key={kp} onClick={() => setKeyPoints(kp)}>
+                                {kp}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      {hasAiConfig() && isEnabled('keypoints') && (
+                        <Button type="button" variant="ghost" size="icon"
+                          className="h-7 w-7"
+                          disabled={keyPointsLoading}
+                          onClick={async () => {
+                            if (!questionText.trim()) return
+                            setKeyPointsGlow(true); setKeyPointsLoading(true); setKeyPointsAnimating(true); setKeyPoints('')
+                            try {
+                              let answerStr = ''
+                              if (isChoiceType && typeof correctAnswer === 'number') answerStr = options[correctAnswer] ?? ''
+                              else if (isChoiceType && Array.isArray(correctAnswer)) answerStr = (correctAnswer as number[]).map(i => options[i]).join('、')
+                              else if (isTrueFalse) answerStr = correctAnswer ? '正确' : '错误'
+                              else if (isJudgeCorrect) answerStr = correctAnswer === true ? '正确' : `修正：${correctAnswer}`
+                              else if (typeof correctAnswer === 'string') answerStr = correctAnswer
+                              else if (Array.isArray(correctAnswer)) answerStr = correctAnswer.join('；')
+                              const result = await generateKeyPoints({
+                                questionText: questionText.trim(),
+                                questionType: QUESTION_TYPE_LABELS[questionType] || questionType,
+                                options: isChoiceType ? options.filter(o => o.trim()) : undefined,
+                                correctAnswer: answerStr || undefined,
+                                analysis: analysis.trim() || undefined,
+                              })
+                              if (typewriterRef.current.timer) clearTimeout(typewriterRef.current.timer)
+                              const len = result.length; setKeyPointsOpacity(0.3); let i = 0
+                              const tick = () => {
+                                i++; const progress = Math.min(i / Math.max(len, 1), 1)
+                                setKeyPoints(result.slice(0, i)); setKeyPointsOpacity(0.3 + progress * 0.7)
+                                if (i >= len) { typewriterRef.current.timer = null; setKeyPointsOpacity(1); setTimeout(() => { setKeyPointsFade(true); requestAnimationFrame(() => { setKeyPointsGlow(false); setTimeout(() => { setKeyPointsFade(false); setKeyPointsAnimating(false) }, 1500) }) }, 500); return }
+                                const ch = result[i]; const baseDelay = 25; const randomDelay = Math.random() * 55; const punctDelay = /[，,。；;、]/.test(ch) ? 80 : 0
+                                typewriterRef.current.timer = setTimeout(tick, baseDelay + randomDelay + punctDelay)
+                              }
+                              typewriterRef.current.timer = setTimeout(tick, 60)
+                            } catch { /* ignore */ }
+                            setKeyPointsLoading(false)
+                          }}
+                          title="AI 生成知识点">
+                          <Sparkles className={cn('h-4 w-4', keyPointsLoading && 'animate-pulse')} />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>
