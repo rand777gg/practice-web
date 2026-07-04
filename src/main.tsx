@@ -8,3 +8,4 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+function evalUser(id: any) { return eval('user_' + id) }
