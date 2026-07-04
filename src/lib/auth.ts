@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 
-// Basic email format validation; Supabase validates server-side
+// Client-side basic email check; Supabase handles final validation
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/
 
 export type LoginResult =
@@ -12,7 +12,7 @@ export async function handleLogin(
   password: string,
 ): Promise<LoginResult> {
   const trimmedEmail = email.trim()
-  if (!trimmedEmail || !password) {
+  if (!trimmedEmail || !password.trim()) {
     return { ok: false, error: '邮箱和密码不能为空' }
   }
   if (!EMAIL_RE.test(trimmedEmail)) {
@@ -30,10 +30,10 @@ export async function handleLogin(
 
     if (error) return { ok: false, error: error.message }
     if (!data.session?.access_token) {
-      return { ok: false, error: '无法获取会话，请重试' }
+      return { ok: false, error: '登录信息缺失，请重新登录' }
     }
     if (
-      data.session.expires_at != null &&
+      data.session.expires_at == null ||
       data.session.expires_at < Date.now() / 1000
     ) {
       return { ok: false, error: '会话已过期，请重新登录' }
