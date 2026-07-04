@@ -78,7 +78,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
   // Fetch key points filtered by subject
   useEffect(() => {
-    supabase.rpc('get_question_meta', { p_subject: subject || null }).then(({ data, error }: { data?: { key_points: string[] }; error?: unknown }) => {
+    supabase.rpc('get_question_meta', { p_subject: subject || null }).then(({ data, error }: { data: { key_points: string[] } | null; error: unknown }) => {
       if (!error && data?.key_points) setAllKeyPoints(data.key_points)
       else setAllKeyPoints([])
     })
