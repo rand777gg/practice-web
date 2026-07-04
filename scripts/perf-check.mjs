@@ -36,12 +36,12 @@ function isChunk(name) {
 }
 
 async function sendFeishu(text) {
-  if (!FEISHU_URL) return
-  await fetch(FEISHU_URL, {
+  const res = await fetch(FEISHU_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ msg_type: 'text', content: { text: `[Perf] ${text}` } }),
   })
+  return { status: res.status, body: await res.text() }
 }
 
 async function main() {
@@ -72,7 +72,10 @@ async function main() {
   ].join('\n')
 
   console.log(report)
-  await sendFeishu(report)
+  if (FEISHU_URL) {
+    const res = await sendFeishu(report)
+    console.log(`[perf] Feishu: ${res.status} ${res.body}`)
+  }
   console.log('[perf] Done.')
 }
 
