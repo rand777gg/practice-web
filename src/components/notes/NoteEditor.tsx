@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import { ImagePlus, Sparkles, Loader2, ScanEye, X } from 'lucide-react'
@@ -38,26 +38,6 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
-
-  // Shared upload helper with compression
-  const uploadToR2 = useCallback(async (file: File) => {
-    setIsUploading(true)
-    try {
-      const compressed = await compressImage(file)
-      const formData = new FormData()
-      formData.append('file', compressed, compressed.name)
-      formData.append('folder', 'images')
-      const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-      if (error) throw new Error(error.message || '上传失败')
-      const url = (data as { url: string }).url
-      if (!url) throw new Error('未返回图片地址')
-      const current = textareaRef.current?.value || value
-      onChange(current ? `${current}\n\n![图片](${url})` : `![图片](${url})`)
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '上传失败')
-    }
-    setIsUploading(false)
-  }, [value, onChange])
 
   // ── File select ────────────────────────────────────────────────────────
 

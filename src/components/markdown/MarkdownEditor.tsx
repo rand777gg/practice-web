@@ -21,12 +21,13 @@ interface Props {
   bottomButtons?: React.ReactNode
   overlay?: React.ReactNode
   onImageAction?: (action: 'left' | 'center' | 'right', src: string) => void
+  className?: string
 }
 
 export function MarkdownEditor({
   value, onChange, placeholder, textareaRef: externalRef, minHeight = '160px',
   hidePreview, hideImageTools, extraToolbarButtons, bottomButtons, overlay,
-  onImageAction,
+  onImageAction, className,
 }: Props) {
   const [previewValue, setPreviewValue] = useState(value)
   const [dragOver, setDragOver] = useState(false)
@@ -152,7 +153,7 @@ export function MarkdownEditor({
   ) : null
 
   return (
-    <div ref={containerRef} className="space-y-2">
+    <div ref={containerRef} className={cn('space-y-2', className)}>
       <div className="flex gap-1 flex-wrap items-center">
         <FormattingToolbar textareaRef={ta} value={value} onChange={onChange} extraButtons={
           <>

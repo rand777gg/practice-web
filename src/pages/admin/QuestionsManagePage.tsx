@@ -49,7 +49,6 @@ export function Component() {
   const [selectedImportMode, setSelectedImportMode] = useState('')
   const [selectedVerified, setSelectedVerified] = useState<'' | 'true' | 'false'>('')
   const [selectedKeyPoints, setSelectedKeyPoints] = useState('')
-  const [allKeyPoints, setAllKeyPoints] = useState<string[]>([])
 
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const btnRowRef = useRef<HTMLDivElement>(null)
@@ -115,22 +114,9 @@ export function Component() {
     setSubjectCounts(subCounts)
     setCategoryCounts(catCounts)
     setKpCounts(kpCounts)
-    const all = new Set<string>()
-    for (const kps of kpMap.values()) for (const kp of kps) all.add(kp)
-    setAllKeyPoints([...all].sort())
   }, [])
 
   useEffect(() => { loadMetaData() }, [loadMetaData])
-
-  // Refresh key_points within selected subject for filter
-  useEffect(() => {
-    supabase.rpc('get_question_meta', { p_subject: selectedSubject || null }).then(({ data, error }: any) => {
-      if (!error && data?.key_points) {
-        // Merge into global allKeyPoints so dropdown always has all options
-        setAllKeyPoints(prev => { const s = new Set(prev); data.key_points.forEach((k: string) => s.add(k)); return [...s].sort() })
-      }
-    })
-  }, [selectedSubject])
 
   // Trigger fetch when filters or search change
   useEffect(() => {

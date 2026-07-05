@@ -6,7 +6,6 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
-import { FormattingToolbar } from '@/components/notes/FormattingToolbar'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -226,6 +225,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         verified,
         allow_unordered: allowUnordered,
         import_mode: initialData?.import_mode ?? 'manual',
+        source_page: initialData?.source_page ?? null,
       })
     } catch {
       setError(t('questions.saveFailed'))
