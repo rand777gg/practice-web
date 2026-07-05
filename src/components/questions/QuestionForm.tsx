@@ -15,9 +15,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
 import {
-  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, WrapText, ImagePlus, Loader2, X, Wand2,
+  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X, Wand2,
 } from 'lucide-react'
-import { compressImage } from '@/lib/image-compress'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
@@ -54,8 +53,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [analysisOpen, setAnalysisOpen] = useState(true)
   const analysisRef = useRef<HTMLTextAreaElement>(null)
   const questionTextRef = useRef<HTMLTextAreaElement>(null)
-  const [isFormatting, setIsFormatting] = useState(false)
-  const [isUploadingImg, setIsUploadingImg] = useState(false)
   const [keyPointsGlow, setKeyPointsGlow] = useState(false)
   const [keyPointsFade, setKeyPointsFade] = useState(false)
   const [keyPointsOpacity, setKeyPointsOpacity] = useState(1)
@@ -164,7 +161,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
           const model = client(config.model || 'deepseek-chat')
           const { text } = await generateText({
             model,
-            system: '你是一个题目格式化助手。只提取题干部分，去掉所有选项（A. B. C. D. ①②③④等）和分析/解析内容。直接返回提取后的纯题干，不要加任何额外说明。',
+            system: '你是一个题目格式化助手。你的任务是保留题目的完整题干内容，只删除选项部分和分析/解析部分。\n\n规则：\n1. 保留题干的所有正文叙述，一字不改，包括背景材料、情境描述、设问句等\n2. 删除以 A. B. C. D. 或 ①②③④ 等编号开头的选项行\n3. 删除"解析："、"分析："、"答案："等开头的解析内容\n4. 直接输出完整题干，不要总结、缩写或添加任何说明',
             prompt: questionText.trim(),
             temperature: 0.1,
           })
@@ -190,53 +187,6 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     const next = before + text + after
     setQuestionText(next)
     requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + text.length; el.focus() })
-  }
-
-  const handleUploadImage = async () => {
-    const input = document.createElement('input')
-    input.type = 'file'; input.accept = 'image/' + '*'
-    input.onchange = async (e) => {
-      const f = (e.target as HTMLInputElement).files?.[0]
-      if (!f) return
-      setIsUploadingImg(true)
-      try {
-        const compressed = await compressImage(f)
-        const formData = new FormData()
-        formData.append('file', compressed, compressed.name)
-        formData.append('folder', 'images')
-        const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-        if (error) throw new Error(error.message || '上传失败')
-        const url = (data as { url: string }).url
-        if (url) {
-          const current = questionTextRef.current?.value || questionText
-          const md = current ? `${current}\n\n![图片](${url})` : `![图片](${url})`
-          setQuestionText(md)
-        }
-      } catch (err) { alert(err instanceof Error ? err.message : '上传失败') }
-      setIsUploadingImg(false)
-    }
-    input.click()
-  }
-
-  const handleAiLineBreak = async () => {
-    const config = getAiConfig()
-    if (!config?.apiKey) return
-    setIsFormatting(true)
-    try {
-      const current = questionTextRef.current?.value || questionText
-      if (!current.trim()) return
-      const { generateText } = await import('ai')
-      const { createDeepSeek } = await import('@ai-sdk/deepseek')
-      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
-      const { text } = await generateText({
-        model: client(config.model || 'deepseek-chat'),
-        system: 'You are a text formatter. Add <br> at natural break points between paragraphs and list items. Do NOT change any content.',
-        prompt: current,
-        temperature: 0.1,
-      })
-      if (text) setQuestionText(text)
-    } catch { /* ignore */ }
-    setIsFormatting(false)
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -297,8 +247,12 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <CardTitle className="text-sm">{t('questions.questionText')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex gap-1 flex-wrap items-center">
-                <FormattingToolbar textareaRef={questionTextRef} value={questionText} onChange={setQuestionText} extraButtons={
+              <MarkdownEditor
+                textareaRef={questionTextRef}
+                value={questionText}
+                onChange={setQuestionText}
+                placeholder={t('questions.questionPlaceholder')}
+                extraToolbarButtons={
                   <>
                     <span className="text-muted-foreground/40 text-xs mx-0.5">|</span>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground text-xs font-mono"
@@ -307,65 +261,51 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                       title="插入「」" onClick={() => insertAtCursor('「」')}>「」</Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground text-xs"
                       title="插入『』" onClick={() => insertAtCursor('『』')}>『』</Button>
-                    <span className="text-muted-foreground/40 text-xs mx-0.5">|</span>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
-                      disabled={isUploadingImg} onClick={handleUploadImage}>
-                      {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-                      title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
-                      {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
-                    </Button>
                   </>
-                } />
-              </div>
-              <div className="relative">
-                <MarkdownEditor
-                  inputRef={questionTextRef}
-                  value={questionText}
-                  onChange={setQuestionText}
-                  placeholder={t('questions.questionPlaceholder')}
-                  minHeight="160px"
-                />
-                <div className="absolute right-1 bottom-1 flex gap-0.5">
-                  <Button type="button" variant="ghost" size="icon"
-                    className="h-7 w-7"
-                    disabled={!questionText.trim()}
-                    onClick={() => setQuestionText(normalizeChineseText(questionText))}
-                    title="文字标准化"
-                  >
-                    <Wand2 className="h-3.5 w-3.5" />
-                  </Button>
-                  {hasAiConfig() && (
-                    <>
-                      {prevQuestionTextRef.current && (
+                }
+                bottomButtons={
+                  <>
+                    <Button type="button" variant="ghost" size="icon"
+                      className="h-7 w-7"
+                      disabled={!questionText.trim()}
+                      onClick={() => setQuestionText(normalizeChineseText(questionText))}
+                      title="文字标准化"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </Button>
+                    {hasAiConfig() && (
+                      <>
+                        {prevQuestionTextRef.current && (
+                          <Button type="button" variant="ghost" size="icon"
+                            className="h-7 w-7"
+                            onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
+                            title="还原"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button type="button" variant="ghost" size="icon"
                           className="h-7 w-7"
-                          onClick={() => { setQuestionText(prevQuestionTextRef.current!); prevQuestionTextRef.current = null }}
-                          title="还原"
+                          disabled={stemExtracting || !questionText.trim()}
+                          onClick={handleExtractStem}
+                          title="AI 提取题干"
                         >
-                          <RotateCcw className="h-3.5 w-3.5" />
+                          <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
                         </Button>
-                      )}
-                      <Button type="button" variant="ghost" size="icon"
-                        className="h-7 w-7"
-                        disabled={stemExtracting || !questionText.trim()}
-                        onClick={handleExtractStem}
-                        title="AI 提取题干"
-                      >
-                        <Sparkles className={`h-3.5 w-3.5 ${stemExtracting ? 'animate-pulse' : ''}`} />
-                      </Button>
-                    </>
-                  )}
-                </div>
-                {(stemGlow || stemFade) && (
-                  <div className={cn(
-                    'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
-                    stemGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
-                    stemFade && 'border-2 border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
-                  )} />
-                )}
-              </div>
+                      </>
+                    )}
+                  </>
+                }
+                overlay={
+                  (stemGlow || stemFade) ? (
+                    <div className={cn(
+                      'absolute inset-0 rounded-lg pointer-events-none transition-[border-color,box-shadow] duration-1000',
+                      stemGlow && '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]',
+                      stemFade && 'border-2 border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]',
+                    )} />
+                  ) : undefined
+                }
+              />
             </CardContent>
           </Card>
 
@@ -506,10 +446,11 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                                 next[i] = e.target.value
                                 setCorrectAnswer(blankCount > 1 ? next : next[0] || '')
                               }}
-                              placeholder={`答案${i + 1}`}
+                              placeholder={`答案${i + 1}；多个近似答案用；分隔`}
                             />
                           </div>
                         ))}
+                        <p className="text-[11px] text-muted-foreground">多个近似答案用分号（；）分隔，如：React；React.js；ReactJS</p>
                       </div>
                       <div className="flex items-center justify-between pt-1">
                         <div>
@@ -690,18 +631,25 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               <CardContent className="pb-3 px-4 space-y-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{t('questions.analysis')} (选填)</Label>
-                  <FormattingToolbar textareaRef={analysisRef} value={analysis} onChange={setAnalysis} extraButtons={
-                    <Button type="button" variant="ghost" size="icon"
-                      className="h-7 w-7"
-                      disabled={!analysis.trim()}
-                      onClick={() => setAnalysis(normalizeChineseText(analysis))}
-                      title="文字标准化"
-                    >
-                      <Wand2 className="h-3.5 w-3.5" />
-                    </Button>
-                  } />
-                  <Textarea id="analysis" ref={analysisRef} value={analysis} onChange={(e) => setAnalysis(e.target.value)}
-                    placeholder={t('questions.analysisPlaceholder')} rows={3} />
+                  <MarkdownEditor
+                    textareaRef={analysisRef}
+                    value={analysis}
+                    onChange={setAnalysis}
+                    placeholder={t('questions.analysisPlaceholder')}
+                    hideImageTools
+                    hidePreview
+                    minHeight="100px"
+                    extraToolbarButtons={
+                      <Button type="button" variant="ghost" size="icon"
+                        className="h-7 w-7"
+                        disabled={!analysis.trim()}
+                        onClick={() => setAnalysis(normalizeChineseText(analysis))}
+                        title="文字标准化"
+                      >
+                        <Wand2 className="h-3.5 w-3.5" />
+                      </Button>
+                    }
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">{t('questions.keyPoints')} (选填)</Label>

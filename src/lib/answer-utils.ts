@@ -28,7 +28,10 @@ export function isAnswerCorrect(
         selArr.sort()
         corArr.sort()
       }
-      return selArr.every((s, i) => s === corArr[i])
+      return selArr.every((s, i) => {
+        const alternatives = corArr[i].split(/[;；]/).map(a => a.trim()).filter(Boolean)
+        return alternatives.some(a => s === a)
+      })
     }
     case 'short_answer': {
       const userAnswer = String(selected).trim().toLowerCase()

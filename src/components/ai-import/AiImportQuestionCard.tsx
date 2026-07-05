@@ -24,12 +24,14 @@ interface Props {
   question: ParsedQuestion
   index: number
   selected: boolean
+  subject?: string
+  category?: string
   onToggleSelect: () => void
   onChange: (q: ParsedQuestion) => void
   onRemove: () => void
 }
 
-export function AiImportQuestionCard({ question, index, selected, onToggleSelect, onChange, onRemove }: Props) {
+export function AiImportQuestionCard({ question, index, selected, subject, category, onToggleSelect, onChange, onRemove }: Props) {
   const patch = (partial: Partial<ParsedQuestion>) => onChange({ ...question, ...partial })
   const type = question.question_type
   const { isEnabled } = useSettingsStore()
@@ -114,6 +116,16 @@ export function AiImportQuestionCard({ question, index, selected, onToggleSelect
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {(subject || category) && (
+          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+            {subject && <span>{subject}</span>}
+            {subject && category && <span>·</span>}
+            {category && <span>{category}</span>}
+          </span>
+        )}
+
+        <span className="flex-1" />
 
         <Button
           variant={question.verified ? 'default' : 'ghost'}

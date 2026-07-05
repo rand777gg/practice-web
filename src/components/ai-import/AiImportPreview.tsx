@@ -10,13 +10,13 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { AiImportQuestionCard } from './AiImportQuestionCard'
-import { Check, ChevronDown, Plus, Sparkles, Wand2, X } from 'lucide-react'
+import { Check, ChevronDown, ListRestart, Plus, Sparkles, Wand2, X } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 import { useSettingsStore } from '@/stores/settings-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
-import { normalizeChineseText } from '@/lib/utils'
+import { normalizeChineseText, cleanOptionText } from '@/lib/utils'
 
 interface Props {
   questions: ParsedQuestion[]
@@ -65,6 +65,16 @@ export function AiImportPreview({
         options: q.options.map(normalizeChineseText),
         analysis: q.analysis ? normalizeChineseText(q.analysis) : q.analysis,
         answer_explanation: q.answer_explanation ? normalizeChineseText(q.answer_explanation) : q.answer_explanation,
+      })
+    })
+  }
+
+  const handleBatchCleanOptions = () => {
+    questions.forEach((q, i) => {
+      if (!selectedIds.has(i)) return
+      onChangeQuestion(i, {
+        ...q,
+        options: q.options.map(cleanOptionText),
       })
     })
   }
@@ -163,6 +173,17 @@ export function AiImportPreview({
           >
             <Wand2 className="h-3 w-3" />
             标准化
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-6 gap-1"
+            disabled={selectedIds.size === 0}
+            onClick={handleBatchCleanOptions}
+            title="清理选中题目选项中的 AI 生成标签前缀（A. / A、/ 1. 等）"
+          >
+            <ListRestart className="h-3 w-3" />
+            清理选项
           </Button>
           {showBatchManualKp ? (
             <div className="flex items-center gap-1">
@@ -278,6 +299,8 @@ export function AiImportPreview({
               question={q}
               index={i}
               selected={selectedIds.has(i)}
+              subject={subject}
+              category={category}
               onToggleSelect={() => onToggleSelect(i)}
               onChange={(updated) => onChangeQuestion(i, updated)}
               onRemove={() => onRemoveQuestion(i)}

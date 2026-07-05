@@ -337,7 +337,11 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
               {!isAnalysis && !correct && (
                 <p className="mt-1">
                   <span className="font-medium">{t('practice.correct')}: </span>
-                  {Array.isArray(question.correct_answer) ? question.correct_answer.join('、') : String(question.correct_answer)}
+                  {(() => {
+                    const raw = question.correct_answer
+                    const items = Array.isArray(raw) ? raw : [String(raw)]
+                    return items.map(a => String(a).split(/[;；]/).map(s => s.trim()).join(' / ')).join('、')
+                  })()}
                 </p>
               )}
               {isAnalysis && <p className="text-xs text-muted-foreground mt-1">分析题需人工批改</p>}

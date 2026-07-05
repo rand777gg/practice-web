@@ -1,10 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from '@/components/ui/dropdown-menu'
-import { ImagePlus, Sparkles, Loader2, Bold, Italic, Underline, Strikethrough, Highlighter, Smile, WrapText, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Indent, Sigma, ScanEye, X } from 'lucide-react'
+import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
+import { ImagePlus, Sparkles, Loader2, ScanEye, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
@@ -13,7 +10,6 @@ import { getMinerUToken } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import { compressImage } from '@/lib/image-compress'
-import { EmojiPickerContent } from './EmojiPickerContent'
 
 interface Props {
   value: string
@@ -25,21 +21,6 @@ interface Props {
 type Align = 'left' | 'center' | 'right'
 type InsertMode = 'html' | 'markdown'
 
-function wrapSelection(value: string, ta: HTMLTextAreaElement | null, open: string, close: string): string {
-  if (!ta) return value
-  const s = ta.selectionStart, e = ta.selectionEnd
-  if (s === e) return value  // no selection, do nothing
-  const before = value.slice(0, s)
-  const selected = value.slice(s, e)
-  const after = value.slice(e)
-  const newValue = before + open + selected + close + after
-  requestAnimationFrame(() => {
-    ta.focus()
-    ta.setSelectionRange(s + open.length, e + open.length)
-  })
-  return newValue
-}
-
 export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
@@ -47,34 +28,16 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
   const [isRecognizing, setIsRecognizing] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [recognitionResult, setRecognitionResult] = useState<string | null>(null)
-  const [previewValue, setPreviewValue] = useState(value)
-  const [isFormatting, setIsFormatting] = useState(false)
 
   const [selectedAlign, setSelectedAlign] = useState<Align>('center')
   const [insertMode, setInsertMode] = useState<InsertMode>('html')
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const user = useAuthStore((s) => s.user)
   const { noteRecognitionMode } = useSettingsStore()
   const providers = useAiStore((s) => s.providers)
   const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
-
-  // Uncontrolled textarea — only sync when value changes externally
-  useEffect(() => {
-    const ta = textareaRef.current
-    if (ta && ta.value !== value) ta.value = value
-  }, [value])
-
-  useEffect(() => {
-    const t = setTimeout(() => setPreviewValue(value), 300)
-    return () => clearTimeout(t)
-  }, [value])
-
-  const handleChange = () => {
-    if (textareaRef.current) onChange(textareaRef.current.value)
-  }
 
   // Shared upload helper with compression
   const uploadToR2 = useCallback(async (file: File) => {
@@ -95,106 +58,6 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
     }
     setIsUploading(false)
   }, [value, onChange])
-
-  // Clipboard paste handler
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault()
-          const file = item.getAsFile()
-          if (file) uploadToR2(file)
-          return
-        }
-      }
-    }
-    el.addEventListener('paste', onPaste)
-    return () => el.removeEventListener('paste', onPaste)
-  }, [uploadToR2])
-
-  // ── Text formatting helpers ──────────────────────────────────────────────
-
-  const applyFormat = (open: string, close: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    const v = wrapSelection(ta.value, ta, open, close)
-    ta.value = v
-    onChange(v)
-  }
-
-  const handleBold = () => applyFormat('**', '**')
-  const handleItalic = () => applyFormat('*', '*')
-  const handleUnderline = () => applyFormat('<u>', '</u>')
-  const handleStrikethrough = () => applyFormat('<s>', '</s>')
-  const handleHighlight = () => applyFormat('<mark>', '</mark>')
-
-  // Line prefix — wrap each selected line
-  const applyLinePrefix = (prefix: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    const s = ta.selectionStart; const e = ta.selectionEnd
-    const before = ta.value.slice(0, s)
-    const selected = ta.value.slice(s, e)
-    const lines = selected ? selected.split('\n') : ['']
-    const formatted = lines.map(l => prefix + l).join('\n')
-    ta.value = before + formatted + ta.value.slice(e)
-    const newEnd = s + formatted.length
-    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(s, newEnd) })
-    onChange(ta.value)
-  }
-
-  const handleOrderedList = () => applyLinePrefix('1. ')
-  const handleUnorderedList = () => applyLinePrefix('- ')
-  const handleLineHeight = (lh: string) => applyFormat(`<span style="line-height:${lh}">`, '</span>')
-  const handleAlign = (align: string) => applyFormat(`<div align="${align}">`, '</div>')
-  const handleIndent = () => applyFormat('<blockquote>', '</blockquote>')
-  const handleEmoji = (emoji: string) => {
-    const ta = textareaRef.current
-    if (!ta) { onChange(value + emoji); return }
-    const s = ta.selectionStart
-    const before = ta.value.slice(0, s)
-    const after = ta.value.slice(s)
-    ta.value = before + emoji + after
-    const pos = s + emoji.length
-    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(pos, pos) })
-    onChange(ta.value)
-  }
-
-  const handleAiLineBreak = async () => {
-    if (!activeProvider) return
-    setIsFormatting(true)
-    try {
-      const current = textareaRef.current?.value || value
-      if (!current.trim()) return
-      const modelId = activeProvider.models.find((m) => m.enabled)?.id || activeProvider.models[0].id
-      const res = await fetch(`${activeProvider.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${activeProvider.apiKey}` },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [{ role: 'user', content:
-            `Format the following text with proper line breaks. Insert <br> at natural break points — between list items, before/after ordered/unordered lists, between paragraphs. Do NOT change any content, only add <br> tags for readability.\n\nTEXT:\n${current}`
-          }],
-          temperature: 0.1,
-          max_tokens: current.length * 2,
-        }),
-      })
-      const data = await res.json() as any
-      if (data.error) throw new Error(data.error?.message || 'API error')
-      const text = data.choices?.[0]?.message?.content
-      if (text) {
-        if (textareaRef.current) textareaRef.current.value = text
-        onChange(text)
-      }
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '格式化失败')
-    }
-    setIsFormatting(false)
-  }
 
   // ── File select ────────────────────────────────────────────────────────
 
@@ -330,26 +193,49 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
     : !!getMinerUToken()
 
   return (
-    <div ref={containerRef} className="space-y-2">
-      {/* ── Main editor / preview split ──────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-        <textarea
-          ref={textareaRef}
-          defaultValue={value}
-          onChange={handleChange}
-          placeholder={placeholder}
-          rows={10}
-          spellCheck={false}
-          className="block min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
-        />
-        <div className="rounded-lg border bg-muted/30 p-3 min-h-[120px] max-h-[500px] overflow-auto">
-          {previewValue ? (
-            <MarkdownRenderer content={previewValue} onImageAction={handleImageAction} />
-          ) : (
-            <p className="text-xs text-muted-foreground">预览区域，编辑内容后实时显示...</p>
-          )}
-        </div>
-      </div>
+    <div className="space-y-2">
+      <MarkdownEditor
+        textareaRef={textareaRef}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        hideImageTools={hideImageTools}
+        onImageAction={handleImageAction}
+        extraToolbarButtons={
+          <>
+            {!hideImageTools && (
+              <>
+                <input ref={fileInputRef} type="file" accept={'image/*'} onChange={handleFileSelect} className="hidden" />
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+                  title="识别手写笔记/图片"
+                  onClick={() => fileInputRef.current?.click()}>
+                  <ScanEye className="h-3.5 w-3.5" />
+                </Button>
+                <span className="w-px h-4 bg-border mx-0.5 self-center" />
+              </>
+            )}
+            <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('mermaid')}>Mermaid</Button>
+            <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('plantuml')}>PlantUML</Button>
+            {imageBase64 && (
+              <>
+                <span className="w-px h-4 bg-border mx-0.5 self-center" />
+                <Button variant="outline" size="sm" className="text-xs h-7"
+                  disabled={isRecognizing || !canRecognize} onClick={handleRecognize}>
+                  {isRecognizing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+                  {noteRecognitionMode === 'ai' ? 'AI识别' : 'MinerU识别'}
+                </Button>
+                {user && (
+                  <Button variant="outline" size="sm" className="text-xs h-7"
+                    disabled={isUploading} onClick={handleUploadToCloud}>
+                    {isUploading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5 mr-1" />}
+                    存为图片并插入
+                  </Button>
+                )}
+              </>
+            )}
+          </>
+        }
+      />
 
       {/* ── Image preview & alignment for upload ────────────────────────── */}
       {imagePreview && (
@@ -423,141 +309,6 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
           </div>
         </div>
       )}
-
-      {/* ── Toolbar ───────────────────────────────────────────────────── */}
-      <div className="flex gap-1 flex-wrap items-center">
-        {/* ── Group 1: Text formatting ── */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="加粗" onClick={handleBold}>
-          <Bold className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="斜体" onClick={handleItalic}>
-          <Italic className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="下划线" onClick={handleUnderline}>
-          <Underline className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="删除线" onClick={handleStrikethrough}>
-          <Strikethrough className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="高亮" onClick={handleHighlight}>
-          <Highlighter className="h-3.5 w-3.5" />
-        </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        {/* ── Group 2: Paragraph ── */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="有序列表" onClick={handleOrderedList}>
-          <ListOrdered className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="无序列表" onClick={handleUnorderedList}>
-          <List className="h-3.5 w-3.5" />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="行高">
-              <span className="text-[11px] font-mono">1.5</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {['1.0', '1.25', '1.5', '1.75', '2.0'].map(lh => (
-              <DropdownMenuItem key={lh} onClick={() => handleLineHeight(lh)}>
-                <span className="text-xs">{lh}x</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="对齐方式">
-              <AlignLeft className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => handleAlign('left')}>
-              <AlignLeft className="h-3.5 w-3.5 mr-1" /><span className="text-xs">左对齐</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleAlign('center')}>
-              <AlignCenter className="h-3.5 w-3.5 mr-1" /><span className="text-xs">居中</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleAlign('right')}>
-              <AlignRight className="h-3.5 w-3.5 mr-1" /><span className="text-xs">右对齐</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="增加缩进" onClick={handleIndent}>
-          <Indent className="h-3.5 w-3.5" />
-        </Button>
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center" />
-
-        {/* ── Group 3: Insert ── */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入 Emoji">
-              <Smile className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <EmojiPickerContent onSelect={handleEmoji} />
-        </DropdownMenu>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入公式"
-          onClick={() => insertMarkdown('math')}>
-          <Sigma className="h-3.5 w-3.5" />
-        </Button>
-        {!hideImageTools && (
-          <>
-            <input ref={fileInputRef} type="file" accept={'image/*'} onChange={handleFileSelect} className="hidden" />
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
-              disabled={isUploading}
-              onClick={async () => {
-                const input = document.createElement('input')
-                input.type = 'file'; input.accept = 'image/' + '*'
-                input.onchange = async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadToR2(f) }
-                input.click()
-              }}>
-              {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-            </Button>
-
-            <span className="w-px h-4 bg-border mx-0.5 self-center" />
-          </>
-        )}
-
-        {/* ── Group 4: AI ── */}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-          title="AI 自动换行"
-          disabled={isFormatting || !activeProvider}
-          onClick={handleAiLineBreak}>
-          {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
-        </Button>
-        {!hideImageTools && (
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-            title="识别手写笔记/图片"
-            onClick={() => fileInputRef.current?.click()}>
-            <ScanEye className="h-3.5 w-3.5" />
-          </Button>
-        )}
-
-        <span className="w-px h-4 bg-border mx-0.5 self-center hidden sm:block" />
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('mermaid')}>Mermaid</Button>
-        <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground font-mono" onClick={() => insertMarkdown('plantuml')}>PlantUML</Button>
-
-        {imageBase64 && (
-          <>
-            <span className="w-px h-4 bg-border mx-0.5 self-center" />
-            <Button variant="outline" size="sm" className="text-xs h-7"
-              disabled={isRecognizing || !canRecognize} onClick={handleRecognize}>
-              {isRecognizing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
-              {noteRecognitionMode === 'ai' ? 'AI识别' : 'MinerU识别'}
-            </Button>
-            {user && (
-              <Button variant="outline" size="sm" className="text-xs h-7"
-                disabled={isUploading} onClick={handleUploadToCloud}>
-                {isUploading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5 mr-1" />}
-                存为图片并插入
-              </Button>
-            )}
-          </>
-        )}
-      </div>
     </div>
   )
 }

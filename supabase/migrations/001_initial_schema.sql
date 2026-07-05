@@ -320,6 +320,7 @@ ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS status_json TEXT;
 ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS page_ranges TEXT;
 ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS extra_formats TEXT;
 ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS pdf_total_pages INTEGER;
+ALTER TABLE public.parse_history ADD COLUMN IF NOT EXISTS pdf_page_urls TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_parse_history_user
   ON public.parse_history(user_id, created_at DESC);
@@ -633,6 +634,7 @@ ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL 
 -- 导入方式
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS import_mode TEXT;
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS allow_unordered BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS source_page TEXT;
 
 -- 查询用户最后在线时间（最近一次答题时间，fallback 到登录时间）
 CREATE OR REPLACE FUNCTION public.get_user_last_online(user_id UUID)
@@ -664,3 +666,68 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_question_meta(TEXT) TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 20. QUESTION META CACHE — 缓存 distinct 学科/分类，避免前端反复扫全表
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.question_meta_cache (
+  id         BOOLEAN PRIMARY KEY DEFAULT true,
+  subjects   JSONB NOT NULL DEFAULT '[]',
+  categories JSONB NOT NULL DEFAULT '[]',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 初始填充
+INSERT INTO public.question_meta_cache (subjects, categories)
+SELECT
+  (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
+  (SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
+    SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
+    UNION
+    SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
+  ) t);
+
+-- 刷新函数
+CREATE OR REPLACE FUNCTION public.refresh_question_meta_cache()
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  INSERT INTO public.question_meta_cache (subjects, categories, updated_at)
+  SELECT
+    (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
+    (SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
+      SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
+      UNION
+      SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
+    ) t),
+    NOW()
+  ON CONFLICT (id) DO UPDATE SET
+    subjects = EXCLUDED.subjects,
+    categories = EXCLUDED.categories,
+    updated_at = NOW();
+$$;
+
+-- 触发器：questions 表变动时自动刷新
+CREATE OR REPLACE FUNCTION public.trg_refresh_question_meta()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  PERFORM public.refresh_question_meta_cache();
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_question_meta_refresh ON public.questions;
+CREATE TRIGGER trg_question_meta_refresh
+AFTER INSERT OR UPDATE OR DELETE ON public.questions
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.trg_refresh_question_meta();
+
+-- RLS
+ALTER TABLE public.question_meta_cache ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS qmc_select ON public.question_meta_cache;
+CREATE POLICY qmc_select ON public.question_meta_cache FOR SELECT TO authenticated USING (true);

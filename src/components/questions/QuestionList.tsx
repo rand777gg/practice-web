@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { Question, QuestionType } from '@/types'
 import { Pencil, Trash2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -47,6 +48,7 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
             <TableHead className="min-w-[180px]">{t('questions.question')}</TableHead>
             <TableHead>{t('questions.subject')}</TableHead>
             <TableHead>{t('questions.category')}</TableHead>
+            <TableHead>知识点</TableHead>
             <TableHead>{t('questions.questionType')}</TableHead>
             <TableHead className="w-[70px]">导入</TableHead>
             <TableHead className="w-[70px]">验证</TableHead>
@@ -67,16 +69,59 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
                 </TableCell>
                 <TableCell className="max-w-[200px] lg:max-w-xs truncate">{q.question_text}</TableCell>
                 <TableCell className="whitespace-nowrap">{q.subject ?? '-'}</TableCell>
-                <TableCell className="whitespace-nowrap text-xs">{q.categories?.length ? q.categories.join(', ') : (q.category ?? '-')}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs">
+                  {(() => {
+                    const cats = q.categories?.length ? q.categories : q.category ? [q.category] : []
+                    if (!cats.length) return '-'
+                    const years = cats.filter(c => /^\d{4}年真题$/.test(c))
+                    const others = cats.filter(c => !/^\d{4}年真题$/.test(c))
+                    return <span className="inline-flex items-center gap-1">
+                      {years.length > 1 ? (
+                        <HoverCard openDelay={200} closeDelay={100}>
+                          <HoverCardTrigger asChild>
+                            <span className="inline-block rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1 text-[10px] font-medium cursor-default">
+                              {years.length}年真题
+                            </span>
+                          </HoverCardTrigger>
+                          <HoverCardContent side="bottom" align="start" className="w-auto px-3 py-2 text-xs">
+                            <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
+                            <div className="flex flex-wrap gap-1">
+                              {years.map((y) => (
+                                <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
+                              ))}
+                            </div>
+                          </HoverCardContent>
+                        </HoverCard>
+                      ) : years.map(c => (
+                        <span key={c}>{c}</span>
+                      ))}
+                      {others.length > 0 && <span className="text-muted-foreground">{others.join(', ')}</span>}
+                    </span>
+                  })()}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-xs max-w-[120px] truncate">{q.key_points || '-'}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
                     {t(`questionTypes.${q.question_type}` as any) || q.question_type}
                   </span>
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
-                  <span className="text-[10px] text-muted-foreground">
-                    {{ manual: '手动', lightweight: '轻量', precision: '精准', generate: 'AI生成' }[q.import_mode || 'manual'] || q.import_mode || '手动'}
-                  </span>
+                  {q.source_page && (q.import_mode === 'lightweight' || q.import_mode === 'precision') ? (
+                    <HoverCard openDelay={200} closeDelay={100}>
+                      <HoverCardTrigger asChild>
+                        <span className="text-[10px] text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">
+                          {{ lightweight: '轻量', precision: '精准' }[q.import_mode] || q.import_mode}
+                        </span>
+                      </HoverCardTrigger>
+                      <HoverCardContent side="bottom" align="start" className="w-auto px-3 py-2 text-xs">
+                        <p className="text-muted-foreground">来源页码：{q.source_page}</p>
+                      </HoverCardContent>
+                    </HoverCard>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">
+                      {{ manual: '手动', lightweight: '轻量', precision: '精准', generate: 'AI生成' }[q.import_mode || 'manual'] || q.import_mode || '手动'}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {q.verified ? (

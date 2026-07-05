@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
@@ -34,18 +34,32 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Play, Trash2, Upload, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Pencil, Play, Trash2, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision' | 'generate'
 
 export function Component() {
-  const [step, setStep] = useState<Step>('upload')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const step = (searchParams.get('step') as Step) || 'upload'
+  const urlHistoryId = searchParams.get('id') ? Number(searchParams.get('id')) : null
+  const setStepPersisted = (s: Step, historyId?: number | null) => {
+    const params: Record<string, string> = {}
+    if (s !== 'upload') params.step = s
+    if (historyId) params.id = String(historyId)
+    else if (urlHistoryId && s !== 'upload') params.id = String(urlHistoryId)
+    setSearchParams(params, { replace: true })
+  }
   const [file, setFile] = useState<File | null>(null)
   const [files, setFiles] = useState<File[]>([])
-  const [questions, setQuestions] = useState<ParsedQuestion[]>([])
-  const [subject, setSubject] = useState('')
-  const [category, setCategory] = useState('')
+  const [questions, setQuestions] = useState<ParsedQuestion[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('ai-import-questions')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  })
+  const [subject, setSubject] = useState(() => sessionStorage.getItem('ai-import-subject') || '')
+  const [category, setCategory] = useState(() => sessionStorage.getItem('ai-import-category') || '')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [parseMsg, setParseMsg] = useState('')
   const [parseStatus, setParseStatus] = useState<Record<string, unknown> | null>(null)
@@ -53,6 +67,21 @@ export function Component() {
   parseStatusRef.current = parseStatus
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
+
+  // Persist lightweight state so navigating away and back restores the preview
+  // (parseResult is too large for sessionStorage; restored from DB via URL history ID)
+  useEffect(() => {
+    if (questions.length > 0 && step === 'preview') {
+      sessionStorage.setItem('ai-import-questions', JSON.stringify(questions))
+      sessionStorage.setItem('ai-import-subject', subject)
+      sessionStorage.setItem('ai-import-category', category)
+    }
+    if (step === 'upload') {
+      sessionStorage.removeItem('ai-import-questions')
+      sessionStorage.removeItem('ai-import-subject')
+      sessionStorage.removeItem('ai-import-category')
+    }
+  }, [questions, subject, category, step])
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
 
@@ -104,10 +133,19 @@ export function Component() {
 
   const { isEnabled, setSidebarCollapsed } = useSettingsStore()
   const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; pdf_page_urls: string | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
-  const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(null)
+  const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(urlHistoryId)
+
+  // Sync historyId to URL
+  useEffect(() => {
+    if (currentHistoryId && step !== 'upload') {
+      const params: Record<string, string> = { step }
+      params.id = String(currentHistoryId)
+      setSearchParams(params, { replace: true })
+    }
+  }, [currentHistoryId, step])
   const [dedupHistoryIds, setDedupHistoryIds] = useState<Set<number>>(new Set())
   const [dedupOpen, setDedupOpen] = useState(true)
 
@@ -133,7 +171,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at')
+      .select('id, file_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -172,11 +210,12 @@ export function Component() {
   const loadHistory = async (id: number) => {
     const entry = history.find(h => h.id === id)
     if (entry) {
+      setCurrentHistoryId(id)
       setParseResult({ markdown: entry.markdown, fileName: entry.file_name, jsonData: entry.json_data || undefined })
       if (entry.questions_json) {
         try { setQuestions(JSON.parse(entry.questions_json)) } catch { /* ignore */ }
       }
-      if (entry.page_ranges) setPageRanges(entry.page_ranges)
+      if (entry.page_ranges && !pageRanges) setPageRanges(entry.page_ranges)
       if (entry.mode === 'precision' || entry.mode === 'lightweight' || entry.mode === 'generate') {
         setParseMode(entry.mode)
       }
@@ -187,7 +226,7 @@ export function Component() {
       }
       // Detect if file_name is a URL → use for PDF viewer
       if (entry.file_name.startsWith('http')) {
-        const isOwnStorage = entry.file_name.includes('/storage/v1/object/') || entry.file_name.includes('/r2/') || entry.file_name.includes('r2.dev')
+        const isOwnStorage = entry.file_name.includes('/storage/v1/object/') || entry.file_name.includes('/r2/') || entry.file_name.includes('r2.dev') || entry.file_name.includes('r2-rpw.pguide.dev')
         if (isOwnStorage) {
           setHistoryPdfUrl(entry.file_name)
         } else {
@@ -200,13 +239,37 @@ export function Component() {
       setShowHistory(false)
       setParseMsg('已从历史记录加载')
       setParsingDone(true)
-      setStep('parsing')
+      setStepPersisted('parsing', id)
     }
   }
+
+  // Auto-load history from URL param on mount
+  const historyLoadedRef = useRef(false)
+  useEffect(() => {
+    if (historyLoadedRef.current || history.length === 0 || !urlHistoryId) return
+    const entry = history.find(h => h.id === urlHistoryId)
+    if (entry) { historyLoadedRef.current = true; loadHistory(urlHistoryId) }
+  }, [history, urlHistoryId])
 
   const deleteHistory = async (id: number) => {
     await supabase.from('parse_history').delete().eq('id', id)
     setHistory(prev => prev.filter(h => h.id !== id))
+  }
+
+  const [editPdfId, setEditPdfId] = useState<number | null>(null)
+  const [editPdfUrl, setEditPdfUrl] = useState('')
+
+  const savePdfUrl = async () => {
+    if (!editPdfId || !editPdfUrl.trim()) return
+    const id = editPdfId; const newUrl = editPdfUrl.trim()
+    await supabase.from('parse_history').update({ file_name: newUrl, pdf_page_urls: null }).eq('id', id)
+    setHistory(prev => prev.map(h => h.id === id ? { ...h, file_name: newUrl, pdf_page_urls: null } : h))
+    setEditPdfId(null)
+    setParseResult(prev => prev ? { ...prev, fileName: newUrl } : null)
+    if (newUrl.startsWith('http')) {
+      const isOwn = newUrl.includes('/storage/v1/object/') || newUrl.includes('/r2/') || newUrl.includes('r2.dev') || newUrl.includes('r2-rpw.pguide.dev')
+      setHistoryPdfUrl(isOwn ? newUrl : null)
+    } else { setHistoryPdfUrl(null) }
   }
 
   const aiConfigured = hasAiConfig()
@@ -239,10 +302,11 @@ export function Component() {
   useEffect(() => {
     if (!user) return
     async function loadMeta() {
-      const { data, error } = await supabase.rpc('get_question_meta')
+      // Use question_meta_cache for complete subject/category lists (not get_question_meta RPC which only checks old category column)
+      const { data, error } = await supabase.from('question_meta_cache').select('subjects, categories').single()
       if (error) { console.warn('loadMeta error:', error); return }
-      setExistingSubjects((data as any)?.subjects ?? [])
-      setExistingCategories((data as any)?.categories ?? [])
+      setExistingSubjects((data?.subjects ?? []) as string[])
+      setExistingCategories((data?.categories ?? []) as string[])
     }
     loadMeta()
   }, [user?.id])
@@ -265,7 +329,7 @@ export function Component() {
   }
 
   const startParse = async () => {
-    setStep('parsing')
+    setStepPersisted('parsing')
     setError('')
     setParseResult(null)
     setParsingDone(false)
@@ -284,7 +348,7 @@ export function Component() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '解析失败')
-      setStep('upload')
+      setStepPersisted('upload')
     }
   }
 
@@ -389,7 +453,7 @@ export function Component() {
       const results = await mineru.uploadAndParseBatchPrecision(files, options, (msg) => setParseMsg(msg), (status) => setParseStatus(status as unknown as Record<string, unknown>))
       if (results.length === 0) {
         setError('所有文件解析失败')
-        setStep('upload')
+        setStepPersisted('upload')
         return
       }
       const mergedMd = results.map(r => `## ${r.fileName}\n\n${r.markdown}`).join('\n\n---\n\n')
@@ -422,7 +486,7 @@ export function Component() {
 
     setQuestions(result.questions)
     setSelectedIds(new Set(result.questions.map((_, i) => i)))
-    setStep('preview')
+    setStepPersisted('preview')
     if (parseResult) {
       if (currentHistoryId) {
         await updateHistoryEntry(currentHistoryId, { questions: result.questions, status: { state: 'questions_extracted' } })
@@ -460,7 +524,7 @@ export function Component() {
       setSelectedIds(new Set(questions.map((_, i) => i)))
       setSubject(genSubject)
       setCategory('AI生成')
-      setStep('preview')
+      setStepPersisted('preview')
       let historyId: number | null = null
       if (genFile) {
         historyId = await saveToHistory({ fileName: genFile.name, markdown: genFileText, questions, mode: 'generate' })
@@ -494,7 +558,7 @@ export function Component() {
   }
 
   const startImport = async () => {
-    setStep('importing')
+    setStepPersisted('importing')
     const toImport = questions.filter((_, i) => selectedIds.has(i))
 
     try {
@@ -512,6 +576,7 @@ export function Component() {
           answer_explanation: null,
           seq_number: null,
           import_mode: parseMode,
+          source_page: q.source_page || pageRangesRef.current || null,
           verified: q.verified ?? false,
           allow_unordered: q.allow_unordered ?? false,
         })),
@@ -522,10 +587,10 @@ export function Component() {
       if (currentHistoryId) {
         await supabase.from('parse_history').update({ status_json: JSON.stringify({ state: 'imported' }) }).eq('id', currentHistoryId)
       }
-      setStep('done')
+      setStepPersisted('done')
     } catch (err) {
       setError(err instanceof Error ? err.message : '导入失败')
-      setStep('preview')
+      setStepPersisted('preview')
     }
   }
 
@@ -563,7 +628,7 @@ export function Component() {
   }
 
   const resetState = () => {
-    setStep('upload')
+    setStepPersisted('upload')
     setFile(null)
     setFiles([])
     setQuestions([])
@@ -642,7 +707,7 @@ export function Component() {
                               if (h.questions_json) {
                                 try { setQuestions(JSON.parse(h.questions_json)) } catch { /* ignore */ }
                                 setSelectedIds(new Set())
-                                setStep('preview')
+                                setStepPersisted('preview')
                                 setShowHistory(false)
                               }
                             }}>
@@ -1130,7 +1195,7 @@ export function Component() {
               {parsingDone && parseResult ? (
                 <>
                   <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => { setStep('upload'); setParsingDone(false); setParseResult(null) }}>
+                    <Button variant="outline" size="sm" onClick={() => { setStepPersisted('upload'); setParsingDone(false); setParseResult(null) }}>
                       重新解析
                     </Button>
                     <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
@@ -1196,7 +1261,23 @@ export function Component() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <p className="text-sm font-medium">MinerU 解析结果</p>
-                      <span className="text-xs text-muted-foreground">{parseResult.fileName}</span>
+                      {editPdfId === currentHistoryId ? (
+                        <div className="flex items-center gap-1">
+                          <Input value={editPdfUrl} onChange={(e) => setEditPdfUrl(e.target.value)} className="h-7 text-xs w-80" placeholder="PDF URL" onKeyDown={(e) => { if (e.key === 'Enter') savePdfUrl() }} />
+                          <Button size="sm" className="h-7 text-xs" onClick={savePdfUrl} disabled={!editPdfUrl.trim()}>确定</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditPdfId(null)}>取消</Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          {parseResult.fileName}
+                          {currentHistoryId && (
+                            <button type="button" className="text-muted-foreground/50 hover:text-foreground" title="更换 PDF 链接"
+                              onClick={() => { setEditPdfId(currentHistoryId); setEditPdfUrl(parseResult.fileName) }}>
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       {(historyPdfUrl || pdfUrl) && (
@@ -1211,7 +1292,7 @@ export function Component() {
                     </div>
                   </div>
 
-                  {(historyPdfUrl || pdfUrl) && parseResult.jsonData ? (
+                  {(historyPdfUrl || pdfUrl) && parseResult?.jsonData ? (
                     <Card className="border-0 shadow-none">
                       <CardContent className="p-0 h-[calc(100vh-100px)]">
                         <PdfMarkdownViewer pdfUrl={historyPdfUrl || pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges}>
@@ -1308,7 +1389,7 @@ export function Component() {
               />
               {error && <p className="text-sm text-destructive">{error}</p>}
               <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => setStep('upload')}>
+                <Button variant="outline" onClick={() => setStepPersisted('upload')}>
                   <ArrowLeft className="h-4 w-4" /> 返回
                 </Button>
                 <Button onClick={startImport} disabled={selectedIds.size === 0}>

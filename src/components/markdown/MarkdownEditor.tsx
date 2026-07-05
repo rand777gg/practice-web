@@ -1,190 +1,180 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { supabase } from '@/lib/supabase'
 import { MarkdownRenderer } from './MarkdownRenderer'
-import { Eye, PenLine } from 'lucide-react'
+import { FormattingToolbar } from '@/components/notes/FormattingToolbar'
+import { supabase } from '@/lib/supabase'
+import { compressImage } from '@/lib/image-compress'
 import { cn } from '@/lib/utils'
+import { ImagePlus, Loader2, WrapText } from 'lucide-react'
+import { hasAiConfig, getAiConfig } from '@/lib/ai/config'
 
 interface Props {
   value: string
-  onChange: (v: string) => void
+  onChange: (value: string) => void
   placeholder?: string
-  className?: string
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   minHeight?: string
-  inputRef?: React.RefObject<HTMLTextAreaElement | null>
+  hidePreview?: boolean
+  hideImageTools?: boolean
+  extraToolbarButtons?: React.ReactNode
+  bottomButtons?: React.ReactNode
+  overlay?: React.ReactNode
+  onImageAction?: (action: 'left' | 'center' | 'right', src: string) => void
 }
 
-import { compressImage } from '@/lib/image-compress'
-
-export function MarkdownEditor({ value, onChange, placeholder, className, minHeight = '120px', inputRef }: Props) {
-  const [preview, setPreview] = useState(true)
-  const [uploading, setUploading] = useState(false)
+export function MarkdownEditor({
+  value, onChange, placeholder, textareaRef: externalRef, minHeight = '160px',
+  hidePreview, hideImageTools, extraToolbarButtons, bottomButtons, overlay,
+  onImageAction,
+}: Props) {
+  const [previewValue, setPreviewValue] = useState(value)
   const [dragOver, setDragOver] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [isUploadingImg, setIsUploadingImg] = useState(false)
+  const [isFormatting, setIsFormatting] = useState(false)
+  const internalRef = useRef<HTMLTextAreaElement>(null)
+  const ta = externalRef ?? internalRef
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Sync external ref
   useEffect(() => {
-    if (inputRef) (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = textareaRef.current
-  }, [textareaRef.current])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+    if (externalRef) (externalRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = internalRef.current
+  })
 
+  // Debounced preview
+  useEffect(() => {
+    const t = setTimeout(() => setPreviewValue(value), 300)
+    return () => clearTimeout(t)
+  }, [value])
 
-  const uploadToR2 = useCallback(async (file: File): Promise<string | null> => {
-    setUploading(true)
+  const uploadImageFile = useCallback(async (file: File) => {
+    setIsUploadingImg(true)
     try {
       const compressed = await compressImage(file)
       const formData = new FormData()
       formData.append('file', compressed, compressed.name)
       formData.append('folder', 'images')
-
       const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
-      if (error || !data?.url) {
-        console.warn('R2 upload failed, falling back to base64:', error)
-        return null
+      if (error) throw new Error(error.message || '上传失败')
+      const url = (data as { url: string }).url
+      if (url) {
+        const el = internalRef.current
+        if (el) {
+          const start = el.selectionStart
+          const end = el.selectionEnd
+          const before = value.slice(0, start)
+          const after = value.slice(end)
+          const md = `${before ? '\n\n' : ''}![图片](${url})\n\n`
+          onChange(before + md + after)
+          requestAnimationFrame(() => {
+            el.focus()
+            const pos = start + md.length
+            el.setSelectionRange(pos, pos)
+          })
+        } else {
+          onChange(value ? `${value}\n\n![图片](${url})` : `![图片](${url})`)
+        }
       }
-      return data.url as string
-    } catch {
-      return null
-    } finally {
-      setUploading(false)
-    }
-  }, [])
-
-  const insertImageAtCursor = useCallback((url: string, alt?: string) => {
-    const ta = textareaRef.current
-    if (!ta) {
-      onChange(value ? `${value}\n\n![${alt || 'image'}](${url})` : `![${alt || 'image'}](${url})`)
-      return
-    }
-    const start = ta.selectionStart
-    const end = ta.selectionEnd
-    const before = value.slice(0, start)
-    const after = value.slice(end)
-    const hasNewline = before.endsWith('\n') || before === ''
-    const md = `${hasNewline ? '' : '\n\n'}![${alt || 'image'}](${url})\n\n`
-    onChange(before + md + after)
-    setTimeout(() => {
-      ta.focus()
-      const pos = start + md.length
-      ta.setSelectionRange(pos, pos)
-    }, 0)
+    } catch (err) { alert(err instanceof Error ? err.message : '上传失败') }
+    setIsUploadingImg(false)
   }, [value, onChange])
 
-  const handleFile = useCallback(async (file: File) => {
-    if (!file.type.startsWith('image/')) return
-
-    // Try R2 upload, fall back to base64
-    const r2Url = await uploadToR2(file)
-
-    if (r2Url) {
-      insertImageAtCursor(r2Url, file.name)
-    } else {
-      // Fallback: inline base64
-      const reader = new FileReader()
-      reader.onload = () => {
-        insertImageAtCursor(reader.result as string, file.name)
-      }
-      reader.readAsDataURL(file)
+  const handleUploadImage = () => {
+    const input = document.createElement('input')
+    input.type = 'file'; input.accept = 'image/' + '*'
+    input.onchange = (e) => {
+      const f = (e.target as HTMLInputElement).files?.[0]
+      if (f) uploadImageFile(f)
     }
-  }, [uploadToR2, insertImageAtCursor])
-
-  // Drag & drop
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(true)
+    input.click()
   }
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragOver(true) }
   const handleDragLeave = () => setDragOver(false)
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    for (const f of files) handleFile(f)
+    e.preventDefault(); setDragOver(false)
+    for (const f of Array.from(e.dataTransfer.files)) {
+      if (f.type.startsWith('image/')) uploadImageFile(f)
+    }
   }
 
-  // Clipboard paste (works in both edit and preview mode)
-  const containerRef = useRef<HTMLDivElement>(null)
+  // Paste image
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (const item of items) {
+      for (const item of e.clipboardData?.items ?? []) {
         if (item.type.startsWith('image/')) {
           e.preventDefault()
           const file = item.getAsFile()
-          if (file) handleFile(file)
+          if (file) uploadImageFile(file)
           return
         }
       }
     }
     el.addEventListener('paste', onPaste)
     return () => el.removeEventListener('paste', onPaste)
-  }, [handleFile])
+  }, [uploadImageFile])
+
+  const handleAiLineBreak = async () => {
+    const config = getAiConfig()
+    if (!config?.apiKey) return
+    setIsFormatting(true)
+    try {
+      const current = internalRef.current?.value || value
+      if (!current.trim()) return
+      const { generateText } = await import('ai')
+      const { createDeepSeek } = await import('@ai-sdk/deepseek')
+      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+      const { text } = await generateText({
+        model: client(config.model || 'deepseek-chat'),
+        system: 'You are a text formatter. Add <br> at natural break points between paragraphs and list items. Do NOT change any content.',
+        prompt: current,
+        temperature: 0.1,
+      })
+      if (text) onChange(text)
+    } catch { /* ignore */ }
+    setIsFormatting(false)
+  }
+
+  const toolbarButtons = !hideImageTools ? (
+    <>
+      <span className="text-muted-foreground/40 text-xs mx-0.5">|</span>
+      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+        disabled={isUploadingImg} onClick={handleUploadImage}>
+        {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+      </Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+        title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
+        {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
+      </Button>
+    </>
+  ) : null
 
   return (
-    <div ref={containerRef} className={cn('space-y-2', className)}>
-      {/* Toolbar */}
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          className={cn('inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors', !preview && 'bg-muted font-medium')}
-          onClick={() => setPreview(false)}
-        >
-          <PenLine className="h-3 w-3" />
-          编辑
-        </button>
-        <button
-          type="button"
-          className={cn('inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors', preview && 'bg-muted font-medium')}
-          onClick={() => setPreview(true)}
-        >
-          <Eye className="h-3 w-3" />
-          预览
-        </button>
-        {!preview && (
+    <div ref={containerRef} className="space-y-2">
+      <div className="flex gap-1 flex-wrap items-center">
+        <FormattingToolbar textareaRef={ta} value={value} onChange={onChange} extraButtons={
           <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={'image/*'}
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) handleFile(f)
-                e.target.value = ''
-              }}
-            />
+            {toolbarButtons}
+            {extraToolbarButtons}
           </>
-        )}
-        {uploading && <span className="text-[10px] text-muted-foreground ml-2">上传中...</span>}
+        } />
       </div>
-
-      {/* Editor / Preview */}
-      {preview ? (
-        <div className={cn('rounded-lg border bg-muted/20 p-3', dragOver && 'ring-2 ring-primary')}>
-          {value ? (
-            <MarkdownRenderer content={value} />
-          ) : (
-            <p className="text-xs text-muted-foreground">暂无内容</p>
-          )}
-        </div>
-      ) : (
+      <div className={cn('grid gap-2 items-stretch', !hidePreview && 'grid-cols-1 lg:grid-cols-2')}>
         <div
           className={cn('relative', dragOver && 'ring-2 ring-primary ring-offset-1 rounded-lg')}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={!hideImageTools ? handleDragOver : undefined}
+          onDragLeave={!hideImageTools ? handleDragLeave : undefined}
+          onDrop={!hideImageTools ? handleDrop : undefined}
         >
           <Textarea
-            id="markdown-editor"
-            name="markdown-editor"
-            ref={textareaRef}
+            ref={internalRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder || '支持 Markdown 语法。拖拽、粘贴图片到此处自动上传...'}
-            className="font-mono text-sm resize-y"
-            style={{ minHeight }}
+            placeholder={placeholder || '支持 Markdown 语法...'}
+            className="font-mono text-sm h-full min-h-0"
+            style={{ minHeight, resize: 'none' }}
             spellCheck={false}
             autoComplete="off"
           />
@@ -193,8 +183,23 @@ export function MarkdownEditor({ value, onChange, placeholder, className, minHei
               <span className="text-sm font-medium text-primary">释放以插入图片</span>
             </div>
           )}
+          {bottomButtons && (
+            <div className="absolute right-1 bottom-1 flex gap-0.5">
+              {bottomButtons}
+            </div>
+          )}
+          {overlay}
         </div>
-      )}
+        {!hidePreview && (
+          <div className="rounded-lg border bg-muted/30 p-3 overflow-auto" style={{ minHeight, maxHeight: '500px' }}>
+            {previewValue ? (
+              <MarkdownRenderer content={previewValue} onImageAction={onImageAction} />
+            ) : (
+              <p className="text-xs text-muted-foreground">预览区域，编辑内容后实时显示...</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

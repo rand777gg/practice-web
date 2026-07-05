@@ -60,28 +60,72 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (!open) return
     async function load() {
-      const { data: qs } = await supabase.from('questions').select('subject')
+      const { data: meta } = await supabase
+        .from('question_meta_cache')
+        .select('subjects')
+        .single()
+      const metaSubjects: string[] = (meta?.subjects ?? []) as string[]
+
       const counts = new Map<string, number>()
-      for (const q of (qs ?? [])) {
-        const s = q.subject || 'Other'
-        counts.set(s, (counts.get(s) ?? 0) + 1)
+      for (const s of metaSubjects) counts.set(s, 0)
+      for (const s of selectedSubjects) {
+        if (!counts.has(s)) counts.set(s, 0)
       }
+
+      // Paginate through all questions — PostgREST defaults to max-rows=1000
+      const PAGE = 1000
+      let from = 0
+      const subjectIds = new Map<string, Set<string>>()
+
+      while (true) {
+        const { data: page } = await supabase
+          .from('questions')
+          .select('id, subject')
+          .order('id')
+          .range(from, from + PAGE - 1)
+
+        if (!page || page.length === 0) break
+
+        for (const q of page) {
+          const s = q.subject || 'Other'
+          counts.set(s, (counts.get(s) ?? 0) + 1)
+          let ids = subjectIds.get(s)
+          if (!ids) { ids = new Set(); subjectIds.set(s, ids) }
+          ids.add(q.id)
+        }
+
+        if (page.length < PAGE) break
+        from += PAGE
+      }
+
       setAllSubjects([...counts.keys()].sort())
       setSubjectCounts(counts)
 
       if (user) {
-        const [{ data: done }, { data: allQs }] = await Promise.all([
-          supabase.from('user_answers').select('question_id').eq('user_id', user.id),
-          supabase.from('questions').select('id, subject'),
-        ])
-        const doneIds = new Set((done ?? []).map((a) => a.question_id))
+        const doneIds = new Set<string>()
+        from = 0
+        while (true) {
+          const { data: page } = await supabase
+            .from('user_answers')
+            .select('question_id')
+            .eq('user_id', user.id)
+            .order('question_id')
+            .range(from, from + PAGE - 1)
+
+          if (!page || page.length === 0) break
+          for (const a of page) doneIds.add(a.question_id)
+          if (page.length < PAGE) break
+          from += PAGE
+        }
+
         const progress = new Map<string, { total: number; done: number }>()
-        for (const q of (allQs ?? [])) {
-          const s = q.subject || 'Other'
-          const entry = progress.get(s) || { total: 0, done: 0 }
-          entry.total++
-          if (doneIds.has(q.id)) entry.done++
-          progress.set(s, entry)
+        for (const s of counts.keys()) {
+          progress.set(s, { total: 0, done: 0 })
+        }
+        for (const [subject, ids] of subjectIds) {
+          let done = 0
+          for (const id of ids) { if (doneIds.has(id)) done++ }
+          progress.set(subject, { total: ids.size, done })
         }
         setSubjectProgress(progress)
       }

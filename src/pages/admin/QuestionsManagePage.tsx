@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
@@ -17,6 +17,16 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
@@ -70,9 +80,55 @@ export function Component() {
   )
 
   // Load distinct key_points — re-fetch when subject changes
+  const [kpsBySubject, setKpsBySubject] = useState<Map<string, string[]>>(new Map())
+  const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
+  const [categoryCounts, setCategoryCounts] = useState<Map<string, number>>(new Map())
+  const [kpCounts, setKpCounts] = useState<Map<string, number>>(new Map())
+
+  // Load metadata grouped by subject (paginated, for submenu structure + counts)
+  const loadMetaData = useCallback(async () => {
+    const kpMap = new Map<string, Set<string>>()
+    const subCounts = new Map<string, number>()
+    const catCounts = new Map<string, number>()
+    const kpCounts = new Map<string, number>()
+    const PAGE = 1000; let from = 0
+    while (true) {
+      const { data } = await supabase.from('questions').select('subject, key_points, category, categories').order('id').range(from, from + PAGE - 1)
+      if (!data || data.length === 0) break
+      for (const q of data) {
+        const s = q.subject || '未分类'
+        subCounts.set(s, (subCounts.get(s) ?? 0) + 1)
+        if (q.key_points) {
+          let kps = kpMap.get(s); if (!kps) { kps = new Set(); kpMap.set(s, kps) }
+          kps.add(q.key_points)
+          kpCounts.set(q.key_points, (kpCounts.get(q.key_points) ?? 0) + 1)
+        }
+        const cats: string[] = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
+        for (const c of cats) catCounts.set(c, (catCounts.get(c) ?? 0) + 1)
+      }
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+    const result = new Map<string, string[]>()
+    for (const [s, kps] of kpMap) result.set(s, [...kps].sort())
+    setKpsBySubject(result)
+    setSubjectCounts(subCounts)
+    setCategoryCounts(catCounts)
+    setKpCounts(kpCounts)
+    const all = new Set<string>()
+    for (const kps of kpMap.values()) for (const kp of kps) all.add(kp)
+    setAllKeyPoints([...all].sort())
+  }, [])
+
+  useEffect(() => { loadMetaData() }, [loadMetaData])
+
+  // Refresh key_points within selected subject for filter
   useEffect(() => {
     supabase.rpc('get_question_meta', { p_subject: selectedSubject || null }).then(({ data, error }: any) => {
-      if (!error && data?.key_points) setAllKeyPoints(data.key_points)
+      if (!error && data?.key_points) {
+        // Merge into global allKeyPoints so dropdown always has all options
+        setAllKeyPoints(prev => { const s = new Set(prev); data.key_points.forEach((k: string) => s.add(k)); return [...s].sort() })
+      }
     })
   }, [selectedSubject])
 
@@ -94,11 +150,17 @@ export function Component() {
     return () => { if (debounceRef.current !== null) clearTimeout(debounceRef.current) }
   }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, fetchQuestions])
 
-  // Update filtered categories and reset key_points when subject changes
+  // Update filtered categories and reset category/key_points when subject changes
   useEffect(() => {
     updateFilteredCategories(selectedSubject)
+    setSelectedCategory('')
     setSelectedKeyPoints('')
   }, [selectedSubject, updateFilteredCategories])
+
+  // Pre-fill bulk key points from filter
+  useEffect(() => {
+    if (selectedKeyPoints) { setBulkKeyPoints(selectedKeyPoints); setNewKeyPointsInput(selectedKeyPoints) }
+  }, [selectedKeyPoints])
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -118,8 +180,10 @@ export function Component() {
 
   const [bulkSubject, setBulkSubject] = useState('')
   const [bulkCategory, setBulkCategory] = useState('')
+  const [bulkKeyPoints, setBulkKeyPoints] = useState('')
   const [newSubjectInput, setNewSubjectInput] = useState('')
   const [newCategoryInput, setNewCategoryInput] = useState('')
+  const [newKeyPointsInput, setNewKeyPointsInput] = useState('')
   const [bulkUpdating, setBulkUpdating] = useState(false)
 
   const handleBulkDelete = async () => {
@@ -131,25 +195,58 @@ export function Component() {
     refetch()
   }
 
-  const handleBulkUpdate = async () => {
-    if (!bulkSubject && !bulkCategory) return
+  const [kpConfirm, setKpConfirm] = useState<{ oldKp: string; newKp: string; selectedCount: number; totalCount: number } | null>(null)
+
+  const applyBulkUpdate = async (ids: string[], data: Record<string, unknown>) => {
     setBulkUpdating(true)
+    if (ids.length > 0) {
+      await supabase.from('questions').update(data).in('id', ids)
+    } else {
+      // Update all matching key_points
+      await supabase.from('questions').update({ key_points: data.key_points }).eq('key_points', kpConfirm?.oldKp ?? '')
+    }
+    setBulkSubject('')
+    setBulkCategory('')
+    setBulkKeyPoints('')
+    setSelectedIds(new Set())
+    setBulkUpdating(false)
+    if (kpConfirm?.oldKp && selectedKeyPoints === kpConfirm.oldKp) {
+      setSelectedKeyPoints(kpConfirm.newKp)
+    } else if (data.key_points && selectedKeyPoints) {
+      setSelectedKeyPoints(data.key_points as string)
+    }
+    setKpConfirm(null)
+    refetch()
+    loadMetaData()
+  }
+
+  const handleBulkUpdate = async () => {
+    if (!bulkSubject && !bulkCategory && !bulkKeyPoints) return
     const ids = [...selectedIds]
     const data: Record<string, unknown> = {}
     if (bulkSubject) data.subject = bulkSubject
     if (bulkCategory) { data.category = bulkCategory; data.categories = [bulkCategory] }
-    await supabase.from('questions').update(data).in('id', ids)
-    setBulkSubject('')
-    setBulkCategory('')
-    setSelectedIds(new Set())
-    setBulkUpdating(false)
-    refetch()
+    if (bulkKeyPoints) data.key_points = bulkKeyPoints
+
+    // If changing key points with active filter, check for unselected matching questions
+    if (bulkKeyPoints && selectedKeyPoints && selectedKeyPoints !== bulkKeyPoints) {
+      const { count } = await supabase
+        .from('questions')
+        .select('id', { count: 'exact', head: true })
+        .eq('key_points', selectedKeyPoints)
+      const total = count ?? 0
+      if (total > ids.length) {
+        setKpConfirm({ oldKp: selectedKeyPoints, newKp: bulkKeyPoints, selectedCount: ids.length, totalCount: total })
+        return
+      }
+    }
+    applyBulkUpdate(ids, data)
   }
 
   const clearSelection = () => setSelectedIds(new Set())
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold">{t('questions.title')}</h1>
@@ -214,8 +311,9 @@ export function Component() {
             </DropdownMenuItem>
             {sortedSubjects.map((s) => (
               <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>
-                {s}
-                {selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                <span>{s}</span>
+                <span className="ml-auto text-muted-foreground text-[10px] tabular-nums mr-1">{subjectCounts.get(s) ?? 0}</span>
+                {selectedSubject === s && <Check className="h-3 w-3" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -242,8 +340,9 @@ export function Component() {
                   <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                     {yearCategories.map((c) => (
                       <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                        {c}
-                        {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                        <span>{c}</span>
+                        <span className="ml-auto text-muted-foreground text-[10px] tabular-nums mr-1">{categoryCounts.get(c) ?? 0}</span>
+                        {selectedCategory === c && <Check className="h-3 w-3" />}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuSubContent>
@@ -255,8 +354,9 @@ export function Component() {
                 <DropdownMenuSeparator />
                 {nonYearCategories.map((c) => (
                   <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>
-                    {c}
-                    {selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                    <span>{c}</span>
+                    <span className="ml-auto text-muted-foreground text-[10px] tabular-nums mr-1">{categoryCounts.get(c) ?? 0}</span>
+                    {selectedCategory === c && <Check className="h-3 w-3" />}
                   </DropdownMenuItem>
                 ))}
               </>
@@ -325,7 +425,7 @@ export function Component() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {allKeyPoints.length > 0 && (
+        {kpsBySubject.size > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1 text-xs">
@@ -338,11 +438,20 @@ export function Component() {
                 <span className="text-muted-foreground">知识点</span>
                 {!selectedKeyPoints && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
-              {allKeyPoints.map((kp) => (
-                <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoints(kp)}>
-                  {kp}
-                  {selectedKeyPoints === kp && <Check className="h-4 w-4 ml-auto" />}
-                </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {[...kpsBySubject.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([subject, kps]) => (
+                <DropdownMenuSub key={subject}>
+                  <DropdownMenuSubTrigger>{subject}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                    {kps.map((kp) => (
+                      <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoints(kp)}>
+                        <span>{kp}</span>
+                        <span className="ml-auto text-muted-foreground text-[10px] tabular-nums mr-1">{kpCounts.get(kp) ?? 0}</span>
+                        {selectedKeyPoints === kp && <Check className="h-3 w-3" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -490,7 +599,62 @@ export function Component() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button variant="default" size="sm" disabled={bulkUpdating || (!bulkSubject && !bulkCategory)}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                      {bulkKeyPoints || '设置知识点'}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto min-w-[220px]">
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b">
+                      <Input
+                        value={newKeyPointsInput}
+                        onChange={(e) => setNewKeyPointsInput(e.target.value)}
+                        placeholder="输入或选择知识点"
+                        className="h-7 text-xs"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (e.key === 'Enter' && newKeyPointsInput.trim()) {
+                            setBulkKeyPoints(newKeyPointsInput.trim())
+                            setNewKeyPointsInput('')
+                            e.currentTarget.blur()
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs shrink-0"
+                        disabled={!newKeyPointsInput.trim()}
+                        onClick={() => { setBulkKeyPoints(newKeyPointsInput.trim()); setNewKeyPointsInput('') }}
+                      >
+                        确定
+                      </Button>
+                    </div>
+                    <DropdownMenuItem onClick={() => setBulkKeyPoints('')}>
+                      <span className="text-muted-foreground">不设置</span>
+                      {!bulkKeyPoints && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {[...kpsBySubject.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([subject, kps]) => (
+                      <DropdownMenuSub key={subject}>
+                        <DropdownMenuSubTrigger>{subject}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                          {kps.map((kp) => (
+                            <DropdownMenuItem key={kp} onSelect={(e) => { e.preventDefault(); setNewKeyPointsInput(kp) }}>
+                              <span>{kp}</span>
+                              <span className="ml-auto text-muted-foreground text-[10px] tabular-nums mr-1">{kpCounts.get(kp) ?? 0}</span>
+                              {bulkKeyPoints === kp && <Check className="h-3 w-3" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button variant="default" size="sm" disabled={bulkUpdating || (!bulkSubject && !bulkCategory && !bulkKeyPoints)}
                   onClick={handleBulkUpdate}>
                   {bulkUpdating ? '应用中...' : '应用'}
                 </Button>
@@ -568,6 +732,30 @@ export function Component() {
         onClose={() => setShowImport(false)}
         onImported={refetch}
       />
+
+      <AlertDialog open={!!kpConfirm} onOpenChange={() => setKpConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>同步修改知识点</AlertDialogTitle>
+            <AlertDialogDescription>
+              已选中 {kpConfirm?.selectedCount} 道题，但知识点为「{kpConfirm?.oldKp}」的题目共有 {kpConfirm?.totalCount} 道。
+              是否将 {kpConfirm?.totalCount} 道题全部改为「{kpConfirm?.newKp}」？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              if (kpConfirm) applyBulkUpdate([...selectedIds], { key_points: kpConfirm.newKp })
+            }}>
+              仅修改已选中
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (kpConfirm) applyBulkUpdate([], { key_points: kpConfirm.newKp })
+            }}>
+              全部修改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

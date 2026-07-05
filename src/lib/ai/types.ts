@@ -16,6 +16,7 @@ export interface ParsedQuestion {
   answer_explanation?: string
   verified?: boolean
   allow_unordered?: boolean
+  source_page?: string
 }
 
 export interface AiParseResult {

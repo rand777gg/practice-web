@@ -89,6 +89,7 @@ export interface Question {
   verified: boolean
   import_mode: string | null
   allow_unordered: boolean
+  source_page: string | null
 }
 
 export interface ExamSession {

@@ -42,7 +42,7 @@ export function useQuestions() {
 
     if (search) query = query.ilike('question_text', `%${search}%`)
     if (subject) query = query.eq('subject', subject)
-    if (category) query = query.contains('categories', [category])
+    if (category) query = query.or(`category.eq."${category}",categories.cs.["${category}"]`)
     if (questionType) query = query.eq('question_type', questionType)
     if (importMode) query = query.eq('import_mode', importMode)
     if (verified === 'true') query = query.eq('verified', true)

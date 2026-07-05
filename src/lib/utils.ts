@@ -41,3 +41,13 @@ export function normalizeChineseText(text: string): string {
   result = result.replace(new RegExp(`(${CJK})['’]`, 'g'), '$1』')
   return result
 }
+
+// Strip AI-generated label prefixes from option text (A. / A、/ 1. / ① etc.)
+export function cleanOptionText(text: string): string {
+  if (!text) return text
+  return text
+    .replace(/^[A-Z][\.\、\)）]\s*/, '')
+    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
+    .replace(/^\d+[\.\、\)）]\s*/, '')
+    .trim()
+}
