@@ -151,7 +151,7 @@ export function Component() {
 
   const { isEnabled } = useSettingsStore()
   const [showHistoryDialog, setShowHistoryDialog] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; pdf_page_urls: string | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<{ id: number; file_name: string; display_name: string | null; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; pdf_page_urls: string | null; mode: string; created_at: string }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(urlHistoryId)
@@ -346,12 +346,13 @@ export function Component() {
 
   // Load existing key_points filtered by subject
   useEffect(() => {
-    supabase.rpc('get_question_meta', { p_subject: subject || null }).then(
-      ({ data, error }: { data: { key_points?: string[] } | null; error: unknown }) => {
+    ;(async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_question_meta', { p_subject: subject || null }) as { data: { key_points?: string[] } | null; error: unknown }
         if (!error && data?.key_points) setExistingKeyPoints(data.key_points)
         else setExistingKeyPoints([])
-      }
-    ).catch(() => setExistingKeyPoints([]))
+      } catch { setExistingKeyPoints([]) }
+    })()
   }, [subject])
 
   useEffect(() => {

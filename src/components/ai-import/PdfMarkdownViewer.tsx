@@ -444,7 +444,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
                       if (rangeAnchor === null) {
                         onToggleSection?.(i) // select anchor first
                       } else {
-                        onRangeSelect(Math.min(rangeAnchor, i), Math.max(rangeAnchor, i))
+                        onRangeSelect(Math.min(rangeAnchor!, i), Math.max(rangeAnchor!, i))
                       }
                     }
                   }}

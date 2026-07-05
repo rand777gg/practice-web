@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { AiImportQuestionCard } from './AiImportQuestionCard'
-import { Check, ChevronDown, ListRestart, Plus, Sparkles, Wand2, X } from 'lucide-react'
+import { Check, ChevronDown, ListRestart, Plus, Sparkles, Wand2 } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
