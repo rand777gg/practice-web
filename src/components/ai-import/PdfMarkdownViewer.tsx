@@ -21,11 +21,20 @@ interface MdSection {
   blockIndex: number
 }
 
+interface PageUrl {
+  p: number
+  w: number
+  h: number
+  src: string
+}
+
 interface Props {
   pdfUrl: string | null
   jsonData?: string | Record<string, unknown>
   markdown: string
   pageRanges?: string
+  pageUrls?: PageUrl[]
+  rendering?: boolean
   children?: React.ReactNode
 }
 
@@ -193,15 +202,27 @@ function renderBlockToMd(node: BlockNode, level: number): string {
 
 // ---- Component ----
 
-export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, children }: Props) {
+export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, pageUrls, rendering, children }: Props) {
   const mdRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   const pageImgRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
-  const [renderedPages, setRenderedPages] = useState<{ p: number; w: number; h: number; src: string }[]>([])
+  const [renderedPages, setRenderedPages] = useState<{ p: number; w: number; h: number; src: string }[]>(pageUrls || [])
   const [containerW, setContainerW] = useState(700)
   const [activeMdIdx, setActiveMdIdx] = useState<number | null>(null)
   const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
+
+  const hasPreRendered = !!(pageUrls && pageUrls.length > 0)
+
+  // Sync progressive pageUrls stream into renderedPages (page-by-page upload)
+  useEffect(() => {
+    if (pageUrls && pageUrls.length > 0) {
+      setRenderedPages(pageUrls)
+    }
+  }, [pageUrls])
+
+  // Skip pdfjs when: pre-rendered pages exist, or pages are currently being rendered
+  const skipPdfjs = hasPreRendered || rendering
 
   const { sections, blocks } = jsonData
     ? parseLayoutTree(jsonData, pageRanges)
@@ -216,8 +237,9 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
   const displaySections = sections.length > 0 ? sections : fallbackSections
   const matched = sections.filter(s => s.bbox).length
 
-  // Adaptive render scale: lower on mobile to prevent OOM
-  const renderScale = Math.min(2.0, Math.max(1.0, window.innerWidth / 700))
+  // Render scale must match the actual image render scale for bbox overlay positioning.
+  // Pre-rendered R2 images are always rendered at 2.0; pdfjs path uses adaptive scale.
+  const renderScale = hasPreRendered ? 2.0 : Math.min(2.0, Math.max(1.0, window.innerWidth / 700))
 
   // Lazy-loading: render pages on demand with IntersectionObserver
   const [loadedCount, setLoadedCount] = useState(5)
@@ -240,7 +262,8 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
 
   useEffect(() => {
     let cancelled = false
-    setLoadedCount(5)  // reset on new pdfUrl
+    setLoadedCount(5)
+    if (skipPdfjs) return
     setRenderedPages([])
     if (!pdfUrl) return
 
@@ -277,7 +300,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
 
     renderInBatches()
     return () => { cancelled = true }
-  }, [pdfUrl, renderScale])
+  }, [pdfUrl, renderScale, skipPdfjs])
 
   useEffect(() => {
     const el = pdfContainerRef.current
@@ -325,8 +348,11 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 min-h-0">
         <div ref={pdfContainerRef} className="overflow-auto lg:border-r p-2 space-y-3">
           {renderedPages.length === 0 ? (
-            <div className="space-y-4 p-2">
+            <div className="space-y-3 p-2">
               <Skeleton className="h-[50vh] w-full rounded" />
+              {rendering && (
+                <p className="text-xs text-muted-foreground text-center">正在渲染 PDF 页面并上传到 R2...</p>
+              )}
             </div>
           ) : (
             visiblePages.map(rp => {
@@ -372,6 +398,9 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, chil
             })
           )}
           {hasMore && <div ref={sentinelRef} className="h-4" />}
+          {rendering && renderedPages.length > 0 && (
+            <p className="text-[10px] text-muted-foreground text-center">正在渲染剩余页面...</p>
+          )}
         </div>
 
         <ScrollArea className="p-3">
