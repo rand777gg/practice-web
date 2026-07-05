@@ -97,7 +97,7 @@ async function main() {
   let newLastId = lastId
 
   // List recent messages
-  const path = `/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=${CHAT_ID}&page_size=10&sort_type=ByCreateTimeDesc`
+  const path = `/open-apis/im/v1/messages?container_id_type=chat&container_id=${CHAT_ID}&page_size=10&sort_type=ByCreateTimeDesc`
   const list = await feishuApi(path)
   console.log('API:', JSON.stringify(list).slice(0, 300))
 
