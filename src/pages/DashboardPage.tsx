@@ -132,7 +132,7 @@ export function Component() {
       if (isStale(myGen)) { setIsRefreshing(false); return }
 
       if (!questions) {
-        const { data: fresh } = await supabase.from('questions').select('id, subject, category, question_type')
+        const { data: fresh } = await supabase.from('questions').select('id, subject, category, categories, question_type')
         if (isStale(myGen)) { setIsRefreshing(false); return }
         questions = (fresh ?? []) as QMeta[]
         dashboardStore.setQMetaCache(questions)

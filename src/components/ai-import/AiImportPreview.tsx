@@ -25,8 +25,10 @@ interface Props {
   category: string
   existingSubjects: string[]
   existingCategories: string[]
+  existingKeyPoints: string[]
   onSubjectChange: (v: string) => void
   onCategoryChange: (v: string) => void
+  onSetKeyPoints: (indexes: number[], kp: string) => void
   onToggleSelect: (index: number) => void
   onToggleAll: () => void
   onChangeQuestion: (index: number, q: ParsedQuestion) => void
@@ -35,25 +37,22 @@ interface Props {
 
 export function AiImportPreview({
   questions, selectedIds, subject, category,
-  existingSubjects, existingCategories,
-  onSubjectChange, onCategoryChange,
+  existingSubjects, existingCategories, existingKeyPoints,
+  onSubjectChange, onCategoryChange, onSetKeyPoints,
   onToggleSelect, onToggleAll, onChangeQuestion, onRemoveQuestion,
 }: Props) {
   const { t } = useT()
   const { isEnabled } = useSettingsStore()
   const allSelected = questions.length > 0 && selectedIds.size === questions.length
   const [batchKpLoading, setBatchKpLoading] = useState(false)
-  const [showBatchManualKp, setShowBatchManualKp] = useState(false)
   const [batchManualKp, setBatchManualKp] = useState('')
 
   const handleBatchManualKeyPoints = () => {
     const v = batchManualKp.trim()
     if (!v || selectedIds.size === 0) return
-    questions.forEach((q, i) => {
-      if (selectedIds.has(i)) onChangeQuestion(i, { ...q, key_points: v })
-    })
+    const idxs = questions.reduce<number[]>((acc, _, i) => selectedIds.has(i) ? [...acc, i] : acc, [])
+    onSetKeyPoints(idxs, v)
     setBatchManualKp('')
-    setShowBatchManualKp(false)
   }
 
   const handleBatchNormalize = () => {
@@ -185,35 +184,39 @@ export function AiImportPreview({
             <ListRestart className="h-3 w-3" />
             清理选项
           </Button>
-          {showBatchManualKp ? (
-            <div className="flex items-center gap-1">
-              <Input
-                autoFocus
-                placeholder="知识点..."
-                value={batchManualKp}
-                onChange={(e) => setBatchManualKp(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleBatchManualKeyPoints() }}
-                className="h-6 text-xs w-[120px]"
-              />
-              <Button size="sm" className="text-xs h-6 px-2" onClick={handleBatchManualKeyPoints} disabled={!batchManualKp.trim() || selectedIds.size === 0}>
-                确定
-              </Button>
-              <Button size="sm" variant="ghost" className="text-xs h-6 px-1" onClick={() => { setShowBatchManualKp(false); setBatchManualKp('') }}>
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs h-6 gap-1"
-              disabled={selectedIds.size === 0}
-              onClick={() => setShowBatchManualKp(true)}
-              title="对选中的题目统一设置相同的知识点"
-            >
-              <Plus className="h-3 w-3" />
-              统一设置知识点
-            </Button>
+          {selectedIds.size > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="text-xs h-6 gap-1">
+                  <Plus className="h-3 w-3" />
+                  统一设置知识点
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto max-w-xs">
+                {existingKeyPoints.map((kp) => (
+                  <DropdownMenuItem key={kp} className="text-xs"
+                    onClick={() => {
+                      const idxs = questions.reduce<number[]>((acc, _, i) => selectedIds.has(i) ? [...acc, i] : acc, [])
+                      onSetKeyPoints(idxs, kp)
+                    }}>
+                    <span className="truncate">{kp}</span>
+                  </DropdownMenuItem>
+                ))}
+                {existingKeyPoints.length > 0 && <DropdownMenuSeparator />}
+                <div className="flex items-center gap-1 px-2 py-1" onKeyDown={(e) => e.stopPropagation()}>
+                  <Input
+                    placeholder="新增知识点..."
+                    value={batchManualKp}
+                    onChange={(e) => setBatchManualKp(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleBatchManualKeyPoints() } }}
+                    className="h-7 text-xs flex-1"
+                  />
+                  <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleBatchManualKeyPoints} disabled={!batchManualKp.trim()}>
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -289,6 +292,7 @@ export function AiImportPreview({
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
+
       </div>
 
       <ScrollArea className="max-h-[70vh] pr-1">

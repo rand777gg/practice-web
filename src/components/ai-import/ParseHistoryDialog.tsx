@@ -4,11 +4,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Trash2, Clock } from 'lucide-react'
+import { Trash2, Clock, Link, ChevronDown } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 
 export interface HistoryEntry {
   id: number
   file_name: string
+  display_name: string | null
   markdown: string
   json_data: string | null
   questions_json: string | null
@@ -29,7 +32,11 @@ interface Props {
   onLoad: (id: number) => void
   onDelete: (id: number) => void
   onBatchCache: (ids: number[]) => void
+  onBatchReplaceUrl: (ids: number[], newUrl: string) => void
+  onRename: (id: number, displayName: string) => void
   onShowQuestions: (questionsJson: string) => void
+  r2DisplayNames?: Map<string, string>
+  r2Pdfs?: { key: string; url: string }[]
 }
 
 const MODES = [
@@ -55,9 +62,32 @@ function stateColor(s: string) {
   return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30'
 }
 
-export function ParseHistoryDialog({ open, onOpenChange, history, loading, error, onLoad, onDelete, onBatchCache, onShowQuestions }: Props) {
+function fileNameFromUrl(url: string): string {
+  return url.split('/').pop() || url
+}
+
+function r2KeyFromUrl(url: string): string | null {
+  if (!url.includes('r2-rpw.pguide.dev')) return null
+  const idx = url.indexOf('pdf/')
+  return idx >= 0 ? url.slice(idx) : null
+}
+
+function displayFileName(h: HistoryEntry, r2Names?: Map<string, string>): string {
+  if (h.display_name) return h.display_name
+  if (r2Names) {
+    const key = r2KeyFromUrl(h.file_name)
+    if (key && r2Names.has(key)) return r2Names.get(key)!
+  }
+  return h.file_name.startsWith('http') ? fileNameFromUrl(h.file_name) : h.file_name
+}
+
+export function ParseHistoryDialog({ open, onOpenChange, history, loading, error, onLoad, onDelete, onBatchCache, onBatchReplaceUrl, onRename, onShowQuestions, r2DisplayNames, r2Pdfs }: Props) {
   const [mode, setMode] = useState('all')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [replaceUrl, setReplaceUrl] = useState('')
+  const [showReplaceInput, setShowReplaceInput] = useState(false)
+  const [editingNameId, setEditingNameId] = useState<number | null>(null)
+  const [editNameValue, setEditNameValue] = useState('')
 
   const filtered = mode === 'all' ? history : history.filter(h => h.mode === mode)
   const cacheable = filtered.filter(h => h.file_name.startsWith('http'))
@@ -93,7 +123,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
           ) : (
             <>
               {selectedIds.size > 0 && (
-                <div className="flex items-center gap-2 mb-2 sticky top-0 bg-background py-1 z-10">
+                <div className="flex items-center gap-2 mb-2 sticky top-0 bg-background py-1 z-10 flex-wrap">
                   <span className="text-xs text-muted-foreground">已选 {selectedIds.size} 条</span>
                   <Button variant="outline" size="sm" className="h-7 text-xs"
                     onClick={async () => {
@@ -103,6 +133,60 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                     }}>
                     批量缓存到 R2
                   </Button>
+                  {showReplaceInput ? (
+                    <>
+                      <Input
+                        value={replaceUrl}
+                        onChange={(e) => setReplaceUrl(e.target.value)}
+                        placeholder="输入新的 PDF URL 或从 R2 选择"
+                        className="h-7 text-xs w-56"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && replaceUrl.trim()) {
+                            onBatchReplaceUrl([...selectedIds], replaceUrl.trim())
+                            setSelectedIds(new Set())
+                            setReplaceUrl('')
+                            setShowReplaceInput(false)
+                          }
+                        }}
+                      />
+                      {r2Pdfs && r2Pdfs.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                              R2 <ChevronDown className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto max-w-xs">
+                            {r2Pdfs.map((f) => (
+                              <DropdownMenuItem key={f.key} className="text-xs" onClick={() => setReplaceUrl(f.url)}>
+                                <span className="truncate">{r2DisplayNames?.get(f.key) || f.key.replace('pdf/', '')}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      <Button variant="outline" size="sm" className="h-7 text-xs"
+                        disabled={!replaceUrl.trim()}
+                        onClick={() => {
+                          onBatchReplaceUrl([...selectedIds], replaceUrl.trim())
+                          setSelectedIds(new Set())
+                          setReplaceUrl('')
+                          setShowReplaceInput(false)
+                        }}>
+                        确认换源
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs"
+                        onClick={() => { setShowReplaceInput(false); setReplaceUrl('') }}>
+                        取消
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" className="h-7 text-xs"
+                      onClick={() => setShowReplaceInput(true)}>
+                      <Link className="h-3 w-3 mr-1" />
+                      批量换源
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -148,8 +232,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                               onCheckedChange={() => {
                                 setSelectedIds(prev => {
                                   const next = new Set(prev)
-                                  if (next.has(h.id)) next.delete(h.id)
-                                  else next.add(h.id)
+                                  if (next.has(h.id)) { next.delete(h.id) } else { next.add(h.id) }
                                   return next
                                 })
                               }}
@@ -158,10 +241,38 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                         </TableCell>
                         <TableCell className="text-xs py-1.5 text-muted-foreground tabular-nums">{h.id}</TableCell>
                         <TableCell className="text-xs py-1.5">
-                          <button type="button" className="text-left hover:underline underline-offset-2 font-medium max-w-[280px] truncate block"
-                            onClick={() => { onLoad(h.id); onOpenChange(false) }}>
-                            {h.file_name.startsWith('http') ? (h.file_name.split('/').pop() || h.file_name) : h.file_name}
-                          </button>
+                          {editingNameId === h.id ? (
+                            <Input
+                              value={editNameValue}
+                              onChange={(e) => setEditNameValue(e.target.value)}
+                              onBlur={() => {
+                                if (editNameValue.trim()) onRename(h.id, editNameValue.trim())
+                                setEditingNameId(null)
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  if (editNameValue.trim()) onRename(h.id, editNameValue.trim())
+                                  setEditingNameId(null)
+                                } else if (e.key === 'Escape') {
+                                  setEditingNameId(null)
+                                }
+                              }}
+                              className="h-6 text-xs"
+                              autoFocus
+                            />
+                          ) : (
+                            <button type="button"
+                              className="text-left hover:underline underline-offset-2 font-medium max-w-[280px] truncate block"
+                              onClick={() => { onLoad(h.id); onOpenChange(false) }}
+                              onDoubleClick={(e) => {
+                                e.preventDefault()
+                                setEditingNameId(h.id)
+                                setEditNameValue(displayFileName(h, r2DisplayNames))
+                              }}
+                              title="单击查看 · 双击重命名">
+                              {displayFileName(h, r2DisplayNames)}
+                            </button>
+                          )}
                         </TableCell>
                         <TableCell className="text-xs py-1.5 text-muted-foreground">
                           {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}

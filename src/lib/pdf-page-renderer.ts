@@ -98,3 +98,39 @@ export async function renderAndUploadPdfPages(
   pdf.destroy()
   return results
 }
+
+// Render first page of a PDF as thumbnail WebP, upload to R2. Caller should try direct URL first.
+export async function renderPdfThumbnail(pdfUrl: string, thumbKey: string): Promise<string | null> {
+  try {
+    const pdf = await pdfjsLib.getDocument(pdfUrl).promise
+    const page = await pdf.getPage(1)
+    const vp = page.getViewport({ scale: 0.7 })
+    const cvs = document.createElement('canvas')
+    cvs.width = vp.width
+    cvs.height = vp.height
+    const ctx = cvs.getContext('2d')!
+    await page.render({ canvasContext: ctx, viewport: vp }).promise
+    page.cleanup()
+    pdf.destroy()
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      cvs.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/webp', 0.8)
+    })
+
+    const { data, error } = await supabase.functions.invoke('r2-upload-url', {
+      body: { key: thumbKey, contentType: 'image/webp' },
+    })
+    if (error || !(data as any)?.url) return null
+    const { url: presignedUrl, publicUrl } = data as { url: string; publicUrl: string }
+
+    const uploadRes = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: blob,
+      headers: { 'Content-Type': 'image/webp' },
+    })
+    if (!uploadRes.ok) return null
+    return publicUrl
+  } catch {
+    return null
+  }
+}

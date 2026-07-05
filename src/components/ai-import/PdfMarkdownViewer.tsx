@@ -35,6 +35,11 @@ interface Props {
   pageRanges?: string
   pageUrls?: PageUrl[]
   rendering?: boolean
+  selectionMode?: 'off' | 'single' | 'range'
+  selectedSections?: Set<number>
+  onToggleSection?: (index: number) => void
+  onRangeSelect?: (from: number, to: number) => void
+  rangeAnchor?: number | null
   children?: React.ReactNode
 }
 
@@ -95,7 +100,7 @@ function buildPageMap(ranges: string | undefined): (i: number) => number {
 
 // ---- Parse layout.json tree into sections with direct block references ----
 
-function parseLayoutTree(rawJson: unknown, pageRanges?: string): { sections: MdSection[]; blocks: BlockNode[] } {
+export function parseLayoutTree(rawJson: unknown, pageRanges?: string): { sections: MdSection[]; blocks: BlockNode[] } {
   const sections: MdSection[] = []
   const flatBlocks: BlockNode[] = []
 
@@ -202,7 +207,7 @@ function renderBlockToMd(node: BlockNode, level: number): string {
 
 // ---- Component ----
 
-export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, pageUrls, rendering, children }: Props) {
+export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, pageUrls, rendering, selectionMode, selectedSections, onToggleSection, onRangeSelect, rangeAnchor, children }: Props) {
   const mdRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   const pageImgRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -405,7 +410,11 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
 
         <ScrollArea className="p-3">
           <div ref={mdRef} className="text-xs leading-relaxed font-mono whitespace-pre-wrap break-all">
-              {displaySections.map((sec, i) => (
+              {displaySections.map((sec, i) => {
+                const isSelected = selectedSections ? selectedSections.has(i) : false
+                const isAnchor = selectionMode === 'range' && rangeAnchor === i
+                const selActive = selectionMode && selectionMode !== 'off'
+                return (
                 <span
                   key={i}
                   data-md-idx={i}
@@ -414,16 +423,49 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
                       ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20 border-l-2 border-l-amber-300/50'
                       : 'text-muted-foreground/50 border-l-2 border-l-transparent'
                   } ${
-                    activeMdIdx === i
+                    activeMdIdx === i && !selActive
                       ? '!bg-blue-100 dark:!bg-blue-900/40 ring-1 ring-blue-400 !border-l-blue-500'
                       : ''
+                  } ${
+                    isSelected && selActive
+                      ? '!bg-green-50 dark:!bg-green-900/20 !border-l-green-500'
+                      : ''
+                  } ${
+                    isAnchor
+                      ? '!bg-orange-50 dark:!bg-orange-900/20 !border-l-orange-500'
+                      : ''
                   }`}
-                  onClick={() => handleMdClick(sec, i)}
-                  title={sec.bbox ? `第 ${sec.page} 页 — 点击定位` : `估算第 ${sec.page} 页`}
+                  onClick={() => {
+                    if (selectionMode === 'off' || !selectionMode) {
+                      handleMdClick(sec, i)
+                    } else if (selectionMode === 'single' && onToggleSection) {
+                      onToggleSection(i)
+                    } else if (selectionMode === 'range' && onRangeSelect) {
+                      if (rangeAnchor === null) {
+                        onToggleSection?.(i) // select anchor first
+                      } else {
+                        onRangeSelect(Math.min(rangeAnchor, i), Math.max(rangeAnchor, i))
+                      }
+                    }
+                  }}
+                  title={
+                    selActive
+                      ? selectionMode === 'range' && rangeAnchor === null ? `第 ${sec.page} 页 — 点击设为起点` : `第 ${sec.page} 页`
+                      : sec.bbox ? `第 ${sec.page} 页 — 点击定位` : `估算第 ${sec.page} 页`
+                  }
                 >
+                  {selActive && (
+                    <span className={`inline-block w-3.5 h-3.5 mr-1 rounded border text-[9px] leading-none text-center align-middle ${
+                      isAnchor ? 'bg-orange-500 border-orange-500 text-white' :
+                      isSelected ? 'bg-green-500 border-green-500 text-white' : 'border-muted-foreground/30'
+                    }`}>
+                      {isAnchor ? '▶' : isSelected ? '✓' : ''}
+                    </span>
+                  )}
                   {sec.text}
                 </span>
-              ))}
+                )
+              })}
             </div>
         </ScrollArea>
       </div>

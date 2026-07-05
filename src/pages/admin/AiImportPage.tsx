@@ -21,8 +21,9 @@ import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { PdfMarkdownViewer } from '@/components/ai-import/PdfMarkdownViewer'
+import { PdfMarkdownViewer, parseLayoutTree } from '@/components/ai-import/PdfMarkdownViewer'
 import { ParseHistoryDialog } from '@/components/ai-import/ParseHistoryDialog'
+import { R2PdfGallery } from '@/components/ai-import/R2PdfGallery'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
   getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
@@ -34,6 +35,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { Icon } from '@iconify/react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Pencil, Play, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
@@ -84,6 +86,7 @@ export function Component() {
   }, [questions, subject, category, step])
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
+  const [existingKeyPoints, setExistingKeyPoints] = useState<string[]>([])
 
   // MinerU precision parsing settings
   const [parseMode, setParseMode] = useState<ParseMode>('lightweight')
@@ -99,6 +102,17 @@ export function Component() {
   const [pageUrls, setPageUrls] = useState<{ p: number; w: number; h: number; src: string }[]>([])
   const [pageRendering, setPageRendering] = useState(false)
   const [r2Pdfs, setR2Pdfs] = useState<{ key: string; url: string; size: number }[]>([])
+  const [r2DisplayNames, setR2DisplayNames] = useState<Map<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('r2-pdf-names')
+      return saved ? new Map(JSON.parse(saved)) : new Map()
+    } catch { return new Map() }
+  })
+
+  const saveR2DisplayNames = (map: Map<string, string>) => {
+    setR2DisplayNames(map)
+    localStorage.setItem('r2-pdf-names', JSON.stringify([...map]))
+  }
   const [pageRanges, setPageRanges] = useState('')
   const pageRangesRef = useRef(pageRanges)
   pageRangesRef.current = pageRanges
@@ -175,7 +189,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls')
+      .select('id, file_name, display_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -246,6 +260,16 @@ export function Component() {
         setPageUrls([])
       }
       setPageRendering(false)
+      setSelectedSectionIdx(new Set())
+      setSelectionMode('off')
+      setRangeAnchor(null)
+      setCurrentDisplayName(entry.display_name || (() => {
+        if (entry.file_name.includes('r2-rpw.pguide.dev')) {
+          const idx = entry.file_name.indexOf('pdf/')
+          if (idx >= 0) return r2DisplayNames.get(entry.file_name.slice(idx)) || null
+        }
+        return null
+      })())
       setParseMsg('已从历史记录加载')
       setParsingDone(true)
       setStepPersisted('parsing', id)
@@ -320,6 +344,16 @@ export function Component() {
     loadMeta()
   }, [user?.id])
 
+  // Load existing key_points filtered by subject
+  useEffect(() => {
+    supabase.rpc('get_question_meta', { p_subject: subject || null }).then(
+      ({ data, error }: { data: { key_points?: string[] } | null; error: unknown }) => {
+        if (!error && data?.key_points) setExistingKeyPoints(data.key_points)
+        else setExistingKeyPoints([])
+      }
+    ).catch(() => setExistingKeyPoints([]))
+  }, [subject])
+
   useEffect(() => {
     if (user) loadHistoryList()
   }, [user?.id])
@@ -379,6 +413,10 @@ export function Component() {
     setHistoryPdfUrl(null)
     setPageUrls([])
     setPageRendering(false)
+    setCurrentDisplayName(null)
+    setSelectedSectionIdx(new Set())
+    setSelectionMode('off')
+    setRangeAnchor(null)
     setParseStatus({ state: 'connecting' })
 
     try {
@@ -399,10 +437,7 @@ export function Component() {
     const fileName = manualPdfUrl.split('/').pop()?.split('?')[0] || 'document.pdf'
     const mineru = new MinerUClient()
 
-    // Compute R2 dedup key (fast, no network)
-    const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manualPdfUrl))
-    const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
-    const dedupKey = `pdf/${hashHex}_${fileName}`
+    const dedupKey = `pdf/${fileName}`
 
     // Background: ensure PDF is persisted to R2 (skip if already cached)
     let r2Url: string
@@ -526,8 +561,12 @@ export function Component() {
   }
 
   const [parseResult, setParseResult] = useState<{ markdown: string; fileName: string; jsonData?: string } | null>(null)
+  const [currentDisplayName, setCurrentDisplayName] = useState<string | null>(null)
   const [parsingDone, setParsingDone] = useState(false)
   const [parsePage, setParsePage] = useState(0)
+  const [selectionMode, setSelectionMode] = useState<'off' | 'single' | 'range'>('off')
+  const [selectedSectionIdx, setSelectedSectionIdx] = useState<Set<number>>(new Set())
+  const [rangeAnchor, setRangeAnchor] = useState<number | null>(null)
   const CHARS_PER_PAGE = 3000
   const pdfUrl = file ? URL.createObjectURL(file) : files.length > 0 ? URL.createObjectURL(files[0]) : null
 
@@ -734,6 +773,26 @@ export function Component() {
           setParseMsg('批量缓存完成')
           loadHistoryList()
         }}
+        onRename={async (id, displayName) => {
+          await supabase.from('parse_history').update({ display_name: displayName }).eq('id', id)
+          setHistory(prev => prev.map(h => h.id === id ? { ...h, display_name: displayName } : h))
+          if (id === currentHistoryId) setCurrentDisplayName(displayName)
+        }}
+        onBatchReplaceUrl={async (ids, newUrl) => {
+          // Optimistic update: reflect new URL and clear cache immediately
+          setHistory(prev => prev.map(h =>
+            ids.includes(h.id) ? { ...h, file_name: newUrl, pdf_page_urls: null } : h
+          ))
+          await Promise.all(ids.map(id =>
+            supabase.from('parse_history').update({
+              file_name: newUrl,
+              pdf_page_urls: null,
+            }).eq('id', id)
+          ))
+          loadHistoryList()
+        }}
+        r2DisplayNames={r2DisplayNames}
+        r2Pdfs={r2Pdfs}
         onShowQuestions={(json) => {
           try { setQuestions(JSON.parse(json)) } catch { /* ignore */ }
           setSelectedIds(new Set())
@@ -754,7 +813,9 @@ export function Component() {
         <CardContent className="py-6 space-y-4">
           {/* Step 1: Upload */}
           {step === 'upload' && (
-            <>
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_35%] gap-6">
+              {/* ===== LEFT PANEL: Mode + Settings + Upload ===== */}
+              <div className="space-y-4">
               {/* Parse mode selection */}
               <Tabs value={parseMode} onValueChange={(v) => { setParseMode(v as ParseMode); if (v === 'lightweight') setBatchMode(false) }}>
                 <TabsList>
@@ -1003,7 +1064,10 @@ export function Component() {
                                   )}>
                                     {checked && <Check className="h-3 w-3" />}
                                   </button>
-                                  <span className="truncate flex-1">{h.file_name}</span>
+                                  <span className="truncate flex-1 text-xs">
+                                    {h.display_name || (h.file_name.startsWith('http') ? h.file_name.split('/').pop() : h.file_name)}
+                                    {h.mode !== 'generate' && <span className="text-[10px] text-muted-foreground ml-1">({h.page_ranges || '全部'})</span>}
+                                  </span>
                                   <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
                                 </label>
                                 )
@@ -1115,31 +1179,9 @@ export function Component() {
                 <>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">PDF URL <span className="text-muted-foreground font-normal text-xs">(选填，直接填入 URL 无需上传)</span></label>
-                    <div className="flex gap-2">
-                      <Input placeholder="https://example.com/document.pdf" value={manualPdfUrl}
-                        onChange={(e) => { setManualPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
-                        className="h-9 text-sm flex-1" />
-                      {r2Pdfs.length > 0 && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-9 gap-1 text-xs">
-                              R2 已有 <ChevronDown className="h-3 w-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto max-w-md">
-                            {r2Pdfs.map((f) => (
-                              <DropdownMenuItem key={f.key} className="flex items-center gap-1" onClick={() => { setManualPdfUrl(f.url); setFile(null); setFiles([]) }}>
-                                <span className="truncate text-xs">{f.key.replace('pdf/', '')}</span>
-                                <span className="ml-2 text-[10px] text-muted-foreground shrink-0">{formatSize(f.size)}</span>
-                                <a href={f.url} target="_blank" rel="noopener noreferrer"
-                                  className="ml-auto shrink-0 text-[10px] text-primary hover:underline"
-                                  onClick={(e) => e.stopPropagation()}>预览</a>
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
+                    <Input placeholder="https://example.com/document.pdf" value={manualPdfUrl}
+                      onChange={(e) => { setManualPdfUrl(e.target.value); if (e.target.value) { setFile(null); setFiles([]) } }}
+                      className="h-9 text-sm" />
                   </div>
                   <AiImportUpload
                     onFile={handleFile}
@@ -1183,7 +1225,42 @@ export function Component() {
                   {parseMode === 'precision' ? '开始精准解析' : '开始解析'}
                 </Button>
               )}
-            </>
+              </div>
+
+              {/* ===== RIGHT PANEL: Cloudflare R2 ===== */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                    <Icon icon="logos:cloudflare-icon" className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-tight">Cloudflare R2</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">PDF 存储桶</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground tabular-nums">
+                    {r2Pdfs.length} 文件
+                  </span>
+                </div>
+                <R2PdfGallery
+                  pdfs={r2Pdfs}
+                  displayNames={r2DisplayNames}
+                  onSelect={(url) => { setManualPdfUrl(url); setFile(null); setFiles([]) }}
+                  onRename={(key, name) => {
+                    const next = new Map(r2DisplayNames)
+                    if (name) next.set(key, name)
+                    else next.delete(key)
+                    saveR2DisplayNames(next)
+                  }}
+                  onRefresh={() => {
+                    supabase.functions.invoke('r2-list', { body: { prefix: 'pdf/' } })
+                      .then(({ data }) => {
+                        if (data?.files) setR2Pdfs((data.files as { key: string; url: string; size: number }[]).filter(f => f.key !== 'pdf/' && !f.key.endsWith('/')))
+                      })
+                      .catch(() => {})
+                  }}
+                />
+              </div>
+            </div>
           )}
 
           {/* Step 2: Parsing */}
@@ -1197,7 +1274,16 @@ export function Component() {
                     <Button variant="outline" size="sm" onClick={() => { setStepPersisted('upload'); setParsingDone(false); setParseResult(null) }}>
                       重新解析
                     </Button>
-                    <Button size="sm" onClick={() => extractQuestions(parseResult.markdown)}>
+                    <Button size="sm" onClick={() => {
+                      let markdown = parseResult.markdown
+                      if (parseResult?.jsonData && selectedSectionIdx.size > 0) {
+                        try {
+                          const { sections } = parseLayoutTree(parseResult.jsonData, pageRanges)
+                          markdown = sections.filter((_, i) => selectedSectionIdx.has(i)).map(s => s.text).join('\n\n')
+                        } catch { /* use full markdown */ }
+                      }
+                      extractQuestions(markdown)
+                    }}>
                       <ArrowRight className="h-4 w-4" />
                       AI 提取题目
                     </Button>
@@ -1241,7 +1327,10 @@ export function Component() {
                                       )}>
                                         {checked && <Check className="h-3 w-3" />}
                                       </button>
-                                      <span className="truncate flex-1 text-[10px]">{h.file_name}</span>
+                                      <span className="truncate flex-1 text-[10px]">
+                                        {h.display_name || (h.file_name.startsWith('http') ? h.file_name.split('/').pop() : h.file_name)}
+                                        {h.mode !== 'generate' && <span className="text-[9px] text-muted-foreground ml-1">({h.page_ranges || '全部'})</span>}
+                                      </span>
                                       <span className="text-[9px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
                                     </label>
                                   )
@@ -1271,7 +1360,7 @@ export function Component() {
                               <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto max-w-sm">
                                 {r2Pdfs.filter(f => f.key !== 'pdf/' && !f.key.endsWith('/')).map((f) => (
                                   <DropdownMenuItem key={f.key} className="text-xs" onClick={() => setEditPdfUrl(f.url)}>
-                                    <span className="truncate">{f.key.replace('pdf/', '')}</span>
+                                    <span className="truncate">{r2DisplayNames.get(f.key) || f.key.replace('pdf/', '')}</span>
                                     <span className="ml-2 text-[10px] text-muted-foreground shrink-0">{formatSize(f.size)}</span>
                                   </DropdownMenuItem>
                                 ))}
@@ -1283,7 +1372,7 @@ export function Component() {
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          {parseResult.fileName}
+                          {currentDisplayName || (parseResult.fileName.startsWith('http') ? parseResult.fileName.split('/').pop() : parseResult.fileName)}
                           {currentHistoryId && (
                             <button type="button" className="text-muted-foreground/50 hover:text-foreground" title="更换 PDF 链接"
                               onClick={() => { setEditPdfId(currentHistoryId); setEditPdfUrl(parseResult.fileName) }}>
@@ -1294,6 +1383,28 @@ export function Component() {
                       )}
                     </div>
                     <div className="flex items-center gap-3">
+                      {parseResult?.jsonData && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                              {selectionMode === 'off' ? '段落选择' : selectionMode === 'single' ? `单击 · ${selectedSectionIdx.size}` : `范围 · ${selectedSectionIdx.size}`}
+                              <ChevronDown className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuRadioGroup value={selectionMode} onValueChange={(v) => { setSelectionMode(v as typeof selectionMode); setRangeAnchor(null) }}>
+                              <DropdownMenuRadioItem value="off">关闭</DropdownMenuRadioItem>
+                              <DropdownMenuRadioItem value="single">单击选择</DropdownMenuRadioItem>
+                              <DropdownMenuRadioItem value="range">范围选择（起点 + 终点）</DropdownMenuRadioItem>
+                            </DropdownMenuRadioGroup>
+                            {selectionMode !== 'off' && (
+                              <DropdownMenuItem onClick={() => { setSelectedSectionIdx(new Set()); setRangeAnchor(null) }}>
+                                清除选择
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                       {currentHistoryId && !pageRendering && historyPdfUrl && (
                         <Button variant="outline" size="sm" className="h-7 text-xs"
                           onClick={() => renderAndUploadPages(historyPdfUrl, currentHistoryId)}>
@@ -1306,7 +1417,27 @@ export function Component() {
                   {(historyPdfUrl || pdfUrl) && parseResult?.jsonData ? (
                     <Card className="border-0 shadow-none">
                       <CardContent className="p-0 h-[calc(100vh-100px)]">
-                        <PdfMarkdownViewer key={currentHistoryId ?? 'live'} pdfUrl={historyPdfUrl || pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges} pageUrls={pageUrls.length > 0 ? pageUrls : undefined} rendering={pageRendering}>
+                        <PdfMarkdownViewer key={currentHistoryId ?? 'live'} pdfUrl={historyPdfUrl || pdfUrl} jsonData={parseResult.jsonData} markdown={parseResult.markdown} pageRanges={pageRanges} pageUrls={pageUrls.length > 0 ? pageUrls : undefined} rendering={pageRendering}
+                          selectionMode={selectionMode}
+                          selectedSections={selectedSectionIdx}
+                          rangeAnchor={rangeAnchor}
+                          onToggleSection={(i) => {
+                            if (selectionMode === 'range' && rangeAnchor === null) {
+                              setRangeAnchor(i)
+                            }
+                            setSelectedSectionIdx(prev => {
+                              const next = new Set(prev)
+                              if (next.has(i)) { next.delete(i) } else { next.add(i) }
+                              return next
+                            })
+                          }}
+                          onRangeSelect={(from, to) => {
+                            const next = new Set<number>()
+                            for (let j = from; j <= to; j++) next.add(j)
+                            setSelectedSectionIdx(next)
+                            setRangeAnchor(null)
+                          }}
+                        >
                           <button type="button" className="text-[10px] underline text-muted-foreground hover:text-foreground" onClick={() => {
                             const w = window.open('', '_blank', 'width=800,height=600')
                             if (w) {
@@ -1391,8 +1522,14 @@ export function Component() {
                 category={category}
                 existingSubjects={existingSubjects}
                 existingCategories={existingCategories}
+                existingKeyPoints={existingKeyPoints}
                 onSubjectChange={setSubject}
                 onCategoryChange={setCategory}
+                onSetKeyPoints={(indexes, kp) => {
+                  setQuestions(prev => prev.map((q, i) =>
+                    indexes.includes(i) ? { ...q, key_points: kp } : q
+                  ))
+                }}
                 onToggleSelect={toggleSelect}
                 onToggleAll={toggleAll}
                 onChangeQuestion={changeQuestion}

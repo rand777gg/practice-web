@@ -33,12 +33,16 @@ export function normalizeChineseText(text: string): string {
   result = result.replace(new RegExp(`([.:])(${CJK})`, 'g'), (_, p, c) => (p === '.' ? '。' : '：') + c)
   result = result.replace(new RegExp(`(${CJK})([)])`, 'g'), '$1）')
   result = result.replace(new RegExp(`([(])(${CJK})`, 'g'), '（$2')
-  // 半角引号 → 直角引号（开引号优先，避免 CJK+" 被误判为闭引号）
-  // 同时处理弯引号 “ ” ‘ ’（从 Word/网页复制时常出现）
-  result = result.replace(new RegExp(`["“](${CJK})`, 'g'), '「$1')
-  result = result.replace(new RegExp(`(${CJK})["”]`, 'g'), '$1」')
-  result = result.replace(new RegExp(`['‘](${CJK})`, 'g'), '『$1')
-  result = result.replace(new RegExp(`(${CJK})['’]`, 'g'), '$1』')
+  // 弯引号直接替换为直角引号（从 Word/网页复制时常出现）
+  result = result.replace(/“/g, '「')
+  result = result.replace(/”/g, '」')
+  result = result.replace(/‘/g, '『')
+  result = result.replace(/’/g, '』')
+  // 半角引号转直角引号（需邻接 CJK 判断开闭）
+  result = result.replace(new RegExp(`"(${CJK})`, 'g'), '「$1')
+  result = result.replace(new RegExp(`(${CJK})"`, 'g'), '$1」')
+  result = result.replace(new RegExp(`'(${CJK})`, 'g'), '『$1')
+  result = result.replace(new RegExp(`(${CJK})'`, 'g'), '$1』')
   return result
 }
 
@@ -46,8 +50,8 @@ export function normalizeChineseText(text: string): string {
 export function cleanOptionText(text: string): string {
   if (!text) return text
   return text
-    .replace(/^[A-Z][\.\、\)）]\s*/, '')
-    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
-    .replace(/^\d+[\.\、\)）]\s*/, '')
+    .replace(/^[A-Z][.、）)]\s*/, '')
+    .replace(/^[①-⑩]\s*/, '')
+    .replace(/^\d+[.、）)]\s*/, '')
     .trim()
 }

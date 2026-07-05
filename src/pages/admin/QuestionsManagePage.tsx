@@ -148,6 +148,11 @@ export function Component() {
     if (selectedKeyPoints) { setBulkKeyPoints(selectedKeyPoints); setNewKeyPointsInput(selectedKeyPoints) }
   }, [selectedKeyPoints])
 
+  // Pre-fill bulk category from filter
+  useEffect(() => {
+    if (selectedCategory) setBulkCategory(selectedCategory)
+  }, [selectedCategory])
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -168,7 +173,6 @@ export function Component() {
   const [bulkCategory, setBulkCategory] = useState('')
   const [bulkKeyPoints, setBulkKeyPoints] = useState('')
   const [newSubjectInput, setNewSubjectInput] = useState('')
-  const [newCategoryInput, setNewCategoryInput] = useState('')
   const [newKeyPointsInput, setNewKeyPointsInput] = useState('')
   const [bulkUpdating, setBulkUpdating] = useState(false)
 
@@ -182,13 +186,15 @@ export function Component() {
   }
 
   const [kpConfirm, setKpConfirm] = useState<{ oldKp: string; newKp: string; selectedCount: number; totalCount: number } | null>(null)
+  const [catConfirm, setCatConfirm] = useState<{ oldCat: string; newCat: string; selectedCount: number; totalCount: number } | null>(null)
 
   const applyBulkUpdate = async (ids: string[], data: Record<string, unknown>) => {
     setBulkUpdating(true)
     if (ids.length > 0) {
       await supabase.from('questions').update(data).in('id', ids)
+    } else if (catConfirm) {
+      await supabase.from('questions').update({ category: data.category, categories: data.categories }).eq('category', catConfirm.oldCat)
     } else {
-      // Update all matching key_points
       await supabase.from('questions').update({ key_points: data.key_points }).eq('key_points', kpConfirm?.oldKp ?? '')
     }
     setBulkSubject('')
@@ -202,6 +208,7 @@ export function Component() {
       setSelectedKeyPoints(data.key_points as string)
     }
     setKpConfirm(null)
+    setCatConfirm(null)
     refetch()
     loadMetaData()
   }
@@ -223,6 +230,18 @@ export function Component() {
       const total = count ?? 0
       if (total > ids.length) {
         setKpConfirm({ oldKp: selectedKeyPoints, newKp: bulkKeyPoints, selectedCount: ids.length, totalCount: total })
+        return
+      }
+    }
+    // Same check for category
+    if (bulkCategory && selectedCategory && selectedCategory !== bulkCategory) {
+      const { count } = await supabase
+        .from('questions')
+        .select('id', { count: 'exact', head: true })
+        .eq('category', selectedCategory)
+      const total = count ?? 0
+      if (total > ids.length) {
+        setCatConfirm({ oldCat: selectedCategory, newCat: bulkCategory, selectedCount: ids.length, totalCount: total })
         return
       }
     }
@@ -543,42 +562,19 @@ export function Component() {
                   <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
                     <div className="flex items-center gap-1 px-2 py-1.5 border-b" onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <Input
-                        value={newCategoryInput}
-                        onChange={(e) => setNewCategoryInput(e.target.value)}
-                        placeholder="新建分类"
+                        value={bulkCategory}
+                        onChange={(e) => setBulkCategory(e.target.value)}
+                        placeholder="输入或选择分类"
                         className="h-7 text-xs"
-                        onKeyDown={(e) => {
-                          e.stopPropagation()
-                          if (e.key === 'Enter' && newCategoryInput.trim()) {
-                            setBulkCategory(newCategoryInput.trim())
-                            setNewCategoryInput('')
-                            e.currentTarget.blur()
-                          }
-                        }}
                       />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs shrink-0"
-                        disabled={!newCategoryInput.trim()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={() => { setBulkCategory(newCategoryInput.trim()); setNewCategoryInput('') }}
-                      >
-                        新建
-                      </Button>
                     </div>
                     <DropdownMenuItem onClick={() => setBulkCategory('')}>
                       <span className="text-muted-foreground">不设置</span>
                       {!bulkCategory && <Check className="h-4 w-4 ml-auto" />}
                     </DropdownMenuItem>
-                    {bulkCategory && !filteredCategories.includes(bulkCategory) && (
-                      <DropdownMenuItem onClick={() => setBulkCategory(bulkCategory)}>
-                        {bulkCategory}
-                        <Check className="h-4 w-4 ml-auto" />
-                      </DropdownMenuItem>
-                    )}
+                    <DropdownMenuSeparator />
                     {filteredCategories.map((c) => (
-                      <DropdownMenuItem key={c} onClick={() => setBulkCategory(c)}>
+                      <DropdownMenuItem key={c} onSelect={(e) => { e.preventDefault(); setBulkCategory(c) }}>
                         {c}
                         {bulkCategory === c && <Check className="h-4 w-4 ml-auto" />}
                       </DropdownMenuItem>
@@ -736,6 +732,30 @@ export function Component() {
             </AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               if (kpConfirm) applyBulkUpdate([], { key_points: kpConfirm.newKp })
+            }}>
+              全部修改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!catConfirm} onOpenChange={() => setCatConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>同步修改分类</AlertDialogTitle>
+            <AlertDialogDescription>
+              已选中 {catConfirm?.selectedCount} 道题，但分类为「{catConfirm?.oldCat}」的题目共有 {catConfirm?.totalCount} 道。
+              是否将 {catConfirm?.totalCount} 道题全部改为「{catConfirm?.newCat}」？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              if (catConfirm) applyBulkUpdate([...selectedIds], { category: catConfirm.newCat, categories: [catConfirm.newCat] })
+            }}>
+              仅修改已选中
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (catConfirm) applyBulkUpdate([], { category: catConfirm.newCat, categories: [catConfirm.newCat] })
             }}>
               全部修改
             </AlertDialogAction>

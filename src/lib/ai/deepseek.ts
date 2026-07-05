@@ -79,15 +79,54 @@ export class DeepSeekParser {
   }
 
   async parseDocument(markdown: string, systemPrompt?: string): Promise<AiParseResult> {
-    const { object } = await generateObject({
-      model: this.model,
-      schema: resultSchema,
-      system: systemPrompt || SYSTEM_PROMPT,
-      prompt: `Extract all questions from this document:\n\n${markdown}`,
-      temperature: 0.1,
-    })
+    // Split long documents into chunks to avoid AI response truncation.
+    // DeepSeek max output is ~8K tokens (~24K chars). Each question with analysis
+    // can be 1-2K chars, so we limit input to ~10K chars per chunk.
+    const MAX_CHUNK = 12000
+    if (markdown.length <= MAX_CHUNK) {
+      const { object } = await generateObject({
+        model: this.model,
+        schema: resultSchema,
+        system: systemPrompt || SYSTEM_PROMPT,
+        prompt: `Extract all questions from this document:\n\n${markdown}`,
+        temperature: 0.1,
+        maxOutputTokens: 8000,
+      })
+      return { questions: this.normalize(object.questions) }
+    }
 
-    return { questions: this.normalize(object.questions) }
+    // Split by paragraph boundaries, group into chunks
+    const paragraphs = markdown.split(/\n\n+/)
+    const chunks: string[] = []
+    let current = ''
+    for (const p of paragraphs) {
+      if (current && current.length + p.length > MAX_CHUNK) {
+        chunks.push(current)
+        current = p
+      } else {
+        current = current ? current + '\n\n' + p : p
+      }
+    }
+    if (current) chunks.push(current)
+
+    // Process each chunk
+    const allQuestions: ParsedQuestion[] = []
+    const totalChunks = chunks.length
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = chunks[i]
+      const chunkLabel = totalChunks > 1 ? ` (Part ${i + 1}/${totalChunks})` : ''
+      const { object } = await generateObject({
+        model: this.model,
+        schema: resultSchema,
+        system: systemPrompt || SYSTEM_PROMPT,
+        prompt: `Extract all questions from this document${chunkLabel}:\n\n${chunk}`,
+        temperature: 0.1,
+        maxOutputTokens: 8000,
+      })
+      allQuestions.push(...this.normalize(object.questions))
+    }
+
+    return { questions: allQuestions }
   }
 
   async generateKeyPoints(context: {
@@ -235,15 +274,7 @@ export class DeepSeekParser {
   }
 
   async generateFromDocument(markdown: string, systemPrompt?: string): Promise<AiParseResult> {
-    const { object } = await generateObject({
-      model: this.model,
-      schema: resultSchema,
-      system: systemPrompt || GENERATE_FROM_DOC_SYSTEM,
-      prompt: `请根据以下学习材料，识别核心知识点，以考官视角出题：\n\n${markdown}`,
-      temperature: 0.7,
-    })
-
-    return { questions: this.normalize(object.questions) }
+    return this.parseDocument(markdown, systemPrompt || GENERATE_FROM_DOC_SYSTEM)
   }
 
   async suggestPlan(data: {
