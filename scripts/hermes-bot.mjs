@@ -1,28 +1,44 @@
-// Hermes Agent Bot — runs in GitHub Actions, processes one @bot command per invocation
-// GH Actions: every 2 min cron. Local: node scripts/hermes-bot.mjs --once
+// Hermes Agent Bot — GitHub Actions cron, polls Feishu for @bot commands
+// Uses Feishu REST API directly (no lark-cli dependency required)
 
-import { execSync } from 'child_process'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 
+const LARK_APP_ID = process.env.LARK_APP_ID || ''
+const LARK_APP_SECRET = process.env.LARK_APP_SECRET || ''
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY || ''
 const DEEPSEEK_BASE = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat'
 const FEISHU_HOOK = process.env.FEISHU_BOT_HOOK || ''
 const CHAT_ID = process.env.CHAT_ID || 'oc_f4d1b1b0478f4b910038a0bd6311a5fe'
 
-if (!DEEPSEEK_KEY) { console.error('Set DEEPSEEK_API_KEY'); process.exit(1) }
-
-// ---- Persist last processed message ID ----
 const STATE_DIR = join(process.env.GITHUB_WORKSPACE || process.cwd(), '.hermes-state')
 const STATE_FILE = join(STATE_DIR, 'last-msg-id.txt')
 
-function getLastId() {
-  try { return readFileSync(STATE_FILE, 'utf-8').trim() } catch { return '' }
+function getLastId() { try { return readFileSync(STATE_FILE, 'utf-8').trim() } catch { return '' } }
+function saveLastId(id) { if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true }); writeFileSync(STATE_FILE, id) }
+
+// ---- Feishu API ----
+let _token = null, _tokenExp = 0
+async function getToken() {
+  if (_token && Date.now() < _tokenExp) return _token
+  const r = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ app_id: LARK_APP_ID, app_secret: LARK_APP_SECRET }),
+  })
+  const j = await r.json()
+  _token = j.tenant_access_token
+  _tokenExp = Date.now() + (j.expire - 60) * 1000
+  return _token
 }
-function saveLastId(id) {
-  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true })
-  writeFileSync(STATE_FILE, id)
+
+async function feishuApi(path) {
+  const token = await getToken()
+  const r = await fetch(`https://open.feishu.cn${path}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  })
+  return r.json()
 }
 
 // ---- DeepSeek ----
@@ -38,7 +54,7 @@ async function chat(system, prompt, maxTokens = 2000) {
 
 // ---- Reply via Feishu webhook ----
 async function reply(text) {
-  if (!FEISHU_HOOK) { console.log('No webhook, skip reply'); return }
+  if (!FEISHU_HOOK) return
   await fetch(FEISHU_HOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -65,7 +81,7 @@ async function security() {
   return chat('安全审计专家。XSS/CSRF/泄露/依赖/认证。中文500字内。', '审计 react-practice-web (React19+Supabase,anon key暴露,R2,edge functions)')
 }
 
-const HELP = 'Hermes Agent\n/pr-review — PR审查\n/audit — 过度工程审计\n/security — 安全审计\n/help — 帮助'
+const HELP = 'Hermes Agent\n/pr-review — PR审查\n/audit — 过度工程审计\n/security — 安全审计'
 
 function parseCmd(text) {
   if (text.includes('/pr-review')) return prReview
@@ -75,49 +91,53 @@ function parseCmd(text) {
   return null
 }
 
-// ---- One-shot: check latest messages, process the newest matching one ----
-async function once() {
+// ---- Main ----
+async function main() {
   const lastId = getLastId()
   let newLastId = lastId
 
-  try {
-    const raw = execSync(`lark-cli im +chat-messages-list --chat-id ${CHAT_ID} --page-size 10 --as user`, {
-      encoding: 'utf-8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    const data = JSON.parse(raw)
-    const msgs = data?.data?.messages
-    if (!msgs?.length) { console.log('No messages'); return }
+  // List recent messages
+  const path = `/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=${CHAT_ID}&page_size=10&sort_type=ByCreateTimeDesc`
+  const list = await feishuApi(path)
 
-    // Find the newest unprocessed @bot message
-    let target = null
-    for (const m of msgs) {
-      if (!m.message_id || m.message_id <= lastId) continue
-      if (newLastId < m.message_id) newLastId = m.message_id
-      if (m.sender?.id?.startsWith('cli_')) continue
-      if (m.msg_type !== 'text') continue
-      const text = m.content || ''
-      if (!text.includes('<at') || !text.includes('cli_')) continue
-      target = m
-    }
+  const items = list?.data?.items
+  if (!items?.length) { console.log('No messages'); saveLastId(lastId); return }
 
-    if (target) {
-      console.log(`Processing: ${target.content.slice(0, 80)}`)
-      const handler = parseCmd(target.content)
+  // Find newest unprocessed @bot text message
+  let target = null
+  for (const m of items) {
+    if (!m.message_id || m.message_id <= lastId) continue
+    if (newLastId < m.message_id) newLastId = m.message_id
+    if (m.msg_type !== 'text') continue
+    if (m.sender?.id_type !== 'user') continue
+
+    // Check if message @mentions any bot
+    const mentions = m.mentions || []
+    if (!mentions.some(at => at.key?.startsWith('cli_'))) continue
+
+    target = m
+  }
+
+  if (target) {
+    const text = JSON.stringify(target.body?.content || '') || ''
+    console.log(`Processing: ${text.slice(0, 100)}`)
+
+    // Parse body content (may be JSON string or plain text)
+    let content = ''
+    try { content = JSON.parse(target.body?.content || '{}').text || '' } catch { content = target.body?.content || '' }
+    if (typeof content === 'string' && content) {
+      const handler = parseCmd(content)
       if (handler) {
         const result = await handler()
         await reply(result)
         console.log('Replied')
       }
-    } else {
-      console.log('No new command')
     }
-
-    saveLastId(newLastId)
-  } catch (e) {
-    const msg = (e.stderr || e.message || '').toString()
-    console.error(msg.slice(0, 200))
-    saveLastId(newLastId || lastId)
+  } else {
+    console.log('No new command')
   }
+
+  saveLastId(newLastId)
 }
 
-await once()
+await main()
