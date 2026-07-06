@@ -195,12 +195,25 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const handleSave = async () => {
     if (!user) return
     setSaving(true)
+    // ponytail: auto-calc daily target counts from deadline before saving
+    const effectiveTargets = dailyTargets.map((target) => {
+      if (!target.deadline) return target
+      const daysLeft = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
+      return {
+        ...target,
+        subjects: target.subjects.map((subj) => {
+          const p = subjectProgress.get(subj.subject)
+          const remaining = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
+          return { ...subj, count: Math.ceil(remaining / daysLeft) }
+        }),
+      }
+    })
     await supabase
       .from('profiles')
       .update({
         deadline: deadline || null,
         plan_subjects: selectedSubjects.length > 0 ? JSON.stringify(selectedSubjects) : null,
-        daily_targets: dailyTargets.length > 0 ? JSON.stringify(dailyTargets) : null,
+        daily_targets: effectiveTargets.length > 0 ? JSON.stringify(effectiveTargets) : null,
       })
       .eq('id', user.id)
     await refreshProfile()
@@ -431,19 +444,28 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     const total = p?.total ?? 0
                     const done = p?.done ?? 0
                     const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                    const remaining = Math.max(total - done, 0)
+                    const targetDaysLeft = target.deadline
+                      ? Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
+                      : 0
+                    const effectiveCount = targetDaysLeft > 0 ? Math.ceil(remaining / targetDaysLeft) : subj.count
                     return (
                     <div key={subj.subject} className="space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs text-muted-foreground">{subj.subject}</span>
                         <span className="text-[10px] text-muted-foreground tabular-nums">{done}/{total}</span>
                         <div className="flex items-center gap-1">
-                          <Input
-                            type="number"
-                            min={1}
-                            value={subj.count}
-                            onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
-                            className="h-7 w-14 text-xs text-center shrink-0"
-                          />
+                          {targetDaysLeft > 0 ? (
+                            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 tabular-nums w-14 text-center">{effectiveCount}</span>
+                          ) : (
+                            <Input
+                              type="number"
+                              min={1}
+                              value={subj.count}
+                              onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
+                              className="h-7 w-14 text-xs text-center shrink-0"
+                            />
+                          )}
                           <span className="text-xs text-muted-foreground">{t('plan.questions')}</span>
                         </div>
                       </div>
@@ -468,6 +490,34 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   <Plus className="h-3 w-3" />
                   {t('plan.addSubject')}
                 </Button>
+              )
+            })()}
+
+            {/* Daily goal summary — same style as long-term plan */}
+            {dailyTargets.length > 0 && dailyTargets.some(t => t.subjects.length > 0) && (() => {
+              const dailyGoalTotal = dailyTargets.reduce((sum, t) => {
+                if (!t.deadline) return sum + t.subjects.reduce((s, subj) => s + subj.count, 0)
+                const daysLeft = Math.max(Math.ceil((new Date(t.deadline).getTime() - Date.now()) / 86400000), 1)
+                return sum + t.subjects.reduce((s, subj) => {
+                  const p = subjectProgress.get(subj.subject)
+                  const r = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
+                  return s + Math.ceil(r / daysLeft)
+                }, 0)
+              }, 0)
+              const uniqueSubjects = new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))
+              let totalScope = 0, totalDoneAll = 0
+              for (const s of uniqueSubjects) {
+                const p = subjectProgress.get(s)
+                totalScope += p?.total ?? 0
+                totalDoneAll += p?.done ?? 0
+              }
+              const remainingAll = Math.max(totalScope - totalDoneAll, 0)
+              return (
+                <p className="text-[11px] pt-1">
+                  <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
+                  <span className="font-semibold text-pink-600 dark:text-pink-400">{dailyGoalTotal} {t('plan.perDay')}</span>
+                  <span className="text-muted-foreground ml-2">{t('plan.remaining')}: {remainingAll}/{totalScope}</span>
+                </p>
               )
             })()}
           </div>

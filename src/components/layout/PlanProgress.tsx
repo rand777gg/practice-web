@@ -42,6 +42,7 @@ export function PlanProgress() {
   const [isLoading, setIsLoading] = useState(true)
   const [dailyGoal, setDailyGoal] = useState(0)
   const [todayLongDone, setTodayLongDone] = useState(0)
+  const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
 
   const hasData = dailyGoal > 0 || targetProgress.length > 0
@@ -52,15 +53,18 @@ export function PlanProgress() {
     // Only show skeleton on first load — keep current values visible during refresh
     if (!hasData) setIsLoading(true)
     async function load() {
+      // ponytail: hoist shared all-time answers query for both sections
+      const { data: done } = await supabase
+        .from('user_answers')
+        .select('question_id')
+        .eq('user_id', uid)
+      const allDoneIds = new Set((done ?? []).map((a) => a.question_id))
+
       // Long-term goal
       if (deadline) {
         const deadlineDate = new Date(deadline + 'T23:59:59')
         const now = new Date()
         const daysLeft = Math.max(daysBetween(now, deadlineDate), 1)
-
-        let qQuery = supabase.from('questions').select('id', { count: 'exact', head: true })
-        if (planSubjects.length > 0) qQuery = qQuery.in('subject', planSubjects)
-        const { count: total } = await qQuery
 
         let scopeIds: Set<string> | undefined
         if (planSubjects.length > 0) {
@@ -71,18 +75,14 @@ export function PlanProgress() {
           scopeIds = new Set((scopeQs ?? []).map((q) => q.id))
         }
 
-        const { data: done } = await supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', uid)
-
-        const allDoneIds = new Set((done ?? []).map((a) => a.question_id))
-
         if (scopeIds) {
           let doneAll = 0
           for (const id of scopeIds) if (allDoneIds.has(id)) doneAll++
           setDailyGoal(Math.ceil(Math.max(scopeIds.size - doneAll, 0) / daysLeft))
         } else {
+          const { count: total } = await supabase
+            .from('questions')
+            .select('id', { count: 'exact', head: true })
           setDailyGoal(Math.ceil(Math.max((total ?? 0) - allDoneIds.size, 0) / daysLeft))
         }
 
@@ -127,6 +127,39 @@ export function PlanProgress() {
           subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
         }
 
+        // ponytail: compute daily goal for targets with deadlines
+        const deadlineTargets = dailyTargets.filter(t => t.deadline)
+        let computedGoal = 0
+        if (deadlineTargets.length > 0) {
+          const deadlineSubjects = [...new Set(deadlineTargets.flatMap(t => t.subjects.map(s => s.subject)))]
+          const { data: scopeQs } = await supabase.from('questions').select('id, subject').in('subject', deadlineSubjects)
+          const totalPerSubject = new Map<string, number>()
+          const qSubject = new Map<string, string>()
+          for (const q of (scopeQs ?? [])) {
+            const s = subjectKey(q.subject)
+            totalPerSubject.set(s, (totalPerSubject.get(s) ?? 0) + 1)
+            qSubject.set(q.id, s)
+          }
+          const donePerSubject = new Map<string, number>()
+          for (const a of (done ?? [])) {
+            const s = qSubject.get(a.question_id)
+            if (s) donePerSubject.set(s, (donePerSubject.get(s) ?? 0) + 1)
+          }
+          for (const target of deadlineTargets) {
+            const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
+            for (const subj of target.subjects) {
+              const total = totalPerSubject.get(subj.subject) ?? 0
+              const doneSubj = donePerSubject.get(subj.subject) ?? 0
+              computedGoal += Math.ceil(Math.max(total - doneSubj, 0) / daysLeft)
+            }
+          }
+        }
+        // Add manual counts for targets without deadlines
+        const manualTotal = dailyTargets
+          .filter(t => !t.deadline)
+          .reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
+        setDailyTargetGoal(computedGoal + manualTotal)
+
         setTargetProgress(dailyTargets.map((t) => {
           const subjects = t.subjects.map(s => ({
             subject: s.subject,
@@ -139,6 +172,7 @@ export function PlanProgress() {
         }))
       } else {
         setTargetProgress([])
+        setDailyTargetGoal(0)
       }
       setIsLoading(false)
     }
@@ -165,10 +199,10 @@ export function PlanProgress() {
   }
 
   const hasDailyTargets = dailyTargets.length > 0
-  const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
-  const dailyPct = totalDaily > 0 ? Math.min(Math.round((doneDaily / totalDaily) * 100), 100) : 0
-  const dailyDone = doneDaily >= totalDaily && totalDaily > 0
+  const effectiveTotal = dailyTargetGoal
+  const dailyPct = effectiveTotal > 0 ? Math.min(Math.round((doneDaily / effectiveTotal) * 100), 100) : 0
+  const dailyDone = doneDaily >= effectiveTotal && effectiveTotal > 0
 
   const hasDeadline = !!deadline
   const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 100
@@ -224,7 +258,7 @@ export function PlanProgress() {
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.daily')}</span>
                 <Progress value={dailyPct} className="w-10 h-2 [&>div]:bg-pink-500" />
-                <span className="tabular-nums shrink-0 text-[10px]">{doneDaily}/{totalDaily}</span>
+                <span className="tabular-nums shrink-0 text-[10px]">{doneDaily}/{effectiveTotal}</span>
               </div>
             ))}
           </>

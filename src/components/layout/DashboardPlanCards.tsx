@@ -42,6 +42,8 @@ export function DashboardPlanCards() {
   const [yesterdayDone, setYesterdayDone] = useState(0)
 
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
+  const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
+  const [customTargetTotalQuestions, setCustomTargetTotalQuestions] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -74,6 +76,9 @@ export function DashboardPlanCards() {
 
       if (dailyTargets.length > 0) {
         const targetSubjectSet = new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))
+        const allTargetSubjects = [...targetSubjectSet]
+
+        // Today's answers
         const { data: today } = await supabase.from('user_answers')
           .select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
         const todayIds = new Set((today ?? []).map((a) => a.question_id))
@@ -85,6 +90,46 @@ export function DashboardPlanCards() {
           if (targetSubjectSet.has(s)) subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
         }
 
+        // Total questions for ALL target subjects (for display)
+        const { data: scopeQs } = await supabase.from('questions').select('id, subject').in('subject', allTargetSubjects)
+        const totalPerSubj = new Map<string, number>()
+        const qSubj = new Map<string, string>()
+        for (const q of (scopeQs ?? [])) {
+          const s = subjectKey(q.subject)
+          totalPerSubj.set(s, (totalPerSubj.get(s) ?? 0) + 1)
+          qSubj.set(q.id, s)
+        }
+        let totalAll = 0
+        for (const [, v] of totalPerSubj) totalAll += v
+        setCustomTargetTotalQuestions(totalAll)
+
+        // Daily goal for deadline targets
+        const deadlineTargets = dailyTargets.filter(t => t.deadline)
+        let computedGoal = 0
+        if (deadlineTargets.length > 0) {
+          const { data: allDone } = await supabase.from('user_answers').select('question_id').eq('user_id', uid)
+          const allDoneIds = new Set((allDone ?? []).map(a => a.question_id))
+          const donePerSubj = new Map<string, number>()
+          for (const q of (scopeQs ?? [])) {
+            if (allDoneIds.has(q.id)) {
+              const s = subjectKey(q.subject)
+              donePerSubj.set(s, (donePerSubj.get(s) ?? 0) + 1)
+            }
+          }
+          for (const target of deadlineTargets) {
+            const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
+            for (const subj of target.subjects) {
+              const total = totalPerSubj.get(subj.subject) ?? 0
+              const done = donePerSubj.get(subj.subject) ?? 0
+              computedGoal += Math.ceil(Math.max(total - done, 0) / daysLeft)
+            }
+          }
+        }
+        const manualTotal = dailyTargets
+          .filter(t => !t.deadline)
+          .reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
+        setDailyTargetGoal(computedGoal + manualTotal)
+
         setTargetProgress(dailyTargets.map((t) => {
           const subjects = t.subjects.map(s => ({
             subject: s.subject,
@@ -95,6 +140,10 @@ export function DashboardPlanCards() {
           const totalDone = subjects.reduce((sum, s) => sum + s.done, 0)
           return { subjects, total: totalCount, totalDone }
         }))
+      } else {
+        setTargetProgress([])
+        setDailyTargetGoal(0)
+        setCustomTargetTotalQuestions(0)
       }
     }
     load()
@@ -107,9 +156,8 @@ export function DashboardPlanCards() {
   const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
 
-  const totalDaily = dailyTargets.reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
-  const dailyPct = totalDaily > 0 ? Math.min(Math.round((doneDaily / totalDaily) * 100), 100) : 0
+  const dailyPct = dailyTargetGoal > 0 ? Math.min(Math.round((doneDaily / dailyTargetGoal) * 100), 100) : 0
 
   const nearestDeadline = dailyTargets.filter(t => t.deadline)
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
@@ -120,7 +168,7 @@ export function DashboardPlanCards() {
     const d = Math.floor(diff / 86400000)
     const h = Math.floor((diff % 86400000) / 3600000)
     const m = Math.floor((diff % 3600000) / 60000)
-    const remaining = totalDaily - doneDaily
+    const remaining = dailyTargetGoal - doneDaily
     const timePart = d > 0 ? `还剩${d}天${h}小时` : h > 0 ? `还剩${h}小时${m}分钟` : `还剩${m}分钟`
     return `${timePart}，还有${Math.max(remaining, 0)}道题哦，加油！`
   })() : null
@@ -171,7 +219,7 @@ export function DashboardPlanCards() {
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
-                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{totalDaily}</span>
+                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{customTargetTotalQuestions}</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
                 {t('plan.doneCount')}: {doneDaily}
