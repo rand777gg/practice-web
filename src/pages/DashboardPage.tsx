@@ -76,9 +76,10 @@ export function Component() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
+  const [chartsRequested, setChartsRequested] = useState(false)
+  const needsCharts = chartsRequested || visitedTabs.has('stats') || visitedTabs.has('subjects') || visitedTabs.has('journey')
   const btnRowRef = useRef<HTMLDivElement>(null)
   const loadGenRef = useRef(0)
-  // Cache raw data for knowledge-graph reuse (avoids duplicate fetches)
 
   useEffect(() => {
     if (expandedBtn === null) return
@@ -96,6 +97,8 @@ export function Component() {
     let cancelled = false
     const isStale = (gen: number) => loadGenRef.current !== gen || cancelled
     async function load() {
+      // ponytail: skip heavy chart queries until user visits a chart tab
+      if (!needsCharts) return
       loadGenRef.current++
       const myGen = loadGenRef.current
 
@@ -320,7 +323,7 @@ export function Component() {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, profile?.deadline, profile?.plan_subjects])
+  }, [user?.id, profile?.deadline, profile?.plan_subjects, needsCharts])
 
   return (
     <div className="space-y-6 w-full">
@@ -334,56 +337,34 @@ export function Component() {
         )}
       </div>
 
-      {!chartData ? (
-        // First load — skeleton shell
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="animate-pulse rounded-lg border p-6 space-y-3">
-              <div className="h-4 w-1/3 bg-muted rounded" />
-              <div className="h-40 w-full bg-muted rounded" />
-            </div>
-            <div className="animate-pulse rounded-lg border p-6 space-y-3">
-              <div className="h-4 w-1/4 bg-muted rounded" />
-              <div className="h-40 w-full bg-muted rounded" />
-            </div>
-          </div>
-        </div>
-      ) : (chartData.totalAnswered === 0 && chartData.sunburstData.length === 0) ? (
-        <div className="text-center py-12 space-y-4">
-          <p className="text-muted-foreground">{t('dashboard.noData')}</p>
-          <Button asChild size="sm">
-            <Link to="/practice">
-              <Pencil className="h-4 w-4" />
-              {t('dashboard.startPractice')}
-            </Link>
-          </Button>
-        </div>
-      ) : (
-        <Tabs
-          defaultValue="plan"
-          className="w-full"
-          onValueChange={(v) => setVisitedTabs((prev) => new Set(prev).add(v))}
-        >
-          <ScrollArea scrollbars="horizontal">
-            <TabsList className="justify-center">
-              <TabsTrigger value="plan" className="gap-1.5">
-                <ListChecks className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">{t('dashboard.tabPlan')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="stats" className="gap-1.5">
-                <Target className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">{t('dashboard.tabStats')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="subjects" className="gap-1.5">
-                <PieChart className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">{t('dashboard.tabSubjects')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="journey" className="gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">{t('dashboard.tabJourney')}</span>
-              </TabsTrigger>
-            </TabsList>
-          </ScrollArea>
+      <Tabs
+        defaultValue="plan"
+        className="w-full"
+        onValueChange={(v) => {
+          setVisitedTabs((prev) => new Set(prev).add(v))
+          if (v !== 'plan') setChartsRequested(true)
+        }}
+      >
+        <ScrollArea scrollbars="horizontal">
+          <TabsList className="justify-center">
+            <TabsTrigger value="plan" className="gap-1.5">
+              <ListChecks className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">{t('dashboard.tabPlan')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="stats" className="gap-1.5">
+              <Target className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">{t('dashboard.tabStats')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="subjects" className="gap-1.5">
+              <PieChart className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">{t('dashboard.tabSubjects')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="journey" className="gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">{t('dashboard.tabJourney')}</span>
+            </TabsTrigger>
+          </TabsList>
+        </ScrollArea>
 
           <TabsContent value="plan">
             <div className="space-y-4">
@@ -428,7 +409,7 @@ export function Component() {
           </TabsContent>
 
           <TabsContent value="stats">
-            {visitedTabs.has('stats') ? (
+            {visitedTabs.has('stats') && chartData ? (
               <div className="space-y-4">
                 <LazyChart>
                   <Card className="border-0 shadow-none">
@@ -488,7 +469,7 @@ export function Component() {
           </TabsContent>
 
           <TabsContent value="subjects">
-            {visitedTabs.has('subjects') ? (
+            {visitedTabs.has('subjects') && chartData ? (
               <div className="space-y-4">
                 <LazyChart>
                   <Card className="border-0 shadow-none">
@@ -551,7 +532,7 @@ export function Component() {
           </TabsContent>
 
           <TabsContent value="journey">
-            {visitedTabs.has('journey') ? (
+            {visitedTabs.has('journey') && chartData ? (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="rounded-lg border bg-card px-4 py-3 text-center min-w-[100px]">
@@ -635,7 +616,6 @@ export function Component() {
           </TabsContent>
 
         </Tabs>
-      )}
     </div>
   )
 }
