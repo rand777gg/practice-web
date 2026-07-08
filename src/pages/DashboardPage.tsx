@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { ScrollArea, Spinner } from '@radix-ui/themes'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
