@@ -4,17 +4,23 @@ import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
 import { visit } from 'unist-util-visit'
 
-// rehype plugin: remark-math inline-math nodes → MathJax \(...\) delimiters
+// rehype plugin: remark-math nodes → MathJax \(...\) / \[...\] delimiters
+// In remark-math v6 + mdast-util-to-hast v13, inlineMath produces
+// <code class="language-math math-inline">, displayMath produces
+// <pre><code class="language-math math-display">.
 function rehypeMathJax() {
   return (tree: any) => {
     visit(tree, 'element', (node: any, idx: number | undefined, parent: any) => {
       if (idx == null) return
       const cls = node.properties?.className
-      if (Array.isArray(cls) && cls.includes('math') && node.tagName === 'span') {
+      if (!Array.isArray(cls)) return
+      // Inline math: <code class="language-math math-inline"> or legacy <span class="math math-inline">
+      if (cls.includes('math-inline')) {
         const text = extractText(node)
         parent.children[idx] = { type: 'raw', value: `\\(${text}\\)` }
       }
-      if (Array.isArray(cls) && cls.includes('math-display') && node.tagName === 'div') {
+      // Display math: <code class="language-math math-display"> or legacy <div class="math math-display">
+      if (cls.includes('math-display')) {
         const text = extractText(node)
         parent.children[idx] = { type: 'raw', value: `\\[${text}\\]` }
       }

@@ -7,12 +7,15 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { AiImportQuestionCard } from './AiImportQuestionCard'
-import { Check, ChevronDown, ListRestart, Plus, Sparkles, Wand2 } from 'lucide-react'
+import { Check, ChevronDown, ListRestart, Loader2, Plus, Sparkles, Wand2, WrapText } from 'lucide-react'
 import type { ParsedQuestion } from '@/lib/ai/types'
-import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
+import { generateKeyPoints, hasAiConfig, getAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 import { useSettingsStore } from '@/stores/settings-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
@@ -46,6 +49,39 @@ export function AiImportPreview({
   const allSelected = questions.length > 0 && selectedIds.size === questions.length
   const [batchKpLoading, setBatchKpLoading] = useState(false)
   const [batchManualKp, setBatchManualKp] = useState('')
+  const [batchLineBreakLoading, setBatchLineBreakLoading] = useState(false)
+
+  const handleBatchLineBreak = async () => {
+    const config = getAiConfig()
+    if (!config?.apiKey || selectedIds.size === 0) return
+    setBatchLineBreakLoading(true)
+    try {
+      const { generateText } = await import('ai')
+      const { createDeepSeek } = await import('@ai-sdk/deepseek')
+      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+      // Batch all selected questions in one API call
+      const idxs = questions.reduce<number[]>((acc, _, i) => selectedIds.has(i) ? [...acc, i] : acc, [])
+      const items = idxs.map((i) => `[${i}] ${questions[i].question_text}`).join('\n\n---\n\n')
+      const { text } = await generateText({
+        model: client(config.model || 'deepseek-chat'),
+        system: '你是一个纯文本格式化工具。对下面每段 [N] 标记的文本，在段落和列表项之间插入 <br> 换行符。逐字保留原文，不得修改任何内容。保持 [N] 标记不变。直接输出格式化后的文本。',
+        prompt: `以下是要格式化的 ${idxs.length} 段文本，严格原样保留，只在需要的地方添加 <br>：\n\n---\n${items}\n---`,
+        temperature: 0.1,
+        maxOutputTokens: 16000,
+      })
+      if (text) {
+        const parts = text.split(/\n*\[(\d+)\]\s*/)
+        for (let i = 1; i < parts.length; i += 2) {
+          const idx = Number(parts[i])
+          const content = parts[i + 1]?.trim()
+          if (idx >= 0 && idx < questions.length && content && content !== questions[idx].question_text) {
+            onChangeQuestion(idx, { ...questions[idx], question_text: content })
+          }
+        }
+      }
+    } catch (e) { console.error('Batch line break failed:', e) }
+    setBatchLineBreakLoading(false)
+  }
 
   const handleBatchManualKeyPoints = () => {
     const v = batchManualKp.trim()
@@ -184,6 +220,19 @@ export function AiImportPreview({
             <ListRestart className="h-3 w-3" />
             清理选项
           </Button>
+          {hasAiConfig() && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-6 gap-1"
+              disabled={batchLineBreakLoading || selectedIds.size === 0}
+              onClick={handleBatchLineBreak}
+              title="对选中题目的题干进行 AI 自动换行"
+            >
+              {batchLineBreakLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <WrapText className="h-3 w-3" />}
+              AI 换行
+            </Button>
+          )}
           {selectedIds.size > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -232,17 +281,6 @@ export function AiImportPreview({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => onSubjectChange('')}>
-              <span className="text-muted-foreground">{t('questions.subject')}</span>
-              {!subject && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-            {allSubjects.map((s) => (
-              <DropdownMenuItem key={s} onClick={() => onSubjectChange(s)}>
-                {s}
-                {subject === s && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
             <div className="flex items-center gap-1 px-2 py-1" onKeyDown={(e) => e.stopPropagation()}>
               <Input
                 placeholder="新增学科..."
@@ -255,6 +293,17 @@ export function AiImportPreview({
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onSubjectChange('')}>
+              <span className="text-muted-foreground">{t('questions.subject')}</span>
+              {!subject && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {allSubjects.map((s) => (
+              <DropdownMenuItem key={s} onClick={() => onSubjectChange(s)}>
+                {s}
+                {subject === s && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -267,17 +316,6 @@ export function AiImportPreview({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => onCategoryChange('')}>
-              <span className="text-muted-foreground">{t('questions.category')}</span>
-              {!category && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-            {allCategories.map((c) => (
-              <DropdownMenuItem key={c} onClick={() => onCategoryChange(c)}>
-                {c}
-                {category === c && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
             <div className="flex items-center gap-1 px-2 py-1" onKeyDown={(e) => e.stopPropagation()}>
               <Input
                 placeholder="新增分类..."
@@ -290,6 +328,42 @@ export function AiImportPreview({
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onCategoryChange('')}>
+              <span className="text-muted-foreground">{t('questions.category')}</span>
+              {!category && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            {(() => {
+              const yearCats = allCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a))
+              const nonYearCats = allCategories.filter((c) => !/^\d{4}年真题$/.test(c))
+              return (
+                <>
+                  {yearCats.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>历年真题</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                          {yearCats.map((c) => (
+                            <DropdownMenuItem key={c} onClick={() => onCategoryChange(c)}>
+                              {c}
+                              {category === c && <Check className="h-4 w-4 ml-auto" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </>
+                  )}
+                  {nonYearCats.length > 0 && yearCats.length > 0 && <DropdownMenuSeparator />}
+                  {nonYearCats.map((c) => (
+                    <DropdownMenuItem key={c} onClick={() => onCategoryChange(c)}>
+                      {c}
+                      {category === c && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )
+            })()}
           </DropdownMenuContent>
         </DropdownMenu>
 

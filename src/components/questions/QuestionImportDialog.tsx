@@ -197,8 +197,8 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
             <div className="flex items-center gap-2">
               <Button variant={format === 'csv' ? 'default' : 'outline'} size="sm" onClick={() => setFormat('csv')}>CSV</Button>
               <Button variant={format === 'json' ? 'default' : 'outline'} size="sm" onClick={() => setFormat('json')}>JSON</Button>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                <Switch checked={autoNumber} onCheckedChange={setAutoNumber} className="scale-75" />
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer" htmlFor="auto-number-sw">
+                <Switch id="auto-number-sw" checked={autoNumber} onCheckedChange={setAutoNumber} className="scale-75" />
                 自动编号
               </label>
               <div className="flex-1" />
@@ -258,8 +258,8 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
                 </Button>
               </TabsContent>
               <TabsContent value="file" className="mt-3">
-                <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors">
-                  <input type="file" accept=".csv,.json" className="hidden" onChange={handleFile} />
+                <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors" htmlFor="import-file-input">
+                  <input id="import-file-input" type="file" accept=".csv,.json" className="hidden" onChange={handleFile} />
                   <Upload className="h-6 w-6 text-muted-foreground/60" />
                   <span className="text-sm text-muted-foreground">点击选择 CSV 或 JSON 文件</span>
                 </label>

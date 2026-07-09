@@ -216,6 +216,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
   const [containerW, setContainerW] = useState(700)
   const [activeMdIdx, setActiveMdIdx] = useState<number | null>(null)
   const [activeBbox, setActiveBbox] = useState<[number, number, number, number] | null>(null)
+  const [flashIdx, setFlashIdx] = useState<number | null>(null)
 
   const hasPreRendered = !!(pageUrls && pageUrls.length > 0)
 
@@ -250,20 +251,21 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
   const [loadedCount, setLoadedCount] = useState(5)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
-  const visiblePages = renderedPages.slice(0, loadedCount)
-  const hasMore = loadedCount < renderedPages.length
+  const validPages = renderedPages.filter(rp => rp.src)
+  const visiblePages = validPages.slice(0, loadedCount)
+  const hasMore = loadedCount < validPages.length
 
   useEffect(() => {
     const el = sentinelRef.current
     if (!el || !hasMore) return
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
-        setLoadedCount(prev => Math.min(prev + 3, renderedPages.length))
+        setLoadedCount(prev => Math.min(prev + 3, validPages.length))
       }
     }, { rootMargin: '200px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [hasMore, renderedPages.length])
+  }, [hasMore, validPages.length])
 
   useEffect(() => {
     let cancelled = false
@@ -329,6 +331,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
     const secIdx = sections.findIndex(s => s.blockIndex === blockIndex)
     if (secIdx >= 0) {
       setActiveMdIdx(secIdx)
+      setFlashIdx(secIdx)
       const el = mdRef.current?.querySelector(`[data-md-idx="${secIdx}"]`)
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
@@ -337,7 +340,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 py-2 px-1 shrink-0 text-[10px] text-muted-foreground flex-wrap">
-        <span>共 {renderedPages.length} 页</span>
+        <span>共 {validPages.length} 页</span>
         <span className="text-muted-foreground/60">|</span>
         <span>段落 {displaySections.length}</span>
         <span className={matched > 0 ? 'text-green-600' : 'text-amber-600'}>
@@ -352,7 +355,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 min-h-0">
         <div ref={pdfContainerRef} className="overflow-auto lg:border-r p-2 space-y-3">
-          {renderedPages.length === 0 ? (
+          {validPages.length === 0 ? (
             <div className="space-y-3 p-2">
               <Skeleton className="h-[50vh] w-full rounded" />
               {rendering && (
@@ -372,7 +375,8 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
                   className="relative mx-auto"
                   style={{ width: cssW, height: cssH }}
                 >
-                  <img src={rp.src} alt={`Page ${rp.p}`} className="w-full h-full rounded border" />
+                  <img src={rp.src} alt={`Page ${rp.p}`} className="w-full h-full rounded border"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   {pageBlocks.map((b, bi) => {
                     const [x0, y0, x1, y1] = b.bbox
                     const isActive = activeBbox &&
@@ -403,7 +407,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
             })
           )}
           {hasMore && <div ref={sentinelRef} className="h-4" />}
-          {rendering && renderedPages.length > 0 && (
+          {rendering && validPages.length > 0 && (
             <p className="text-[10px] text-muted-foreground text-center">正在渲染剩余页面...</p>
           )}
         </div>
@@ -418,7 +422,10 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
                 <span
                   key={i}
                   data-md-idx={i}
+                  onAnimationEnd={(e) => { if (e.animationName === 'flash') setFlashIdx(null) }}
                   className={`block cursor-pointer rounded px-1 py-0.5 transition-colors ${
+                    flashIdx === i ? 'animate-flash' : ''
+                  } ${
                     sec.bbox
                       ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20 border-l-2 border-l-amber-300/50'
                       : 'text-muted-foreground/50 border-l-2 border-l-transparent'
@@ -436,13 +443,12 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
                       : ''
                   }`}
                   onClick={() => {
-                    if (selectionMode === 'off' || !selectionMode) {
-                      handleMdClick(sec, i)
-                    } else if (selectionMode === 'single' && onToggleSection) {
+                    handleMdClick(sec, i)
+                    if (selectionMode === 'single' && onToggleSection) {
                       onToggleSection(i)
                     } else if (selectionMode === 'range' && onRangeSelect) {
                       if (rangeAnchor === null) {
-                        onToggleSection?.(i) // select anchor first
+                        onToggleSection?.(i)
                       } else {
                         onRangeSelect(Math.min(rangeAnchor!, i), Math.max(rangeAnchor!, i))
                       }

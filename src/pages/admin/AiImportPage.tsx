@@ -6,12 +6,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuCheckboxItem,
@@ -36,7 +41,7 @@ import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Icon } from '@iconify/react'
-import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Pencil, Play, Upload, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Pencil, Play, Plus, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision' | 'generate'
@@ -62,6 +67,8 @@ export function Component() {
   })
   const [subject, setSubject] = useState(() => sessionStorage.getItem('ai-import-subject') || '')
   const [category, setCategory] = useState(() => sessionStorage.getItem('ai-import-category') || '')
+  const [keyPoints, setKeyPoints] = useState(() => sessionStorage.getItem('ai-import-keypoints') || '')
+  const [lineBreakEnabled, setLineBreakEnabled] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [parseMsg, setParseMsg] = useState('')
   const [parseStatus, setParseStatus] = useState<Record<string, unknown> | null>(null)
@@ -70,26 +77,39 @@ export function Component() {
   const [importCount, setImportCount] = useState(0)
   const [error, setError] = useState('')
 
-  // Persist lightweight state so navigating away and back restores the preview
-  // (parseResult is too large for sessionStorage; restored from DB via URL history ID)
+  // Persist metadata — survives page reload and step transitions
+  useEffect(() => {
+    sessionStorage.setItem('ai-import-subject', subject)
+    sessionStorage.setItem('ai-import-category', category)
+    sessionStorage.setItem('ai-import-keypoints', keyPoints)
+  }, [subject, category, keyPoints])
+
+  // Persist questions for preview recovery, clear on done
   useEffect(() => {
     if (questions.length > 0 && step === 'preview') {
       sessionStorage.setItem('ai-import-questions', JSON.stringify(questions))
-      sessionStorage.setItem('ai-import-subject', subject)
-      sessionStorage.setItem('ai-import-category', category)
     }
-    if (step === 'upload') {
+    if (step === 'done') {
       sessionStorage.removeItem('ai-import-questions')
       sessionStorage.removeItem('ai-import-subject')
       sessionStorage.removeItem('ai-import-category')
+      sessionStorage.removeItem('ai-import-keypoints')
     }
-  }, [questions, subject, category, step])
+  }, [questions, step])
   const [existingSubjects, setExistingSubjects] = useState<string[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
   const [existingKeyPoints, setExistingKeyPoints] = useState<string[]>([])
 
+  // Local lists for new items added during the session (for subject/category/kp dropdowns)
+  const [localSubjects, setLocalSubjects] = useState<string[]>([])
+  const [localCategories, setLocalCategories] = useState<string[]>([])
+  const [localKeyPoints, setLocalKeyPoints] = useState<string[]>([])
+  const allSubjects = [...new Set([...existingSubjects, ...localSubjects])].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  const allCategories = [...new Set([...existingCategories, ...localCategories])].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  const allKeyPoints = [...new Set([...existingKeyPoints, ...localKeyPoints])].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+
   // MinerU precision parsing settings
-  const [parseMode, setParseMode] = useState<ParseMode>('lightweight')
+  const [parseMode, setParseMode] = useState<ParseMode>('precision')
   const [modelVersion, setModelVersion] = useState<MinerUModelVersion>(getMinerUModelVersion())
   const [mineruToken, setMineruTokenState] = useState(getMinerUToken())
   const [enableOcr, setEnableOcr] = useState(false)
@@ -102,6 +122,7 @@ export function Component() {
   const [pageUrls, setPageUrls] = useState<{ p: number; w: number; h: number; src: string }[]>([])
   const [pageRendering, setPageRendering] = useState(false)
   const [r2Pdfs, setR2Pdfs] = useState<{ key: string; url: string; size: number }[]>([])
+  const [r2Loading, setR2Loading] = useState(true)
   const [r2DisplayNames, setR2DisplayNames] = useState<Map<string, string>>(() => {
     try {
       const saved = localStorage.getItem('r2-pdf-names')
@@ -120,11 +141,13 @@ export function Component() {
 
   // Load existing PDFs from R2
   useEffect(() => {
+    setR2Loading(true)
     supabase.functions.invoke('r2-list', { body: { prefix: 'pdf/' } })
       .then(({ data }) => {
         if (data?.files) setR2Pdfs((data.files as { key: string; url: string; size: number }[]).filter(f => f.key !== 'pdf/' && !f.key.endsWith('/')))
       })
       .catch(() => {})
+      .finally(() => setR2Loading(false))
   }, [])
 
   const [noCache, setNoCache] = useState(false)
@@ -132,6 +155,9 @@ export function Component() {
   const [dataId, setDataId] = useState('')
 
   // AI Generate state
+  const [newSubject, setNewSubject] = useState('')
+  const [newCategory, setNewCategory] = useState('')
+  const [newKeyPoint, setNewKeyPoint] = useState('')
   const [genSubject, setGenSubject] = useState('')
   const [genTypes, setGenTypes] = useState<Set<string>>(new Set(['single_choice']))
   const [genCount, setGenCount] = useState(5)
@@ -284,10 +310,30 @@ export function Component() {
     if (entry) { historyLoadedRef.current = true; loadHistory(urlHistoryId) }
   }, [history, urlHistoryId])
 
-  const deleteHistory = async (id: number) => {
-    await supabase.from('parse_history').delete().eq('id', id)
-    setHistory(prev => prev.filter(h => h.id !== id))
+  const [deleteConfirm, setDeleteConfirm] = useState<{ ids: number[] } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDeleteConfirm = async (deleteCache: boolean) => {
+    if (!deleteConfirm) return
+    const ids = deleteConfirm.ids
+    setDeleteConfirm(null)
+    setDeleting(true)
+    try {
+      if (deleteCache) {
+        for (const id of ids) {
+          await supabase.functions.invoke('r2-delete', { body: { prefix: `pdf-cache/${id}/` } }).catch(() => {})
+        }
+      }
+      await supabase.from('parse_history').delete().in('id', ids)
+      setHistory(prev => prev.filter(h => !ids.includes(h.id)))
+    } finally {
+      setDeleting(false)
+    }
   }
+
+  const deleteHistory = (id: number) => setDeleteConfirm({ ids: [id] })
+
+  const batchDeleteHistory = (ids: number[]) => setDeleteConfirm({ ids })
 
   const [editPdfId, setEditPdfId] = useState<number | null>(null)
   const [editPdfUrl, setEditPdfUrl] = useState('')
@@ -576,14 +622,46 @@ export function Component() {
     const parser = new DeepSeekParser(getAiConfig())
     const result = await parser.parseDocument(markdown, extractPrompt)
 
-    setQuestions(result.questions)
-    setSelectedIds(new Set(result.questions.map((_, i) => i)))
+    // Apply upload-step metadata defaults to extracted questions
+    const kp = keyPoints || category || ''
+    let merged = result.questions.map((q) => ({ ...q, key_points: q.key_points || kp || undefined }))
+
+    // Auto line-break formatting — batch all questions in one API call
+    if (lineBreakEnabled && merged.length > 0) {
+      setParseMsg('AI 正在换行格式化...')
+      try {
+        const { generateText } = await import('ai')
+        const { createDeepSeek } = await import('@ai-sdk/deepseek')
+        const client = createDeepSeek(getAiConfig())
+        const items = merged.map((q, i) => `[${i}] ${q.question_text}`).join('\n\n---\n\n')
+        const { text } = await generateText({
+          model: client('deepseek-chat'),
+          system: '你是一个纯文本格式化工具。对下面每段 [N] 标记的文本，在段落和列表项之间插入 <br> 换行符。逐字保留原文，不得修改任何内容。保持 [N] 标记不变。直接输出格式化后的文本。',
+          prompt: `以下是要格式化的 ${merged.length} 段文本，严格原样保留，只在需要的地方添加 <br>：\n\n---\n${items}\n---`,
+          temperature: 0.1,
+          maxOutputTokens: 16000,
+        })
+        if (text) {
+          const parts = text.split(/\n*\[(\d+)\]\s*/)
+          for (let i = 1; i < parts.length; i += 2) {
+            const idx = Number(parts[i])
+            const content = parts[i + 1]?.trim()
+            if (idx >= 0 && idx < merged.length && content) {
+              merged[idx] = { ...merged[idx], question_text: content }
+            }
+          }
+        }
+      } catch (e) { console.error('Auto line break failed:', e) }
+    }
+
+    setQuestions(merged)
+    setSelectedIds(new Set(merged.map((_, i) => i)))
     setStepPersisted('preview')
     if (parseResult) {
       if (currentHistoryId) {
-        await updateHistoryEntry(currentHistoryId, { questions: result.questions, status: { state: 'questions_extracted' } })
+        await updateHistoryEntry(currentHistoryId, { questions: merged, status: { state: 'questions_extracted' } })
       } else {
-        const historyId = await saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: result.questions, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
+        const historyId = await saveToHistory({ fileName: parseResult.fileName, markdown: parseResult.markdown, jsonData: parseResult.jsonData, questions: merged, mode: parseMode === 'lightweight' ? 'lightweight' : 'precision' })
         if (historyId) setCurrentHistoryId(historyId)
       }
     }
@@ -730,6 +808,7 @@ export function Component() {
     setQuestions([])
     setSubject('')
     setCategory('')
+    setKeyPoints('')
     setSelectedIds(new Set())
     setGenSubject('')
     setGenTypes(new Set(['single_choice']))
@@ -757,10 +836,11 @@ export function Component() {
         open={showHistoryDialog}
         onOpenChange={setShowHistoryDialog}
         history={history}
-        loading={historyLoading}
+        loading={historyLoading || deleting}
         error={historyError}
         onLoad={(id) => loadHistory(id)}
         onDelete={(id) => deleteHistory(id)}
+        onBatchDelete={(ids) => batchDeleteHistory(ids)}
         onBatchCache={async (ids) => {
           for (const id of ids) {
             const entry = history.find(h => h.id === id)
@@ -817,6 +897,139 @@ export function Component() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_35%] gap-6">
               {/* ===== LEFT PANEL: Mode + Settings + Upload ===== */}
               <div className="space-y-4">
+              {/* Common metadata: subject / category / key_points */}
+              <div className="p-4 rounded-lg border bg-muted/30">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Subject */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">学科 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between text-sm font-normal h-8">
+                          {subject || '选择学科'}
+                          <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                        <div className="flex items-center gap-1 px-2 py-1" onKeyDown={(e) => e.stopPropagation()}>
+                          <Input placeholder="新增学科..." value={newSubject}
+                            onChange={(e) => setNewSubject(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = newSubject.trim(); if (v) { if (!allSubjects.includes(v)) setLocalSubjects(p => [...p, v]); setSubject(v); setNewSubject('') } } }}
+                            className="h-7 text-xs flex-1" />
+                          <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0"
+                            onClick={() => { const v = newSubject.trim(); if (v) { if (!allSubjects.includes(v)) setLocalSubjects(p => [...p, v]); setSubject(v); setNewSubject('') } }}
+                            disabled={!newSubject.trim()}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setSubject('')}>
+                          <span className="text-muted-foreground">不限学科</span>
+                          {!subject && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                        {allSubjects.map((s) => (
+                          <DropdownMenuItem key={s} onClick={() => setSubject(s)}>
+                            {s}
+                            {subject === s && <Check className="h-4 w-4 ml-auto" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {/* Category */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">分类 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between text-sm font-normal h-8">
+                          {category || '选择分类'}
+                          <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                        <div className="flex items-center gap-1 px-2 py-1" onKeyDown={(e) => e.stopPropagation()}>
+                          <Input placeholder="新增分类..." value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = newCategory.trim(); if (v) { if (!allCategories.includes(v)) setLocalCategories(p => [...p, v]); setCategory(v); setNewCategory('') } } }}
+                            className="h-7 text-xs flex-1" />
+                          <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0"
+                            onClick={() => { const v = newCategory.trim(); if (v) { if (!allCategories.includes(v)) setLocalCategories(p => [...p, v]); setCategory(v); setNewCategory('') } }}
+                            disabled={!newCategory.trim()}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setCategory('')}>
+                          <span className="text-muted-foreground">不限分类</span>
+                          {!category && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                        {(() => {
+                          const yearCats = allCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a))
+                          const nonYearCats = allCategories.filter((c) => !/^\d{4}年真题$/.test(c))
+                          return (<>
+                            {yearCats.length > 0 && (<>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>历年真题</DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                                  {yearCats.map((s) => (
+                                    <DropdownMenuItem key={s} onClick={() => setCategory(s)}>{s}{category === s && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            </>)}
+                            {nonYearCats.length > 0 && yearCats.length > 0 && <DropdownMenuSeparator />}
+                            {nonYearCats.map((s) => (
+                              <DropdownMenuItem key={s} onClick={() => setCategory(s)}>{s}{category === s && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+                            ))}
+                          </>)
+                        })()}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {/* Key points */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">知识点 <span className="text-muted-foreground font-normal text-xs">(选填)</span></label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between text-sm font-normal h-8">
+                          {keyPoints || '选择知识点'}
+                          <ChevronDown className="h-4 w-4 ml-2 shrink-0 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+                        <div className="flex items-center gap-1 px-2 py-1" onKeyDown={(e) => e.stopPropagation()}>
+                          <Input placeholder="新增知识点..." value={newKeyPoint}
+                            onChange={(e) => setNewKeyPoint(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = newKeyPoint.trim(); if (v) { if (!allKeyPoints.includes(v)) setLocalKeyPoints(p => [...p, v]); setKeyPoints(v); setNewKeyPoint('') } } }}
+                            className="h-7 text-xs flex-1" />
+                          <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0"
+                            onClick={() => { const v = newKeyPoint.trim(); if (v) { if (!allKeyPoints.includes(v)) setLocalKeyPoints(p => [...p, v]); setKeyPoints(v); setNewKeyPoint('') } }}
+                            disabled={!newKeyPoint.trim()}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setKeyPoints('')}>
+                          <span className="text-muted-foreground">不限知识点</span>
+                          {!keyPoints && <Check className="h-4 w-4 ml-auto" />}
+                        </DropdownMenuItem>
+                        {allKeyPoints.map((s) => (
+                          <DropdownMenuItem key={s} onClick={() => setKeyPoints(s)}>
+                            {s}
+                            {keyPoints === s && <Check className="h-4 w-4 ml-auto" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+                <label className="flex items-center gap-1.5 cursor-pointer pt-2 border-t">
+                  <Switch id="line-break-sw" checked={lineBreakEnabled} onCheckedChange={setLineBreakEnabled} />
+                  <span className="text-xs text-muted-foreground">AI 自动换行（解析后逐个格式化题干）</span>
+                </label>
+              </div>
+
               {/* Parse mode selection */}
               <Tabs value={parseMode} onValueChange={(v) => { setParseMode(v as ParseMode); if (v === 'lightweight') setBatchMode(false) }}>
                 <TabsList>
@@ -866,8 +1079,9 @@ export function Component() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
+                    <label className="flex items-center gap-1.5 cursor-pointer" htmlFor="batch-mode-sw">
                       <Switch
+                        id="batch-mode-sw"
                         checked={batchMode}
                         onCheckedChange={(v) => { setBatchMode(v); setFile(null); setFiles([]) }}
                       />
@@ -955,8 +1169,8 @@ export function Component() {
                     </div>
                     {!batchMode && (
                       <>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <Switch checked={noCache} onCheckedChange={setNoCache} />
+                        <label className="flex items-center gap-1.5 cursor-pointer" htmlFor="no-cache-sw">
+                          <Switch id="no-cache-sw" checked={noCache} onCheckedChange={setNoCache} />
                           <span className="text-xs">绕过缓存</span>
                         </label>
                         {!noCache && (
@@ -984,7 +1198,10 @@ export function Component() {
                     )}
                   <div className="flex items-center justify-between pt-2 border-t">
                     <div>
-                      <p className="text-sm">使用 R2 上传</p>
+                      <p className="text-sm flex items-center gap-1">
+                        使用 R2 上传
+                        <Icon icon="logos:cloudflare-icon" className="h-3.5 w-3.5 shrink-0" />
+                      </p>
                       <p className="text-xs text-muted-foreground">大文件（＞50MB）通过 Cloudflare R2 上传，无大小限制</p>
                     </div>
                     <Switch checked={useR2Upload} onCheckedChange={setUseR2Upload} />
@@ -1020,8 +1237,8 @@ export function Component() {
                           </div>
                         </div>
                       ) : (
-                        <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors">
-                          <input type="file" accept=".pdf,.docx,.doc,.txt,.md" className="hidden"
+                        <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 cursor-pointer hover:border-primary/40 hover:bg-accent/30 transition-colors" htmlFor="gen-file-input">
+                          <input id="gen-file-input" type="file" accept=".pdf,.docx,.doc,.txt,.md" className="hidden"
                             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleGenFile(f) }} />
                           <Upload className="h-5 w-5 text-muted-foreground/60" />
                           <span className="text-sm text-muted-foreground">点击选择文件，或拖拽到此处</span>
@@ -1051,7 +1268,7 @@ export function Component() {
                               {history.filter((h) => h.questions_json).map((h) => {
                                 const checked = dedupHistoryIds.has(h.id)
                                 return (
-                                <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
+                                <div key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
                                   <button type="button" onClick={() => {
                                     setDedupHistoryIds((prev) => {
                                       const next = new Set(prev)
@@ -1070,7 +1287,7 @@ export function Component() {
                                     {h.mode !== 'generate' && <span className="text-[10px] text-muted-foreground ml-1">({h.page_ranges || '全部'})</span>}
                                   </span>
                                   <span className="text-[10px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
-                                </label>
+                                </div>
                                 )
                               })}
                             </div>
@@ -1244,6 +1461,7 @@ export function Component() {
                 </div>
                 <R2PdfGallery
                   pdfs={r2Pdfs}
+                  loading={r2Loading}
                   displayNames={r2DisplayNames}
                   onSelect={(url) => { setManualPdfUrl(url); setFile(null); setFiles([]) }}
                   onRename={(key, name) => {
@@ -1253,11 +1471,13 @@ export function Component() {
                     saveR2DisplayNames(next)
                   }}
                   onRefresh={() => {
+                    setR2Loading(true)
                     supabase.functions.invoke('r2-list', { body: { prefix: 'pdf/' } })
                       .then(({ data }) => {
                         if (data?.files) setR2Pdfs((data.files as { key: string; url: string; size: number }[]).filter(f => f.key !== 'pdf/' && !f.key.endsWith('/')))
                       })
                       .catch(() => {})
+                      .finally(() => setR2Loading(false))
                   }}
                 />
               </div>
@@ -1314,7 +1534,7 @@ export function Component() {
                                 {history.filter((h) => h.questions_json).map((h) => {
                                   const checked = dedupHistoryIds.has(h.id)
                                   return (
-                                    <label key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
+                                    <div key={h.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5">
                                       <button type="button" onClick={() => {
                                         setDedupHistoryIds((prev) => {
                                           const next = new Set(prev)
@@ -1333,7 +1553,7 @@ export function Component() {
                                         {h.mode !== 'generate' && <span className="text-[9px] text-muted-foreground ml-1">({h.page_ranges || '全部'})</span>}
                                       </span>
                                       <span className="text-[9px] text-muted-foreground shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
-                                    </label>
+                                    </div>
                                   )
                                 })}
                               </div>
@@ -1576,6 +1796,26 @@ export function Component() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete confirm dialog */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除解析记录</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirm ? `确定删除选中的 ${deleteConfirm.ids.length} 条记录？` : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Button variant="destructive" className="w-full" onClick={() => handleDeleteConfirm(true)}>
+              删除记录和缓存 PDF 图片
+            </Button>
+            <AlertDialogCancel onClick={() => handleDeleteConfirm(false)}>
+              仅删除记录
+            </AlertDialogCancel>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

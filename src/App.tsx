@@ -133,7 +133,8 @@ function AuthInitializer({ children }: { children: ReactNode }) {
         } else {
           if (!cancelled) setProfile(null)
         }
-      } catch {
+      } catch (e) {
+        console.error('Session init failed:', e)
         if (!cancelled) {
           setUser(null)
           setProfile(null)
@@ -151,6 +152,8 @@ function AuthInitializer({ children }: { children: ReactNode }) {
         // Skip token refresh entirely — no store update, no re-render
         if (event === 'TOKEN_REFRESHED') return
         const user = session?.user ?? null
+        const currentProfile = useAuthStore.getState().profile
+        if (user && currentProfile && currentProfile.id === user.id) return
         if (!cancelled) setUser(user)
         if (user) {
           await loadProfile(user.id)

@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
+import { useDashboardStore } from '@/stores/dashboard-store'
+import { useRefreshStore } from '@/stores/refresh-store'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Calendar, Check, ChevronDown, HelpCircle, Plus, Play, X } from 'lucide-react'
 import {
   Dialog,
@@ -56,82 +59,34 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [allSubjects, setAllSubjects] = useState<string[]>([])
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
   const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
+  const [planLoading, setPlanLoading] = useState(false)
+
+  const { fetchPlanCache } = useDashboardStore()
+  const refreshVersion = useRefreshStore((s) => s.version)
 
   useEffect(() => {
-    if (!open) return
-    async function load() {
-      const { data: meta } = await supabase
-        .from('question_meta_cache')
-        .select('subjects')
-        .single()
-      const metaSubjects: string[] = (meta?.subjects ?? []) as string[]
-
+    if (!open || !user) return
+    const cache = useDashboardStore.getState().getPlanCache()
+    if (cache && cache.refreshVersion === refreshVersion) {
       const counts = new Map<string, number>()
-      for (const s of metaSubjects) counts.set(s, 0)
-      for (const s of selectedSubjects) {
-        if (!counts.has(s)) counts.set(s, 0)
-      }
-
-      // Paginate through all questions — PostgREST defaults to max-rows=1000
-      const PAGE = 1000
-      let from = 0
-      const subjectIds = new Map<string, Set<string>>()
-
-      while (true) {
-        const { data: page } = await supabase
-          .from('questions')
-          .select('id, subject')
-          .order('id')
-          .range(from, from + PAGE - 1)
-
-        if (!page || page.length === 0) break
-
-        for (const q of page) {
-          const s = q.subject || 'Other'
-          counts.set(s, (counts.get(s) ?? 0) + 1)
-          let ids = subjectIds.get(s)
-          if (!ids) { ids = new Set(); subjectIds.set(s, ids) }
-          ids.add(q.id)
-        }
-
-        if (page.length < PAGE) break
-        from += PAGE
-      }
-
-      setAllSubjects([...counts.keys()].sort())
+      for (const [s, p] of Object.entries(cache.subjectProgress)) counts.set(s, p.total)
+      for (const s of selectedSubjects) { if (!counts.has(s)) counts.set(s, 0) }
+      setAllSubjects(cache.allSubjects)
       setSubjectCounts(counts)
-
-      if (user) {
-        const doneIds = new Set<string>()
-        from = 0
-        while (true) {
-          const { data: page } = await supabase
-            .from('user_answers')
-            .select('question_id')
-            .eq('user_id', user.id)
-            .order('question_id')
-            .range(from, from + PAGE - 1)
-
-          if (!page || page.length === 0) break
-          for (const a of page) doneIds.add(a.question_id)
-          if (page.length < PAGE) break
-          from += PAGE
-        }
-
-        const progress = new Map<string, { total: number; done: number }>()
-        for (const s of counts.keys()) {
-          progress.set(s, { total: 0, done: 0 })
-        }
-        for (const [subject, ids] of subjectIds) {
-          let done = 0
-          for (const id of ids) { if (doneIds.has(id)) done++ }
-          progress.set(subject, { total: ids.size, done })
-        }
-        setSubjectProgress(progress)
-      }
+      setSubjectProgress(new Map(Object.entries(cache.subjectProgress)))
+      return
     }
-    load()
-  }, [open, user, selectedSubjects])
+    setPlanLoading(true)
+    fetchPlanCache(user.id, refreshVersion).then((cache) => {
+      const counts = new Map<string, number>()
+      for (const [s, p] of Object.entries(cache.subjectProgress)) counts.set(s, p.total)
+      for (const s of selectedSubjects) { if (!counts.has(s)) counts.set(s, 0) }
+      setAllSubjects(cache.allSubjects)
+      setSubjectCounts(counts)
+      setSubjectProgress(new Map(Object.entries(cache.subjectProgress)))
+      setPlanLoading(false)
+    })
+  }, [open, user, selectedSubjects, fetchPlanCache, refreshVersion])
 
   useEffect(() => {
     const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
@@ -324,7 +279,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 />
               </button>
 
-              {selectedSubjects.length > 0 && (
+              {planLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-3 w-10" />
+                      </div>
+                      <Skeleton className="h-1.5 w-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : selectedSubjects.length > 0 && (
                 <div className="space-y-1.5">
                   {selectedSubjects.map((s) => {
                     const p = subjectProgress.get(s)
@@ -371,7 +338,26 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             </div>
 
             <div className="space-y-3">
-            {dailyTargets.map((target, i) => {
+            {planLoading ? (
+              <div className="space-y-2">
+                {[...Array(2)].map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-8 w-full" />
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-7 flex-1" />
+                      <Skeleton className="h-7 w-7" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Skeleton className="h-3 w-16" />
+                        <Skeleton className="h-3 w-10" />
+                      </div>
+                      <Skeleton className="h-1.5 w-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : dailyTargets.map((target, i) => {
               const usedByOthers = new Set(
                 dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
               )

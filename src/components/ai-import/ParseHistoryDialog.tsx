@@ -31,6 +31,7 @@ interface Props {
   error: string
   onLoad: (id: number) => void
   onDelete: (id: number) => void
+  onBatchDelete: (ids: number[]) => void
   onBatchCache: (ids: number[]) => void
   onBatchReplaceUrl: (ids: number[], newUrl: string) => void
   onRename: (id: number, displayName: string) => void
@@ -72,6 +73,26 @@ function r2KeyFromUrl(url: string): string | null {
   return idx >= 0 ? url.slice(idx) : null
 }
 
+function extractMeta(questionsJson: string | null) {
+  const subs = new Set<string>()
+  const cats = new Set<string>()
+  const kps = new Set<string>()
+  try {
+    const qs = JSON.parse(questionsJson || '[]') as any[]
+    for (const q of qs) {
+      if (q.subject) subs.add(q.subject)
+      if (q.category) cats.add(q.category)
+      if (q.key_points) {
+        for (const kp of String(q.key_points).split(/[,，;；]/)) {
+          const t = kp.trim()
+          if (t) kps.add(t)
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return { subjects: [...subs].join(', '), categories: [...cats].join(', '), keyPoints: [...kps].join(', ') }
+}
+
 function displayFileName(h: HistoryEntry, r2Names?: Map<string, string>): string {
   if (h.display_name) return h.display_name
   if (r2Names) {
@@ -81,7 +102,7 @@ function displayFileName(h: HistoryEntry, r2Names?: Map<string, string>): string
   return h.file_name.startsWith('http') ? fileNameFromUrl(h.file_name) : h.file_name
 }
 
-export function ParseHistoryDialog({ open, onOpenChange, history, loading, error, onLoad, onDelete, onBatchCache, onBatchReplaceUrl, onRename, onShowQuestions, r2DisplayNames, r2Pdfs }: Props) {
+export function ParseHistoryDialog({ open, onOpenChange, history, loading, error, onLoad, onDelete, onBatchDelete, onBatchCache, onBatchReplaceUrl, onRename, onShowQuestions, r2DisplayNames, r2Pdfs }: Props) {
   const [mode, setMode] = useState('all')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [replaceUrl, setReplaceUrl] = useState('')
@@ -132,6 +153,14 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                       onBatchCache(ids)
                     }}>
                     批量缓存到 R2
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      onBatchDelete([...selectedIds])
+                      setSelectedIds(new Set())
+                    }}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    删除
                   </Button>
                   {showReplaceInput ? (
                     <>
@@ -190,6 +219,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                 </div>
               )}
 
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -207,6 +237,9 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                     <TableHead className="text-xs w-[40px]">ID</TableHead>
                     <TableHead className="text-xs">文件名</TableHead>
                     <TableHead className="text-xs w-[48px]">模式</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">学科</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">分类</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">知识点</TableHead>
                     <TableHead className="text-xs w-[80px]">页码范围</TableHead>
                     <TableHead className="text-xs w-[44px]">题目</TableHead>
                     <TableHead className="text-xs w-[68px]">状态</TableHead>
@@ -222,6 +255,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                     const statusText = stateLabel(s.state || '')
                     const statusCls = stateColor(s.state || '')
                     const cachePages = (() => { try { const urls = JSON.parse(h.pdf_page_urls || 'null'); return Array.isArray(urls) ? urls.length : 0 } catch { return 0 } })()
+                    const meta = extractMeta(h.questions_json)
 
                     return (
                       <TableRow key={h.id}>
@@ -277,6 +311,15 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                         <TableCell className="text-xs py-1.5 text-muted-foreground">
                           {{lightweight: '轻量', precision: '精准', generate: '生成'}[h.mode] || h.mode}
                         </TableCell>
+                        <TableCell className="text-xs py-1.5 text-muted-foreground whitespace-nowrap max-w-[120px] truncate" title={meta.subjects || undefined}>
+                          {meta.subjects || '-'}
+                        </TableCell>
+                        <TableCell className="text-xs py-1.5 text-muted-foreground whitespace-nowrap max-w-[120px] truncate" title={meta.categories || undefined}>
+                          {meta.categories || '-'}
+                        </TableCell>
+                        <TableCell className="text-xs py-1.5 text-muted-foreground whitespace-nowrap max-w-[150px] truncate" title={meta.keyPoints || undefined}>
+                          {meta.keyPoints || '-'}
+                        </TableCell>
                         <TableCell className="text-xs py-1.5 text-muted-foreground font-mono whitespace-nowrap">
                           {h.mode === 'generate' ? '全部' : (h.page_ranges || '全部')}{h.pdf_total_pages ? ` / ${h.pdf_total_pages}页` : ''}
                         </TableCell>
@@ -312,6 +355,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                   })}
                 </TableBody>
               </Table>
+              </div>
             </>
           )}
         </div>

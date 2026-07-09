@@ -514,3 +514,12 @@
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+@keyframes flash {
+  0% { background-color: transparent; }
+  20% { background-color: hsl(217 91% 60% / 0.25); }
+  100% { background-color: transparent; }
+}
+.animate-flash {
+  animation: flash 0.9s ease-in-out 2;
+}

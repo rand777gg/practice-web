@@ -35,9 +35,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
   startExam: async (userId, questionCount, durationMs, subjects, categories, questionTypes) => {
     set({ isLoading: true, error: null })
 
-    let query = supabase.from('questions').select('id')
+    let query = supabase.from('questions').select('id, subject, categories')
     if (subjects?.length) query = query.in('subject', subjects)
-    if (categories?.length) query = query.contains('categories', categories)
     if (questionTypes?.length) query = query.in('question_type', questionTypes)
 
     const { data: allQuestions, error: fetchError } = await query
@@ -52,8 +51,23 @@ export const useExamStore = create<ExamState>((set, get) => ({
       return
     }
 
-    const count = Math.min(questionCount, allQuestions.length)
-    const shuffled = [...allQuestions].sort(() => Math.random() - 0.5)
+    // Client-side JSONB categories filter (PostgREST lacks JSONB array overlap operator)
+    let filtered = allQuestions as { id: string; subject: string; categories: string[] }[]
+    if (categories?.length) {
+      const catSet = new Set(categories)
+      filtered = filtered.filter(q => {
+        if (!q.categories || !Array.isArray(q.categories)) return false
+        return q.categories.some(c => catSet.has(c))
+      })
+    }
+
+    if (filtered.length === 0) {
+      set({ isLoading: false, error: 'No questions available for the selected filters.' })
+      return
+    }
+
+    const count = Math.min(questionCount, filtered.length)
+    const shuffled = [...filtered].sort(() => Math.random() - 0.5)
     const selected = shuffled.slice(0, count)
     const questionIds: string[] = selected.map((q: { id: string }) => q.id)
 
@@ -165,10 +179,25 @@ export const useExamStore = create<ExamState>((set, get) => ({
   },
 
   answerQuestion: (questionId, answer) => {
-    const { answers } = get()
+    const { answers, session, questions } = get()
     const newAnswers = new Map(answers)
     newAnswers.set(questionId, answer)
     set({ answers: newAnswers })
+
+    // Auto-save to DB so answers survive refresh
+    if (session) {
+      const q = questions.find(x => x.id === questionId)
+      const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered) : false
+      supabase.from('user_answers').upsert({
+        user_id: session.user_id,
+        question_id: questionId,
+        selected_answer: answer as any,
+        is_correct: isC,
+        mode: 'exam',
+        exam_session_id: session.id,
+        answered_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,question_id,exam_session_id' }).then()
+    }
   },
 
   nextQuestion: () => {

@@ -11,7 +11,7 @@ export function Component() {
  return (
   <div className="space-y-8">
    <div>
-    <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('exam.title')}</h1>
+    {!isActive && <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('exam.title')}</h1>}
     <ExamSession />
    </div>
    {!isActive && (

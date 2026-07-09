@@ -42,6 +42,7 @@ export const FONT_WEIGHTS = [
 
 export const EYE_CARE_PALETTES = [
   { value: '',       label: '默认',   preview: 'hsl(0 0% 100%)' },
+  { value: 'paper',  label: '纸张',   preview: '#FBF5D7' },
   { value: 'silk',   label: '绢色',   preview: '#F4EDE4' },
   { value: 'celadon', label: '青瓷',  preview: '#EAF0E5' },
   { value: 'lotus',  label: '藕荷',   preview: '#F4EEF1' },

@@ -70,6 +70,8 @@ export function PracticeSession() {
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
+  const [selectedKeyPoint, setSelectedKeyPoint] = useState('')
+  const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
   const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>('mixed')
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>('all')
 
@@ -85,6 +87,20 @@ export function PracticeSession() {
     setSelectedCategory('')
   }, [selectedSubjects, updateFilteredCategories])
 
+  useEffect(() => { kpRetryRef.current = 0 }, [selectedKeyPoint])
+
+  // Load distinct key_points for filter dropdown, grouped by subject
+  useEffect(() => {
+    let c = false
+    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null).then(({ data }) => {
+      if (c) return
+      const m = new Map<string, Set<string>>()
+      for (const r of (data ?? [])) { const s = (r as any).subject || '其他'; if (!m.has(s)) m.set(s, new Set()); if ((r as any).key_points) for (const k of ((r as any).key_points as string).split(/[,，;；]/)) { const t = k.trim(); if (t) m.get(s)!.add(t) } }
+      setKpBySubject([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort((a2, b2) => a2.localeCompare(b2, 'zh-CN')) })))
+    })
+    return () => { c = true }
+  }, [])
+
   const yearCategories = useMemo(
     () => filteredCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a)),
     [filteredCategories],
@@ -95,6 +111,7 @@ export function PracticeSession() {
   )
 
   const fetchGenRef = useRef(0)
+  const kpRetryRef = useRef(0)
 
   const fetchRandomQuestion = useCallback(async () => {
     fetchGenRef.current++
@@ -113,7 +130,7 @@ export function PracticeSession() {
     // Scope: favorites — pick from user's favorited questions
     if (currentUser && questionScope === 'favorites') {
       const { data: favRows } = await supabase.from('favorites')
-        .select('question_id, questions!inner(subject, category, question_type)')
+        .select('question_id, questions!inner(subject, category, question_type, key_points)')
         .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false })
         .limit(200)
@@ -123,6 +140,7 @@ export function PracticeSession() {
         if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
         if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
         if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
+        if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
         if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
       }
     }
@@ -130,7 +148,7 @@ export function PracticeSession() {
     // Scope: wrong — pick from previously wrong-answered questions
     if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
       const { data: wrongRows } = await supabase.from('user_answers')
-        .select('question_id, questions!inner(subject, category, question_type)')
+        .select('question_id, questions!inner(subject, category, question_type, key_points)')
         .eq('user_id', currentUser.id)
         .eq('is_correct', false)
         .order('answered_at', { ascending: false })
@@ -141,6 +159,7 @@ export function PracticeSession() {
         if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
         if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
         if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
+        if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
         if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
       }
     }
@@ -191,6 +210,14 @@ export function PracticeSession() {
     ])
     if (fetchGenRef.current !== myGen) return
 
+    // RPC doesn't filter by key_points, check post-fetch and retry up to 5 times
+    const kpRetry = kpRetryRef.current
+    if (selectedKeyPoint && !(qRes.data?.key_points || '').includes(selectedKeyPoint) && kpRetry < 5) {
+      kpRetryRef.current = kpRetry + 1
+      fetchRandomQuestion()
+      return
+    }
+
     if (qRes.error || !qRes.data) {
       if (fetchGenRef.current !== myGen) return
       const localQ = await getPrefetchedQuestion(pickedId!)
@@ -217,7 +244,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, planSubjectSet, questionMode, questionScope])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope])
 
   useEffect(() => {
     fetchRandomQuestion()
@@ -424,6 +451,20 @@ export function PracticeSession() {
                 {t(`questionTypes.${o.value}` as any)}
                 {selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1 text-xs">
+              {selectedKeyPoint || '知识点'}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+            <DropdownMenuItem onClick={() => setSelectedKeyPoint('')}><span className="text-muted-foreground">不限知识点</span>{!selectedKeyPoint && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {kpBySubject.map(({ subject, keyPoints }) => (
+              <DropdownMenuSub key={subject}><DropdownMenuSubTrigger className="text-xs">{subject}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{keyPoints.map(kp => <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoint(kp)}>{kp}{selectedKeyPoint === kp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>

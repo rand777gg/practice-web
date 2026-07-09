@@ -129,12 +129,14 @@ export function MarkdownEditor({
       const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
       const { text } = await generateText({
         model: client(config.model || 'deepseek-chat'),
-        system: 'You are a text formatter. Add <br> at natural break points between paragraphs and list items. Do NOT change any content.',
-        prompt: current,
+        system: '你是一个纯文本格式化工具。你的唯一任务是在段落和列表项之间插入 <br> 换行符。你必须逐字保留原文，不得修改、替换、改写、省略任何内容，包括标点、空格、数学公式、Markdown 语法。只添加 <br>，不要做任何其他改动。直接输出格式化后的文本，不要加任何解释。',
+        prompt: `以下是要格式化的文本，请严格原样保留，只在需要的地方添加 <br>：\n\n---\n${current}\n---`,
         temperature: 0.1,
       })
       if (text) onChange(text)
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error('AI line break failed:', e)
+    }
     setIsFormatting(false)
   }
 

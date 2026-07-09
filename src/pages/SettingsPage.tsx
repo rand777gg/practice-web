@@ -726,7 +726,10 @@ export function Component() {
               try {
                await supabase.from('user_answers').delete().eq('user_id', user!.id)
                await supabase.from('exam_sessions').delete().eq('user_id', user!.id)
-              } catch { /* ignore */ }
+              } catch (e) {
+               setResetError('重置失败，请稍后重试')
+               console.error('Reset data failed:', e)
+              }
               setResettingData(false)
               setResetDataOpen(false)
              }}
@@ -763,7 +766,11 @@ export function Component() {
            disabled={deleting}
            onClick={async () => {
             setDeleting(true)
-            try { await supabase.functions.invoke('delete-account') } catch { /* ignore */ }
+            try { await supabase.functions.invoke('delete-account') } catch (e) {
+              setDeleting(false)
+              console.error('Delete account failed:', e)
+              return alert('注销失败，请稍后重试')
+            }
             setDeleteOpen(false)
             signOut()
            }}

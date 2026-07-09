@@ -13,7 +13,13 @@ const UNITS = '(Gbps|Mbps|Kbps|bps|GHz|MHz|kHz|rpm|GB|MB|KB|TB|PB|cm|mm|km|kg|mg
 
 export function normalizeChineseText(text: string): string {
   if (!text) return text
+  // Protect LaTeX math regions from normalization — replace with placeholders
+  const mathBlocks: string[] = []
   let result = text
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => { mathBlocks.push(`$$${m}$$`); return `\x00MATH${mathBlocks.length - 1}\x00` })
+    .replace(/\$([^$]+?)\$/g, (_, m) => { mathBlocks.push(`$${m}$`); return `\x00MATH${mathBlocks.length - 1}\x00` })
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => { mathBlocks.push(`\\[${m}\\]`); return `\x00MATH${mathBlocks.length - 1}\x00` })
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => { mathBlocks.push(`\\(${m}\\)`); return `\x00MATH${mathBlocks.length - 1}\x00` })
   // 中英文之间加空格
   result = result.replace(new RegExp(`(${CJK})([a-zA-Z])`, 'g'), '$1 $2')
   result = result.replace(new RegExp(`([a-zA-Z])(${CJK})`, 'g'), '$1 $2')
@@ -43,6 +49,8 @@ export function normalizeChineseText(text: string): string {
   result = result.replace(new RegExp(`(${CJK})"`, 'g'), '$1」')
   result = result.replace(new RegExp(`'(${CJK})`, 'g'), '『$1')
   result = result.replace(new RegExp(`(${CJK})'`, 'g'), '$1』')
+  // Restore LaTeX math regions
+  result = result.replace(/\x00MATH(\d+)\x00/g, (_, i) => mathBlocks[Number(i)] || '')
   return result
 }
 

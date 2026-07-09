@@ -8,6 +8,7 @@ import { ExamProgress } from './ExamProgress'
 import { ExamResultDialog } from './ExamResultDialog'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
@@ -29,6 +30,7 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import { ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
 import { useSwipe } from '@/hooks/use-swipe'
 import {
@@ -66,7 +68,7 @@ export function ExamSession() {
     submitExam,
   } = useExamStore()
 
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [hasStarted, setHasStarted] = useState(false)
   const [showStart, setShowStart] = useState(true)
   const [resultDialogOpen, setResultDialogOpen] = useState(false)
@@ -87,6 +89,8 @@ export function ExamSession() {
   const [aiGlow, setAiGlow] = useState(false)
   const [aiFade, setAiFade] = useState(false)
   const [aiReason, setAiReason] = useState('')
+  const [showSheet, setShowSheet] = useState(false)
+  const { setSidebarCollapsed } = useSettingsStore()
 
   useEffect(() => {
     async function loadFilters() {
@@ -130,10 +134,11 @@ export function ExamSession() {
     let cancelled = false
     const sessionId = searchParams.get('sessionId')
     if (sessionId && user) {
-      resumeExam(sessionId).then(() => {
-        if (cancelled) return
-        setShowStart(false)
-        setHasStarted(true)
+      // Optimistically show exam UI immediately to avoid flash
+      setShowStart(false)
+      setHasStarted(true)
+      resumeExam(sessionId).catch(() => {
+        if (!cancelled) { setShowStart(true); setHasStarted(false) }
       })
       return () => { cancelled = true }
     }
@@ -166,6 +171,9 @@ export function ExamSession() {
     const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
     const mins = Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, durationMin || EXAM_DEFAULT_DURATION_MIN))
     await startExam(user.id, count, mins * 60 * 1000, selectedSubjects.length ? selectedSubjects : undefined, selectedCategories.length ? selectedCategories : undefined, selectedTypes.length ? selectedTypes : undefined)
+    const s = useExamStore.getState().session
+    if (s) setSearchParams({ sessionId: s.id }, { replace: true })
+    setSidebarCollapsed(true)
     setShowStart(false)
     setHasStarted(true)
   }
@@ -173,7 +181,9 @@ export function ExamSession() {
   const handleResume = async () => {
     if (!pendingSession) return
     setShowResumeDialog(false)
+    setSearchParams({ sessionId: pendingSession.id }, { replace: true })
     await resumeExam(pendingSession.id)
+    setSidebarCollapsed(true)
     setShowStart(false)
     setHasStarted(true)
   }
@@ -184,6 +194,8 @@ export function ExamSession() {
     }
     setShowResumeDialog(false)
     setPendingSession(null)
+    setSidebarCollapsed(false)
+    setSearchParams({}, { replace: true })
   }
 
   const handleSubmitExam = async () => {
@@ -195,11 +207,14 @@ export function ExamSession() {
 
   const handleTimerExpire = () => {
     handleSubmitExam()
+    setSearchParams({}, { replace: true })
   }
 
   const handleCloseResult = () => {
     setResultDialogOpen(false)
     useExamStore.getState().reset()
+    setSidebarCollapsed(false)
+    setSearchParams({}, { replace: true })
     setShowStart(true)
     setHasStarted(false)
   }
@@ -285,7 +300,10 @@ export function ExamSession() {
                       setQuestionCount(Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, result.questionCount)))
                       setDurationMin(Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, result.durationMin)))
                       setAiReason(result.reason)
-                    } catch { /* ignore */ }
+                    } catch (e) {
+                      console.error('AI suggest exam failed:', e)
+                      setAiReason('AI 推荐失败，请手动设置参数')
+                    }
                     setAiLoading(false)
                     setTimeout(() => {
                       setAiFade(true)
@@ -485,66 +503,265 @@ export function ExamSession() {
   }
 
   const currentQuestion = questions[currentIndex]
+  const currentAnswer = currentQuestion ? answers.get(currentQuestion.id) ?? null : null
+  const currentAnswered = currentAnswer !== null
+  const answeredCount = questionIds.filter(id => answers.has(id)).length
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <ExamTimer
-          startedAt={session.started_at}
-          durationMs={session.duration_ms}
-          onExpire={handleTimerExpire}
-        />
-        <ExamProgress
-          current={currentIndex}
-          total={questions.length}
-          answers={answers}
-          questionIds={questionIds}
-          onJumpTo={jumpTo}
-        />
-      </div>
-
-      {currentQuestion && (
-        <div
-          className="touch-pan-y select-none"
-          style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-        >
-          <QuestionCard
-            question={currentQuestion}
-            selectedAnswer={answers.get(currentQuestion.id) ?? null}
-            onSelect={handleAnswerSelect}
-          />
+    <div className="flex flex-col lg:flex-row gap-0 lg:h-[calc(100vh-7rem)]">
+      {/* ── Left: Answer Sheet ────────────────────────────────── */}
+      <div className="flex-[2] min-w-0 lg:border-r bg-muted/20 hidden lg:flex flex-col">
+        <div className="p-3 border-b">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">答题卡</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <ExamTimer startedAt={session.started_at} durationMs={session.duration_ms} onExpire={handleTimerExpire} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" />已答</div>
+            <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted border border-dashed border-muted-foreground/20" />未答</div>
+          </div>
         </div>
-      )}
-
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={previousQuestion}
-          disabled={currentIndex === 0}
-        >
-          <ChevronLeft className="h-4 w-4" />
-          <span className="hidden sm:inline ml-1">{t('exam.previous')}</span>
-        </Button>
-
-        <span className="text-sm text-muted-foreground whitespace-nowrap">
-          {currentIndex + 1} / {questions.length}
-        </span>
-
-        {currentIndex < questions.length - 1 ? (
-          <Button size="sm" onClick={nextQuestion}>
-            <span className="hidden sm:inline mr-1">{t('exam.next')}</span>
-            <ChevronRight className="h-4 w-4" />
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="flex flex-wrap gap-2 content-start">
+            {questionIds.map((id, i) => {
+              const isAnswered = answers.has(id)
+              const isCurrent = i === currentIndex
+              return (
+                <button key={id}
+                  onClick={() => jumpTo(i)}
+                  className={cn(
+                    'w-8 h-8 rounded text-xs tabular-nums transition-all border border-dashed flex items-center justify-center',
+                    isCurrent && 'bg-primary text-primary-foreground border-primary',
+                    !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
+                    !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
+                  )}
+                >
+                  {i + 1}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="p-3 border-t space-y-2">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">进度</span>
+              <span className="tabular-nums">{answeredCount}/{questions.length}</span>
+            </div>
+            <Progress value={(answeredCount / questions.length) * 100} className="h-2 [&>div]:bg-emerald-500" />
+          </div>
+          <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleSubmitExam} disabled={isSubmitting}>
+            {isSubmitting ? t('exam.submitting') : '交卷'}
           </Button>
-        ) : (
-          <Button size="sm" onClick={handleSubmitExam} disabled={isSubmitting}>
-            {isSubmitting ? t('exam.submitting') : t('exam.submitExam')}
-          </Button>
-        )}
+        </div>
       </div>
+
+      {/* ── Center: Question ──────────────────────────────────── */}
+      <div className="flex-[4] flex flex-col min-w-0 lg:overflow-hidden lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
+        <div className="flex items-center gap-2 px-4 py-2 border-b text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">第 {currentIndex + 1} 题</span>
+          <span className="text-border">|</span>
+          <span>{currentQuestion?.subject || '未分类'}</span>
+          <span className="text-border">|</span>
+          <span>{currentQuestion?.question_type ? t(`questionTypes.${currentQuestion.question_type}` as any) : ''}</span>
+          <span className="ml-auto">共 {questions.length} 题</span>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {currentQuestion && (
+            <div className="max-w-2xl mx-auto space-y-6 lg:h-full flex flex-col">
+              <div className="flex-1">
+                <p className="text-base leading-relaxed whitespace-pre-wrap">{currentQuestion.question_text}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Right: Answer Area ─────────────────────────────────── */}
+      <div className="flex-[4] min-w-0 lg:border-l bg-muted/20 flex flex-col lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
+        <div className="p-3 border-b">
+          <p className="text-sm font-semibold">作答区</p>
+          <span className="text-xs text-muted-foreground">
+            {currentAnswered ? `已作答 ${currentIndex + 1}/${questions.length}` : `${currentIndex + 1}/${questions.length}`}
+          </span>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3">
+          {currentQuestion && (() => {
+            const q = currentQuestion
+            const type = q.question_type
+
+            if (type === 'single_choice' || type === 'multi_select') {
+              const isMulti = type === 'multi_select'
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground mb-2">{isMulti ? '多选题，点击选项选中/取消' : '单选题，点击选项选择'}</p>
+                  {q.options.map((opt, i) => {
+                    const selected = currentAnswer
+                    const checked = isMulti
+                      ? Array.isArray(selected) && (selected as number[]).includes(i)
+                      : selected === i
+                    return (
+                      <button key={i}
+                        onClick={() => {
+                          if (isMulti) {
+                            const prev = (Array.isArray(selected) ? selected as number[] : [])
+                            answerQuestion(q.id, prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])
+                          } else {
+                            answerQuestion(q.id, i)
+                          }
+                        }}
+                        className={cn(
+                          'w-full text-left flex items-center gap-3 p-3 rounded-lg border transition-all text-sm',
+                          checked ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30 hover:bg-accent/50',
+                        )}
+                      >
+                        <span className={cn(
+                          'w-5 h-5 border-2 flex items-center justify-center shrink-0 text-[10px] font-bold',
+                          isMulti ? 'rounded' : 'rounded-full',
+                          checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/30',
+                        )}>
+                          {checked ? (isMulti ? '✓' : '●') : String.fromCharCode(65 + i)}
+                        </span>
+                        <span>{opt}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            }
+
+            if (type === 'fill_blank') {
+              const blankCount = (q.question_text.match(/_{2,}/g) || []).length || 1
+              const answers = (Array.isArray(currentAnswer) ? currentAnswer as string[] : typeof currentAnswer === 'string' ? [currentAnswer] : new Array(blankCount).fill('')) as string[]
+              return (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">填空题，共 {blankCount} 个空</p>
+                  {Array.from({ length: blankCount }, (_, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-6 shrink-0">({i + 1})</span>
+                      <input
+                        type="text"
+                        className="flex-1 h-9 px-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        placeholder={`第 ${i + 1} 个空`}
+                        value={answers[i] || ''}
+                        onChange={(e) => {
+                          const next = [...answers]
+                          next[i] = e.target.value
+                          answerQuestion(q.id, next.filter(Boolean).length ? next : next)
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+
+            if (type === 'true_false') {
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground mb-2">判断题，点击选择答案</p>
+                  <div className="flex gap-3">
+                    {[true, false].map(v => (
+                      <button key={String(v)} onClick={() => answerQuestion(q.id, v)}
+                        className={cn('flex-1 py-4 rounded-lg border text-base font-medium transition-all',
+                          currentAnswer === v ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30')}
+                      >{v ? '✓ 正确' : '✗ 错误'}</button>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+
+            return (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground mb-2">
+                  {{ fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', judge_correct: '判断改错题，输入修正后的正确表述', analysis: '分析题，输入分析内容' }[type] || '请输入答案'}
+                </p>
+                <textarea
+                  className="w-full min-h-[200px] p-3 rounded-lg border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="请输入答案..."
+                  value={typeof currentAnswer === 'string' ? currentAnswer : ''}
+                  onChange={(e) => answerQuestion(q.id, e.target.value)}
+                />
+              </div>
+            )
+          })()}
+        </div>
+        <div className="p-3 border-t">
+          <Button
+            size="sm"
+            className="w-full"
+            disabled={!currentAnswered}
+            onClick={() => {
+              if (currentIndex < questions.length - 1) nextQuestion()
+            }}
+          >
+            {currentAnswered ? '提交本题作答' : '请先作答'}
+          </Button>
+          <div className="flex items-center justify-between pt-2">
+            <Button variant="ghost" size="sm" onClick={previousQuestion} disabled={currentIndex === 0}>
+              <ChevronLeft className="h-4 w-4 mr-1" />上一题
+            </Button>
+            <span className="text-xs text-muted-foreground">{currentIndex + 1}/{questions.length}</span>
+            {currentIndex < questions.length - 1 ? (
+              <Button variant="ghost" size="sm" onClick={nextQuestion}>
+                下一题<ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {/* Mobile answer sheet floating button */}
+      <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
+        <Button size="sm" className="shadow-lg gap-1 rounded-full px-4" onClick={() => setShowSheet(true)}>
+          <span className="text-xs">答题卡</span>
+          <span className="tabular-nums text-[10px] opacity-70">{answeredCount}/{questions.length}</span>
+        </Button>
+      </div>
+
+      {/* Mobile answer sheet — bottom drawer */}
+      {showSheet && <div className="lg:hidden fixed inset-0 z-50" onClick={() => setShowSheet(false)}>
+        <div className="absolute inset-0 bg-black/40" />
+        <div className="absolute bottom-0 inset-x-0 bg-background rounded-t-2xl p-4 pb-8 safe-area-bottom max-h-[70vh] overflow-y-auto animate-in slide-in-from-bottom duration-300" onClick={(e) => e.stopPropagation()}>
+          <div className="w-10 h-1 rounded-full bg-muted-foreground/30 mx-auto mb-4" />
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">答题卡</p>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/80" />已答</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-muted border border-dashed" />未答</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>进度</span><span>{answeredCount}/{questions.length}</span>
+              </div>
+              <Progress value={(answeredCount / questions.length) * 100} className="h-2 [&>div]:bg-emerald-500" />
+            </div>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {questionIds.map((id, i) => {
+                const isAnswered = answers.has(id)
+                const isCurrent = i === currentIndex
+                return (
+                  <button key={id} onClick={() => { jumpTo(i); setShowSheet(false) }}
+                    className={cn('w-8 h-8 rounded text-xs tabular-nums border border-dashed flex items-center justify-center transition-all',
+                      isCurrent && 'bg-primary text-primary-foreground border-primary',
+                      !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
+                      !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20')}>
+                    {i + 1}
+                  </button>
+              )})}
+            </div>
+            <Button size="sm" className="w-full" onClick={handleSubmitExam} disabled={isSubmitting}>
+              {isSubmitting ? t('exam.submitting') : '交卷'}
+            </Button>
+          </div>
+        </div>
+      </div>}
     </div>
   )
 }
