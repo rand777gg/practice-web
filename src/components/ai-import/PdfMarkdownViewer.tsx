@@ -430,7 +430,7 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
                       ? 'hover:bg-amber-100 dark:hover:bg-amber-900/20 border-l-2 border-l-amber-300/50'
                       : 'text-muted-foreground/50 border-l-2 border-l-transparent'
                   } ${
-                    activeMdIdx === i && !selActive
+                    activeMdIdx === i && !selActive && flashIdx !== i
                       ? '!bg-blue-100 dark:!bg-blue-900/40 ring-1 ring-blue-400 !border-l-blue-500'
                       : ''
                   } ${
