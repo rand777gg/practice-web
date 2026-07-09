@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { QUESTION_TYPE_OPTIONS, OPTION_LABELS } from '@/lib/constants'
-import { isAnswerCorrect } from '@/lib/answer-utils'
+
 import { Trash2, Lightbulb, Pencil, Check, X, Star, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
@@ -43,7 +43,6 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
     )
   }
   if (type === 'true_false') {
-    const ok = selected === correct
     return (
       <div className="text-xs space-y-0.5">
         <div className={`rounded px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300`}>你的答案：{selected ? '正确' : '错误'} ✗</div>

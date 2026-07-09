@@ -164,7 +164,6 @@ function SkeletonCard() {
 }
 
 export function Component() {
-  const { t } = useT()
   const { user } = useAuthStore()
 
   const [tab, setTab] = useState('wrong')

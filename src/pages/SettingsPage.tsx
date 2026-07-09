@@ -79,6 +79,7 @@ export function Component() {
  const [logoutOpen, setLogoutOpen] = useState(false)
  const [resetDataOpen, setResetDataOpen] = useState(false)
  const [resettingData, setResettingData] = useState(false)
+ const [resetError, setResetError] = useState('')
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
 
@@ -715,6 +716,7 @@ export function Component() {
            </AlertDialogDescription>
            <div className="flex gap-3 mt-4 justify-end">
             <AlertDialogCancel asChild>
+             {resetError && <p className="text-xs text-destructive mb-2">{resetError}</p>}
              <Button variant="outline" size="sm" disabled={resettingData}>取消</Button>
             </AlertDialogCancel>
             <Button

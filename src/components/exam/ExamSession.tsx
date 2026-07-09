@@ -4,9 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
-import { ExamProgress } from './ExamProgress'
 import { ExamResultDialog } from './ExamResultDialog'
-import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
@@ -32,7 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
-import { useSwipe } from '@/hooks/use-swipe'
+
 import {
   EXAM_DEFAULT_COUNT,
   EXAM_MIN_COUNT,
@@ -219,16 +217,6 @@ export function ExamSession() {
     setHasStarted(false)
   }
 
-  const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
-    onSwipeLeft: nextQuestion,
-    onSwipeRight: previousQuestion,
-  })
-
-  const currentQuestionId = questions[currentIndex]?.id
-  const handleAnswerSelect = useCallback(
-    (index: Parameters<typeof answerQuestion>[1]) => answerQuestion(currentQuestionId!, index),
-    [currentQuestionId, answerQuestion],
-  )
   const questionIds = useMemo(() => questions.map((q) => q.id), [questions])
 
   if (checkingSession) {
