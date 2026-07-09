@@ -215,7 +215,7 @@ export function Component() {
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, display_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls')
+      .select('id, file_name, display_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls, subject, category, key_points')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -240,6 +240,9 @@ export function Component() {
       page_ranges: record.pageRanges || null,
       extra_formats: record.extraFormats?.length ? JSON.stringify(record.extraFormats) : null,
       pdf_total_pages: record.pdfTotalPages || null,
+      subject: subject || null,
+      category: category || null,
+      key_points: keyPoints || null,
     }).select('id').single()
     return data?.id ?? null
   }

@@ -21,6 +21,9 @@ export interface HistoryEntry {
   pdf_page_urls: string | null
   mode: string
   created_at: string
+  subject: string | null
+  category: string | null
+  key_points: string | null
 }
 
 interface Props {
@@ -73,24 +76,30 @@ function r2KeyFromUrl(url: string): string | null {
   return idx >= 0 ? url.slice(idx) : null
 }
 
-function extractMeta(questionsJson: string | null) {
+function extractMeta(h: HistoryEntry) {
+  // Priority: direct stored fields, fallback to questions_json
+  const subjects = h.subject || ''
+  const cats = h.category || ''
+  const kps = h.key_points || ''
+  if (subjects || cats || kps) return { subjects, categories: cats, keyPoints: kps }
+
+  // Fallback: extract from questions_json (for old records)
   const subs = new Set<string>()
-  const cats = new Set<string>()
-  const kps = new Set<string>()
+  const cats2 = new Set<string>()
+  const kps2 = new Set<string>()
   try {
-    const qs = JSON.parse(questionsJson || '[]') as any[]
+    const qs = JSON.parse(h.questions_json || '[]') as any[]
     for (const q of qs) {
       if (q.subject) subs.add(q.subject)
-      if (q.category) cats.add(q.category)
+      if (q.category) cats2.add(q.category)
       if (q.key_points) {
         for (const kp of String(q.key_points).split(/[,，;；]/)) {
-          const t = kp.trim()
-          if (t) kps.add(t)
+          const t = kp.trim(); if (t) kps2.add(t)
         }
       }
     }
   } catch { /* ignore */ }
-  return { subjects: [...subs].join(', '), categories: [...cats].join(', '), keyPoints: [...kps].join(', ') }
+  return { subjects: [...subs].join(', '), categories: [...cats2].join(', '), keyPoints: [...kps2].join(', ') }
 }
 
 function displayFileName(h: HistoryEntry, r2Names?: Map<string, string>): string {
@@ -255,7 +264,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                     const statusText = stateLabel(s.state || '')
                     const statusCls = stateColor(s.state || '')
                     const cachePages = (() => { try { const urls = JSON.parse(h.pdf_page_urls || 'null'); return Array.isArray(urls) ? urls.length : 0 } catch { return 0 } })()
-                    const meta = extractMeta(h.questions_json)
+                    const meta = extractMeta(h)
 
                     return (
                       <TableRow key={h.id}>
