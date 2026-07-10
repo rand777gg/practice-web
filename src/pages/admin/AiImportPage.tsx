@@ -27,7 +27,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { PdfMarkdownViewer, parseLayoutTree } from '@/components/ai-import/PdfMarkdownViewer'
-import { ParseHistoryDialog } from '@/components/ai-import/ParseHistoryDialog'
+import { ParseHistoryDialog, type HistoryEntry } from '@/components/ai-import/ParseHistoryDialog'
 import { R2PdfGallery } from '@/components/ai-import/R2PdfGallery'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
@@ -177,7 +177,7 @@ export function Component() {
 
   const { isEnabled } = useSettingsStore()
   const [showHistoryDialog, setShowHistoryDialog] = useState(false)
-  const [history, setHistory] = useState<{ id: number; file_name: string; display_name: string | null; markdown: string; json_data: string | null; questions_json: string | null; status_json: string | null; page_ranges: string | null; pdf_total_pages: number | null; pdf_page_urls: string | null; mode: string; created_at: string }[]>([])
+  const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(urlHistoryId)

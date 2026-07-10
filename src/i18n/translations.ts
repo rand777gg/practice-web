@@ -388,6 +388,12 @@ export const zh = {
     notFound: '页面未找到',
     goDashboard: '返回仪表盘',
   },
+  pwa: {
+    updateTitle: '发现新版本',
+    updateDesc: '有内容更新，刷新即可使用最新版本。',
+    refresh: '立即刷新',
+    dismiss: '稍后',
+  },
 }
 
 export const en = {
@@ -779,5 +785,11 @@ export const en = {
     error: 'Failed to load',
     notFound: 'Page not found',
     goDashboard: 'Go to Dashboard',
+  },
+  pwa: {
+    updateTitle: 'New version available',
+    updateDesc: 'An update is ready. Refresh to use the latest version.',
+    refresh: 'Refresh now',
+    dismiss: 'Later',
   },
 }
