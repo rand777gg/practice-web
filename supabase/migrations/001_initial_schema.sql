@@ -19,6 +19,10 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS plan_subjects TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_targets TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_deadline TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS plan_wrong_only BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS plan_categories TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS plan_key_points TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS plan_targets TEXT;
 
 -- ----------------------------------------------------------------------------
 -- 2. QUESTIONS — 题目表

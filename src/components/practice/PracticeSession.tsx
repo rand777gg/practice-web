@@ -26,7 +26,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
-import { normalizeDailyTargets } from '@/types'
+import { normalizeDailyTargets, getPlanTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
@@ -49,22 +49,31 @@ export function PracticeSession() {
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
 
-  const planSubjects = useMemo(() => {
-    if (!profile?.plan_subjects) return [] as string[]
-    try { const p = JSON.parse(profile.plan_subjects); return Array.isArray(p) ? p : [] } catch { return [] }
-  }, [profile?.plan_subjects])
+  const planTargets = useMemo(
+    () => getPlanTargets(profile),
+    [profile?.plan_targets, profile?.plan_subjects, profile?.plan_categories, profile?.plan_key_points, profile?.plan_wrong_only],
+  )
+  const planSubjects = useMemo(() => [...new Set(planTargets.flatMap((t) => t.subjects))], [planTargets])
+  const planCategories = useMemo(() => [...new Set(planTargets.flatMap((t) => t.categories))], [planTargets])
+  const planKeyPoints = useMemo(() => [...new Set(planTargets.flatMap((t) => t.keyPoints))], [planTargets])
 
   const dailyTargetSubjects = useMemo(() => {
     if (!profile?.daily_targets) return [] as string[]
     try {
       const raw = normalizeDailyTargets(JSON.parse(profile.daily_targets))
       const planSet = new Set(planSubjects)
-      return [...new Set(raw.flatMap((t) => t.subjects.map((s) => s.subject)))].filter((s) => !planSet.has(s))
+      return [...new Set(raw.flatMap((t) => t.subjects))].filter((s) => !planSet.has(s))
     } catch { return [] }
   }, [profile?.daily_targets, planSubjects])
 
   const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
+
+  const anyTargetWrongOnly = useMemo(() => {
+    if (!profile?.daily_targets) return false
+    try { return normalizeDailyTargets(JSON.parse(profile.daily_targets)).some((t) => t.wrongOnly) } catch { return false }
+  }, [profile?.daily_targets])
+  const reviewWrong = planTargets.some((t) => t.wrongOnly) || anyTargetWrongOnly
 
   const initRef = useRef(false)
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
@@ -81,6 +90,15 @@ export function PracticeSession() {
       initRef.current = true
     }
   }, [planSubjectSet])
+
+  // Long-term / custom "review wrong" plan → default practice to wrong-only scope
+  const wrongInitRef = useRef(false)
+  useEffect(() => {
+    if (!wrongInitRef.current && reviewWrong) {
+      setQuestionScope('wrong')
+      wrongInitRef.current = true
+    }
+  }, [reviewWrong])
 
   useEffect(() => {
     updateFilteredCategories(selectedSubjects.length === 1 ? selectedSubjects[0] : '')
@@ -127,6 +145,10 @@ export function PracticeSession() {
     // Pick question based on scope + mode
     let pickedId: string | null = null
 
+    // Plan categories/keyPoints act as baseline scope; user's single-select overrides
+    const scopeCats = selectedCategory ? [selectedCategory] : planCategories
+    const scopeKps = selectedKeyPoint ? [selectedKeyPoint] : planKeyPoints
+
     // Scope: favorites — pick from user's favorited questions
     if (currentUser && questionScope === 'favorites') {
       const { data: favRows } = await supabase.from('favorites')
@@ -138,9 +160,9 @@ export function PracticeSession() {
       if (favRows?.length) {
         let filtered = favRows
         if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
-        if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
+        if (scopeCats.length) filtered = filtered.filter((r: any) => scopeCats.some((c) => r.questions?.category === c || (r.questions?.categories as string[])?.includes(c)))
         if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
-        if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
+        if (scopeKps.length) filtered = filtered.filter((r: any) => scopeKps.some((k) => (r.questions?.key_points || '').includes(k)))
         if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
       }
     }
@@ -156,10 +178,19 @@ export function PracticeSession() {
       if (fetchGenRef.current !== myGen) return
       if (wrongRows?.length) {
         let filtered = wrongRows
+        if (reviewWrong) {
+          // Review mode: only push wrong questions not yet redone (answered again)
+          const { data: allAns } = await supabase.from('user_answers')
+            .select('question_id').eq('user_id', currentUser.id).limit(5000)
+          if (fetchGenRef.current !== myGen) return
+          const counts = new Map<string, number>()
+          for (const a of allAns ?? []) counts.set(a.question_id, (counts.get(a.question_id) ?? 0) + 1)
+          filtered = filtered.filter((r: any) => (counts.get(r.question_id) ?? 0) < 2)
+        }
         if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
-        if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
+        if (scopeCats.length) filtered = filtered.filter((r: any) => scopeCats.some((c) => r.questions?.category === c || (r.questions?.categories as string[])?.includes(c)))
         if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
-        if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
+        if (scopeKps.length) filtered = filtered.filter((r: any) => scopeKps.some((k) => (r.questions?.key_points || '').includes(k)))
         if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
       }
     }
@@ -169,7 +200,7 @@ export function PracticeSession() {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
-        p_categories: selectedCategory ? [selectedCategory] : null,
+        p_categories: scopeCats.length > 0 ? scopeCats : null,
         p_question_type: selectedType || null,
       })
       if (fetchGenRef.current !== myGen) return
@@ -212,7 +243,7 @@ export function PracticeSession() {
 
     // RPC doesn't filter by key_points, check post-fetch and retry up to 5 times
     const kpRetry = kpRetryRef.current
-    if (selectedKeyPoint && !(qRes.data?.key_points || '').includes(selectedKeyPoint) && kpRetry < 5) {
+    if (scopeKps.length && !scopeKps.some((k) => (qRes.data?.key_points || '').includes(k)) && kpRetry < 5) {
       kpRetryRef.current = kpRetry + 1
       fetchRandomQuestion()
       return
@@ -244,7 +275,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, reviewWrong, planCategories, planKeyPoints])
 
   useEffect(() => {
     fetchRandomQuestion()

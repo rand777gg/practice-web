@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
 import { Check, TrendingUp, TrendingDown } from 'lucide-react'
 import type { DailyTarget } from '@/types'
-import { normalizeDailyTargets } from '@/types'
+import { normalizeDailyTargets, getPlanTargets } from '@/types'
+import { fetchTargetScopeIds, deriveAnswerSets, scopeProgress } from '@/lib/plan'
 import { useT } from '@/i18n/use-t'
 
 function todayStart(): string {
@@ -16,24 +17,17 @@ function todayStart(): string {
   return d.toISOString()
 }
 
-function getPlanSubjects(profile: { plan_subjects?: string | null } | null): string[] {
-  if (!profile?.plan_subjects) return []
-  try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
-}
-
 function getDailyTargets(profile: { daily_targets?: string | null } | null): DailyTarget[] {
   if (!profile?.daily_targets) return []
   try { return normalizeDailyTargets(JSON.parse(profile.daily_targets)) } catch { return [] }
 }
-
-function subjectKey(s: string) { return s || 'Other' }
 
 export function DashboardPlanCards() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const version = useRefreshStore((s) => s.version)
   const deadline = profile?.deadline ?? null
-  const planSubjects = getPlanSubjects(profile)
+  const planTargets = getPlanTargets(profile)
   const dailyTargets = getDailyTargets(profile)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -41,113 +35,72 @@ export function DashboardPlanCards() {
   const [totalDone, setTotalDone] = useState(0)
   const [yesterdayDone, setYesterdayDone] = useState(0)
 
-  const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
+  const [targetProgress, setTargetProgress] = useState<{ subjects: string[]; categories: string[]; keyPoints: string[]; wrongOnly: boolean; doneToday: number; goal: number }[]>([])
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
   const [customTargetTotalQuestions, setCustomTargetTotalQuestions] = useState(0)
+  const [customTotalDone, setCustomTotalDone] = useState(0)
 
   useEffect(() => {
     if (!user) return
     const uid = user.id
     async function load() {
+      const { data: answersRaw } = await supabase
+        .from('user_answers')
+        .select('question_id, is_correct, answered_at')
+        .eq('user_id', uid)
+      const sets = deriveAnswerSets((answersRaw ?? []) as any[], todayStart())
+
       if (deadline) {
-        let scopeIds: Set<string>
-        if (planSubjects.length > 0) {
-          const { data: scopeQs } = await supabase.from('questions').select('id').in('subject', planSubjects)
-          scopeIds = new Set((scopeQs ?? []).map((q) => q.id))
-        } else {
-          const { data: allQs } = await supabase.from('questions').select('id')
-          scopeIds = new Set((allQs ?? []).map((q) => q.id))
+        let total = 0, done = 0, before = 0
+        for (const target of planTargets) {
+          const ids = await fetchTargetScopeIds(target)
+          const p = scopeProgress(ids, sets, target.wrongOnly)
+          total += p.total; done += p.done; before += p.doneBefore
         }
-
-        const { data: done } = await supabase.from('user_answers').select('question_id').eq('user_id', uid)
-        const doneIds = new Set((done ?? []).map((a) => a.question_id))
-        let doneAll = 0
-        for (const id of scopeIds) if (doneIds.has(id)) doneAll++
-        setTotalScope(scopeIds.size)
-        setTotalDone(doneAll)
-
-        const { data: doneBeforeToday } = await supabase.from('user_answers')
-          .select('question_id').eq('user_id', uid).lt('answered_at', todayStart())
-        const yesterdayIds = new Set((doneBeforeToday ?? []).map((a) => a.question_id))
-        let doneBefore = 0
-        for (const id of scopeIds) if (yesterdayIds.has(id)) doneBefore++
-        setYesterdayDone(doneBefore)
+        setTotalScope(total)
+        setTotalDone(done)
+        setYesterdayDone(before)
       }
 
       if (dailyTargets.length > 0) {
-        const targetSubjectSet = new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))
-        const allTargetSubjects = [...targetSubjectSet]
-
-        // Today's answers
-        const { data: today } = await supabase.from('user_answers')
-          .select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
-        const todayIds = new Set((today ?? []).map((a) => a.question_id))
-        const { data: todayQs } = await supabase.from('questions').select('id, subject').in('id', [...todayIds])
-
-        const subjectCounts = new Map<string, number>()
-        for (const q of (todayQs ?? [])) {
-          const s = subjectKey(q.subject)
-          if (targetSubjectSet.has(s)) subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
-        }
-
-        // Total questions for ALL target subjects (for display)
-        const { data: scopeQs } = await supabase.from('questions').select('id, subject').in('subject', allTargetSubjects)
-        const totalPerSubj = new Map<string, number>()
-        const qSubj = new Map<string, string>()
-        for (const q of (scopeQs ?? [])) {
-          const s = subjectKey(q.subject)
-          totalPerSubj.set(s, (totalPerSubj.get(s) ?? 0) + 1)
-          qSubj.set(q.id, s)
-        }
-        let totalAll = 0
-        for (const [, v] of totalPerSubj) totalAll += v
-        setCustomTargetTotalQuestions(totalAll)
-
-        // Daily goal for deadline targets
-        const deadlineTargets = dailyTargets.filter(t => t.deadline)
-        let computedGoal = 0
-        if (deadlineTargets.length > 0) {
-          const { data: allDone } = await supabase.from('user_answers').select('question_id').eq('user_id', uid)
-          const allDoneIds = new Set((allDone ?? []).map(a => a.question_id))
-          const donePerSubj = new Map<string, number>()
-          for (const q of (scopeQs ?? [])) {
-            if (allDoneIds.has(q.id)) {
-              const s = subjectKey(q.subject)
-              donePerSubj.set(s, (donePerSubj.get(s) ?? 0) + 1)
-            }
+        let goalTotal = 0
+        let scopeTotalAll = 0
+        let doneAllTotal = 0
+        const progress: typeof targetProgress = []
+        // ponytail: one scope query per target; targets are few
+        for (const target of dailyTargets) {
+          const ids = await fetchTargetScopeIds(target)
+          const p = scopeProgress(ids, sets, target.wrongOnly)
+          scopeTotalAll += p.total
+          doneAllTotal += p.done
+          let goal = target.count
+          if (target.deadline) {
+            const daysLeft = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
+            goal = Math.ceil(Math.max(p.total - p.done, 0) / daysLeft)
           }
-          for (const target of deadlineTargets) {
-            const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
-            for (const subj of target.subjects) {
-              const total = totalPerSubj.get(subj.subject) ?? 0
-              const done = donePerSubj.get(subj.subject) ?? 0
-              computedGoal += Math.ceil(Math.max(total - done, 0) / daysLeft)
-            }
-          }
+          goalTotal += goal
+          progress.push({
+            subjects: target.subjects,
+            categories: target.categories,
+            keyPoints: target.keyPoints,
+            wrongOnly: target.wrongOnly,
+            doneToday: Math.min(p.todayDone, goal),
+            goal,
+          })
         }
-        const manualTotal = dailyTargets
-          .filter(t => !t.deadline)
-          .reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
-        setDailyTargetGoal(computedGoal + manualTotal)
-
-        setTargetProgress(dailyTargets.map((t) => {
-          const subjects = t.subjects.map(s => ({
-            subject: s.subject,
-            count: s.count,
-            done: Math.min(subjectCounts.get(subjectKey(s.subject)) ?? 0, s.count),
-          }))
-          const totalCount = subjects.reduce((sum, s) => sum + s.count, 0)
-          const totalDone = subjects.reduce((sum, s) => sum + s.done, 0)
-          return { subjects, total: totalCount, totalDone }
-        }))
+        setCustomTargetTotalQuestions(scopeTotalAll)
+        setCustomTotalDone(doneAllTotal)
+        setDailyTargetGoal(goalTotal)
+        setTargetProgress(progress)
       } else {
         setTargetProgress([])
         setDailyTargetGoal(0)
         setCustomTargetTotalQuestions(0)
+        setCustomTotalDone(0)
       }
     }
     load()
-  }, [user?.id, deadline, planSubjects.join(','), JSON.stringify(dailyTargets), version])
+  }, [user?.id, deadline, JSON.stringify(planTargets), JSON.stringify(dailyTargets), version])
 
   if (!user) return null
 
@@ -156,8 +109,8 @@ export function DashboardPlanCards() {
   const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
 
-  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
-  const dailyPct = dailyTargetGoal > 0 ? Math.min(Math.round((doneDaily / dailyTargetGoal) * 100), 100) : 0
+  const doneDaily = targetProgress.reduce((s, t) => s + t.doneToday, 0)
+  const customPct = customTargetTotalQuestions > 0 ? Math.min(Math.round((customTotalDone / customTargetTotalQuestions) * 100), 100) : 0
 
   const nearestDeadline = dailyTargets.filter(t => t.deadline)
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
@@ -218,8 +171,8 @@ export function DashboardPlanCards() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
-                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{customTargetTotalQuestions}</span>
+                <Progress value={customPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
+                <span className="text-[11px] font-medium tabular-nums">{customTotalDone}/{customTargetTotalQuestions}</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
                 {t('plan.doneCount')}: {doneDaily}
@@ -229,20 +182,20 @@ export function DashboardPlanCards() {
               </p>
               <div className="space-y-1">
                 {targetProgress.map((tp, i) => {
+                  const done = tp.goal > 0 && tp.doneToday >= tp.goal
+                  const label = [
+                    tp.wrongOnly ? t('plan.wrongOnly') : '',
+                    tp.subjects.length ? tp.subjects.join('、') : t('plan.allScope'),
+                    ...tp.categories,
+                    ...tp.keyPoints,
+                  ].filter(Boolean).join(' · ')
                   return (
-                    <div key={i} className="space-y-0.5">
-                      {tp.subjects.map((subj) => {
-                        const subjDone = subj.done >= subj.count
-                        return (
-                          <div key={subj.subject} className="flex items-center gap-1 text-xs">
-                            <span className={subjDone ? 'text-green-500' : 'text-muted-foreground'}>
-                              {subjDone ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border" />}
-                            </span>
-                            <span className={subjDone ? 'line-through text-muted-foreground' : ''}>{subj.subject}</span>
-                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}</span>
-                          </div>
-                        )
-                      })}
+                    <div key={i} className="flex items-center gap-1 text-xs">
+                      <span className={done ? 'text-green-500' : 'text-muted-foreground'}>
+                        {done ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border" />}
+                      </span>
+                      <span className={done ? 'line-through text-muted-foreground truncate' : 'truncate'}>{label}</span>
+                      <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{tp.doneToday}/{tp.goal}</span>
                     </div>
                   )
                 })}

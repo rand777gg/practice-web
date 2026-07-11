@@ -7,8 +7,8 @@ export interface Database {
     Tables: {
       profiles: {
         Row: Profile
-        Insert: { id: string; role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null }
-        Update: { role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null }
+        Insert: { id: string; role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null; plan_wrong_only?: boolean | null; plan_categories?: string | null; plan_key_points?: string | null; plan_targets?: string | null }
+        Update: { role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null; plan_wrong_only?: boolean | null; plan_categories?: string | null; plan_key_points?: string | null; plan_targets?: string | null }
       }
       questions: {
         Row: Question

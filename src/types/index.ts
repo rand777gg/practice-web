@@ -21,42 +21,41 @@ export type CorrectAnswer =
   | null        // analysis: manual grading
 
 export interface DailyTarget {
-  subjects: { subject: string; count: number }[]
+  subjects: string[]
+  categories: string[]
+  keyPoints: string[]
+  count: number
   deadline: string | null
+  wrongOnly: boolean
 }
 
 /** Normalize legacy DailyTarget formats to the current shape */
 export function normalizeDailyTargets(raw: any[] | null | undefined): DailyTarget[] {
   if (!raw) return []
   return raw.map((t: any) => {
-    // Current format: subjects: [{ subject, count }]
-    if (Array.isArray(t.subjects) && t.subjects.length > 0 && typeof t.subjects[0] === 'object' && 'subject' in t.subjects[0]) {
-      return {
-        subjects: t.subjects.map((s: any) => ({ subject: s.subject, count: s.count ?? 5 })),
-        deadline: t.deadline ?? null,
-      }
+    const base = {
+      categories: Array.isArray(t.categories) ? t.categories : [],
+      keyPoints: Array.isArray(t.keyPoints) ? t.keyPoints : [],
+      deadline: t.deadline ?? null,
+      wrongOnly: t.wrongOnly ?? false,
     }
-    // Previous format: subjects: string[], count: number
-    if (Array.isArray(t.subjects) && t.subjects.length > 0 && typeof t.subjects[0] === 'string') {
-      const totalCount = t.count ?? 5
-      const per = Math.max(1, Math.floor(totalCount / t.subjects.length))
-      const rem = totalCount - per * t.subjects.length
+    // Current format: subjects: string[], count: number
+    if (Array.isArray(t.subjects) && (t.subjects.length === 0 || typeof t.subjects[0] === 'string')) {
+      return { ...base, subjects: t.subjects, count: t.count ?? 5 }
+    }
+    // Previous format: subjects: [{ subject, count }] — sum per-subject counts
+    if (Array.isArray(t.subjects) && typeof t.subjects[0] === 'object' && 'subject' in t.subjects[0]) {
       return {
-        subjects: t.subjects.map((s: string, i: number) => ({
-          subject: s,
-          count: per + (i < rem ? 1 : 0),
-        })),
-        deadline: t.deadline ?? null,
+        ...base,
+        subjects: t.subjects.map((s: any) => s.subject),
+        count: t.subjects.reduce((sum: number, s: any) => sum + (s.count ?? 5), 0),
       }
     }
     // Legacy: subject: string, count: number
     if (t.subject) {
-      return {
-        subjects: [{ subject: t.subject, count: t.count ?? 5 }],
-        deadline: t.deadline ?? null,
-      }
+      return { ...base, subjects: [t.subject], count: t.count ?? 5 }
     }
-    return { subjects: [], deadline: t.deadline ?? null }
+    return { ...base, subjects: [], count: t.count ?? 5 }
   })
 }
 
@@ -68,7 +67,33 @@ export interface Profile {
   plan_subjects: string | null
   daily_targets: string | null
   daily_deadline: string | null
+  plan_wrong_only: boolean | null
+  plan_categories: string | null
+  plan_key_points: string | null
+  plan_targets: string | null
   created_at: string
+}
+
+const safeArr = (raw: string | null | undefined): string[] => {
+  if (!raw) return []
+  try { const p = JSON.parse(raw); return Array.isArray(p) ? p as string[] : [] } catch { return [] }
+}
+
+/** Long-term plan groups. Falls back to a single group built from legacy singular columns. */
+export function getPlanTargets(
+  profile: Pick<Profile, 'plan_targets' | 'plan_subjects' | 'plan_categories' | 'plan_key_points' | 'plan_wrong_only'> | null,
+): DailyTarget[] {
+  if (!profile) return []
+  if (profile.plan_targets) {
+    try { return normalizeDailyTargets(JSON.parse(profile.plan_targets)) } catch { /* fall through to legacy */ }
+  }
+  const subjects = safeArr(profile.plan_subjects)
+  const categories = safeArr(profile.plan_categories)
+  const keyPoints = safeArr(profile.plan_key_points)
+  if (subjects.length || categories.length || keyPoints.length) {
+    return [{ subjects, categories, keyPoints, count: 0, deadline: null, wrongOnly: profile.plan_wrong_only ?? false }]
+  }
+  return []
 }
 
 export interface Question {

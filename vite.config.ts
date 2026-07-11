@@ -11,6 +11,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
+      devOptions: { enabled: true },
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         name: '刷题练习',
