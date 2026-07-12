@@ -18,10 +18,12 @@ import { cn } from '@/lib/utils'
 import type { UserAnswer, Question, QuestionType, CorrectAnswer } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { useFavorites } from '@/hooks/use-favorites'
+import { Badge } from '@/components/ui/badge'
+import { POINT_COLORS } from '@/components/questions/QuestionCard'
 
 type WrongWithQuestion = UserAnswer & { questions: Question }
 
-function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
+function AnswerInfo({ q, selected, t }: { q: Question; selected: CorrectAnswer; t: (k: string) => string }) {
   const type = q.question_type
   const correct = q.correct_answer
   const isChoice = type === 'single_choice' || type === 'multi_select'
@@ -45,15 +47,15 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
   if (type === 'true_false') {
     return (
       <div className="text-xs space-y-0.5">
-        <div className={`rounded px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300`}>你的答案：{selected ? '正确' : '错误'} ✗</div>
-        <div className="rounded px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">正确答案：{correct ? '正确' : '错误'}</div>
+        <div className={`rounded px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300`}>{t('common.yourAnswer')}{selected ? t('common.true') : t('common.false')} ✗</div>
+        <div className="rounded px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{t('common.correctAnswer')}{correct ? t('common.true') : t('common.false')}</div>
       </div>
     )
   }
   return (
     <div className="text-xs space-y-0.5">
-      <div className="rounded px-1.5 py-0.5 bg-muted/50"><span className="text-muted-foreground">答案：</span>{Array.isArray(correct) ? (correct as string[]).join('；') || '（无）' : String(correct ?? '（无）')}</div>
-      <div className="rounded px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"><span className="text-muted-foreground">你的答案：</span>{Array.isArray(selected) ? (selected as string[]).join('；') || '（无）' : String(selected ?? '（无）')} ✗</div>
+      <div className="rounded px-1.5 py-0.5 bg-muted/50"><span className="text-muted-foreground">{t('common.answer')}</span>{Array.isArray(correct) ? (correct as string[]).join('；') || t('common.noAnswer') : String(correct ?? t('common.noAnswer'))}</div>
+      <div className="rounded px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"><span className="text-muted-foreground">{t('common.yourAnswer')}</span>{Array.isArray(selected) ? (selected as string[]).join('；') || t('common.noAnswer') : String(selected ?? t('common.noAnswer'))} ✗</div>
     </div>
   )
 }
@@ -67,7 +69,8 @@ const BATCH = 20
 
 export function Component() {
   const { t } = useT()
-  const { user } = useAuthStore()
+  const { user, profile } = useAuthStore()
+  const isAdmin = profile?.role === 'admin'
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [mode, setMode] = useState<FilterMode>('all')
@@ -154,7 +157,7 @@ export function Component() {
   if (isLoading) {
     return (
       <div>
-        <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('wrongReview.title')}</h1>
+        <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('nav.wrongReview')}</h1>
         <div className="space-y-3">{[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}</div>
       </div>
     )
@@ -162,38 +165,38 @@ export function Component() {
 
   return (
     <div>
-      <h1 className="text-xl lg:text-2xl font-bold mb-4">{t('wrongReview.title')}</h1>
+      <h1 className="text-xl lg:text-2xl font-bold mb-4">{t('nav.wrongReview')}</h1>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant={mode === 'all' ? 'default' : 'outline'} size="sm" className="gap-1 text-xs">{mode === 'all' ? '全部' : mode === 'practice' ? '练习' : '考试'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant={mode === 'all' ? 'default' : 'outline'} size="sm" className="gap-1 text-xs">{mode === 'all' ? t('review.all') : mode === 'practice' ? t('review.practice') : t('review.exam')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => setMode('all')}>全部{ mode === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setMode('practice')}>练习{ mode === 'practice' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setMode('exam')}>考试{ mode === 'exam' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setMode('all')}>{t('review.all')}{ mode === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setMode('practice')}>{t('review.practice')}{ mode === 'practice' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setMode('exam')}>{t('review.exam')}{ mode === 'exam' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedSubject || '学科'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedSubject || t('questions.subject')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => setSelectedSubject('')}><span className="text-muted-foreground">不限学科</span>{!selectedSubject && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedSubject('')}><span className="text-muted-foreground">{t('common.noFilterSubject')}</span>{!selectedSubject && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {sortedSubjects.map(s => <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>{s}{selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedCategory || '分类'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedCategory || t('questions.category')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => setSelectedCategory('')}><span className="text-muted-foreground">不限分类</span>{!selectedCategory && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-            {yearCategories.length > 0 && <DropdownMenuSub><DropdownMenuSubTrigger>历年真题</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{yearCategories.map(c => <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>}
+            <DropdownMenuItem onClick={() => setSelectedCategory('')}><span className="text-muted-foreground">{t('common.noFilterCategory')}</span>{!selectedCategory && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {yearCategories.length > 0 && <DropdownMenuSub><DropdownMenuSubTrigger>{t('common.pastExams')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{yearCategories.map(c => <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>}
             {nonYearCategories.length > 0 && (<><DropdownMenuSeparator />{nonYearCategories.map(c => <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</>)}
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedType ? t(`questionTypes.${selectedType}` as any) : '题型'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedType ? t(`questionTypes.${selectedType}` as any) : t('questions.questionType')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => setSelectedType('')}><span className="text-muted-foreground">不限题型</span>{!selectedType && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedType('')}><span className="text-muted-foreground">{t('common.noFilterType')}</span>{!selectedType && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {QUESTION_TYPE_OPTIONS.map(o => <DropdownMenuItem key={o.value} onClick={() => setSelectedType(o.value)}>{o.label}{selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedKp || '知识点'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedKp || t('practice.keyPoint')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => setSelectedKp('')}><span className="text-muted-foreground">不限知识点</span>{!selectedKp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedKp('')}><span className="text-muted-foreground">{t('common.noFilterPoint')}</span>{!selectedKp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {kpBySubject.map(({ subject, keyPoints }) => (
               <DropdownMenuSub key={subject}>
                 <DropdownMenuSubTrigger className="text-xs">{subject}</DropdownMenuSubTrigger>
@@ -207,9 +210,9 @@ export function Component() {
       </div>
 
       {answers.length === 0 ? (
-        <div className="text-center py-12"><p className="text-muted-foreground">暂无错题，继续保持！</p></div>
+        <div className="text-center py-12"><p className="text-muted-foreground">{t('review.noWrongYet')}</p></div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12"><p className="text-muted-foreground">所选条件下暂无错题</p></div>
+        <div className="text-center py-12"><p className="text-muted-foreground">{t('review.noWrongFilter')}</p></div>
       ) : (
         <div className="space-y-3">
           {visible.map((a) => {
@@ -222,14 +225,16 @@ export function Component() {
                   <div className="flex flex-wrap gap-1">
                     {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
                     {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>) : null}
-                    {q.key_points && <span className="inline-block rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">{String(q.key_points).split(/[,，;；]/)[0]}</span>}
+                    {q.key_points && String(q.key_points).split(/[,，;；]/).filter(Boolean).map((kp, i) => (
+  <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
+))}
                   </div>
                   <p className="text-sm font-medium leading-relaxed">{q.question_text}</p>
-                  <AnswerInfo q={q} selected={a.selected_answer} />
+                  <AnswerInfo q={q} selected={a.selected_answer} t={t} />
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className={cn('rounded-full px-1.5 py-0.5 text-xs', a.mode === 'exam' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700')}>{a.mode === 'exam' ? '考试' : '练习'}</span>
+                    <span className={cn('rounded-full px-1.5 py-0.5 text-xs', a.mode === 'exam' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700')}>{a.mode === 'exam' ? t('review.exam') : t('review.practice')}</span>
                     <span>{new Date(a.answered_at).toLocaleDateString()}</span>
-                    <Link to={`/practice`} className="text-primary hover:underline ml-auto">去练习</Link>
+                    <Link to={`/practice`} className="text-primary hover:underline ml-auto">{t('review.goPractice')}</Link>
                   </div>
                 </div>
                 <div className="border-t lg:border-t-0 lg:border-l border-border flex flex-col overflow-hidden max-h-[400px]">
@@ -241,31 +246,36 @@ export function Component() {
                       </div>
                     )}
                     {editingId === a.id ? (
-                      <div className="p-3"><NoteEditor value={editText} onChange={setEditText} placeholder="添加笔记..." /></div>
+                      <div className="p-3"><NoteEditor value={editText} onChange={setEditText} placeholder={t('common.addNote')} /></div>
                     ) : (
                       <div className="p-4 h-full">
                         {a.note ? <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed"><MarkdownRenderer content={a.note} /></div>
-                          : <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">暂无笔记</div>}
+                          : <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">{t('common.noNote')}</div>}
                       </div>
                     )}
                   </div>
                   <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0 justify-end">
                     {(q.analysis || q.answer_explanation) && (
-                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAnalysisId(analysisId === a.id ? null : a.id)} title="查看解析">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAnalysisId(analysisId === a.id ? null : a.id)} title={t('common.viewExplanation')}>
                         <Lightbulb className={cn('h-3.5 w-3.5', analysisId === a.id ? 'text-amber-500' : '')} />
                       </Button>
                     )}
                     <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleFavorite(a.question_id)}>
                       <Star className={cn('h-3.5 w-3.5', fav ? 'fill-amber-400 text-amber-400' : '')} />
                     </Button>
+                    {isAdmin && (
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                        <Link to={`/admin/questions/${a.question_id}/edit?from=/review`}><Pencil className="h-3.5 w-3.5" /></Link>
+                      </Button>
+                    )}
                     {editingId === a.id ? (
                       <>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}><X className="h-3.5 w-3.5" /> 取消</Button>
-                        <Button variant="default" size="sm" className="h-7 text-xs" onClick={() => handleSaveNote(a.id)}><Check className="h-3.5 w-3.5" /> 保存</Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}><X className="h-3.5 w-3.5" /> {t('common.cancel')}</Button>
+                        <Button variant="default" size="sm" className="h-7 text-xs" onClick={() => handleSaveNote(a.id)}><Check className="h-3.5 w-3.5" /> {t('common.save')}</Button>
                       </>
                     ) : (
                       <>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditText(a.note || ''); setEditingId(a.id) }}><Pencil className="h-3.5 w-3.5" /> 笔记</Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditText(a.note || ''); setEditingId(a.id) }}><Pencil className="h-3.5 w-3.5" /> {t('common.note')}</Button>
                         <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={() => handleDelete(a.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </>
                     )}
@@ -275,7 +285,7 @@ export function Component() {
             )
           })}
           {visibleCount < filtered.length && <div ref={sentinelRef} className="h-4" />}
-          {visibleCount < filtered.length && <p className="text-center text-xs text-muted-foreground">{visibleCount}/{filtered.length} 题 — 滚动加载更多</p>}
+          {visibleCount < filtered.length && <p className="text-center text-xs text-muted-foreground">{visibleCount}/{filtered.length} </p>}
         </div>
       )}
     </div>

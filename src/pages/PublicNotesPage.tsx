@@ -22,6 +22,7 @@ import {
 import {
  Check, ChevronDown, Globe, Lock, Pencil, Trash2, X,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { OPTION_LABELS } from '@/lib/constants'
@@ -108,6 +109,8 @@ function NoteCard({
  onTogglePublic, onDeleteRequest,
 }: NoteCardProps) {
  const { t } = useT()
+ const profile = useAuthStore((s) => s.profile)
+ const isAdmin = profile?.role === 'admin'
  const isEditing = style === 'my' && editingNoteId === note.id
 
  return (
@@ -199,6 +202,11 @@ function NoteCard({
         <Trash2 className="h-3 w-3 mr-1" />{t('notes.delete')}
        </Button>
       </>
+     )}
+     {isAdmin && note.questions?.id && (
+      <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+       <Link to={`/admin/questions/${note.questions.id}/edit?from=/notes`}><Pencil className="h-3.5 w-3.5" /></Link>
+      </Button>
      )}
     </div>
    </div>

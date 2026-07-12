@@ -39,7 +39,7 @@ function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
   )
 }
 
-const POINT_COLORS = [
+export const POINT_COLORS = [
   'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
   'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
   'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',

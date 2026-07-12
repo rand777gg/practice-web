@@ -7,6 +7,7 @@ export interface AiFeatureFlags {
   analysis: boolean    // AI 图表分析
   mineru: boolean      // MinerU 精准解析
   keypoints: boolean   // AI 生成知识点
+  explain: boolean     // AI 题目解读
 }
 
 const FLAGS_KEY = 'ai_feature_flags'
@@ -68,7 +69,7 @@ function loadFlags(): AiFeatureFlags {
     const raw = localStorage.getItem(FLAGS_KEY)
     if (raw) return JSON.parse(raw) as AiFeatureFlags
   } catch { /* ignore */ }
-  return { exam: true, summary: false, suggestions: false, analysis: false, mineru: true, keypoints: true }
+  return { exam: true, summary: false, suggestions: false, analysis: false, mineru: true, keypoints: true, explain: true }
 }
 
 function loadOfflineMode(): boolean {

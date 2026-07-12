@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
+import { AiExplainPanel } from '@/components/practice/AiExplainPanel'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -30,21 +32,49 @@ import { normalizeDailyTargets, getPlanTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
+const PS_FILTERS = 'practice_filters'
+const PS_SESSION = 'practice_session'
+
+interface PracticeFilters {
+  selectedSubjects: string[]
+  selectedCategory: string
+  selectedType: string
+  selectedKeyPoint: string
+  questionMode: string
+  questionScope: string
+}
+
+function loadPsFilters(): PracticeFilters | null {
+  try { const r = localStorage.getItem(PS_FILTERS); if (r) return JSON.parse(r) } catch { /* noop */ }
+  return null
+}
+function savePsFilters(v: PracticeFilters) { try { localStorage.setItem(PS_FILTERS, JSON.stringify(v)) } catch { /* noop */ } }
+function loadPsSession() {
+  try { const r = localStorage.getItem(PS_SESSION); if (r) return JSON.parse(r) } catch { /* noop */ }
+  return null
+}
+function savePsSession(v: Record<string, unknown>) { try { localStorage.setItem(PS_SESSION, JSON.stringify(v)) } catch { /* noop */ } }
+function clearPsSession() { try { localStorage.removeItem(PS_SESSION) } catch { /* noop */ } }
 
 export function PracticeSession() {
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
-  const [question, setQuestion] = useState<Question | null>(null)
-  const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
-  const [isSubmitted, setIsSubmitted] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const isEnabled = useSettingsStore((s) => s.isEnabled)
+  const savedFilters = useRef(loadPsFilters())
+  const savedSession = useRef(loadPsSession())
+  const hasSession = !!savedSession.current?.question
+
+  const [question, setQuestion] = useState<Question | null>(savedSession.current?.question ?? null)
+  const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(savedSession.current?.selectedAnswer ?? null)
+  const [isSubmitted, setIsSubmitted] = useState(savedSession.current?.isSubmitted ?? false)
+  const [isLoading, setIsLoading] = useState(!hasSession)
   const [noQuestions, setNoQuestions] = useState(false)
-  const [attemptCount, setAttemptCount] = useState(0)
-  const [wrongCount, setWrongCount] = useState(0)
-  const [answerId, setAnswerId] = useState<string | null>(null)
-  const [note, setNote] = useState('')
-  const [isPublic, setIsPublic] = useState(false)
+  const [attemptCount, setAttemptCount] = useState(savedSession.current?.attemptCount ?? 0)
+  const [wrongCount, setWrongCount] = useState(savedSession.current?.wrongCount ?? 0)
+  const [answerId, setAnswerId] = useState<string | null>(savedSession.current?.answerId ?? null)
+  const [note, setNote] = useState(savedSession.current?.note ?? '')
+  const [isPublic, setIsPublic] = useState(savedSession.current?.isPublic ?? false)
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
@@ -75,14 +105,14 @@ export function PracticeSession() {
   }, [profile?.daily_targets])
   const reviewWrong = planTargets.some((t) => t.wrongOnly) || anyTargetWrongOnly
 
-  const initRef = useRef(false)
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
-  const [selectedCategory, setSelectedCategory] = useState('')
-  const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
-  const [selectedKeyPoint, setSelectedKeyPoint] = useState('')
+  const initRef = useRef(hasSession || savedFilters.current !== null)
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(savedFilters.current?.selectedSubjects ?? [])
+  const [selectedCategory, setSelectedCategory] = useState(savedFilters.current?.selectedCategory ?? '')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>((savedFilters.current?.selectedType as QuestionType) ?? '')
+  const [selectedKeyPoint, setSelectedKeyPoint] = useState(savedFilters.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>('mixed')
-  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>('all')
+  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>((savedFilters.current?.questionMode as 'new' | 'wrong' | 'mixed') ?? 'mixed')
+  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((savedFilters.current?.questionScope as 'all' | 'favorites' | 'wrong') ?? 'all')
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -92,7 +122,7 @@ export function PracticeSession() {
   }, [planSubjectSet])
 
   // Long-term / custom "review wrong" plan → default practice to wrong-only scope
-  const wrongInitRef = useRef(false)
+  const wrongInitRef = useRef(hasSession || savedFilters.current !== null)
   useEffect(() => {
     if (!wrongInitRef.current && reviewWrong) {
       setQuestionScope('wrong')
@@ -100,12 +130,17 @@ export function PracticeSession() {
     }
   }, [reviewWrong])
 
+  const filtersReady = useRef(hasSession || savedFilters.current !== null)
+
   useEffect(() => {
     updateFilteredCategories(selectedSubjects.length === 1 ? selectedSubjects[0] : '')
-    setSelectedCategory('')
+    if (filtersReady.current) {
+      setSelectedCategory('')
+    } else {
+      filtersReady.current = true
+    }
   }, [selectedSubjects, updateFilteredCategories])
 
-  useEffect(() => { kpRetryRef.current = 0 }, [selectedKeyPoint])
 
   // Load distinct key_points for filter dropdown, grouped by subject
   useEffect(() => {
@@ -129,7 +164,6 @@ export function PracticeSession() {
   )
 
   const fetchGenRef = useRef(0)
-  const kpRetryRef = useRef(0)
 
   const fetchRandomQuestion = useCallback(async () => {
     fetchGenRef.current++
@@ -241,11 +275,36 @@ export function PracticeSession() {
     ])
     if (fetchGenRef.current !== myGen) return
 
-    // RPC doesn't filter by key_points, check post-fetch and retry up to 5 times
-    const kpRetry = kpRetryRef.current
-    if (scopeKps.length && !scopeKps.some((k) => (qRes.data?.key_points || '').includes(k)) && kpRetry < 5) {
-      kpRetryRef.current = kpRetry + 1
-      fetchRandomQuestion()
+    // RPC doesn't filter by key_points — if no match, query directly
+    if (scopeKps.length && qRes.data && !scopeKps.some((k) => (qRes.data.key_points || '').includes(k))) {
+      let kpQuery = supabase.from('questions').select('*')
+      if (selectedSubjects.length > 0) kpQuery = kpQuery.in('subject', selectedSubjects)
+      if (scopeCats.length > 0) kpQuery = kpQuery.in('category', scopeCats)
+      if (selectedType) kpQuery = kpQuery.eq('question_type', selectedType)
+      kpQuery = kpQuery.or(scopeKps.map(k => `key_points.ilike.*${k}*`).join(','))
+      const { data: kpData } = await kpQuery.limit(200)
+      if (fetchGenRef.current !== myGen) return
+      if (kpData?.length) {
+        const kpQ = kpData[Math.floor(Math.random() * kpData.length)] as unknown as Question
+        const { data: kpStats } = currentUser
+          ? await supabase.from('user_answers')
+              .select('is_correct, note, is_public')
+              .eq('user_id', currentUser.id)
+              .eq('question_id', kpQ.id)
+              .order('answered_at', { ascending: false })
+          : { data: null }
+        if (fetchGenRef.current !== myGen) return
+        setQuestion(kpQ)
+        const total = kpStats?.length ?? 0
+        setAttemptCount(total)
+        setWrongCount(kpStats?.filter((a) => !a.is_correct).length ?? 0)
+        setNote(kpStats?.find((a) => a.note)?.note ?? '')
+        setIsPublic(kpStats?.find((a) => a.note)?.is_public ?? false)
+        setIsLoading(false)
+        return
+      }
+      setNoQuestions(true)
+      setIsLoading(false)
       return
     }
 
@@ -277,9 +336,28 @@ export function PracticeSession() {
     setIsLoading(false)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, reviewWrong, planCategories, planKeyPoints])
 
+  const mounted = useRef(false)
+
   useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true
+      if (hasSession) return
+    }
     fetchRandomQuestion()
   }, [fetchRandomQuestion])
+
+  // Persist filters
+  useEffect(() => {
+    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope })
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
+
+  // Persist session
+  const sessionRef = useRef({ question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount })
+  sessionRef.current = { question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount }
+  useEffect(() => {
+    const timer = setTimeout(() => savePsSession(sessionRef.current as unknown as Record<string, unknown>), 300)
+    return () => clearTimeout(timer)
+  }, [question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount])
 
   const handleSelect = useCallback((answer: CorrectAnswer) => {
     if (isSubmitted) return
@@ -318,6 +396,7 @@ export function PracticeSession() {
   }, [answerId, note, updateNote])
 
   const handleNext = useCallback(() => {
+    clearPsSession()
     fetchRandomQuestion()
   }, [fetchRandomQuestion])
 
@@ -390,7 +469,7 @@ export function PracticeSession() {
                 <DropdownMenuSeparator />
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
-                    其他
+                    {t('common.other')}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                     {otherSubjects.map((s) => (
@@ -414,7 +493,7 @@ export function PracticeSession() {
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setSelectedSubjects([])} className="text-muted-foreground">
-                  清除筛选
+                  {t('common.clearFilter')}
                 </DropdownMenuItem>
               </>
             )}
@@ -438,7 +517,7 @@ export function PracticeSession() {
                 <DropdownMenuSeparator />
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
-                    历年真题
+                    {t('common.pastExams')}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                     {yearCategories.map((c) => (
@@ -488,12 +567,12 @@ export function PracticeSession() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {selectedKeyPoint || '知识点'}
+              {selectedKeyPoint || t('practice.keyPoint')}
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-            <DropdownMenuItem onClick={() => setSelectedKeyPoint('')}><span className="text-muted-foreground">不限知识点</span>{!selectedKeyPoint && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedKeyPoint('')}><span className="text-muted-foreground">{t('practice.noKeyPoint')}</span>{!selectedKeyPoint && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {kpBySubject.map(({ subject, keyPoints }) => (
               <DropdownMenuSub key={subject}><DropdownMenuSubTrigger className="text-xs">{subject}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{keyPoints.map(kp => <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoint(kp)}>{kp}{selectedKeyPoint === kp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>
             ))}
@@ -503,21 +582,21 @@ export function PracticeSession() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {{ all: '全部题目', favorites: '仅收藏题目', wrong: '仅错题' }[questionScope]}
+              {{ all: t('practice.allQuestions'), favorites: t('practice.favoritesOnly'), wrong: t('practice.wrongOnly') }[questionScope]}
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem onClick={() => setQuestionScope('all')}>
-              全部题目
+              {t('practice.allQuestions')}
               {questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>
-              仅收藏题目
+              {t('practice.favoritesOnly')}
               {questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>
-              仅错题
+              {t('practice.wrongOnly')}
               {questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -525,21 +604,21 @@ export function PracticeSession() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {{ new: '新题优先', wrong: '错题优先', mixed: '混合模式' }[questionMode]}
+              {{ new: t('practice.newFirst'), wrong: t('practice.wrongFirst'), mixed: t('practice.mixedMode') }[questionMode]}
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem onClick={() => setQuestionMode('mixed')}>
-              混合模式
+              {t('practice.mixedMode')}
               {questionMode === 'mixed' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionMode('new')}>
-              新题优先
+              {t('practice.newFirst')}
               {questionMode === 'new' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionMode('wrong')}>
-              错题优先
+              {t('practice.wrongFirst')}
               {questionMode === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -569,7 +648,7 @@ export function PracticeSession() {
             {t('practice.tryAgain')}
           </Button>
         </div>
-      ) : !question ? null : (
+      ) : !question ? null : !isSubmitted ? (
         <>
           <div
             className="touch-pan-y select-none"
@@ -581,9 +660,9 @@ export function PracticeSession() {
             <QuestionCard
               question={question}
               selectedAnswer={selectedAnswer}
-              showResult={isSubmitted}
+              showResult={false}
               onSelect={handleSelect}
-              disabled={isSubmitted}
+              disabled={false}
               showEditLink={isAdmin}
               attemptCount={attemptCount}
               wrongCount={wrongCount}
@@ -596,7 +675,37 @@ export function PracticeSession() {
               } : undefined}
             />
           </div>
-          {isSubmitted && (
+          <div className="flex gap-2 justify-end">
+            {attemptCount > 0 && (
+              <Button variant="outline" onClick={handleNext}>
+                {t('practice.skip')}
+              </Button>
+            )}
+            <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
+              {t('practice.submitAnswer')}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="lg:flex-[6] space-y-4">
+            <QuestionCard
+              question={question}
+              selectedAnswer={selectedAnswer}
+              showResult={true}
+              onSelect={handleSelect}
+              disabled={true}
+              showEditLink={isAdmin}
+              attemptCount={attemptCount}
+              wrongCount={wrongCount}
+              note={note}
+              isFavorited={question ? isFavorite(question.id) : false}
+              onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
+              onVerify={question && !question.verified ? async () => {
+                await supabase.from('questions').update({ verified: true }).eq('id', question.id)
+                setQuestion({ ...question, verified: true })
+              } : undefined}
+            />
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
               <NoteEditor
@@ -614,27 +723,24 @@ export function PracticeSession() {
                 <Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} />
               </div>
             </div>
-          )}
-          <div className="flex gap-2 justify-end">
-            {!isSubmitted ? (
-              <>
-                {attemptCount > 0 && (
-                  <Button variant="outline" onClick={handleNext}>
-                    {t('practice.skip')}
-                  </Button>
-                )}
-                <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
-                  {t('practice.submitAnswer')}
-                </Button>
-              </>
-            ) : (
+            <div className="flex gap-2 justify-end">
               <Button onClick={handleNext}>
                 <Shuffle className="h-4 w-4" />
                 {t('practice.nextQuestion')}
               </Button>
-            )}
+            </div>
           </div>
-        </>
+          {isEnabled('explain') && (
+            <div className="lg:flex-[4]">
+              <AiExplainPanel
+                key={question.id}
+                question={question}
+                userAnswer={selectedAnswer}
+                isCorrect={isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered)}
+              />
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

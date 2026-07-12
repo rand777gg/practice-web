@@ -162,6 +162,7 @@ export function Component() {
   { key: 'suggestions' as const, label: t('settings.aiSuggestions'), desc: t('settings.aiSuggestionsDesc'), available: aiConfigured },
   { key: 'analysis' as const, label: t('settings.aiAnalysis'), desc: t('settings.aiAnalysisDesc'), available: aiConfigured },
   { key: 'keypoints' as const, label: t('settings.aiKeypoints'), desc: t('settings.aiKeypointsDesc'), available: aiConfigured },
+  { key: 'explain' as const, label: t('settings.aiExplain'), desc: t('settings.aiExplainDesc'), available: aiConfigured },
   { key: 'mineru' as const, label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), available: mineruConfigured },
  ]
 

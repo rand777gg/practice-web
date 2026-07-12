@@ -14,6 +14,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { Check, Pencil, Star, Trash2, X, RotateCcw } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { OPTION_LABELS } from '@/lib/constants'
@@ -79,6 +80,8 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
 
 function RecordCard({ record, onDelete }: { record: NoteWithQuestion; onDelete?: (id: string) => void }) {
   const { t } = useT()
+  const profile = useAuthStore((s) => s.profile)
+  const isAdmin = profile?.role === 'admin'
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(record.note || '')
   const { isFavorite, toggleFavorite } = useFavorites()
@@ -131,9 +134,14 @@ function RecordCard({ record, onDelete }: { record: NoteWithQuestion; onDelete?:
           )}
         </div>
         <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0 justify-end">
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleFavorite(record.question_id)} title={fav ? '取消收藏' : '收藏'}>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleFavorite(record.question_id)} title={fav ? t('favorites.remove') : t('favorites.add')}>
             <Star className={cn('h-3.5 w-3.5', fav ? 'fill-amber-400 text-amber-400' : '')} />
           </Button>
+          {isAdmin && record.questions?.id && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+              <Link to={`/admin/questions/${record.questions.id}/edit?from=/records`}><Pencil className="h-3.5 w-3.5" /></Link>
+            </Button>
+          )}
           {editing ? (
             <>
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditing(false)}><X className="h-3.5 w-3.5" /> 取消</Button>

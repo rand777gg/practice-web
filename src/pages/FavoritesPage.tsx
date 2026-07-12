@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth-store'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,14 +15,17 @@ import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { OPTION_LABELS } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Check, ChevronDown, Lightbulb, Pencil, Star, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import type { Question, QuestionType, CorrectAnswer } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { Badge } from '@/components/ui/badge'
+import { POINT_COLORS } from '@/components/questions/QuestionCard'
 
 type FavWithAnswer = Question & { latest_answer: CorrectAnswer | null; answered_at: string | null; note: string | null; answer_id: string | null }
 
-function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer | null }) {
-  if (!selected) return <span className="text-xs text-muted-foreground">未作答</span>
+function AnswerInfo({ q, selected, t }: { q: Question; selected: CorrectAnswer | null; t: (k: string) => string }) {
+  if (!selected) return <span className="text-xs text-muted-foreground">{t('common.notAnswered')}</span>
   const type = q.question_type
   const correct = q.correct_answer
   const isChoice = type === 'single_choice' || type === 'multi_select'
@@ -42,7 +46,7 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer | nu
     )
   }
   const ok = isAnswerCorrect(selected, correct, type, q.allow_unordered)
-  return <span className={`text-xs rounded px-1.5 py-0.5 ${ok ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-red-100 dark:bg-red-900/30 text-red-700'}`}>{ok ? '✓ 正确' : '✗ 错误'}</span>
+  return <span className={`text-xs rounded px-1.5 py-0.5 ${ok ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-red-100 dark:bg-red-900/30 text-red-700'}`}>{ok ? `✓ ${t('common.correct')}` : `✗ ${t('common.wrong')}`}</span>
 }
 
 function SkeletonCard() {
@@ -53,6 +57,8 @@ const BATCH = 20
 
 export function Component() {
   const { t } = useT()
+  const profile = useAuthStore((s) => s.profile)
+  const isAdmin = profile?.role === 'admin'
   const { favorites, isFavorite, toggleFavorite, loaded } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [questions, setQuestions] = useState<FavWithAnswer[]>([])
@@ -147,13 +153,13 @@ export function Component() {
       <h1 className="text-xl lg:text-2xl font-bold mb-4">{t('favorites.title')}</h1>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedSubject || '学科'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedSubject || t('questions.subject')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
             <DropdownMenuItem onClick={() => setSelectedSubject('')}><span className="text-muted-foreground">不限学科</span>{!selectedSubject && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {sortedSubjects.map(s => <DropdownMenuItem key={s} onClick={() => setSelectedSubject(s)}>{s}{selectedSubject === s && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedCategory || '分类'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedCategory || t('questions.category')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
             <DropdownMenuItem onClick={() => setSelectedCategory('')}><span className="text-muted-foreground">不限分类</span>{!selectedCategory && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {yearCategories.length > 0 && <DropdownMenuSub><DropdownMenuSubTrigger>历年真题</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{yearCategories.map(c => <DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>}
@@ -166,7 +172,7 @@ export function Component() {
             {QUESTION_TYPE_OPTIONS.map(o => <DropdownMenuItem key={o.value} onClick={() => setSelectedType(o.value)}>{o.label}{selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedKp || '知识点'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedKp || t('practice.keyPoint')}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
             <DropdownMenuItem onClick={() => setSelectedKp('')}><span className="text-muted-foreground">不限知识点</span>{!selectedKp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             {kpBySubject.map(({ subject, keyPoints }) => (
@@ -184,17 +190,21 @@ export function Component() {
       {questions.length === 0 ? (
         <div className="text-center py-12"><p className="text-muted-foreground">{t('favorites.empty')}</p></div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12"><p className="text-muted-foreground">所选条件下暂无收藏题目</p></div>
+        <div className="text-center py-12"><p className="text-muted-foreground">t('favorites.noFilter')</p></div>
       ) : (
         <div className="space-y-3">
           {visible.map((q) => (
             <div key={q.id} className="rounded-xl border bg-card grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-0 overflow-hidden">
               <div className="p-4 space-y-2 min-w-0">
-                {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
-                {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground ml-1.5">{cat}</span>) : null}
-                {q.key_points && <span className="inline-block rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300 ml-1.5">{String(q.key_points).split(/[,，;；]/)[0]}</span>}
+                <div className="flex flex-wrap gap-1">
+                  {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
+                  {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>) : null}
+                  {q.key_points && String(q.key_points).split(/[,，;；]/).filter(Boolean).map((kp, i) => (
+                    <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
+                  ))}
+                </div>
                 <p className="text-sm font-medium leading-relaxed">{q.question_text}</p>
-                <AnswerInfo q={q} selected={q.latest_answer} />
+                <AnswerInfo q={q} selected={q.latest_answer} t={t} />
                 {q.answered_at && <span className="text-xs text-muted-foreground">{new Date(q.answered_at).toLocaleDateString()}</span>}
               </div>
               <div className="border-t lg:border-t-0 lg:border-l border-border flex flex-col overflow-hidden max-h-[400px]">
@@ -206,37 +216,42 @@ export function Component() {
                     </div>
                   )}
                   {editingId === q.id ? (
-                    <div className="p-3"><NoteEditor value={editText} onChange={setEditText} placeholder="添加笔记..." /></div>
+                    <div className="p-3"><NoteEditor value={editText} onChange={setEditText} placeholder={t("common.addNote")} /></div>
                   ) : (
                     <div className="p-4 h-full">
                       {q.note ? <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed"><MarkdownRenderer content={q.note} /></div>
-                        : <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">暂无笔记</div>}
+                        : <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">{t('common.noNote')}</div>}
                     </div>
                   )}
                 </div>
                 <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0 justify-end">
                   {(q.analysis || q.answer_explanation) && (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAnalysisId(analysisId === q.id ? null : q.id)} title="查看解析">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAnalysisId(analysisId === q.id ? null : q.id)} title={t("common.viewExplanation")}>
                       <Lightbulb className={cn('h-3.5 w-3.5', analysisId === q.id ? 'text-amber-500' : '')} />
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleFavorite(q.id)}>
                     <Star className={cn('h-3.5 w-3.5', isFavorite(q.id) ? 'fill-amber-400 text-amber-400' : '')} />
                   </Button>
+                  {isAdmin && (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                      <Link to={`/admin/questions/${q.id}/edit?from=/favorites`}><Pencil className="h-3.5 w-3.5" /></Link>
+                    </Button>
+                  )}
                   {editingId === q.id ? (
                     <>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}><X className="h-3.5 w-3.5" /> 取消</Button>
-                      <Button variant="default" size="sm" className="h-7 text-xs" onClick={() => handleSaveNote(q.id, q.answer_id)}><Check className="h-3.5 w-3.5" /> 保存</Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}><X className="h-3.5 w-3.5" /> {t('common.cancel')}</Button>
+                      <Button variant="default" size="sm" className="h-7 text-xs" onClick={() => handleSaveNote(q.id, q.answer_id)}><Check className="h-3.5 w-3.5" /> {t('common.save')}</Button>
                     </>
                   ) : (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditText(q.note || ''); setEditingId(q.id) }}><Pencil className="h-3.5 w-3.5" /> 笔记</Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditText(q.note || ''); setEditingId(q.id) }}><Pencil className="h-3.5 w-3.5" /> {t('common.note')}</Button>
                   )}
                 </div>
               </div>
             </div>
           ))}
           {visibleCount < filtered.length && <div ref={sentinelRef} className="h-4" />}
-          {visibleCount < filtered.length && <p className="text-center text-xs text-muted-foreground">{visibleCount}/{filtered.length} 题 — 滚动加载更多</p>}
+          {visibleCount < filtered.length && <p className="text-center text-xs text-muted-foreground">{visibleCount}/{filtered.length} </p>}
         </div>
       )}
     </div>
