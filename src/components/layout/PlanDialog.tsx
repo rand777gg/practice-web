@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
@@ -29,7 +29,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets, getPlanTargets } from '@/types'
 import { fetchTargetScopeIds, deriveAnswerSets, scopeProgress, type AnswerSets } from '@/lib/plan'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
@@ -100,18 +100,34 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
-  const navigate = useNavigate()
 
-  const startKpPractice = (target: DailyTarget) => {
-    localStorage.setItem('practice_filters', JSON.stringify({
-      selectedSubjects: target.subjects,
-      selectedCategory: target.categories[0] ?? '',
-      selectedType: '',
-      selectedKeyPoint: '',
-      questionScope: 'all',
-      kpOrder: true,
-    }))
-    navigate('/practice')
+  const getKpOrder = () => {
+    try {
+      const raw = localStorage.getItem('practice_filters')
+      return raw ? JSON.parse(raw).kpOrder === true : false
+    } catch { return false }
+  }
+
+  const toggleKpOrder = (target: DailyTarget, on: boolean) => {
+    if (on) {
+      localStorage.setItem('practice_filters', JSON.stringify({
+        selectedSubjects: target.subjects,
+        selectedCategory: target.categories[0] ?? '',
+        selectedType: '',
+        selectedKeyPoint: '',
+        questionScope: 'all',
+        kpOrder: true,
+      }))
+    } else {
+      try {
+        const raw = localStorage.getItem('practice_filters')
+        if (raw) {
+          const f = JSON.parse(raw)
+          delete f.kpOrder
+          localStorage.setItem('practice_filters', JSON.stringify(f))
+        }
+      } catch { /* noop */ }
+    }
   }
 
   // Load subject/category/keyPoint metadata once per open — filter options cascade from this
@@ -390,16 +406,18 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                         <X className="h-3 w-3" />
                       </Button>
                     </div>
-                    <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                      <Checkbox checked={target.wrongOnly} onCheckedChange={() => togglePlanTargetWrongOnly(i)} />
-                      <span>{t('plan.wrongOnly')}</span>
-                    </label>
-                    {target.subjects.length > 0 && (
-                      <Button variant="outline" size="sm" className="text-xs h-7 w-full" onClick={() => startKpPractice(target)}>
-                        <Play className="h-3 w-3" />
-                        {t('plan.practiceByKp')}
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-4 text-xs">
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <Switch checked={target.wrongOnly} onCheckedChange={() => togglePlanTargetWrongOnly(i)} />
+                        <span className="text-muted-foreground">{t('plan.wrongOnly')}</span>
+                      </label>
+                      {target.subjects.length > 0 && (
+                        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                          <Switch checked={getKpOrder()} onCheckedChange={(v) => toggleKpOrder(target, v)} />
+                          <span className="text-muted-foreground">{t('plan.practiceByKp')}</span>
+                        </label>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -543,17 +561,18 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     onToggle={(v) => toggleTargetKeyPoint(i, v)}
                   />
 
-                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                    <Checkbox checked={target.wrongOnly} onCheckedChange={() => toggleTargetWrongOnly(i)} />
-                    <span>{t('plan.wrongOnly')}</span>
-                  </label>
-
-                  {target.subjects.length > 0 && (
-                    <Button variant="outline" size="sm" className="text-xs h-7 w-full" onClick={() => startKpPractice(target)}>
-                      <Play className="h-3 w-3" />
-                      {t('plan.practiceByKp')}
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-4 text-xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <Switch checked={target.wrongOnly} onCheckedChange={() => toggleTargetWrongOnly(i)} />
+                      <span className="text-muted-foreground">{t('plan.wrongOnly')}</span>
+                    </label>
+                    {target.subjects.length > 0 && (
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <Switch checked={getKpOrder()} onCheckedChange={(v) => toggleKpOrder(target, v)} />
+                        <span className="text-muted-foreground">{t('plan.practiceByKp')}</span>
+                      </label>
+                    )}
+                  </div>
 
                   {/* Deadline */}
                   <div className="flex items-center gap-1">

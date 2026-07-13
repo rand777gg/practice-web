@@ -113,7 +113,7 @@ export function PracticeSession() {
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(savedFilters.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((savedFilters.current?.questionScope as 'all' | 'favorites' | 'wrong') ?? 'all')
-  const [kpOrder, setKpOrder] = useState(savedFilters.current?.kpOrder ?? false)
+  const kpOrder = savedFilters.current?.kpOrder ?? false
 
   // Kp-ordered sequential queue
   const seqIds = useRef<string[]>([])
@@ -423,17 +423,6 @@ export function PracticeSession() {
     setIsLoading(false)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints])
 
-  // When kpOrder toggled on, reset queue and fetch
-  const kpOrderRef = useRef(kpOrder)
-  useEffect(() => {
-    if (kpOrderRef.current === kpOrder) return
-    kpOrderRef.current = kpOrder
-    seqIds.current = []
-    seqIdx.current = -1
-    clearPsSession()
-    fetchRandomQuestion()
-  }, [kpOrder, fetchRandomQuestion])
-
   const mounted = useRef(false)
 
   useEffect(() => {
@@ -707,11 +696,6 @@ export function PracticeSession() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <span className="w-px h-4 bg-border mx-1 hidden sm:block" />
-        <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-          <Checkbox checked={kpOrder} onCheckedChange={(v) => setKpOrder(v === true)} />
-          <span className="text-muted-foreground">{t('practice.kpOrder')}</span>
-        </label>
       </div>
 
       {isLoading ? (
