@@ -36,11 +36,21 @@ const PS_FILTERS = 'practice_filters'
 const PS_SESSION = 'practice_session'
 const KP_POS = 'kp_order_pos'
 
-function saveKpPos(idx: number, qid: string) {
-  try { localStorage.setItem(KP_POS, JSON.stringify({ idx, qid })) } catch {}
+function saveKpPos(idx: number, qid: string, userId?: string | null) {
+  const data = JSON.stringify({ idx, qid })
+  try { localStorage.setItem(KP_POS, data) } catch {}
+  if (userId) {
+    supabase.from('profiles').update({ kp_order_pos: data }).eq('id', userId).then(() => {})
+  }
 }
 function loadKpPos(): { idx: number; qid: string } | null {
   try { const r = localStorage.getItem(KP_POS); return r ? JSON.parse(r) : null } catch { return null }
+}
+async function loadKpPosFromCloud(userId: string): Promise<{ idx: number; qid: string } | null> {
+  try {
+    const { data } = await supabase.from('profiles').select('kp_order_pos').eq('id', userId).single()
+    return data?.kp_order_pos ? JSON.parse(data.kp_order_pos) : null
+  } catch { return null }
 }
 
 interface PracticeFilters {
@@ -50,6 +60,7 @@ interface PracticeFilters {
   selectedKeyPoint: string
   questionScope: string
   kpOrder?: boolean
+  wrongOnly?: boolean
 }
 
 function loadPsFilters(): PracticeFilters | null {
@@ -132,6 +143,18 @@ export function PracticeSession() {
     window.addEventListener('practice-filters-changed', h)
     return () => window.removeEventListener('practice-filters-changed', h)
   }, [])
+
+  // Sync kpOrder position from cloud if localStorage is empty
+  useEffect(() => {
+    if (!kpOrder) return
+    const local = loadKpPos()
+    if (local) return
+    const uid = useAuthStore.getState().user?.id
+    if (!uid) return
+    loadKpPosFromCloud(uid).then((cloud) => {
+      if (cloud?.qid) saveKpPos(cloud.idx, cloud.qid)
+    })
+  }, [kpOrder])
 
   // Clear kp-order queue when filters change (PlanDialog dispatched event)
   useEffect(() => {
@@ -230,9 +253,20 @@ export function PracticeSession() {
     const { data } = await q.limit(5000)
     const rows = (data ?? []) as any[]
     // Filter by keyPoints (client-side substring match)
-    const filtered = scopeKps.length > 0
+    let filtered = scopeKps.length > 0
       ? rows.filter((r) => scopeKps.some((k: string) => (r.key_points || '').includes(k)))
       : rows
+
+    // If wrongOnly, only keep questions the user has answered wrong
+    if (f?.wrongOnly) {
+      const uid = useAuthStore.getState().user?.id
+      if (uid) {
+        const { data: wrongAns } = await supabase.from('user_answers')
+          .select('question_id').eq('user_id', uid).eq('is_correct', false)
+        const wrongIds = new Set((wrongAns ?? []).map((r: any) => r.question_id))
+        filtered = filtered.filter((r) => wrongIds.has(r.id))
+      }
+    }
 
     // Sort by full key_points string for hierarchical order (e.g. Aa1.1 < Aa1.1,Bb2.2 < Aa1.2)
     const norm = (s: string) => (s || '').trim().replace(/[，；]/g, ',').replace(/\s+/g, ' ')
@@ -544,7 +578,7 @@ export function PracticeSession() {
     if (kpOrder) {
       const nextIdx = seqIdx.current + 1
       const nextQid = nextIdx < seqIds.current.length ? seqIds.current[nextIdx] : ''
-      nextQid ? saveKpPos(nextIdx, nextQid) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
+      nextQid ? saveKpPos(nextIdx, nextQid, useAuthStore.getState().user?.id) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
     }
     fetchRandomQuestion()
   }, [fetchRandomQuestion, kpOrder])
@@ -554,7 +588,7 @@ export function PracticeSession() {
     seqIdx.current -= 2 // will be incremented in fetchRandomQuestion
     const prevIdx = seqIdx.current + 1 // the index that will become current after fetchRandomQuestion
     const prevQid = prevIdx >= 0 && prevIdx < seqIds.current.length ? seqIds.current[prevIdx] : ''
-    prevQid ? saveKpPos(prevIdx, prevQid) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
+    prevQid ? saveKpPos(prevIdx, prevQid, useAuthStore.getState().user?.id) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
     clearPsSession()
     fetchRandomQuestion()
   }, [kpOrder, fetchRandomQuestion])

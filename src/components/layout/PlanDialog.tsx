@@ -111,8 +111,9 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       selectedCategory: target.categories[0] ?? '',
       selectedType: '',
       selectedKeyPoint: '',
-      questionScope: 'all',
+      questionScope: target.wrongOnly ? 'wrong' : 'all',
       kpOrder: true,
+      wrongOnly: target.wrongOnly,
     }))
     notifyPracticeFiltersChanged()
   }
