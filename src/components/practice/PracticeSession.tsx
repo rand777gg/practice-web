@@ -120,6 +120,7 @@ export function PracticeSession() {
   // Kp-ordered sequential queue
   const seqIds = useRef<string[]>([])
   const seqIdx = useRef(-1)
+  const kpOrderRef = useRef(kpOrder)
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -173,14 +174,17 @@ export function PracticeSession() {
   const fetchGenRef = useRef(0)
 
   const buildKpQueue = useCallback(async () => {
-    const scopeCats = selectedCategory ? [selectedCategory] : planCategories
-    const scopeKps = selectedKeyPoint ? [selectedKeyPoint] : planKeyPoints
-    const subjects = selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
+    // Read filters from localStorage — PlanDialog updates them without remounting PracticeSession
+    const f = loadPsFilters()
+    const scopeCats = f?.selectedCategory ? [f.selectedCategory] : selectedCategory ? [selectedCategory] : planCategories
+    const scopeKps = f?.selectedKeyPoint ? [f.selectedKeyPoint] : selectedKeyPoint ? [selectedKeyPoint] : planKeyPoints
+    const subjects = f?.selectedSubjects?.length ? f.selectedSubjects : selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
+    const qType = f?.selectedType || selectedType || ''
 
     let q = supabase.from('questions').select('id, key_points')
     if (subjects.length > 0) q = q.in('subject', subjects)
     if (scopeCats.length > 0) q = q.in('category', scopeCats)
-    if (selectedType) q = q.eq('question_type', selectedType)
+    if (qType) q = q.eq('question_type', qType)
     const { data } = await q.limit(5000)
     const rows = (data ?? []) as any[]
     // Filter by keyPoints (client-side substring match)
@@ -216,6 +220,11 @@ export function PracticeSession() {
 
     // Kp-order mode: sequential by key_point
     if (kpOrder) {
+      if (kpOrderRef.current !== kpOrder) {
+        seqIds.current = []
+        seqIdx.current = -1
+        kpOrderRef.current = kpOrder
+      }
       if (seqIds.current.length === 0) await buildKpQueue()
       if (fetchGenRef.current !== myGen) return
       seqIdx.current++
