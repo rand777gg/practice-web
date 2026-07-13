@@ -194,6 +194,27 @@ export function PracticeSession() {
 
   const fetchGenRef = useRef(0)
 
+  // Get IDs of questions answered correctly on first attempt (not favorited → exclude)
+  const fetchOnceCorrectIds = useCallback(async (userId: string): Promise<Set<string>> => {
+    const [ansRes, favRes] = await Promise.all([
+      supabase.from('user_answers').select('question_id, is_correct').eq('user_id', userId).limit(5000),
+      supabase.from('favorites').select('question_id').eq('user_id', userId),
+    ])
+    const favIds = new Set((favRes.data ?? []).map((r: any) => r.question_id))
+    const counts = new Map<string, { count: number; allCorrect: boolean }>()
+    for (const r of (ansRes.data ?? []) as any[]) {
+      const c = counts.get(r.question_id) ?? { count: 0, allCorrect: true }
+      c.count++
+      if (!r.is_correct) c.allCorrect = false
+      counts.set(r.question_id, c)
+    }
+    const exclude = new Set<string>()
+    for (const [qid, c] of counts) {
+      if (c.count === 1 && c.allCorrect && !favIds.has(qid)) exclude.add(qid)
+    }
+    return exclude
+  }, [])
+
   const buildKpQueue = useCallback(async () => {
     // Read filters from localStorage — PlanDialog updates them without remounting PracticeSession
     const f = loadPsFilters()
@@ -224,13 +245,22 @@ export function PracticeSession() {
       return akp.localeCompare(bkp, 'zh-CN')
     })
 
+    // Exclude questions answered correctly on first attempt (unless favorited)
+    const currentUser = useAuthStore.getState().user
+    if (currentUser) {
+      const excludeIds = await fetchOnceCorrectIds(currentUser.id)
+      for (let i = filtered.length - 1; i >= 0; i--) {
+        if (excludeIds.has(filtered[i].id)) filtered.splice(i, 1)
+      }
+    }
+
     seqIds.current = filtered.map((r) => r.id)
-    // Resume from last position: seqIdx = last-answered-question index,
-    // so fetchRandomQuestion's seqIdx.current++ gives the next question.
+    // Resume from last position: start at the saved question.
+    // fetchRandomQuestion does seqIdx.current++ before showing, so set to pos-1.
     const saved = loadKpPos()
     if (saved?.qid) {
       const pos = seqIds.current.indexOf(saved.qid)
-      seqIdx.current = pos >= 0 ? pos : (saved.idx < seqIds.current.length ? saved.idx : -1)
+      seqIdx.current = pos >= 0 ? pos - 1 : -1
     } else {
       seqIdx.current = -1
     }
@@ -349,6 +379,13 @@ export function PracticeSession() {
     }
 
     if (fetchGenRef.current !== myGen) return
+
+    // Exclude questions answered correctly on first attempt (unless favorited)
+    if (pickedId && currentUser) {
+      const excludeIds = await fetchOnceCorrectIds(currentUser.id)
+      if (fetchGenRef.current !== myGen) return
+      if (excludeIds.has(pickedId)) pickedId = null
+    }
 
     // Offline fallback: try IndexedDB prefetched questions
     if (!pickedId) {
@@ -516,8 +553,8 @@ export function PracticeSession() {
   }, [kpOrder, fetchRandomQuestion])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
-    onSwipeLeft: handleNext,
-    onSwipeRight: kpOrder ? handlePrev : undefined,
+    onSwipeLeft: kpOrder ? handlePrev : undefined,
+    onSwipeRight: handleNext,
   })
 
   return (
