@@ -150,21 +150,12 @@ export function PracticeSession() {
   // Load distinct key_points for filter dropdown, grouped by subject
   useEffect(() => {
     let c = false
-    ;(async () => {
-      const PAGE = 1000
-      const allRows: any[] = []
-      let from = 0
-      while (true) {
-        const { data } = await supabase.from('questions').select('subject, key_points').not('key_points', 'is', null).range(from, from + PAGE - 1)
-        if (c || !data || data.length === 0) break
-        allRows.push(...data)
-        from += PAGE
-      }
+    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null).limit(5000).then(({ data }) => {
       if (c) return
       const m = new Map<string, Set<string>>()
-      for (const r of allRows) { const s = (r as any).subject || '其他'; if (!m.has(s)) m.set(s, new Set()); if ((r as any).key_points) for (const k of ((r as any).key_points as string).split(/[,，;；]/)) { const t = k.trim(); if (t) m.get(s)!.add(t) } }
+      for (const r of (data ?? [])) { const s = (r as any).subject || '其他'; if (!m.has(s)) m.set(s, new Set()); if ((r as any).key_points) for (const k of ((r as any).key_points as string).split(/[,，;；]/)) { const t = k.trim(); if (t) m.get(s)!.add(t) } }
       setKpBySubject([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort((a2, b2) => a2.localeCompare(b2, 'zh-CN')) })))
-    })()
+    })
     return () => { c = true }
   }, [])
 
@@ -184,19 +175,12 @@ export function PracticeSession() {
     const scopeKps = selectedKeyPoint ? [selectedKeyPoint] : planKeyPoints
     const subjects = selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
 
-    const PAGE = 1000
-    const rows: any[] = []
-    let from = 0
-    while (true) {
-      let q = supabase.from('questions').select('id, key_points').range(from, from + PAGE - 1)
-      if (subjects.length > 0) q = q.in('subject', subjects)
-      if (scopeCats.length > 0) q = q.in('category', scopeCats)
-      if (selectedType) q = q.eq('question_type', selectedType)
-      const { data } = await q
-      if (!data || data.length === 0) break
-      rows.push(...(data as any[]))
-      from += PAGE
-    }
+    let q = supabase.from('questions').select('id, key_points')
+    if (subjects.length > 0) q = q.in('subject', subjects)
+    if (scopeCats.length > 0) q = q.in('category', scopeCats)
+    if (selectedType) q = q.eq('question_type', selectedType)
+    const { data } = await q.limit(5000)
+    const rows = (data ?? []) as any[]
     // Filter by keyPoints (client-side substring match)
     const filtered = scopeKps.length > 0
       ? rows.filter((r) => scopeKps.some((k: string) => (r.key_points || '').includes(k)))

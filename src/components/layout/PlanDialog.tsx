@@ -101,14 +101,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
 
-  const getKpOrder = () => {
-    try {
-      const raw = localStorage.getItem('practice_filters')
-      return raw ? JSON.parse(raw).kpOrder === true : false
-    } catch { return false }
-  }
+  const [kpOrderOn, setKpOrderOn] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('practice_filters') || '{}').kpOrder === true } catch { return false }
+  })
 
   const toggleKpOrder = (target: DailyTarget, on: boolean) => {
+    setKpOrderOn(on)
     if (on) {
       localStorage.setItem('practice_filters', JSON.stringify({
         selectedSubjects: target.subjects,
@@ -134,23 +132,14 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    ;(async () => {
-      const PAGE = 1000
-      const allRows: any[] = []
-      let from = 0
-      while (true) {
-        const { data } = await supabase.from('questions').select('subject, category, categories, key_points').range(from, from + PAGE - 1)
-        if (cancelled || !data || data.length === 0) break
-        allRows.push(...data)
-        from += PAGE
-      }
+    supabase.from('questions').select('subject, category, categories, key_points').limit(5000).then(({ data }) => {
       if (cancelled) return
-      setQuestionMeta(allRows.map((r: any) => ({
+      setQuestionMeta((data ?? []).map((r: any) => ({
         subject: r.subject || '',
         cats: (r.categories?.length ? r.categories : r.category ? [r.category] : []) as string[],
         keyPoints: r.key_points ? (r.key_points as string).split(/[,，;；]/).map((k: string) => k.trim()).filter(Boolean) : [],
       })))
-    })()
+    })
     return () => { cancelled = true }
   }, [open])
 
@@ -413,7 +402,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       </label>
                       {target.subjects.length > 0 && (
                         <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                          <Switch checked={getKpOrder()} onCheckedChange={(v) => toggleKpOrder(target, v)} />
+                          <Switch checked={kpOrderOn} onCheckedChange={(v) => toggleKpOrder(target, v)} />
                           <span className="text-muted-foreground">{t('plan.practiceByKp')}</span>
                         </label>
                       )}
@@ -568,7 +557,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     </label>
                     {target.subjects.length > 0 && (
                       <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                        <Switch checked={getKpOrder()} onCheckedChange={(v) => toggleKpOrder(target, v)} />
+                        <Switch checked={kpOrderOn} onCheckedChange={(v) => toggleKpOrder(target, v)} />
                         <span className="text-muted-foreground">{t('plan.practiceByKp')}</span>
                       </label>
                     )}

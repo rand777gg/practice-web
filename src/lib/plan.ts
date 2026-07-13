@@ -6,26 +6,20 @@ export async function fetchTargetScopeIds(
   t: Pick<DailyTarget, 'subjects' | 'categories' | 'keyPoints'>,
 ): Promise<Set<string>> {
   const needKp = t.keyPoints.length > 0
-  const PAGE = 1000
+  let q = supabase
+    .from('questions')
+    .select(needKp ? 'id, category, categories, key_points' : 'id, category, categories')
+    .limit(5000)
+  if (t.subjects.length) q = q.in('subject', t.subjects)
+  const { data } = await q
   const ids = new Set<string>()
-  let from = 0
-  while (true) {
-    let q = supabase
-      .from('questions')
-      .select(needKp ? 'id, category, categories, key_points' : 'id, category, categories')
-      .range(from, from + PAGE - 1)
-    if (t.subjects.length) q = q.in('subject', t.subjects)
-    const { data } = await q
-    if (!data || data.length === 0) break
-    for (const row of data as any[]) {
-      if (t.categories.length) {
-        const rc = (row.categories?.length ? row.categories : row.category ? [row.category] : []) as string[]
-        if (!rc.some((c) => t.categories.includes(c))) continue
-      }
-      if (needKp && !t.keyPoints.some((k) => (row.key_points || '').includes(k))) continue
-      ids.add(row.id)
+  for (const row of (data ?? []) as any[]) {
+    if (t.categories.length) {
+      const rc = (row.categories?.length ? row.categories : row.category ? [row.category] : []) as string[]
+      if (!rc.some((c) => t.categories.includes(c))) continue
     }
-    from += PAGE
+    if (needKp && !t.keyPoints.some((k) => (row.key_points || '').includes(k))) continue
+    ids.add(row.id)
   }
   return ids
 }
