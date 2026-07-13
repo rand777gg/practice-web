@@ -594,8 +594,8 @@ export function PracticeSession() {
   }, [kpOrder, fetchRandomQuestion])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
-    onSwipeLeft: kpOrder ? handlePrev : undefined,
-    onSwipeRight: handleNext,
+    onSwipeLeft: handleNext,
+    onSwipeRight: kpOrder ? handlePrev : undefined,
   })
 
   return (

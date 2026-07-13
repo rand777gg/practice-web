@@ -162,9 +162,9 @@ export function PlanProgress() {
           </span>
         ) : (
           <div className="flex items-center gap-1 shrink-0">
-            <span className="hidden sm:inline text-muted-foreground text-[10px] leading-none">{planWrongOnly ? '今日错题回顾' : t('plan.longTerm')}</span>
+            <span className="hidden sm:inline text-muted-foreground text-[10px] leading-none w-14 truncate">{planWrongOnly ? '今日错题回顾' : t('plan.longTerm')}</span>
             <Progress value={longPct} className="w-10 h-2 shrink-0 [&>div]:bg-blue-500" />
-            <span className="tabular-nums shrink-0 text-[10px] leading-none">{todayLongDone}/{dailyGoal}</span>
+            <span className="tabular-nums shrink-0 text-[10px] leading-none w-8 text-right">{todayLongDone}/{dailyGoal}</span>
           </div>
         ))}
         {hasDailyTargets && (dailyDone ? (
@@ -175,9 +175,9 @@ export function PlanProgress() {
           </span>
         ) : (
           <div className="flex items-center gap-1 shrink-0">
-            <span className="hidden sm:inline text-muted-foreground text-[10px] leading-none">{t('plan.daily')}</span>
+            <span className="hidden sm:inline text-muted-foreground text-[10px] leading-none w-14 truncate">{t('plan.daily')}</span>
             <Progress value={dailyPct} className="w-10 h-2 shrink-0 [&>div]:bg-pink-500" />
-            <span className="tabular-nums shrink-0 text-[10px] leading-none">{doneDaily}/{effectiveTotal}</span>
+            <span className="tabular-nums shrink-0 text-[10px] leading-none w-8 text-right">{doneDaily}/{effectiveTotal}</span>
           </div>
         ))}
       </button>
