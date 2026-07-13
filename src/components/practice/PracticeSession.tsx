@@ -220,10 +220,16 @@ export function PracticeSession() {
     }
 
     // Sort by first key_point alphabetically, empty key_points at the end
-    // We need to fetch key_points for all IDs
+    // We need to fetch key_points for all IDs (batch to avoid URL length limits)
     if (ids.length > 0) {
-      const { data: kps } = await supabase.from('questions').select('id, key_points').in('id', ids)
-      const kpMap = new Map((kps ?? []).map((r: any) => [r.id, r.key_points || '']))
+      const BATCH = 80
+      const allKps: any[] = []
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH)
+        const { data } = await supabase.from('questions').select('id, key_points').in('id', chunk)
+        if (data) allKps.push(...data)
+      }
+      const kpMap = new Map(allKps.map((r: any) => [r.id, r.key_points || '']))
       ids.sort((a, b) => {
         const akp = (kpMap.get(a) || '').split(/[,，;；]/)[0].trim()
         const bkp = (kpMap.get(b) || '').split(/[,，;；]/)[0].trim()
