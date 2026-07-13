@@ -113,7 +113,7 @@ export function PracticeSession() {
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(savedFilters.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((savedFilters.current?.questionScope as 'all' | 'favorites' | 'wrong') ?? 'all')
-  const [kpOrder, setKpOrder] = useState(savedFilters.current?.kpOrder ?? false)
+  const kpOrder = savedFilters.current?.kpOrder ?? false
 
   // Kp-ordered sequential queue
   const seqIds = useRef<string[]>([])
@@ -408,6 +408,22 @@ export function PracticeSession() {
     setIsLoading(false)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints])
 
+  // Clear kpOrder flag on unmount so it only applies to the immediate session
+  useEffect(() => {
+    return () => {
+      try {
+        const raw = localStorage.getItem(PS_FILTERS)
+        if (raw) {
+          const f = JSON.parse(raw)
+          if (f.kpOrder) {
+            delete f.kpOrder
+            localStorage.setItem(PS_FILTERS, JSON.stringify(f))
+          }
+        }
+      } catch { /* noop */ }
+    }
+  }, [])
+
   const mounted = useRef(false)
 
   useEffect(() => {
@@ -420,8 +436,8 @@ export function PracticeSession() {
 
   // Persist filters
   useEffect(() => {
-    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope, kpOrder })
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope, kpOrder])
+    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope })
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope])
 
   // Persist session
   const sessionRef = useRef({ question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount, lastWrong })
