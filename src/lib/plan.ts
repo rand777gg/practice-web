@@ -28,13 +28,14 @@ export async function fetchTargetScopeIds(
 export type AnswerRow = { question_id: string; is_correct: boolean; answered_at: string }
 export type AnswerSets = ReturnType<typeof deriveAnswerSets>
 
-// 从用户全部作答记录派生各集合。redone = 错题且总作答次数≥2（再次作答即完成，无论对错）。
+// 从用户全部作答记录派生各集合。redone = 错题且之后答对过。
 export function deriveAnswerSets(rows: AnswerRow[], todayISO: string) {
-  const attempts = new Map<string, { count: number; beforeCount: number; wrong: boolean; today: boolean }>()
+  const attempts = new Map<string, { count: number; beforeCount: number; wrong: boolean; hasCorrect: boolean; today: boolean }>()
   for (const r of rows) {
-    const a = attempts.get(r.question_id) ?? { count: 0, beforeCount: 0, wrong: false, today: false }
+    const a = attempts.get(r.question_id) ?? { count: 0, beforeCount: 0, wrong: false, hasCorrect: false, today: false }
     a.count++
     if (!r.is_correct) a.wrong = true
+    else a.hasCorrect = true
     if (r.answered_at >= todayISO) a.today = true
     else a.beforeCount++
     attempts.set(r.question_id, a)
@@ -47,8 +48,8 @@ export function deriveAnswerSets(rows: AnswerRow[], todayISO: string) {
     if (a.today) todayIds.add(id)
     if (a.wrong) {
       wrongIds.add(id)
-      if (a.count >= 2) { redoneIds.add(id); if (a.today) redoneTodayIds.add(id) }
-      if (a.beforeCount >= 2) redoneBeforeIds.add(id)
+      if (a.hasCorrect) { redoneIds.add(id); if (a.today) redoneTodayIds.add(id) }
+      if (a.beforeCount >= 1 && a.hasCorrect) redoneBeforeIds.add(id)
     }
   }
   return { answeredIds, answeredBeforeIds, todayIds, wrongIds, redoneIds, redoneBeforeIds, redoneTodayIds }

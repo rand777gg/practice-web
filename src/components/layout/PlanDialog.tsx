@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
@@ -100,6 +100,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
+  const navigate = useNavigate()
+
+  const startKpPractice = (target: DailyTarget) => {
+    localStorage.setItem('practice_filters', JSON.stringify({
+      selectedSubjects: target.subjects,
+      selectedCategory: target.categories[0] ?? '',
+      selectedType: '',
+      selectedKeyPoint: '',
+      questionScope: 'all',
+      kpOrder: true,
+    }))
+    navigate('/practice')
+  }
 
   // Load subject/category/keyPoint metadata once per open — filter options cascade from this
   useEffect(() => {
@@ -121,7 +134,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     if (!open || !user) return
     let cancelled = false
     const todayISO = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
-    supabase.from('user_answers').select('question_id, is_correct, answered_at').eq('user_id', user.id).then(({ data }) => {
+    supabase.from('user_answers').select('question_id, is_correct, answered_at').eq('user_id', user.id).order('answered_at', { ascending: false }).limit(5000).then(({ data }) => {
       if (!cancelled) setAnswerSets(deriveAnswerSets((data ?? []) as any[], todayISO))
     })
     return () => { cancelled = true }
@@ -372,6 +385,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       <Checkbox checked={target.wrongOnly} onCheckedChange={() => togglePlanTargetWrongOnly(i)} />
                       <span>{t('plan.wrongOnly')}</span>
                     </label>
+                    {target.subjects.length > 0 && (
+                      <Button variant="outline" size="sm" className="text-xs h-7 w-full" onClick={() => startKpPractice(target)}>
+                        <Play className="h-3 w-3" />
+                        {t('plan.practiceByKp')}
+                      </Button>
+                    )}
                   </div>
                 )
               })}
@@ -519,6 +538,13 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     <Checkbox checked={target.wrongOnly} onCheckedChange={() => toggleTargetWrongOnly(i)} />
                     <span>{t('plan.wrongOnly')}</span>
                   </label>
+
+                  {target.subjects.length > 0 && (
+                    <Button variant="outline" size="sm" className="text-xs h-7 w-full" onClick={() => startKpPractice(target)}>
+                      <Play className="h-3 w-3" />
+                      {t('plan.practiceByKp')}
+                    </Button>
+                  )}
 
                   {/* Deadline */}
                   <div className="flex items-center gap-1">

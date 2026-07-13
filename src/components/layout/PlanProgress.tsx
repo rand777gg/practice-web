@@ -52,6 +52,8 @@ export function PlanProgress() {
         .from('user_answers')
         .select('question_id, is_correct, answered_at')
         .eq('user_id', uid)
+        .order('answered_at', { ascending: false })
+        .limit(5000)
       const todayISO = todayStart()
       const sets = deriveAnswerSets((answersRaw ?? []) as any[], todayISO)
 

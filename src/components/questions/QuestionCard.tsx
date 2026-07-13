@@ -59,13 +59,14 @@ interface Props {
   showEditLink?: boolean
   attemptCount?: number
   wrongCount?: number
+  lastWrong?: boolean
   note?: string | null
   isFavorited?: boolean
   onToggleFavorite?: () => void
   onVerify?: () => void
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onVerify }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, lastWrong, note, isFavorited, onToggleFavorite, onVerify }: Props) {
   const { t } = useT()
   const type = question.question_type
   const isSingle = type === 'single_choice'
@@ -152,6 +153,9 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
         {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
           <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
         ))}
+        {lastWrong && (
+          <span className="inline-block rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 px-2 py-0.5 text-xs font-medium">{t('practice.lastWrong')}</span>
+        )}
         {attemptCount != null && (
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <span>{t('practice.attempts')}: {attemptCount}</span>

@@ -40,8 +40,8 @@ interface PracticeFilters {
   selectedCategory: string
   selectedType: string
   selectedKeyPoint: string
-  questionMode: string
   questionScope: string
+  kpOrder?: boolean
 }
 
 function loadPsFilters(): PracticeFilters | null {
@@ -75,6 +75,7 @@ export function PracticeSession() {
   const [answerId, setAnswerId] = useState<string | null>(savedSession.current?.answerId ?? null)
   const [note, setNote] = useState(savedSession.current?.note ?? '')
   const [isPublic, setIsPublic] = useState(savedSession.current?.isPublic ?? false)
+  const [lastWrong, setLastWrong] = useState(savedSession.current?.lastWrong ?? false)
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
@@ -111,8 +112,12 @@ export function PracticeSession() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>((savedFilters.current?.selectedType as QuestionType) ?? '')
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(savedFilters.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>((savedFilters.current?.questionMode as 'new' | 'wrong' | 'mixed') ?? 'mixed')
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((savedFilters.current?.questionScope as 'all' | 'favorites' | 'wrong') ?? 'all')
+  const [kpOrder, setKpOrder] = useState(savedFilters.current?.kpOrder ?? false)
+
+  // Kp-ordered sequential queue
+  const seqIds = useRef<string[]>([])
+  const seqIdx = useRef(-1)
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -165,6 +170,37 @@ export function PracticeSession() {
 
   const fetchGenRef = useRef(0)
 
+  const buildKpQueue = useCallback(async () => {
+    const scopeCats = selectedCategory ? [selectedCategory] : planCategories
+    const scopeKps = selectedKeyPoint ? [selectedKeyPoint] : planKeyPoints
+    const subjects = selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
+
+    let q = supabase.from('questions').select('id, key_points')
+    if (subjects.length > 0) q = q.in('subject', subjects)
+    if (scopeCats.length > 0) q = q.in('category', scopeCats)
+    if (selectedType) q = q.eq('question_type', selectedType)
+    const { data } = await q.limit(5000)
+
+    const rows = (data ?? []) as any[]
+    // Filter by keyPoints (client-side substring match)
+    const filtered = scopeKps.length > 0
+      ? rows.filter((r) => scopeKps.some((k: string) => (r.key_points || '').includes(k)))
+      : rows
+
+    // Sort by first key_point
+    filtered.sort((a, b) => {
+      const akp = (a.key_points || '').split(/[,，;；]/)[0].trim()
+      const bkp = (b.key_points || '').split(/[,，;；]/)[0].trim()
+      if (!akp && !bkp) return 0
+      if (!akp) return 1
+      if (!bkp) return -1
+      return akp.localeCompare(bkp, 'zh-CN')
+    })
+
+    seqIds.current = filtered.map((r) => r.id)
+    seqIdx.current = -1
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planCategories, planKeyPoints, planSubjectSet])
+
   const fetchRandomQuestion = useCallback(async () => {
     fetchGenRef.current++
     const myGen = fetchGenRef.current
@@ -175,6 +211,39 @@ export function PracticeSession() {
     setAnswerId(null)
 
     const currentUser = useAuthStore.getState().user
+
+    // Kp-order mode: sequential by key_point
+    if (kpOrder) {
+      if (seqIds.current.length === 0) await buildKpQueue()
+      if (fetchGenRef.current !== myGen) return
+      seqIdx.current++
+      if (seqIdx.current >= seqIds.current.length) {
+        setNoQuestions(true)
+        setIsLoading(false)
+        return
+      }
+      const id = seqIds.current[seqIdx.current]
+      const { data: qData, error: qErr } = await supabase.from('questions').select('*').eq('id', id).single()
+      if (fetchGenRef.current !== myGen) return
+      if (qErr || !qData) {
+        setNoQuestions(true)
+        setIsLoading(false)
+        return
+      }
+      setQuestion(qData as unknown as Question)
+      const { data: stats } = currentUser
+        ? await supabase.from('user_answers').select('is_correct, note, is_public').eq('user_id', currentUser.id).eq('question_id', id).order('answered_at', { ascending: false })
+        : { data: null }
+      if (fetchGenRef.current !== myGen) return
+      const total = stats?.length ?? 0
+      setAttemptCount(total)
+      setWrongCount(stats?.filter((a) => !a.is_correct).length ?? 0)
+      setLastWrong(stats?.[0] ? !(stats[0] as any).is_correct : false)
+      setNote(stats?.find((a) => a.note)?.note ?? '')
+      setIsPublic(stats?.find((a) => a.note)?.is_public ?? false)
+      setIsLoading(false)
+      return
+    }
 
     // Pick question based on scope + mode
     let pickedId: string | null = null
@@ -202,7 +271,7 @@ export function PracticeSession() {
     }
 
     // Scope: wrong — pick from previously wrong-answered questions
-    if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
+    if (!pickedId && currentUser && questionScope === 'wrong') {
       const { data: wrongRows } = await supabase.from('user_answers')
         .select('question_id, questions!inner(subject, category, question_type, key_points)')
         .eq('user_id', currentUser.id)
@@ -229,8 +298,8 @@ export function PracticeSession() {
       }
     }
 
-    // Scope: all with mixed/new mode — RPC random pick
-    if (!pickedId && currentUser && questionScope === 'all' && questionMode !== 'wrong') {
+    // Scope: all — RPC random pick
+    if (!pickedId && currentUser && questionScope === 'all') {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
@@ -298,6 +367,7 @@ export function PracticeSession() {
         const total = kpStats?.length ?? 0
         setAttemptCount(total)
         setWrongCount(kpStats?.filter((a) => !a.is_correct).length ?? 0)
+        setLastWrong(kpStats?.[0] ? !(kpStats[0] as any).is_correct : false)
         setNote(kpStats?.find((a) => a.note)?.note ?? '')
         setIsPublic(kpStats?.find((a) => a.note)?.is_public ?? false)
         setIsLoading(false)
@@ -313,6 +383,7 @@ export function PracticeSession() {
       const localQ = await getPrefetchedQuestion(pickedId!)
       if (localQ) {
         setQuestion(localQ as Question)
+        setLastWrong(false)
         setIsLoading(false)
         return
       }
@@ -328,13 +399,14 @@ export function PracticeSession() {
     const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
     setAttemptCount(total)
     setWrongCount(wrong)
+    setLastWrong(statsData?.[0] ? !(statsData[0] as any).is_correct : false)
     const latestNote = statsData?.find((a) => a.note)?.note ?? ''
     const latestIsPublic = statsData?.find((a) => a.note)?.is_public ?? false
     setNote(latestNote)
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, reviewWrong, planCategories, planKeyPoints])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints])
 
   const mounted = useRef(false)
 
@@ -348,16 +420,16 @@ export function PracticeSession() {
 
   // Persist filters
   useEffect(() => {
-    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope })
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
+    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope, kpOrder })
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope, kpOrder])
 
   // Persist session
-  const sessionRef = useRef({ question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount })
-  sessionRef.current = { question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount }
+  const sessionRef = useRef({ question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount, lastWrong })
+  sessionRef.current = { question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount, lastWrong }
   useEffect(() => {
     const timer = setTimeout(() => savePsSession(sessionRef.current as unknown as Record<string, unknown>), 300)
     return () => clearTimeout(timer)
-  }, [question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount])
+  }, [question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount, lastWrong])
 
   const handleSelect = useCallback((answer: CorrectAnswer) => {
     if (isSubmitted) return
@@ -400,8 +472,16 @@ export function PracticeSession() {
     fetchRandomQuestion()
   }, [fetchRandomQuestion])
 
+  const handlePrev = useCallback(() => {
+    if (!kpOrder || seqIdx.current <= 0) return
+    seqIdx.current -= 2 // will be incremented in fetchRandomQuestion
+    clearPsSession()
+    fetchRandomQuestion()
+  }, [kpOrder, fetchRandomQuestion])
+
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,
+    onSwipeRight: kpOrder ? handlePrev : undefined,
   })
 
   return (
@@ -601,28 +681,6 @@ export function PracticeSession() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {{ new: t('practice.newFirst'), wrong: t('practice.wrongFirst'), mixed: t('practice.mixedMode') }[questionMode]}
-              <ChevronDown className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => setQuestionMode('mixed')}>
-              {t('practice.mixedMode')}
-              {questionMode === 'mixed' && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuestionMode('new')}>
-              {t('practice.newFirst')}
-              {questionMode === 'new' && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuestionMode('wrong')}>
-              {t('practice.wrongFirst')}
-              {questionMode === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {isLoading ? (
@@ -666,6 +724,7 @@ export function PracticeSession() {
               showEditLink={isAdmin}
               attemptCount={attemptCount}
               wrongCount={wrongCount}
+              lastWrong={lastWrong}
               note={note}
               isFavorited={question ? isFavorite(question.id) : false}
               onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
@@ -676,6 +735,11 @@ export function PracticeSession() {
             />
           </div>
           <div className="flex gap-2 justify-end">
+            {kpOrder && seqIdx.current > 0 && (
+              <Button variant="outline" onClick={handlePrev}>
+                {t('practice.prev')}
+              </Button>
+            )}
             {attemptCount > 0 && (
               <Button variant="outline" onClick={handleNext}>
                 {t('practice.skip')}
@@ -698,6 +762,7 @@ export function PracticeSession() {
               showEditLink={isAdmin}
               attemptCount={attemptCount}
               wrongCount={wrongCount}
+              lastWrong={lastWrong}
               note={note}
               isFavorited={question ? isFavorite(question.id) : false}
               onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
@@ -724,9 +789,13 @@ export function PracticeSession() {
               </div>
             </div>
             <div className="flex gap-2 justify-end">
+              {kpOrder && seqIdx.current > 0 && (
+                <Button variant="outline" onClick={handlePrev}>
+                  {t('practice.prev')}
+                </Button>
+              )}
               <Button onClick={handleNext}>
-                <Shuffle className="h-4 w-4" />
-                {t('practice.nextQuestion')}
+                {kpOrder ? t('practice.nextQuestion') : <><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</>}
               </Button>
             </div>
           </div>
