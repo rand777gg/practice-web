@@ -159,6 +159,7 @@ export function PracticeSession() {
   useEffect(() => {
     seqIds.current = []
     seqIdx.current = -1
+    prevStack.current = []
   }, [filtersTick])
 
   // Kp-ordered sequential queue
@@ -249,7 +250,7 @@ export function PracticeSession() {
     if (subjects.length > 0) q = q.in('subject', subjects)
     if (scopeCats.length > 0) q = q.in('category', scopeCats)
     if (qType) q = q.eq('question_type', qType)
-    const { data } = await q.limit(5000)
+    const { data } = await q.limit(10000)
     const rows = (data ?? []) as any[]
     // Filter by keyPoints (client-side substring match)
     let filtered = scopeKps.length > 0
@@ -290,7 +291,11 @@ export function PracticeSession() {
     seqIds.current = filtered.map((r) => r.id)
     // Resume from last position: start at the saved question.
     // fetchRandomQuestion does seqIdx.current++ before showing, so set to pos-1.
-    const saved = loadKpPos()
+    let saved = loadKpPos()
+    if (!saved) {
+      const uid = useAuthStore.getState().user?.id
+      if (uid) saved = await loadKpPosFromCloud(uid)
+    }
     if (saved?.qid) {
       const pos = seqIds.current.indexOf(saved.qid)
       seqIdx.current = pos >= 0 ? pos - 1 : -1
@@ -339,6 +344,14 @@ export function PracticeSession() {
     if (kpOrder) {
       if (seqIds.current.length === 0) await buildKpQueue()
       if (fetchGenRef.current !== myGen) return
+      // Skip once-correct questions (they may have been answered since queue was built)
+      if (currentUser) {
+        const excludeIds = await fetchOnceCorrectIds(currentUser.id)
+        if (fetchGenRef.current !== myGen) return
+        while (seqIdx.current + 1 < seqIds.current.length && excludeIds.has(seqIds.current[seqIdx.current + 1])) {
+          seqIdx.current++
+        }
+      }
       seqIdx.current++
       if (seqIdx.current >= seqIds.current.length) {
         setNoQuestions(true)

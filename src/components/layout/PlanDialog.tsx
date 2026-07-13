@@ -23,6 +23,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
@@ -94,6 +97,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   // Daily target: subject/category/keyPoint options cascade from question metadata
   const [questionMeta, setQuestionMeta] = useState<{ subject: string; cats: string[]; keyPoints: string[] }[]>([])
+  const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
   const [answerSets, setAnswerSets] = useState<AnswerSets>(() => deriveAnswerSets([], ''))
   const [longProgress, setLongProgress] = useState<{ total: number; done: number }>({ total: 0, done: 0 })
   const [targetScopes, setTargetScopes] = useState<{ total: number; done: number }[]>([])
@@ -135,11 +139,25 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     let cancelled = false
     supabase.from('questions').select('subject, category, categories, key_points').limit(5000).then(({ data }) => {
       if (cancelled) return
-      setQuestionMeta((data ?? []).map((r: any) => ({
+      const meta = (data ?? []).map((r: any) => ({
         subject: r.subject || '',
         cats: (r.categories?.length ? r.categories : r.category ? [r.category] : []) as string[],
         keyPoints: r.key_points ? (r.key_points as string).split(/[,，;；]/).map((k: string) => k.trim()).filter(Boolean) : [],
-      })))
+      }))
+      setQuestionMeta(meta)
+      // Build kpBySubject from raw key_points (not split), grouped by subject
+      const kpMap = new Map<string, Set<string>>()
+      for (const r of (data ?? []) as any[]) {
+        const s = r.subject || '其他'
+        if (!kpMap.has(s)) kpMap.set(s, new Set())
+        if (r.key_points) {
+          for (const k of (r.key_points as string).split(/[,，;；]/)) {
+            const t = k.trim()
+            if (t) kpMap.get(s)!.add(t)
+          }
+        }
+      }
+      setKpBySubject([...kpMap.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort((a2, b2) => a2.localeCompare(b2, 'zh-CN')) })))
     })
     return () => { cancelled = true }
   }, [open])
@@ -244,8 +262,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setPlanTargets((prev) => prev.map((t, idx) => {
       if (idx !== i) return t
       const categories = t.categories.includes(val) ? t.categories.filter((x) => x !== val) : [...t.categories, val]
-      const valid = validKeyPoints(t.subjects[0], categories)
-      return { ...t, categories, keyPoints: t.keyPoints.filter((k) => valid.has(k)) }
+      return { ...t, categories }
     }))
   }
 
@@ -256,6 +273,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const togglePlanTargetWrongOnly = (i: number) => {
     setPlanTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, wrongOnly: !t.wrongOnly } : t))
+    notifyPracticeFiltersChanged()
   }
 
   const togglePlanTargetKpOrder = (i: number) => {
@@ -280,17 +298,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setDailyTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, count } : t))
   }
 
-  // Valid key points under a subject + selected categories (cascade)
-  const validKeyPoints = (subject: string, cats: string[]) => {
-    const set = new Set<string>()
-    for (const r of questionMeta) {
-      if (subject && r.subject !== subject) continue
-      if (cats.length && !r.cats.some((c) => cats.includes(c))) continue
-      for (const k of r.keyPoints) set.add(k)
-    }
-    return set
-  }
-
   // Subject is single-select per target. Switching subject drops now-invalid category/keyPoint picks.
   const setTargetSubject = (i: number, val: string) => {
     setDailyTargets((prev) => prev.map((t, idx) =>
@@ -303,8 +310,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setDailyTargets((prev) => prev.map((t, idx) => {
       if (idx !== i) return t
       const categories = t.categories.includes(val) ? t.categories.filter((x) => x !== val) : [...t.categories, val]
-      const valid = validKeyPoints(t.subjects[0], categories)
-      return { ...t, categories, keyPoints: t.keyPoints.filter((k) => valid.has(k)) }
+      return { ...t, categories }
     }))
   }
 
@@ -318,6 +324,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const toggleTargetWrongOnly = (i: number) => {
     setDailyTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, wrongOnly: !t.wrongOnly } : t))
+    notifyPracticeFiltersChanged()
   }
 
   const toggleTargetKpOrder = (i: number) => {
@@ -402,22 +409,45 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               {planTargets.map((target, i) => {
                 const subj = target.subjects[0]
                 const catOpts = new Set<string>()
-                const kpOpts = new Set<string>()
                 for (const r of questionMeta) {
                   if (subj && r.subject !== subj) continue
                   for (const c of r.cats) catOpts.add(c)
-                  if (target.categories.length && !r.cats.some((c) => target.categories.includes(c))) continue
-                  for (const k of r.keyPoints) kpOpts.add(k)
                 }
                 const categoryOptions = [...catOpts].sort((a, b) => a.localeCompare(b, 'zh-CN'))
-                const keyPointOptions = [...kpOpts].sort((a, b) => a.localeCompare(b, 'zh-CN'))
                 return (
                   <div key={i} className="space-y-2 border rounded-md p-2">
                     <div className="flex items-start gap-1">
                       <div className="flex-1 space-y-2">
                         <MultiSelectDropdown placeholder={t('plan.selectSubjects')} options={allSubjects} selected={target.subjects} onToggle={(v) => setPlanTargetSubject(i, v)} />
                         <MultiSelectDropdown placeholder={t('plan.selectCategories')} options={categoryOptions} selected={target.categories} onToggle={(v) => togglePlanTargetCategory(i, v)} />
-                        <MultiSelectDropdown placeholder={t('plan.selectKeyPoints')} options={keyPointOptions} selected={target.keyPoints} onToggle={(v) => togglePlanTargetKeyPoint(i, v)} />
+                        {/* Key points: grouped by subject, no cascade filter — matches question management */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                              <span className={target.keyPoints.length === 0 ? 'text-muted-foreground' : 'truncate'}>
+                                {target.keyPoints.length === 0 ? t('plan.selectKeyPoints') : target.keyPoints.join('、')}
+                              </span>
+                              <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                            {kpBySubject.length === 0 ? (
+                              <DropdownMenuItem disabled className="text-xs text-muted-foreground">—</DropdownMenuItem>
+                            ) : kpBySubject.map(({ subject: s, keyPoints: kps }) => (
+                              <DropdownMenuSub key={s}>
+                                <DropdownMenuSubTrigger className="text-xs">{s}</DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                                  {kps.map(kp => (
+                                    <DropdownMenuItem key={kp} onSelect={(e) => { e.preventDefault(); togglePlanTargetKeyPoint(i, kp) }} className="text-xs">
+                                      <Check className={cn('h-3 w-3 shrink-0', !target.keyPoints.includes(kp) && 'opacity-0')} />
+                                      <span className="truncate">{kp}</span>
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removePlanTarget(i)}>
                         <X className="h-3 w-3" />
@@ -540,25 +570,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             ) : dailyTargets.map((target, i) => {
               const scope = targetScopes[i] ?? { total: 0, done: 0 }
               const pct = scope.total > 0 ? Math.round((scope.done / scope.total) * 100) : 0
-              // Category options limited to the picked subject; key points further limited by picked categories
               const subj = target.subjects[0]
               const catOpts = new Set<string>()
-              const kpOpts = new Set<string>()
               for (const r of questionMeta) {
                 if (subj && r.subject !== subj) continue
                 for (const c of r.cats) catOpts.add(c)
-                if (target.categories.length && !r.cats.some((c) => target.categories.includes(c))) continue
-                for (const k of r.keyPoints) kpOpts.add(k)
               }
               const categoryOptions = [...catOpts].sort((a, b) => a.localeCompare(b, 'zh-CN'))
-              const keyPointOptions = [...kpOpts].sort((a, b) => a.localeCompare(b, 'zh-CN'))
               const daysLeft = target.deadline
                 ? Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
                 : 0
               const effectiveCount = daysLeft > 0 ? Math.ceil(Math.max(scope.total - scope.done, 0) / daysLeft) : target.count
               return (
                 <div key={i} className="space-y-2 border rounded-md p-2">
-                  {/* Subject (single-select) → category → key point, cascading */}
                   <MultiSelectDropdown
                     placeholder={t('plan.selectSubjects')}
                     options={allSubjects}
@@ -571,12 +595,34 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     selected={target.categories}
                     onToggle={(v) => toggleTargetCategory(i, v)}
                   />
-                  <MultiSelectDropdown
-                    placeholder={t('plan.selectKeyPoints')}
-                    options={keyPointOptions}
-                    selected={target.keyPoints}
-                    onToggle={(v) => toggleTargetKeyPoint(i, v)}
-                  />
+                  {/* Key points: grouped by subject, no cascade filter */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                        <span className={target.keyPoints.length === 0 ? 'text-muted-foreground' : 'truncate'}>
+                          {target.keyPoints.length === 0 ? t('plan.selectKeyPoints') : target.keyPoints.join('、')}
+                        </span>
+                        <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                      {kpBySubject.length === 0 ? (
+                        <DropdownMenuItem disabled className="text-xs text-muted-foreground">—</DropdownMenuItem>
+                      ) : kpBySubject.map(({ subject: s, keyPoints: kps }) => (
+                        <DropdownMenuSub key={s}>
+                          <DropdownMenuSubTrigger className="text-xs">{s}</DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                            {kps.map(kp => (
+                              <DropdownMenuItem key={kp} onSelect={(e) => { e.preventDefault(); toggleTargetKeyPoint(i, kp) }} className="text-xs">
+                                <Check className={cn('h-3 w-3 shrink-0', !target.keyPoints.includes(kp) && 'opacity-0')} />
+                                <span className="truncate">{kp}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
                   <div className="flex items-center gap-4 text-xs">
                     <label className="flex items-center gap-1.5 cursor-pointer select-none">

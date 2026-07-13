@@ -21,6 +21,7 @@ export function useSwipe({ onSwipeLeft, onSwipeRight, threshold = 50 }: UseSwipe
       const deltaX = e.touches[0].clientX - touchStartX.current
       const deltaY = e.touches[0].clientY - touchStartY.current
       if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        e.preventDefault()
         setSwipeOffset(deltaX)
       }
     },
