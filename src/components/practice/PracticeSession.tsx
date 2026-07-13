@@ -150,7 +150,7 @@ export function PracticeSession() {
   // Load distinct key_points for filter dropdown, grouped by subject
   useEffect(() => {
     let c = false
-    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null).then(({ data }) => {
+    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null).limit(5000).then(({ data }) => {
       if (c) return
       const m = new Map<string, Set<string>>()
       for (const r of (data ?? [])) { const s = (r as any).subject || '其他'; if (!m.has(s)) m.set(s, new Set()); if ((r as any).key_points) for (const k of ((r as any).key_points as string).split(/[,，;；]/)) { const t = k.trim(); if (t) m.get(s)!.add(t) } }

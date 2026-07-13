@@ -118,7 +118,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    supabase.from('questions').select('subject, category, categories, key_points').then(({ data }) => {
+    supabase.from('questions').select('subject, category, categories, key_points').limit(5000).then(({ data }) => {
       if (cancelled) return
       setQuestionMeta((data ?? []).map((r: any) => ({
         subject: r.subject || '',
