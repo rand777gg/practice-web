@@ -573,7 +573,16 @@ export function PracticeSession() {
     }
   }, [answerId, note, updateNote])
 
+  // History stack for prev navigation (all modes)
+  const prevStack = useRef<{ question: Question; selectedAnswer: CorrectAnswer | null; isSubmitted: boolean; answerId: string | null; note: string; isPublic: boolean; attemptCount: number; wrongCount: number; lastWrong: boolean }[]>([])
+
+  const saveToHistory = useCallback(() => {
+    if (!question) return
+    prevStack.current.push({ question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount, lastWrong })
+  }, [question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount, lastWrong])
+
   const handleNext = useCallback(() => {
+    saveToHistory()
     clearPsSession()
     if (kpOrder) {
       const nextIdx = seqIdx.current + 1
@@ -581,21 +590,38 @@ export function PracticeSession() {
       nextQid ? saveKpPos(nextIdx, nextQid, useAuthStore.getState().user?.id) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
     }
     fetchRandomQuestion()
-  }, [fetchRandomQuestion, kpOrder])
+  }, [fetchRandomQuestion, kpOrder, saveToHistory])
 
   const handlePrev = useCallback(() => {
-    if (!kpOrder || seqIdx.current <= 0) return
-    seqIdx.current -= 2 // will be incremented in fetchRandomQuestion
-    const prevIdx = seqIdx.current + 1 // the index that will become current after fetchRandomQuestion
-    const prevQid = prevIdx >= 0 && prevIdx < seqIds.current.length ? seqIds.current[prevIdx] : ''
-    prevQid ? saveKpPos(prevIdx, prevQid, useAuthStore.getState().user?.id) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
+    if (kpOrder) {
+      if (seqIdx.current <= 0) return
+      seqIdx.current -= 2 // will be incremented in fetchRandomQuestion
+      const prevIdx = seqIdx.current + 1
+      const prevQid = prevIdx >= 0 && prevIdx < seqIds.current.length ? seqIds.current[prevIdx] : ''
+      prevQid ? saveKpPos(prevIdx, prevQid, useAuthStore.getState().user?.id) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
+      clearPsSession()
+      fetchRandomQuestion()
+      return
+    }
+    // Non-kpOrder: pop from history stack
+    const prev = prevStack.current.pop()
+    if (!prev) return
+    setQuestion(prev.question)
+    setSelectedAnswer(prev.selectedAnswer)
+    setIsSubmitted(prev.isSubmitted)
+    setAnswerId(prev.answerId)
+    setNote(prev.note)
+    setIsPublic(prev.isPublic)
+    setAttemptCount(prev.attemptCount)
+    setWrongCount(prev.wrongCount)
+    setLastWrong(prev.lastWrong)
+    setIsLoading(false)
     clearPsSession()
-    fetchRandomQuestion()
   }, [kpOrder, fetchRandomQuestion])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,
-    onSwipeRight: kpOrder ? handlePrev : undefined,
+    onSwipeRight: handlePrev,
   })
 
   return (
