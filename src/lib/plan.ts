@@ -2,25 +2,30 @@ import { supabase } from './supabase'
 import type { DailyTarget } from '@/types'
 
 // 交集范围 → 匹配的题目 id 集合。空筛选=不约束。
-// ponytail: 每个目标一次查询；目标数很少，够用。keyPoints 用子串匹配，客户端过滤
 export async function fetchTargetScopeIds(
   t: Pick<DailyTarget, 'subjects' | 'categories' | 'keyPoints'>,
 ): Promise<Set<string>> {
   const needKp = t.keyPoints.length > 0
-  let q = supabase
-    .from('questions')
-    .select(needKp ? 'id, category, categories, key_points' : 'id, category, categories')
-    .limit(5000) // ponytail: lift default 1000-row cap; still bounded by server db-max-rows
-  if (t.subjects.length) q = q.in('subject', t.subjects)
-  const { data } = await q
+  const PAGE = 1000
   const ids = new Set<string>()
-  for (const row of (data ?? []) as any[]) {
-    if (t.categories.length) {
-      const rc = (row.categories?.length ? row.categories : row.category ? [row.category] : []) as string[]
-      if (!rc.some((c) => t.categories.includes(c))) continue
+  let from = 0
+  while (true) {
+    let q = supabase
+      .from('questions')
+      .select(needKp ? 'id, category, categories, key_points' : 'id, category, categories')
+      .range(from, from + PAGE - 1)
+    if (t.subjects.length) q = q.in('subject', t.subjects)
+    const { data } = await q
+    if (!data || data.length === 0) break
+    for (const row of data as any[]) {
+      if (t.categories.length) {
+        const rc = (row.categories?.length ? row.categories : row.category ? [row.category] : []) as string[]
+        if (!rc.some((c) => t.categories.includes(c))) continue
+      }
+      if (needKp && !t.keyPoints.some((k) => (row.key_points || '').includes(k))) continue
+      ids.add(row.id)
     }
-    if (needKp && !t.keyPoints.some((k) => (row.key_points || '').includes(k))) continue
-    ids.add(row.id)
+    from += PAGE
   }
   return ids
 }

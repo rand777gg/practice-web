@@ -118,14 +118,23 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    supabase.from('questions').select('subject, category, categories, key_points').limit(5000).then(({ data }) => {
+    ;(async () => {
+      const PAGE = 1000
+      const allRows: any[] = []
+      let from = 0
+      while (true) {
+        const { data } = await supabase.from('questions').select('subject, category, categories, key_points').range(from, from + PAGE - 1)
+        if (cancelled || !data || data.length === 0) break
+        allRows.push(...data)
+        from += PAGE
+      }
       if (cancelled) return
-      setQuestionMeta((data ?? []).map((r: any) => ({
+      setQuestionMeta(allRows.map((r: any) => ({
         subject: r.subject || '',
         cats: (r.categories?.length ? r.categories : r.category ? [r.category] : []) as string[],
         keyPoints: r.key_points ? (r.key_points as string).split(/[,，;；]/).map((k: string) => k.trim()).filter(Boolean) : [],
       })))
-    })
+    })()
     return () => { cancelled = true }
   }, [open])
 
