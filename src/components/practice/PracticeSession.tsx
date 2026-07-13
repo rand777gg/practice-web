@@ -297,7 +297,7 @@ export function PracticeSession() {
     } else {
       seqIdx.current = -1
     }
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planCategories, planKeyPoints, planSubjectSet])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planCategories, planKeyPoints, planSubjectSet, reviewWrong])
 
   const fetchRandomQuestion = useCallback(async () => {
     fetchGenRef.current++
