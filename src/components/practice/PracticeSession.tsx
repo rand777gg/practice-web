@@ -517,7 +517,6 @@ export function PracticeSession() {
     setAnswerId(id)
     bumpRefresh()
     setIsSubmitted(true)
-    if (kpOrder) saveKpPos(seqIdx.current, question.id)
   }
 
   const noteSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -542,12 +541,20 @@ export function PracticeSession() {
 
   const handleNext = useCallback(() => {
     clearPsSession()
+    if (kpOrder) {
+      const nextIdx = seqIdx.current + 1
+      const nextQid = nextIdx < seqIds.current.length ? seqIds.current[nextIdx] : ''
+      nextQid ? saveKpPos(nextIdx, nextQid) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
+    }
     fetchRandomQuestion()
-  }, [fetchRandomQuestion])
+  }, [fetchRandomQuestion, kpOrder])
 
   const handlePrev = useCallback(() => {
     if (!kpOrder || seqIdx.current <= 0) return
     seqIdx.current -= 2 // will be incremented in fetchRandomQuestion
+    const prevIdx = seqIdx.current + 1 // the index that will become current after fetchRandomQuestion
+    const prevQid = prevIdx >= 0 && prevIdx < seqIds.current.length ? seqIds.current[prevIdx] : ''
+    prevQid ? saveKpPos(prevIdx, prevQid) : (() => { try { localStorage.removeItem(KP_POS) } catch {} })()
     clearPsSession()
     fetchRandomQuestion()
   }, [kpOrder, fetchRandomQuestion])
