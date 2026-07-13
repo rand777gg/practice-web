@@ -111,7 +111,9 @@ export function PracticeSession() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>((savedFilters.current?.selectedType as QuestionType) ?? '')
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(savedFilters.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>((savedFilters.current?.questionMode as 'new' | 'wrong' | 'mixed') ?? 'mixed')
+  const [questionMode, setQuestionMode] = useState<'sequential' | 'random' | 'smart'>(
+    (savedFilters.current?.questionMode as 'sequential' | 'random' | 'smart') || 'sequential',
+  )
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((savedFilters.current?.questionScope as 'all' | 'favorites' | 'wrong') ?? 'all')
 
   useEffect(() => {
@@ -165,6 +167,82 @@ export function PracticeSession() {
 
   const fetchGenRef = useRef(0)
 
+  // Sequential mode: ordered queue of question IDs
+  const seqIds = useRef<string[]>([])
+  const seqIdx = useRef(-1)
+
+  const buildSeqQueue = useCallback(async () => {
+    const currentUser = useAuthStore.getState().user
+    const scopeCats = selectedCategory ? [selectedCategory] : planCategories
+    const scopeKps = selectedKeyPoint ? [selectedKeyPoint] : planKeyPoints
+    let ids: string[] = []
+
+    if (currentUser && questionScope === 'wrong') {
+      const { data } = await supabase.from('user_answers')
+        .select('question_id, questions!inner(key_points)')
+        .eq('user_id', currentUser.id).eq('is_correct', false)
+        .order('answered_at', { ascending: false }).limit(500)
+      const seen = new Set<string>()
+      for (const r of (data ?? [])) {
+        if (seen.has(r.question_id)) continue
+        seen.add(r.question_id)
+        const q = (r as any).questions
+        if (!q) continue
+        if (selectedSubjects.length > 0 && !selectedSubjects.includes(q.subject)) continue
+        if (scopeCats.length && !scopeCats.some((c: string) => q.category === c || (q.categories as string[])?.includes(c))) continue
+        if (selectedType && q.question_type !== selectedType) continue
+        if (scopeKps.length && !scopeKps.some((k: string) => (q.key_points || '').includes(k))) continue
+        ids.push(r.question_id)
+      }
+    } else if (currentUser && questionScope === 'favorites') {
+      const { data } = await supabase.from('favorites')
+        .select('question_id, questions!inner(subject, category, question_type, key_points)')
+        .eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(500)
+      for (const r of (data ?? [])) {
+        const q = (r as any).questions
+        if (!q) continue
+        if (selectedSubjects.length > 0 && !selectedSubjects.includes(q.subject)) continue
+        if (scopeCats.length && !scopeCats.some((c: string) => q.category === c || (q.categories as string[])?.includes(c))) continue
+        if (selectedType && q.question_type !== selectedType) continue
+        if (scopeKps.length && !scopeKps.some((k: string) => (q.key_points || '').includes(k))) continue
+        ids.push(r.question_id)
+      }
+    } else {
+      let q = supabase.from('questions').select('id, key_points')
+      if (selectedSubjects.length > 0) q = q.in('subject', selectedSubjects)
+      if (scopeCats.length > 0) q = q.in('category', scopeCats)
+      if (selectedType) q = q.eq('question_type', selectedType)
+      const { data } = await q.limit(500)
+      for (const r of (data ?? [])) {
+        if (scopeKps.length && !scopeKps.some((k: string) => (r.key_points || '').includes(k))) continue
+        ids.push(r.id)
+      }
+    }
+
+    // Sort by first key_point alphabetically, empty key_points at the end
+    // We need to fetch key_points for all IDs
+    if (ids.length > 0) {
+      const { data: kps } = await supabase.from('questions').select('id, key_points').in('id', ids)
+      const kpMap = new Map((kps ?? []).map((r: any) => [r.id, r.key_points || '']))
+      ids.sort((a, b) => {
+        const akp = (kpMap.get(a) || '').split(/[,，;；]/)[0].trim()
+        const bkp = (kpMap.get(b) || '').split(/[,，;；]/)[0].trim()
+        if (!akp && !bkp) return 0
+        if (!akp) return 1
+        if (!bkp) return -1
+        return akp.localeCompare(bkp, 'zh-CN')
+      })
+    }
+
+    seqIds.current = ids
+    seqIdx.current = -1
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope, planCategories, planKeyPoints])
+
+  // Rebuild queue when filters change in sequential mode
+  useEffect(() => {
+    if (questionMode === 'sequential') buildSeqQueue()
+  }, [questionMode, buildSeqQueue])
+
   const fetchRandomQuestion = useCallback(async () => {
     fetchGenRef.current++
     const myGen = fetchGenRef.current
@@ -202,7 +280,7 @@ export function PracticeSession() {
     }
 
     // Scope: wrong — pick from previously wrong-answered questions
-    if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
+    if (!pickedId && currentUser && questionScope === 'wrong') {
       const { data: wrongRows } = await supabase.from('user_answers')
         .select('question_id, questions!inner(subject, category, question_type, key_points)')
         .eq('user_id', currentUser.id)
@@ -229,8 +307,19 @@ export function PracticeSession() {
       }
     }
 
-    // Scope: all with mixed/new mode — RPC random pick
-    if (!pickedId && currentUser && questionScope === 'all' && questionMode !== 'wrong') {
+    // Sequential mode: build queue if empty, then pick from ordered queue
+    if (!pickedId && questionMode === 'sequential') {
+      if (seqIds.current.length === 0) await buildSeqQueue()
+      if (fetchGenRef.current !== myGen) return
+      if (seqIds.current.length > 0) {
+        seqIdx.current++
+        if (seqIdx.current >= seqIds.current.length) seqIdx.current = 0
+        pickedId = seqIds.current[seqIdx.current]
+      }
+    }
+
+    // Random mode: RPC random pick
+    if (!pickedId && currentUser && questionMode === 'random' && questionScope === 'all') {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: selectedSubjects.length > 0 ? selectedSubjects : planSubjectSet.size > 0 ? [...planSubjectSet] : null,
@@ -334,7 +423,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, reviewWrong, planCategories, planKeyPoints])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, reviewWrong, planCategories, planKeyPoints, buildSeqQueue])
 
   const mounted = useRef(false)
 
@@ -646,22 +735,22 @@ export function PracticeSession() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {{ new: t('practice.newFirst'), wrong: t('practice.wrongFirst'), mixed: t('practice.mixedMode') }[questionMode]}
+              {{ sequential: t('practice.sequential'), random: t('practice.random'), smart: t('practice.smart') }[questionMode]}
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => setQuestionMode('mixed')}>
-              {t('practice.mixedMode')}
-              {questionMode === 'mixed' && <Check className="h-4 w-4 ml-auto" />}
+            <DropdownMenuItem onClick={() => setQuestionMode('sequential')}>
+              {t('practice.sequential')}
+              {questionMode === 'sequential' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuestionMode('new')}>
-              {t('practice.newFirst')}
-              {questionMode === 'new' && <Check className="h-4 w-4 ml-auto" />}
+            <DropdownMenuItem onClick={() => setQuestionMode('random')}>
+              {t('practice.random')}
+              {questionMode === 'random' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuestionMode('wrong')}>
-              {t('practice.wrongFirst')}
-              {questionMode === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
+            <DropdownMenuItem disabled onClick={() => setQuestionMode('smart')}>
+              {t('practice.smartSoon')}
+              {questionMode === 'smart' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
