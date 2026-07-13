@@ -312,8 +312,9 @@ export function PracticeSession() {
 
     // Non-kpOrder: restore last question from saved position (cross-device)
     if (!kpOrder && !hasSession) {
-      const saved = loadKpPos()
-      if (saved?.qid && saved.idx === undefined) {
+      let saved = loadKpPos()
+      if (!saved && currentUser) saved = await loadKpPosFromCloud(currentUser.id)
+      if (saved?.qid) {
         const { data: qData, error: qErr } = await supabase.from('questions').select('*').eq('id', saved.qid).single()
         if (fetchGenRef.current !== myGen) return
         if (qData && !qErr) {
