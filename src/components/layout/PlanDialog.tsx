@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
@@ -188,6 +188,13 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     return () => { cancelled = true }
   }, [open, planTargetsKey, answerSets]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-save on dialog close
+  const prevOpen = useRef(open)
+  useEffect(() => {
+    if (prevOpen.current && !open && user) handleSave()
+    prevOpen.current = open
+  }, [open])
+
   useEffect(() => {
     if (!open || !user) return
     const cache = useDashboardStore.getState().getPlanCache()
@@ -328,7 +335,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   }
 
   const handleSave = async () => {
-    if (!user) return
+    if (!user || saving) return
     setSaving(true)
     // Deadline targets recompute count from scope at render/consume time — save raw
     await supabase

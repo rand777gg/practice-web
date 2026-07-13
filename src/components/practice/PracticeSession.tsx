@@ -34,6 +34,14 @@ import { useT } from '@/i18n/use-t'
 
 const PS_FILTERS = 'practice_filters'
 const PS_SESSION = 'practice_session'
+const KP_POS = 'kp_order_pos'
+
+function saveKpPos(idx: number, qid: string) {
+  try { localStorage.setItem(KP_POS, JSON.stringify({ idx, qid })) } catch {}
+}
+function loadKpPos(): { idx: number; qid: string } | null {
+  try { const r = localStorage.getItem(KP_POS); return r ? JSON.parse(r) : null } catch { return null }
+}
 
 interface PracticeFilters {
   selectedSubjects: string[]
@@ -217,7 +225,15 @@ export function PracticeSession() {
     })
 
     seqIds.current = filtered.map((r) => r.id)
-    seqIdx.current = -1
+    // Resume from last position: seqIdx = last-answered-question index,
+    // so fetchRandomQuestion's seqIdx.current++ gives the next question.
+    const saved = loadKpPos()
+    if (saved?.qid) {
+      const pos = seqIds.current.indexOf(saved.qid)
+      seqIdx.current = pos >= 0 ? pos : (saved.idx < seqIds.current.length ? saved.idx : -1)
+    } else {
+      seqIdx.current = -1
+    }
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planCategories, planKeyPoints, planSubjectSet])
 
   const fetchRandomQuestion = useCallback(async () => {
@@ -464,6 +480,7 @@ export function PracticeSession() {
     setAnswerId(id)
     bumpRefresh()
     setIsSubmitted(true)
+    if (kpOrder) saveKpPos(seqIdx.current, question.id)
   }
 
   const noteSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
