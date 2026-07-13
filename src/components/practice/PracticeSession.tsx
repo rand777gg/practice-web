@@ -256,8 +256,8 @@ export function PracticeSession() {
       ? rows.filter((r) => scopeKps.some((k: string) => (r.key_points || '').includes(k)))
       : rows
 
-    // If wrongOnly, only keep questions the user has answered wrong
-    if (f?.wrongOnly) {
+    // If wrongOnly (from plan targets or localStorage), only keep wrong-answered questions
+    if (f?.wrongOnly || reviewWrong) {
       const uid = useAuthStore.getState().user?.id
       if (uid) {
         const { data: wrongAns } = await supabase.from('user_answers')
