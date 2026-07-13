@@ -782,7 +782,7 @@ export function PracticeSession() {
       ) : !question ? null : !isSubmitted ? (
         <>
           <div
-            className="touch-pan-x select-none"
+            className="touch-pan-y select-none"
             style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
@@ -821,7 +821,7 @@ export function PracticeSession() {
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="lg:flex-[6] space-y-4">
             <div
-              className="touch-pan-x select-none"
+              className="touch-pan-y select-none"
               style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
               onTouchStart={onTouchStart}
               onTouchMove={onTouchMove}
