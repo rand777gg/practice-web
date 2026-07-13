@@ -113,7 +113,9 @@ export function PracticeSession() {
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(savedFilters.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((savedFilters.current?.questionScope as 'all' | 'favorites' | 'wrong') ?? 'all')
-  const kpOrder = savedFilters.current?.kpOrder ?? false
+  const kpOrder = (() => {
+    try { return JSON.parse(localStorage.getItem(PS_FILTERS) || '{}').kpOrder === true } catch { return false }
+  })()
 
   // Kp-ordered sequential queue
   const seqIds = useRef<string[]>([])
@@ -405,7 +407,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints, kpOrder])
 
   const mounted = useRef(false)
 
