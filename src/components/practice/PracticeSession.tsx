@@ -117,10 +117,23 @@ export function PracticeSession() {
     try { return JSON.parse(localStorage.getItem(PS_FILTERS) || '{}').kpOrder === true } catch { return false }
   })()
 
+  // Listen for kpOrder changes from PlanDialog (same-tab localStorage isn't observable)
+  const [filtersTick, setFiltersTick] = useState(0)
+  useEffect(() => {
+    const h = () => setFiltersTick((t) => t + 1)
+    window.addEventListener('practice-filters-changed', h)
+    return () => window.removeEventListener('practice-filters-changed', h)
+  }, [])
+
+  // Clear kp-order queue when filters change (PlanDialog dispatched event)
+  useEffect(() => {
+    seqIds.current = []
+    seqIdx.current = -1
+  }, [filtersTick])
+
   // Kp-ordered sequential queue
   const seqIds = useRef<string[]>([])
   const seqIdx = useRef(-1)
-  const kpOrderRef = useRef(kpOrder)
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -220,11 +233,6 @@ export function PracticeSession() {
 
     // Kp-order mode: sequential by key_point
     if (kpOrder) {
-      if (kpOrderRef.current !== kpOrder) {
-        seqIds.current = []
-        seqIdx.current = -1
-        kpOrderRef.current = kpOrder
-      }
       if (seqIds.current.length === 0) await buildKpQueue()
       if (fetchGenRef.current !== myGen) return
       seqIdx.current++
@@ -417,7 +425,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints, kpOrder])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionScope, reviewWrong, planCategories, planKeyPoints, kpOrder, filtersTick])
 
   const mounted = useRef(false)
 
@@ -431,7 +439,7 @@ export function PracticeSession() {
 
   // Persist filters
   useEffect(() => {
-    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope })
+    savePsFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope, kpOrder })
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionScope])
 
   // Persist session

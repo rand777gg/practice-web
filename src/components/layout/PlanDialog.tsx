@@ -101,6 +101,10 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
 
+  const notifyPracticeFiltersChanged = () => {
+    window.dispatchEvent(new Event('practice-filters-changed'))
+  }
+
   const syncKpOrderToStorage = (target: DailyTarget) => {
     localStorage.setItem('practice_filters', JSON.stringify({
       selectedSubjects: target.subjects,
@@ -110,6 +114,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       questionScope: 'all',
       kpOrder: true,
     }))
+    notifyPracticeFiltersChanged()
   }
 
   const clearKpOrderFromStorage = () => {
@@ -121,6 +126,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         localStorage.setItem('practice_filters', JSON.stringify(f))
       }
     } catch { /* noop */ }
+    notifyPracticeFiltersChanged()
   }
 
   // Load subject/category/keyPoint metadata once per open — filter options cascade from this
