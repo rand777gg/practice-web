@@ -36,17 +36,17 @@ const PS_FILTERS = 'practice_filters'
 const PS_SESSION = 'practice_session'
 const KP_POS = 'kp_order_pos'
 
-function saveKpPos(idx: number, qid: string, userId?: string | null) {
-  const data = JSON.stringify({ idx, qid })
+function saveKpPos(idx: number | null, qid: string, userId?: string | null) {
+  const data = JSON.stringify(idx != null ? { idx, qid } : { qid })
   try { localStorage.setItem(KP_POS, data) } catch {}
   if (userId) {
     supabase.from('profiles').update({ kp_order_pos: data }).eq('id', userId).then(() => {})
   }
 }
-function loadKpPos(): { idx: number; qid: string } | null {
+function loadKpPos(): { idx?: number; qid: string } | null {
   try { const r = localStorage.getItem(KP_POS); return r ? JSON.parse(r) : null } catch { return null }
 }
-async function loadKpPosFromCloud(userId: string): Promise<{ idx: number; qid: string } | null> {
+async function loadKpPosFromCloud(userId: string): Promise<{ idx?: number; qid: string } | null> {
   try {
     const { data } = await supabase.from('profiles').select('kp_order_pos').eq('id', userId).single()
     return data?.kp_order_pos ? JSON.parse(data.kp_order_pos) : null
@@ -144,17 +144,16 @@ export function PracticeSession() {
     return () => window.removeEventListener('practice-filters-changed', h)
   }, [])
 
-  // Sync kpOrder position from cloud if localStorage is empty
+  // Sync last position from cloud if localStorage is empty
   useEffect(() => {
-    if (!kpOrder) return
     const local = loadKpPos()
     if (local) return
     const uid = useAuthStore.getState().user?.id
     if (!uid) return
     loadKpPosFromCloud(uid).then((cloud) => {
-      if (cloud?.qid) saveKpPos(cloud.idx, cloud.qid)
+      if (cloud?.qid) saveKpPos(cloud.idx ?? null, cloud.qid)
     })
-  }, [kpOrder])
+  }, [])
 
   // Clear kp-order queue when filters change (PlanDialog dispatched event)
   useEffect(() => {
@@ -310,6 +309,30 @@ export function PracticeSession() {
     setAnswerId(null)
 
     const currentUser = useAuthStore.getState().user
+
+    // Non-kpOrder: restore last question from saved position (cross-device)
+    if (!kpOrder && !hasSession) {
+      const saved = loadKpPos()
+      if (saved?.qid && saved.idx === undefined) {
+        const { data: qData, error: qErr } = await supabase.from('questions').select('*').eq('id', saved.qid).single()
+        if (fetchGenRef.current !== myGen) return
+        if (qData && !qErr) {
+          setQuestion(qData as unknown as Question)
+          const { data: stats } = currentUser
+            ? await supabase.from('user_answers').select('is_correct, note, is_public').eq('user_id', currentUser.id).eq('question_id', saved.qid).order('answered_at', { ascending: false })
+            : { data: null }
+          if (fetchGenRef.current !== myGen) return
+          const total = stats?.length ?? 0
+          setAttemptCount(total)
+          setWrongCount(stats?.filter((a) => !a.is_correct).length ?? 0)
+          setLastWrong(stats?.[0] ? !(stats[0] as any).is_correct : false)
+          setNote(stats?.find((a) => a.note)?.note ?? '')
+          setIsPublic(stats?.find((a) => a.note)?.is_public ?? false)
+          setIsLoading(false)
+          return
+        }
+      }
+    }
 
     // Kp-order mode: sequential by key_point
     if (kpOrder) {
@@ -551,6 +574,7 @@ export function PracticeSession() {
     setAnswerId(id)
     bumpRefresh()
     setIsSubmitted(true)
+    saveKpPos(kpOrder ? seqIdx.current : null, question.id, useAuthStore.getState().user?.id)
   }
 
   const noteSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
