@@ -188,10 +188,11 @@ export function PracticeSession() {
       ? rows.filter((r) => scopeKps.some((k: string) => (r.key_points || '').includes(k)))
       : rows
 
-    // Sort by first key_point
+    // Sort by full key_points string for hierarchical order (e.g. Aa1.1 < Aa1.1,Bb2.2 < Aa1.2)
+    const norm = (s: string) => (s || '').trim().replace(/[，；]/g, ',').replace(/\s+/g, ' ')
     filtered.sort((a, b) => {
-      const akp = (a.key_points || '').split(/[,，;；]/)[0].trim()
-      const bkp = (b.key_points || '').split(/[,，;；]/)[0].trim()
+      const akp = norm(a.key_points)
+      const bkp = norm(b.key_points)
       if (!akp && !bkp) return 0
       if (!akp) return 1
       if (!bkp) return -1
