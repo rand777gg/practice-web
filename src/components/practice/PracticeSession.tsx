@@ -395,13 +395,55 @@ export function PracticeSession() {
     }
   }, [answerId, note, updateNote])
 
+  const prevStack = useRef<Array<{
+    question: Question
+    selectedAnswer: CorrectAnswer | null
+    isSubmitted: boolean
+    answerId: string | null
+    note: string
+    isPublic: boolean
+    attemptCount: number
+    wrongCount: number
+  }>>([])
+
+  const saveToHistory = useCallback(() => {
+    if (!question) return
+    prevStack.current.push({
+      question,
+      selectedAnswer,
+      isSubmitted,
+      answerId,
+      note,
+      isPublic,
+      attemptCount,
+      wrongCount,
+    })
+  }, [question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount])
+
   const handleNext = useCallback(() => {
+    saveToHistory()
     clearPsSession()
     fetchRandomQuestion()
-  }, [fetchRandomQuestion])
+  }, [saveToHistory, fetchRandomQuestion])
+
+  const handlePrev = useCallback(() => {
+    const prev = prevStack.current.pop()
+    if (!prev) return
+    setQuestion(prev.question)
+    setSelectedAnswer(prev.selectedAnswer)
+    setIsSubmitted(prev.isSubmitted)
+    setAnswerId(prev.answerId)
+    setNote(prev.note)
+    setIsPublic(prev.isPublic)
+    setAttemptCount(prev.attemptCount)
+    setWrongCount(prev.wrongCount)
+    setIsLoading(false)
+    clearPsSession()
+  }, [])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
-    onSwipeLeft: handleNext,
+    onSwipeLeft: handlePrev,
+    onSwipeRight: handleNext,
   })
 
   return (
@@ -651,7 +693,7 @@ export function PracticeSession() {
       ) : !question ? null : !isSubmitted ? (
         <>
           <div
-            className="touch-pan-y select-none"
+            className="touch-pan-x select-none"
             style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
@@ -689,23 +731,31 @@ export function PracticeSession() {
       ) : (
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="lg:flex-[6] space-y-4">
-            <QuestionCard
-              question={question}
-              selectedAnswer={selectedAnswer}
-              showResult={true}
-              onSelect={handleSelect}
-              disabled={true}
-              showEditLink={isAdmin}
-              attemptCount={attemptCount}
-              wrongCount={wrongCount}
-              note={note}
-              isFavorited={question ? isFavorite(question.id) : false}
-              onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
-              onVerify={question && !question.verified ? async () => {
-                await supabase.from('questions').update({ verified: true }).eq('id', question.id)
-                setQuestion({ ...question, verified: true })
-              } : undefined}
-            />
+            <div
+              className="touch-pan-x select-none"
+              style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+            >
+              <QuestionCard
+                question={question}
+                selectedAnswer={selectedAnswer}
+                showResult={true}
+                onSelect={handleSelect}
+                disabled={true}
+                showEditLink={isAdmin}
+                attemptCount={attemptCount}
+                wrongCount={wrongCount}
+                note={note}
+                isFavorited={question ? isFavorite(question.id) : false}
+                onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
+                onVerify={question && !question.verified ? async () => {
+                  await supabase.from('questions').update({ verified: true }).eq('id', question.id)
+                  setQuestion({ ...question, verified: true })
+                } : undefined}
+              />
+            </div>
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
               <NoteEditor
