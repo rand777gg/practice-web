@@ -101,31 +101,26 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
 
-  const [kpOrderOn, setKpOrderOn] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('practice_filters') || '{}').kpOrder === true } catch { return false }
-  })
+  const syncKpOrderToStorage = (target: DailyTarget) => {
+    localStorage.setItem('practice_filters', JSON.stringify({
+      selectedSubjects: target.subjects,
+      selectedCategory: target.categories[0] ?? '',
+      selectedType: '',
+      selectedKeyPoint: '',
+      questionScope: 'all',
+      kpOrder: true,
+    }))
+  }
 
-  const toggleKpOrder = (target: DailyTarget, on: boolean) => {
-    setKpOrderOn(on)
-    if (on) {
-      localStorage.setItem('practice_filters', JSON.stringify({
-        selectedSubjects: target.subjects,
-        selectedCategory: target.categories[0] ?? '',
-        selectedType: '',
-        selectedKeyPoint: '',
-        questionScope: 'all',
-        kpOrder: true,
-      }))
-    } else {
-      try {
-        const raw = localStorage.getItem('practice_filters')
-        if (raw) {
-          const f = JSON.parse(raw)
-          delete f.kpOrder
-          localStorage.setItem('practice_filters', JSON.stringify(f))
-        }
-      } catch { /* noop */ }
-    }
+  const clearKpOrderFromStorage = () => {
+    try {
+      const raw = localStorage.getItem('practice_filters')
+      if (raw) {
+        const f = JSON.parse(raw)
+        delete f.kpOrder
+        localStorage.setItem('practice_filters', JSON.stringify(f))
+      }
+    } catch { /* noop */ }
   }
 
   // Load subject/category/keyPoint metadata once per open — filter options cascade from this
@@ -250,6 +245,16 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setPlanTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, wrongOnly: !t.wrongOnly } : t))
   }
 
+  const togglePlanTargetKpOrder = (i: number) => {
+    setPlanTargets((prev) => prev.map((t, idx) => {
+      if (idx !== i) return t
+      const next = !t.kpOrder
+      if (next) syncKpOrderToStorage(t)
+      else clearKpOrderFromStorage()
+      return { ...t, kpOrder: next }
+    }))
+  }
+
   const addDailyTarget = () => {
     setDailyTargets((prev) => [...prev, { subjects: [], categories: [], keyPoints: [], count: 5, deadline: null, wrongOnly: false }])
   }
@@ -300,6 +305,16 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const toggleTargetWrongOnly = (i: number) => {
     setDailyTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, wrongOnly: !t.wrongOnly } : t))
+  }
+
+  const toggleTargetKpOrder = (i: number) => {
+    setDailyTargets((prev) => prev.map((t, idx) => {
+      if (idx !== i) return t
+      const next = !t.kpOrder
+      if (next) syncKpOrderToStorage(t)
+      else clearKpOrderFromStorage()
+      return { ...t, kpOrder: next }
+    }))
   }
 
   const removeDailyTarget = (i: number) => {
@@ -402,7 +417,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       </label>
                       {target.subjects.length > 0 && (
                         <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                          <Switch checked={kpOrderOn} onCheckedChange={(v) => toggleKpOrder(target, v)} />
+                          <Switch checked={target.kpOrder ?? false} onCheckedChange={() => togglePlanTargetKpOrder(i)} />
                           <span className="text-muted-foreground">{t('plan.practiceByKp')}</span>
                         </label>
                       )}
@@ -557,7 +572,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     </label>
                     {target.subjects.length > 0 && (
                       <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                        <Switch checked={kpOrderOn} onCheckedChange={(v) => toggleKpOrder(target, v)} />
+                        <Switch checked={target.kpOrder ?? false} onCheckedChange={() => toggleTargetKpOrder(i)} />
                         <span className="text-muted-foreground">{t('plan.practiceByKp')}</span>
                       </label>
                     )}

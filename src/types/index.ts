@@ -27,6 +27,7 @@ export interface DailyTarget {
   count: number
   deadline: string | null
   wrongOnly: boolean
+  kpOrder?: boolean
 }
 
 /** Normalize legacy DailyTarget formats to the current shape */
@@ -38,6 +39,7 @@ export function normalizeDailyTargets(raw: any[] | null | undefined): DailyTarge
       keyPoints: Array.isArray(t.keyPoints) ? t.keyPoints : [],
       deadline: t.deadline ?? null,
       wrongOnly: t.wrongOnly ?? false,
+      kpOrder: t.kpOrder ?? false,
     }
     // Current format: subjects: string[], count: number
     if (Array.isArray(t.subjects) && (t.subjects.length === 0 || typeof t.subjects[0] === 'string')) {
