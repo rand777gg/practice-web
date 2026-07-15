@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { usePlanStore } from '@/stores/plan-store'
 import { Progress } from '@/components/ui/progress'
 import { PlanDialog } from './PlanDialog'
 import type { DailyTarget } from '@/types'
@@ -35,6 +36,7 @@ export function PlanProgress() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const version = useRefreshStore((s) => s.version)
+  const liveDone = usePlanStore((s) => s.todaySubjectDone)
   const deadline = profile?.deadline ?? null
   const planResetAt = profile?.plan_reset_at ?? null
   const dailyResetAt = profile?.daily_reset_at ?? null
@@ -208,13 +210,17 @@ export function PlanProgress() {
   }
 
   const hasDailyTargets = dailyTargets.length > 0
-  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
+  const liveLongTotal = planSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
+  const dailyTargetSubjects = [...new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))]
+  const liveDailyTotal = dailyTargetSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
+  const displayTodayLong = todayLongDone + liveLongTotal
+  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0) + liveDailyTotal
   const effectiveTotal = dailyTargetGoal
   const dailyPct = effectiveTotal > 0 ? Math.min(Math.round((doneDaily / effectiveTotal) * 100), 100) : 0
   const dailyDone = doneDaily >= effectiveTotal && effectiveTotal > 0
 
   const hasDeadline = !!deadline
-  const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 0
+  const longPct = dailyGoal > 0 ? Math.min(Math.round((displayTodayLong / dailyGoal) * 100), 100) : 0
 
   const longCompleted = !hasDeadline
   const dailyCompleted = !hasDailyTargets || dailyDone
@@ -254,7 +260,7 @@ export function PlanProgress() {
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
                 <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
-                <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
+                <span className="tabular-nums shrink-0 text-[10px]">{displayTodayLong}/{dailyGoal}</span>
               </div>
             )}
             {hasDailyTargets && (dailyDone ? (
