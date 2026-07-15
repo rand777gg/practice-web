@@ -190,6 +190,11 @@ export function PlanProgress() {
     }
   }, [])
 
+  // Load live progress from DB on mount and when user changes
+  useEffect(() => {
+    if (user) usePlanStore.getState().loadFromDb(user.id)
+  }, [user?.id])
+
   if (!user) return null
 
   if (isLoading) {
