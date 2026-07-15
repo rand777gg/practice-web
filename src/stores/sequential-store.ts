@@ -48,7 +48,12 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         }),
         currentIndex: 0, isActive: true, isLoading: false,
       })
-      get().saveToDb(userId)
+      // Save immediately so KPs aren't lost on refresh
+      const { selectedKps, questionIds, currentIndex } = get()
+      supabase.from('practice_sequential_state').upsert({
+        user_id: userId, selected_kps: selectedKps, question_ids: questionIds,
+        current_index: currentIndex, updated_at: new Date().toISOString(),
+      }).then(() => {})
     } catch { set({ isLoading: false }) }
   },
 
