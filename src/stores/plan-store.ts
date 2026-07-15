@@ -25,7 +25,7 @@ function saveToDb(userId: string, data: Record<string, number>) {
   supabase.from('plan_live_progress').upsert(rows, { onConflict: 'user_id, subject' }).then(() => {})
 }
 
-export const usePlanStore = create<PlanStore>((set, get) => ({
+export const usePlanStore = create<PlanStore>((set) => ({
   todaySubjectDone: {},
   loaded: false,
 
