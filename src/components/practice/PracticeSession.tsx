@@ -310,7 +310,8 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
-    window.dispatchEvent(new CustomEvent('plan-progress-refresh'))
+    // Double-bump to force PlanProgress re-fetch (React 18 batches the first)
+    useRefreshStore.getState().bump()
     if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
     setIsSubmitted(true)
   }
