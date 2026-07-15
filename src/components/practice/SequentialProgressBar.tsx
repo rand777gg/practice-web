@@ -1,5 +1,3 @@
-import { useT } from '@/i18n/use-t'
-
 interface Props {
   currentIndex: number
   total: number
@@ -9,7 +7,6 @@ interface Props {
 }
 
 export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal, kpName }: Props) {
-  const { t } = useT()
   const kpPct = kpTotal > 0 ? Math.round((kpCurrent / kpTotal) * 100) : 0
   const overallPct = total > 0 ? Math.round(((currentIndex + 1) / total) * 100) : 0
 

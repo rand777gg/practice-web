@@ -78,7 +78,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       return
     }
     setPlanLoading(true)
-    fetchPlanCache(user.id, refreshVersion, profile?.plan_reset_at).then((cache) => {
+    fetchPlanCache(user.id, refreshVersion).then((cache) => {
       const counts = new Map<string, number>()
       for (const [s, p] of Object.entries(cache.subjectProgress)) counts.set(s, p.total)
       for (const s of selectedSubjects) { if (!counts.has(s)) counts.set(s, 0) }
@@ -87,7 +87,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       setSubjectProgress(new Map(Object.entries(cache.subjectProgress)))
       setPlanLoading(false)
     })
-  }, [open, user, selectedSubjects, fetchPlanCache, refreshVersion, profile?.plan_reset_at])
+  }, [open, user, selectedSubjects, fetchPlanCache, refreshVersion])
 
   useEffect(() => {
     const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
