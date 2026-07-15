@@ -34,8 +34,24 @@ import { normalizeDailyTargets } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
+const PS_FILTERS = 'practice_filters'
+
+interface PracticeFilters {
+  selectedSubjects: string[]
+  selectedCategory: string
+  selectedType: string
+  selectedKeyPoint: string
+  questionMode: string
+  questionScope: string
+}
+
+function loadFilters(): PracticeFilters | null {
+  try { const r = localStorage.getItem(PS_FILTERS); return r ? JSON.parse(r) : null } catch { return null }
+}
+function saveFilters(v: PracticeFilters) { try { localStorage.setItem(PS_FILTERS, JSON.stringify(v)) } catch {/* noop */} }
 
 export function PracticeSession() {
+  const saved = useRef(loadFilters())
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
@@ -80,14 +96,19 @@ export function PracticeSession() {
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
 
   const initRef = useRef(false)
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
-  const [selectedCategory, setSelectedCategory] = useState('')
-  const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
-  const [selectedKeyPoint, setSelectedKeyPoint] = useState('')
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(saved.current?.selectedSubjects ?? [])
+  const [selectedCategory, setSelectedCategory] = useState(saved.current?.selectedCategory ?? '')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>((saved.current?.selectedType as QuestionType) ?? '')
+  const [selectedKeyPoint, setSelectedKeyPoint] = useState(saved.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed' | 'sequential'>('mixed')
-  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>('all')
+  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed' | 'sequential'>((saved.current?.questionMode as any) ?? 'mixed')
+  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
+
+  // Persist filters to localStorage
+  useEffect(() => {
+    saveFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope })
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
