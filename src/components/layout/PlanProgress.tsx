@@ -181,8 +181,13 @@ export function PlanProgress() {
   // Listen for direct refresh events — bypass React batching entirely
   useEffect(() => {
     const handler = () => { useRefreshStore.getState().bump() }
+    const onVisible = () => { handler() }
     window.addEventListener('plan-progress-refresh', handler)
-    return () => window.removeEventListener('plan-progress-refresh', handler)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('plan-progress-refresh', handler)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   if (!user) return null
