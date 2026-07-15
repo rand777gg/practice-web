@@ -33,6 +33,8 @@ export function DashboardPlanCards() {
   const { user, profile } = useAuthStore()
   const version = useRefreshStore((s) => s.version)
   const deadline = profile?.deadline ?? null
+  const planResetAt = profile?.plan_reset_at ?? null
+  const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -59,15 +61,18 @@ export function DashboardPlanCards() {
           scopeIds = new Set((allQs ?? []).map((q) => q.id))
         }
 
-        const { data: done } = await supabase.from('user_answers').select('question_id').eq('user_id', uid)
+        let doneQ1 = supabase.from('user_answers').select('question_id').eq('user_id', uid)
+        if (planResetAt) doneQ1 = doneQ1.gte('answered_at', planResetAt)
+        const { data: done } = await doneQ1
         const doneIds = new Set((done ?? []).map((a) => a.question_id))
         let doneAll = 0
         for (const id of scopeIds) if (doneIds.has(id)) doneAll++
         setTotalScope(scopeIds.size)
         setTotalDone(doneAll)
 
-        const { data: doneBeforeToday } = await supabase.from('user_answers')
-          .select('question_id').eq('user_id', uid).lt('answered_at', todayStart())
+        let beforeQ = supabase.from('user_answers').select('question_id').eq('user_id', uid).lt('answered_at', todayStart())
+        if (planResetAt) beforeQ = beforeQ.gte('answered_at', planResetAt)
+        const { data: doneBeforeToday } = await beforeQ
         const yesterdayIds = new Set((doneBeforeToday ?? []).map((a) => a.question_id))
         let doneBefore = 0
         for (const id of scopeIds) if (yesterdayIds.has(id)) doneBefore++
@@ -79,8 +84,9 @@ export function DashboardPlanCards() {
         const allTargetSubjects = [...targetSubjectSet]
 
         // Today's answers
-        const { data: today } = await supabase.from('user_answers')
-          .select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
+        let todayQ = supabase.from('user_answers').select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
+        if (dailyResetAt) todayQ = todayQ.gte('answered_at', dailyResetAt)
+        const { data: today } = await todayQ
         const todayIds = new Set((today ?? []).map((a) => a.question_id))
         const { data: todayQs } = await supabase.from('questions').select('id, subject').in('id', [...todayIds])
 
@@ -107,7 +113,9 @@ export function DashboardPlanCards() {
         const deadlineTargets = dailyTargets.filter(t => t.deadline)
         let computedGoal = 0
         if (deadlineTargets.length > 0) {
-          const { data: allDone } = await supabase.from('user_answers').select('question_id').eq('user_id', uid)
+          let doneQ2 = supabase.from('user_answers').select('question_id').eq('user_id', uid)
+          if (dailyResetAt) doneQ2 = doneQ2.gte('answered_at', dailyResetAt)
+          const { data: allDone } = await doneQ2
           const allDoneIds = new Set((allDone ?? []).map(a => a.question_id))
           const donePerSubj = new Map<string, number>()
           for (const q of (scopeQs ?? [])) {
@@ -147,7 +155,7 @@ export function DashboardPlanCards() {
       }
     }
     load()
-  }, [user?.id, deadline, planSubjects.join(','), JSON.stringify(dailyTargets), version])
+  }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
 
   if (!user) return null
 

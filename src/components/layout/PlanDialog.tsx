@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { usePlanStore } from '@/stores/plan-store'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,7 +78,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       return
     }
     setPlanLoading(true)
-    fetchPlanCache(user.id, refreshVersion).then((cache) => {
+    fetchPlanCache(user.id, refreshVersion, profile?.plan_reset_at).then((cache) => {
       const counts = new Map<string, number>()
       for (const [s, p] of Object.entries(cache.subjectProgress)) counts.set(s, p.total)
       for (const s of selectedSubjects) { if (!counts.has(s)) counts.set(s, 0) }
@@ -86,7 +87,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       setSubjectProgress(new Map(Object.entries(cache.subjectProgress)))
       setPlanLoading(false)
     })
-  }, [open, user, selectedSubjects, fetchPlanCache, refreshVersion])
+  }, [open, user, selectedSubjects, fetchPlanCache, refreshVersion, profile?.plan_reset_at])
 
   useEffect(() => {
     const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
@@ -145,6 +146,28 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const removeDailyTarget = (i: number) => {
     setDailyTargets((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  const handleResetLong = async () => {
+    if (!user) return
+    setSaving(true)
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
+    await supabase.from('profiles').update({ plan_reset_at: todayEnd.toISOString() }).eq('id', user.id)
+    await refreshProfile()
+    usePlanStore.getState().reset()
+    useRefreshStore.getState().bumpPlan()
+    setSaving(false)
+  }
+
+  const handleResetDaily = async () => {
+    if (!user) return
+    setSaving(true)
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
+    await supabase.from('profiles').update({ daily_reset_at: todayEnd.toISOString() }).eq('id', user.id)
+    await refreshProfile()
+    usePlanStore.getState().reset()
+    useRefreshStore.getState().bumpPlan()
+    setSaving(false)
   }
 
   const handleSave = async () => {
@@ -512,6 +535,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         </div>
 
         <DialogFooter className="flex-row gap-2">
+          <Button variant="outline" size="sm" className="text-destructive" onClick={handleResetLong} disabled={saving}>
+            {saving ? '...' : '重置长期'}
+          </Button>
+          <Button variant="outline" size="sm" className="text-destructive" onClick={handleResetDaily} disabled={saving}>
+            {saving ? '...' : '重置自定义'}
+          </Button>
           <DialogClose asChild>
             <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
           </DialogClose>

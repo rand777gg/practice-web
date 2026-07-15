@@ -2,11 +2,15 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { useSequentialStore } from '@/stores/sequential-store'
+import { usePlanStore } from '@/stores/plan-store'
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
+import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
+import { SequentialProgressBar } from '@/components/practice/SequentialProgressBar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -48,6 +52,15 @@ export function PracticeSession() {
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
+  const seqActive = useSequentialStore((s) => s.isActive)
+  const seqQuestionIds = useSequentialStore((s) => s.questionIds)
+  const seqIndex = useSequentialStore((s) => s.currentIndex)
+  const seqKps = useSequentialStore((s) => s.selectedKps)
+  const seqNext = useSequentialStore((s) => s.nextQuestion)
+  const seqStart = useSequentialStore((s) => s.startSequential)
+  const seqReset = useSequentialStore((s) => s.reset)
+  const seqLoadFromDb = useSequentialStore((s) => s.loadFromDb)
+  const seqGetCurrentKpInfo = useSequentialStore((s) => s.getCurrentKpInfo)
 
   const planSubjects = useMemo(() => {
     if (!profile?.plan_subjects) return [] as string[]
@@ -72,8 +85,9 @@ export function PracticeSession() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
   const [selectedKeyPoint, setSelectedKeyPoint] = useState('')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed'>('mixed')
+  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed' | 'sequential'>('mixed')
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>('all')
+  const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
@@ -246,9 +260,43 @@ export function PracticeSession() {
     setIsLoading(false)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope])
 
+  const seqFetchGenRef = useRef(0)
+  const loadSequentialQuestion = useCallback(async (index: number) => {
+    seqFetchGenRef.current++; const myGen = seqFetchGenRef.current
+    setIsLoading(true); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
+    const ids = useSequentialStore.getState().questionIds
+    if (index >= ids.length) { setNoQuestions(true); setIsLoading(false); return }
+    const currentUser = useAuthStore.getState().user
+    const [qRes, statsRes] = await Promise.all([
+      supabase.from('questions').select('*').eq('id', ids[index]).single(),
+      currentUser ? supabase.from('user_answers').select('is_correct, note, is_public').eq('user_id', currentUser.id).eq('question_id', ids[index]).order('answered_at', { ascending: false }) : Promise.resolve(null),
+    ])
+    if (seqFetchGenRef.current !== myGen) return
+    if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
+    setQuestion(qRes.data as unknown as Question)
+    const sd = statsRes?.data; setAttemptCount(sd?.length ?? 0); setWrongCount(sd?.filter((a: any) => !a.is_correct).length ?? 0)
+    setNote(sd?.find((a: any) => a.note)?.note ?? ''); setIsPublic(sd?.find((a: any) => a.note)?.is_public ?? false)
+    setIsLoading(false)
+  }, [])
+
+  const mounted = useRef(false)
   useEffect(() => {
-    fetchRandomQuestion()
-  }, [fetchRandomQuestion])
+    if (!mounted.current) { mounted.current = true; return }
+    if (questionMode === 'sequential' && seqActive) loadSequentialQuestion(seqIndex)
+    else fetchRandomQuestion()
+  }, [fetchRandomQuestion, questionMode, seqActive, seqIndex])
+
+  const handleKpConfirm = useCallback(async (kps: string[]) => {
+    const user = useAuthStore.getState().user; if (!user || kps.length === 0) return
+    await seqStart(user.id, kps, selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet], selectedType)
+    loadSequentialQuestion(0)
+  }, [selectedSubjects, selectedType, planSubjectSet, seqStart, loadSequentialQuestion])
+
+  const prevModeRef = useRef(questionMode)
+  useEffect(() => { const p = prevModeRef.current; prevModeRef.current = questionMode; if (p === questionMode) return
+    if (questionMode === 'sequential') { const user = useAuthStore.getState().user; if (user) { seqLoadFromDb(user.id).then(r => { const s = useSequentialStore.getState(); if (r && s.selectedKps.length > 0 && s.questionIds.length > 0) loadSequentialQuestion(s.currentIndex); else setSequentialDialogOpen(true) }) } else setSequentialDialogOpen(true) }
+    else { seqReset(); fetchRandomQuestion() }
+  }, [questionMode])
 
   const handleSelect = useCallback((answer: CorrectAnswer) => {
     if (isSubmitted) return
@@ -263,6 +311,8 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
+    if (question) usePlanStore.getState().addDone(question.subject || 'Other')
+    if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
     setIsSubmitted(true)
   }
 
@@ -287,8 +337,9 @@ export function PracticeSession() {
   }, [answerId, note, updateNote])
 
   const handleNext = useCallback(() => {
-    fetchRandomQuestion()
-  }, [fetchRandomQuestion])
+    if (questionMode === 'sequential') { seqNext(); const s = useSequentialStore.getState(); const u = useAuthStore.getState().user; if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}); loadSequentialQuestion(s.currentIndex) }
+    else fetchRandomQuestion()
+  }, [questionMode, seqNext, fetchRandomQuestion, loadSequentialQuestion])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,
@@ -468,6 +519,7 @@ export function PracticeSession() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {questionMode !== 'sequential' && (<>
         <span className="w-px h-4 bg-border mx-1 hidden sm:block" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -477,24 +529,16 @@ export function PracticeSession() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => setQuestionScope('all')}>
-              全部题目
-              {questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>
-              仅收藏题目
-              {questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>
-              仅错题
-              {questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('all')}>全部题目{questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>仅收藏题目{questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>仅错题{questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </>)}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 text-xs">
-              {{ new: '新题优先', wrong: '错题优先', mixed: '混合模式' }[questionMode]}
+              {{ new: '新题优先', wrong: '错题优先', mixed: '混合模式', sequential: '顺序刷题' }[questionMode]}
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
@@ -511,9 +555,17 @@ export function PracticeSession() {
               错题优先
               {questionMode === 'wrong' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setQuestionMode('sequential')}>
+              顺序刷题
+              {questionMode === 'sequential' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {questionMode === 'sequential' && (<> <span className="w-px h-4 bg-border mx-1 hidden sm:block" /> <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setSequentialDialogOpen(true)}>{seqKps.length > 0 ? `${seqKps.length}个知识点` : '选择知识点'}<ChevronDown className="h-3 w-3" /></Button> </>)}
       </div>
+
+      <KpSelectDialog open={sequentialDialogOpen} onOpenChange={setSequentialDialogOpen} kpBySubject={kpBySubject} planSubjects={[...planSubjectSet]} selectedKps={seqKps} onConfirm={handleKpConfirm} />
 
       {isLoading ? (
         <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
@@ -530,6 +582,16 @@ export function PracticeSession() {
           </div>
           <Skeleton className="h-10 w-32" />
         </div>
+      ) : noQuestions && questionMode === 'sequential' ? (
+        <div className="text-center py-12 space-y-4">
+          <Check className="h-12 w-12 mx-auto text-green-500" />
+          <p className="text-lg font-medium">{t('practice.sequentialDone')}</p>
+          <p className="text-muted-foreground">{t('practice.sequentialDoneDesc')}</p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => { setQuestionMode('mixed'); seqReset() }}>{t('practice.backToNormalMode')}</Button>
+            <Button onClick={() => { const u = useAuthStore.getState().user; if (u) { seqStart(u.id, seqKps, selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet], selectedType).then(() => loadSequentialQuestion(0)) } }}><Shuffle className="h-4 w-4" />{t('practice.tryAgain')}</Button>
+          </div>
+        </div>
       ) : noQuestions ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">{t('practice.noQuestions')}</p>
@@ -538,7 +600,33 @@ export function PracticeSession() {
             {t('practice.tryAgain')}
           </Button>
         </div>
-      ) : !question ? null : (
+      ) : !question ? null : questionMode === 'sequential' ? (
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="order-2 lg:order-1 lg:flex-[6] space-y-4">
+            <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+              <QuestionCard question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+            </div>
+            {isSubmitted && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
+                <NoteEditor placeholder={t('practice.notePlaceholder')} value={note} onChange={setNote} />
+                <div className="flex items-center justify-between"><div><p className="text-sm">{t('notes.makePublic')}</p><p className="text-xs text-muted-foreground">{isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}</p></div><Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} /></div>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              {!isSubmitted ? (<>{attemptCount > 0 && <Button variant="outline" onClick={handleNext}>{t('practice.skip')}</Button>}<Button onClick={handleSubmit} disabled={selectedAnswer === null}>{t('practice.submitAnswer')}</Button></>) : (<Button onClick={handleNext}><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</Button>)}
+            </div>
+          </div>
+          {seqActive && seqQuestionIds.length > 0 && (
+            <div className="order-1 lg:order-2 lg:flex-[4] lg:max-h-[calc(100vh-10rem)] overflow-auto">
+              <div className="rounded-xl border bg-card p-4 space-y-3">
+                <h4 className="text-sm font-medium">{t('dashboard.kpProgress')}</h4>
+                {(() => { const ki = seqGetCurrentKpInfo(); const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim(); return <SequentialProgressBar currentIndex={seqIndex} total={seqQuestionIds.length} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} /> })()}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
         <>
           <div
             className="touch-pan-y select-none"

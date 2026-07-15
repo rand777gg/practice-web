@@ -6,6 +6,8 @@ import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
 import { Link } from 'react-router-dom'
 import { Settings, Menu, Moon, Sparkles, Sun } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
+import { useAuthStore } from '@/stores/auth-store'
+import { useRefreshStore } from '@/stores/refresh-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
@@ -16,6 +18,8 @@ interface Props {
 export function Header({ onMenuClick }: Props) {
   const { t } = useT()
   const { theme, toggle } = useThemeStore()
+  const { profile } = useAuthStore()
+  const planV = useRefreshStore((s) => s.planVersion)
   const { isEnabled } = useSettingsStore()
   const summaryVisible = hasAiConfig() && isEnabled('summary')
   const [aiOpen, setAiOpen] = useState(false)
@@ -31,7 +35,7 @@ export function Header({ onMenuClick }: Props) {
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <PlanProgress />
+        <PlanProgress key={planV} />
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {summaryVisible && (

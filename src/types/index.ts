@@ -68,6 +68,8 @@ export interface Profile {
   plan_subjects: string | null
   daily_targets: string | null
   daily_deadline: string | null
+  plan_reset_at: string | null
+  daily_reset_at: string | null
   created_at: string
 }
 

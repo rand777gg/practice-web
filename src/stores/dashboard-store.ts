@@ -86,7 +86,7 @@ export const useDashboardStore = create<DashboardState>()(
 
       planCache: null,
 
-      fetchPlanCache: async (userId, refreshVersion = 0) => {
+      fetchPlanCache: async (userId, refreshVersion = 0, planResetAt?: string | null) => {
         const state = get()
         if (state.planCache && Date.now() - state.planCache.fetchedAt < PLAN_CACHE_TTL && state.planCache.refreshVersion === refreshVersion) return state.planCache
 
@@ -120,7 +120,9 @@ export const useDashboardStore = create<DashboardState>()(
         const doneIds = new Set<string>()
         from = 0
         while (true) {
-          const { data: page } = await supabase.from('user_answers').select('question_id').eq('user_id', userId).order('question_id').range(from, from + PAGE - 1)
+          let q = supabase.from('user_answers').select('question_id').eq('user_id', userId).order('question_id').range(from, from + PAGE - 1)
+          if (planResetAt) q = q.gte('answered_at', planResetAt)
+          const { data: page } = await q
           if (!page || page.length === 0) break
           for (const a of page) doneIds.add(a.question_id)
           if (page.length < PAGE) break
