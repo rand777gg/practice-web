@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { usePlanStore } from '@/stores/plan-store'
 import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
@@ -37,6 +38,7 @@ export function DashboardPlanCards() {
   const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
+  const liveDone = usePlanStore((s) => s.todaySubjectDone)
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const [totalScope, setTotalScope] = useState(0)
@@ -159,12 +161,16 @@ export function DashboardPlanCards() {
 
   if (!user) return null
 
-  const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 1000) / 10 : 0
-  const changeFromYesterday = totalDone - yesterdayDone
+  const liveLongTotal = planSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
+  const dailyTargetSubjects = [...new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))]
+  const liveDailyTotal = dailyTargetSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
+  const displayTotalDone = totalDone + liveLongTotal
+  const overallPct = totalScope > 0 ? Math.round((displayTotalDone / totalScope) * 1000) / 10 : 0
+  const changeFromYesterday = displayTotalDone - yesterdayDone
   const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
 
-  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
+  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0) + liveDailyTotal
   const dailyPct = dailyTargetGoal > 0 ? Math.min(Math.round((doneDaily / dailyTargetGoal) * 100), 100) : 0
 
   const nearestDeadline = dailyTargets.filter(t => t.deadline)
@@ -196,7 +202,7 @@ export function DashboardPlanCards() {
                 <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
                   {(() => {
                     const yesterdayPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
-                    const todayPct = totalScope > 0 ? ((totalDone - yesterdayDone) / totalScope) * 100 : 0
+                    const todayPct = totalScope > 0 ? ((displayTotalDone - yesterdayDone) / totalScope) * 100 : 0
                     return (
                       <>
                         {yesterdayPct > 0 && <div className="h-full bg-blue-500 transition-all" style={{ width: `${yesterdayPct}%` }} />}
@@ -208,7 +214,7 @@ export function DashboardPlanCards() {
                 <span className="text-[11px] font-medium tabular-nums">{overallPct.toFixed(1)}%</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
-                {t('plan.doneCount')}: {totalDone}
+                {t('plan.doneCount')}: {displayTotalDone}
                 {changePct != null && changePct > 0 && (
                   <span className={isUp ? 'text-green-500' : 'text-red-500'}>
                     {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct.toFixed(1)}%
