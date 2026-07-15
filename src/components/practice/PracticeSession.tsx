@@ -49,6 +49,15 @@ function loadFilters(): PracticeFilters | null {
   try { const r = localStorage.getItem(PS_FILTERS); return r ? JSON.parse(r) : null } catch { return null }
 }
 function saveFilters(v: PracticeFilters) { try { localStorage.setItem(PS_FILTERS, JSON.stringify(v)) } catch {/* noop */} }
+let dbSaveTimer: ReturnType<typeof setTimeout> | null = null
+function saveFiltersToDb(userId: string, v: PracticeFilters) {
+  if (dbSaveTimer) clearTimeout(dbSaveTimer)
+  dbSaveTimer = setTimeout(() => {
+    supabase.from('user_preferences').upsert({
+      user_id: userId, practice_filters: v, updated_at: new Date().toISOString(),
+    }).then(() => {})
+  }, 500)
+}
 
 export function PracticeSession() {
   const saved = useRef(loadFilters())
@@ -105,10 +114,33 @@ export function PracticeSession() {
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
 
-  // Persist filters to localStorage
+  // Persist filters to localStorage + DB
   useEffect(() => {
-    saveFilters({ selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope })
+    const filters = { selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope }
+    saveFilters(filters)
+    const user = useAuthStore.getState().user
+    if (user) saveFiltersToDb(user.id, filters)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
+
+  // Load filters from DB on mount, fallback to localStorage
+  const dbFiltersRef = useRef(false)
+  useEffect(() => {
+    if (dbFiltersRef.current) return
+    dbFiltersRef.current = true
+    const user = useAuthStore.getState().user
+    if (!user) return
+    supabase.from('user_preferences').select('practice_filters').eq('user_id', user.id).single().then(({ data }) => {
+      if (data?.practice_filters) {
+        const f = data.practice_filters as PracticeFilters
+        if (f.selectedSubjects?.length) setSelectedSubjects(f.selectedSubjects)
+        if (f.selectedCategory) setSelectedCategory(f.selectedCategory)
+        if (f.selectedType) setSelectedType(f.selectedType as QuestionType)
+        if (f.selectedKeyPoint) setSelectedKeyPoint(f.selectedKeyPoint)
+        if (f.questionMode) setQuestionMode(f.questionMode as any)
+        if (f.questionScope) setQuestionScope(f.questionScope as any)
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (!initRef.current && planSubjectSet.size > 0) {
