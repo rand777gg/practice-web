@@ -73,14 +73,17 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
   loadFromDb: async (userId) => {
     const { data } = await supabase.from('practice_sequential_state').select('*').eq('user_id', userId).single()
     if (data) {
-      const ids: string[] = data.question_ids ?? []
+      const storedIds: string[] = data.question_ids ?? []
+      let validIds = storedIds
       let kpsArr: (string | null)[] = []
-      if (ids.length > 0) {
+      let restoredIndex = data.current_index ?? 0
+      if (storedIds.length > 0) {
+        // Validate stored IDs against current questions table (handle deletions)
         const kpMap = new Map<string, string | null>()
         const BATCH = 100
         const batches = []
-        for (let i = 0; i < ids.length; i += BATCH) {
-          batches.push(supabase.from('questions').select('id, key_points').in('id', ids.slice(i, i + BATCH)))
+        for (let i = 0; i < storedIds.length; i += BATCH) {
+          batches.push(supabase.from('questions').select('id, key_points').in('id', storedIds.slice(i, i + BATCH)))
         }
         const results = await Promise.all(batches)
         for (const { data: qData } of results) {
@@ -89,10 +92,14 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
             kpMap.set(q.id, pk)
           }
         }
-        kpsArr = ids.map(id => kpMap.get(id) ?? null)
+        // Filter to only existing questions; rebuild KP array
+        validIds = storedIds.filter(id => kpMap.has(id))
+        kpsArr = validIds.map(id => kpMap.get(id) ?? null)
+        // Clamp index if deleted questions pushed it out of bounds
+        if (restoredIndex >= validIds.length) restoredIndex = Math.max(0, validIds.length - 1)
       }
-      set({ isActive: ids.length > 0, selectedKps: data.selected_kps ?? [], questionIds: ids, questionKps: kpsArr, currentIndex: data.current_index ?? 0 })
-      return true
+      set({ isActive: validIds.length > 0, selectedKps: data.selected_kps ?? [], questionIds: validIds, questionKps: kpsArr, currentIndex: restoredIndex })
+      return data.question_ids ? data.question_ids.length > 0 : false
     }
     return false
   },
