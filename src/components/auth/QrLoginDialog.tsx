@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { QrCode, RefreshCw, Loader2 } from 'lucide-react'
 
-const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qr-login`
-
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -45,24 +43,16 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
       if (data.status === 'confirmed') {
         clearInterval(pollRef.current)
         setStatus('loggingIn')
-        // Get session from Edge Function
-        const res = await fetch(EDGE_FUNCTION_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-          body: JSON.stringify({ token, code: codeRef.current }),
+        const { data: sessionData, error: fnErr } = await supabase.functions.invoke('qr-login', {
+          body: { token, code: codeRef.current },
         })
-        if (!res.ok) { const err = await res.json().catch(() => ({})); console.error('qr-login error:', res.status, err); setStatus('error'); return }
-        const sessionData = await res.json()
-        if (sessionData.access_token) {
-          await supabase.auth.setSession({
-            access_token: sessionData.access_token,
-            refresh_token: sessionData.refresh_token,
-          })
-          onOpenChange(false)
-          navigate('/')
-        } else {
-          setStatus('error')
-        }
+        if (fnErr || !sessionData?.access_token) { console.error('qr-login error:', fnErr); setStatus('error'); return }
+        await supabase.auth.setSession({
+          access_token: sessionData.access_token,
+          refresh_token: sessionData.refresh_token,
+        })
+        onOpenChange(false)
+        navigate('/')
       } else if (data.status === 'expired') {
         setStatus('expired')
         clearInterval(pollRef.current)
