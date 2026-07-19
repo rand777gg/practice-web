@@ -895,8 +895,15 @@ export function PracticeSession() {
         </div>
       ) : !question ? null : (
         <div className="space-y-4">
-          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
+          {questionMode === 'sequential' && (
             <div className="rounded-xl border bg-card p-3 space-y-2 relative">
+            {!seqActive || seqQuestionIds.length === 0 ? (
+              <div className="space-y-2">
+                <div className="flex gap-1.5"><Skeleton className="h-6 w-16 rounded-md" /><Skeleton className="h-6 w-16 rounded-md" /></div>
+                <Skeleton className="h-2 w-full" />
+                <Skeleton className="h-2.5 w-full" />
+              </div>
+            ) : (
               {/* Subject cards */}
               {subjectBlocks.length > 1 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -935,6 +942,7 @@ export function PracticeSession() {
                 const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
                 return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} />
               })()}
+            )}
             </div>
           )}
           <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
