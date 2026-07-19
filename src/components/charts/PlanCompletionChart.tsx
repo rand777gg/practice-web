@@ -84,7 +84,7 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
             <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={32}
               tickFormatter={(value) => { const d = new Date(value); return `${d.getMonth()+1}/${d.getDate()}` }} />
             <ChartTooltip content={<ChartTooltipContent className="w-[150px]" nameKey={activeChart} />} />
-            <Bar dataKey={activeChart} fill={`var(--color-${activeChart})`} radius={[4, 4, 0, 0]} maxBarSize={24} />
+            <Bar dataKey={activeChart} fill={activeChart === 'plan' ? '#3b82f6' : '#ec4899'} radius={[4, 4, 0, 0]} maxBarSize={24} />
           </BarChart>
         </ChartContainer>
       </CardContent>
