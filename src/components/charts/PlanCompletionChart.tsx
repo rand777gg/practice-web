@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Bar, BarChart, CartesianGrid, XAxis } from "recharts"
 import { supabase } from "@/lib/supabase"
 import { useAuthStore } from "@/stores/auth-store"
@@ -17,10 +17,13 @@ const chartConfig = {
   target: { label: "自定义目标", color: "#ec4899" },
 } satisfies ChartConfig
 
+type ActiveKey = keyof typeof chartConfig
+
 export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
   const user = useAuthStore((s) => s.user)
   const [loading, setLoading] = useState(true)
   const [chartData, setChartData] = useState<{ date: string; plan: number; target: number }[]>([])
+  const [activeChart, setActiveChart] = useState<ActiveKey>("plan")
 
   useEffect(() => {
     if (!user) return
@@ -46,23 +49,42 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
     }).catch(() => setLoading(false))
   }, [user, planSubjects.join(','), targetSubjects.join(',')])
 
+  const totals = useMemo(() => ({
+    plan: chartData.reduce((s, d) => s + d.plan, 0),
+    target: chartData.reduce((s, d) => s + d.target, 0),
+  }), [chartData])
+
   if (!user || (!planSubjects.length && !targetSubjects.length)) return null
   if (loading) return <div className="h-48 rounded-lg bg-muted animate-pulse" />
 
   return (
-    <Card className="border-0 shadow-none">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground">每日计划完成对比</CardTitle>
+    <Card className="border-0 shadow-none py-0">
+      <CardHeader className="flex flex-col items-stretch border-b p-0! sm:flex-row">
+        <div className="flex flex-1 flex-col justify-center gap-1 px-6 pt-4 pb-3">
+          <CardTitle className="text-sm">每日计划完成对比</CardTitle>
+        </div>
+        <div className="flex">
+          {(Object.keys(chartConfig) as ActiveKey[]).map((key) => (
+            <button
+              key={key}
+              data-active={activeChart === key}
+              className="relative z-30 flex flex-1 flex-col justify-center gap-1 border-t px-4 py-3 text-left even:border-l data-[active=true]:bg-muted/50 sm:border-t-0 sm:border-l"
+              onClick={() => setActiveChart(key)}
+            >
+              <span className="text-xs text-muted-foreground">{chartConfig[key].label}</span>
+              <span className="text-lg leading-none font-bold">{totals[key].toLocaleString()}</span>
+            </button>
+          ))}
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-2 sm:px-6">
         <ChartContainer config={chartConfig} className="aspect-auto h-[220px] w-full">
           <BarChart accessibilityLayer data={chartData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={32}
               tickFormatter={(value) => { const d = new Date(value); return `${d.getMonth()+1}/${d.getDate()}` }} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="plan" fill="var(--color-plan)" radius={[4, 4, 0, 0]} maxBarSize={16} />
-            <Bar dataKey="target" fill="var(--color-target)" radius={[4, 4, 0, 0]} maxBarSize={16} />
+            <ChartTooltip content={<ChartTooltipContent className="w-[150px]" nameKey={activeChart} />} />
+            <Bar dataKey={activeChart} fill={`var(--color-${activeChart})`} radius={[4, 4, 0, 0]} maxBarSize={24} />
           </BarChart>
         </ChartContainer>
       </CardContent>
