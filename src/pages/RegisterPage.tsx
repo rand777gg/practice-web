@@ -12,16 +12,21 @@ export function Component() {
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10 overflow-hidden bg-[#0a0a2e]">
       <Lightfall
-        colors={['#6366f1', '#8b5cf6', '#a78bfa']}
-        backgroundColor="#1e1b4b"
-        speed={0.5}
-        streakCount={3}
-        density={0.5}
-        zoom={3}
-        glow={0.8}
-        backgroundGlow={0.4}
-        opacity={0.6}
+        colors={['#A6C8FF', '#5227FF', '#FF9FFC']}
+        backgroundColor="#ffffff"
+        speed={0.8}
+        streakCount={2}
+        streakWidth={1.3}
+        streakLength={1}
+        glow={0.9}
+        density={0.6}
+        twinkle={1}
+        zoom={1}
+        backgroundGlow={0}
+        opacity={1}
         mouseInteraction={false}
+        mouseStrength={0.6}
+        mouseRadius={0.8}
       />
       <div className="relative z-10 w-full flex justify-center">
         <AuthForm mode="register" />

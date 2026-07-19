@@ -61,7 +61,12 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
         </Card>
         <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 bg-background/30 backdrop-blur-2xl border-0 shadow-2xl shadow-black/20", imageLoaded ? "opacity-100" : "opacity-0")}>
         <CardContent className={cn("grid p-0 flex-1", !imageHidden && "md:grid-cols-2")}>
-          <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
+          <form className="p-6 md:p-8 flex flex-col justify-center h-full relative" onSubmit={handleSubmit}>
+            {imageHidden && (
+              <button type="button" onClick={() => setImageHidden(false)} className="absolute top-3 right-3 rounded-full bg-muted/50 hover:bg-muted p-1.5 transition-colors" title="显示图片">
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}</h1>
@@ -102,11 +107,6 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
           )}
         </CardContent>
       </Card>
-      {imageHidden && (
-        <button type="button" onClick={() => setImageHidden(false)} className="self-center rounded-full bg-black/30 backdrop-blur-sm p-1.5 transition-opacity" title="显示图片">
-          <EyeOff className="h-4 w-4 text-white/60" />
-        </button>
-      )}
       </div>
       <FieldDescription className="px-6 text-center">
         {isLogin ? <>还没有账号？<a href="/register" className="underline underline-offset-2 hover:text-foreground">立即注册</a></> : <>已有账号？<a href="/login" className="underline underline-offset-2 hover:text-foreground">去登录</a></>}
