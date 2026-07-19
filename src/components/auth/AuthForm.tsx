@@ -7,6 +7,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from 
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n/use-t'
 import { GalleryVerticalEnd } from 'lucide-react'
+import { version } from '../../package.json'
 
 export function AuthForm({ className, mode = 'login', ...props }: React.ComponentProps<"div"> & { mode?: 'login' | 'register' }) {
   const { t } = useT()
@@ -44,7 +45,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               </div>
               <span className="sr-only">Practice Web</span>
             </a>
-            <h1 className="text-xl font-bold">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}</h1>
+            <h1 className="text-xl font-bold">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}<span className="ml-2 text-xs font-normal text-white/30">v{version}</span></h1>
             <FieldDescription>
               {isLogin ? <>还没有账号？ <Link to="/register">注册</Link></> : <>已有账号？ <Link to="/login">登录</Link></>}
             </FieldDescription>
