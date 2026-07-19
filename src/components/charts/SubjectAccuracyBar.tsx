@@ -22,7 +22,7 @@ export function SubjectAccuracyBar() {
           const delta = Math.abs(tPct - yPct)
           return { subject: r.subject, today: tPct, up: isUp ? delta : 0, down: isUp ? 0 : delta }
         })
-        .sort((a: any, b: any) => a.today - b.today)
+        .sort((a: any, b: any) => b.today - a.today)
       setData(list)
       setLoading(false)
     }, () => setLoading(false))
