@@ -905,10 +905,10 @@ export function PracticeSession() {
                 const lastSync = [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
                 const syncText = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
                 return syncText ? (
-                  <div className="absolute bottom-1 right-2 flex items-center gap-1 bg-background/90 rounded-full px-2 py-0.5">
+                  <div className="flex items-center justify-end gap-1 pt-1">
                     <Icon icon={deviceIcon} className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[9px] text-muted-foreground">{osName}</span>
-                    <span className="text-[9px] text-muted-foreground tabular-nums ml-1">{syncText}</span>
+                    <span className="text-[1.2em] text-muted-foreground">{osName}</span>
+                    <span className="text-[1.2em] text-muted-foreground tabular-nums ml-1">{syncText}</span>
                   </div>
                 ) : null
               })()}
