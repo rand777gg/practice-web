@@ -417,7 +417,7 @@ export function Component() {
                   const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
                   return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
                 })()}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[
                     { title: '正确率变化', desc: '今日 vs 昨日正确率对比' },
                     { title: '题型分布', desc: '各题型答题量占比' },
