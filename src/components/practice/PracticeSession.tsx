@@ -121,6 +121,36 @@ export function PracticeSession() {
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
 
+  // Build KP → subject map and subject blocks from current session
+  const kpToSubject = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of kpBySubject) for (const k of s.keyPoints) m.set(k, s.subject)
+    return m
+  }, [kpBySubject])
+
+  const seqQuestionKps = useSequentialStore((s) => s.questionKps)
+  const subjectBlocks = useMemo(() => {
+    if (!seqActive || seqQuestionKps.length === 0) return [] as { subject: string; start: number; end: number; count: number }[]
+    const blocks: { subject: string; start: number; end: number; count: number }[] = []
+    let curSubj = kpToSubject.get(seqQuestionKps[0] ?? '') ?? null
+    let start = 0
+    for (let i = 1; i <= seqQuestionKps.length; i++) {
+      const subj = i < seqQuestionKps.length ? (kpToSubject.get(seqQuestionKps[i] ?? '') ?? null) : null
+      if (subj !== curSubj) {
+        if (curSubj) blocks.push({ subject: curSubj, start, end: i - 1, count: i - start })
+        curSubj = subj
+        start = i
+      }
+    }
+    return blocks
+  }, [seqActive, seqQuestionKps, kpToSubject])
+
+  // Auto-select active subject based on current question
+  const currentSubject = useMemo(() => {
+    if (!seqActive || seqIndex >= seqQuestionKps.length) return null
+    return kpToSubject.get(seqQuestionKps[seqIndex] ?? '') ?? null
+  }, [seqActive, seqIndex, seqQuestionKps, kpToSubject])
+
   // Persist filters to localStorage + DB
   useEffect(() => {
     const filters = { selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope }
@@ -745,8 +775,39 @@ export function PracticeSession() {
       ) : !question ? null : (
         <div className="space-y-4">
           {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
-            <div className="rounded-xl border bg-card p-3">
-              {(() => { const ki = seqGetCurrentKpInfo(); const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim(); return <SequentialProgressBar currentIndex={seqIndex} total={seqQuestionIds.length} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} /> })()}
+            <div className="rounded-xl border bg-card p-3 space-y-2">
+              {/* Subject cards */}
+              {subjectBlocks.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {subjectBlocks.map(b => {
+                    const isActive = b.subject === currentSubject
+                    return (
+                      <button
+                        key={b.subject}
+                        type="button"
+                        onClick={() => loadSequentialQuestion(b.start)}
+                        className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                          isActive
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                        }`}
+                      >
+                        {b.subject} ({b.count})
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {(() => {
+                const block = currentSubject ? subjectBlocks.find(b => b.subject === currentSubject) : null
+                const ci = seqIndex
+                const total = block ? block.count : seqQuestionIds.length
+                const offset = block ? block.start : 0
+                const relIndex = block ? ci - offset : ci
+                const ki = seqGetCurrentKpInfo()
+                const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim()
+                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} />
+              })()}
             </div>
           )}
           <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
