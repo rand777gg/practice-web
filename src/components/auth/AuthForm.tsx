@@ -45,7 +45,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   return (
     <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
       <div className="relative md:min-h-[560px]">
-        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100 z-10")}>
+        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0 backdrop-blur-xl bg-white/10 border-white/10", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100 z-10")}>
           <CardContent className="grid p-0 md:grid-cols-2 flex-1">
             <div className="p-6 md:p-8 space-y-4 flex flex-col justify-center">
               <Skeleton className="h-7 w-40" />
@@ -54,10 +54,10 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-            <div className="relative hidden md:block bg-muted"><Skeleton className="absolute inset-0 h-full w-full rounded-none" /></div>
+            <div className="hidden md:block bg-muted/50" />
           </CardContent>
         </Card>
-        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500", imageLoaded ? "opacity-100" : "opacity-0")}>
+        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 backdrop-blur-xl bg-white/10 border-white/10", imageLoaded ? "opacity-100" : "opacity-0")}>
         <CardContent className="grid p-0 md:grid-cols-2 flex-1">
           <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
             <FieldGroup>
