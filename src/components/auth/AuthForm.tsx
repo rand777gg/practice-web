@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n/use-t'
+import { Eye, EyeOff } from 'lucide-react'
 
 export function AuthForm({ className, mode = 'login', ...props }: React.ComponentProps<"div"> & { mode?: 'login' | 'register' }) {
   const { t } = useT()
@@ -44,7 +45,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   }
 
   return (
-    <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
+    <div className={cn("flex flex-col gap-6 w-full transition-all duration-500", imageHidden ? "max-w-md" : "max-w-4xl", className)} {...props}>
       <div className="relative md:min-h-[560px]">
         <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0 bg-background/30 backdrop-blur-2xl border-0 shadow-2xl shadow-black/20", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100 z-10")}>
           <CardContent className={cn("grid p-0 flex-1", !imageHidden && "md:grid-cols-2")}>
@@ -92,15 +93,20 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
             </FieldGroup>
           </form>
           {!imageHidden && (
-          <div className="relative hidden md:block bg-muted h-full">
+          <div className="relative hidden md:block bg-muted h-full group">
             <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover opacity-60" />
+            <button type="button" onClick={() => setImageHidden(true)} className="absolute top-2 right-2 z-10 rounded-full bg-black/30 backdrop-blur-sm p-1.5 opacity-0 group-hover:opacity-100 transition-opacity" title="隐藏图片">
+              <Eye className="h-4 w-4 text-white/80" />
+            </button>
           </div>
           )}
         </CardContent>
       </Card>
-      <button type="button" onClick={() => setImageHidden(!imageHidden)} className="absolute -bottom-3 right-4 z-10 rounded-full bg-background/60 backdrop-blur-sm border border-border/30 px-2.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-        {imageHidden ? '显示图片' : '隐藏图片'}
-      </button>
+      {imageHidden && (
+        <button type="button" onClick={() => setImageHidden(false)} className="self-center rounded-full bg-black/30 backdrop-blur-sm p-1.5 transition-opacity" title="显示图片">
+          <EyeOff className="h-4 w-4 text-white/60" />
+        </button>
+      )}
       </div>
       <FieldDescription className="px-6 text-center">
         {isLogin ? <>还没有账号？<a href="/register" className="underline underline-offset-2 hover:text-foreground">立即注册</a></> : <>已有账号？<a href="/login" className="underline underline-offset-2 hover:text-foreground">去登录</a></>}
