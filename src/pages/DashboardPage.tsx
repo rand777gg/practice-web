@@ -18,6 +18,7 @@ import { LazyChart } from '@/components/layout/LazyChart'
 import { useT } from '@/i18n/use-t'
 import { PlanCompletionChart } from '@/components/charts/PlanCompletionChart'
 import { SubjectAccuracyBar } from '@/components/charts/SubjectAccuracyBar'
+import { SubjectTypeRadar } from '@/components/charts/SubjectTypeRadar'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
@@ -420,8 +421,11 @@ export function Component() {
                 })()}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <SubjectAccuracyBar />
+                  {(() => {
+                    const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
+                    return <SubjectTypeRadar planSubjects={pts} />
+                  })()}
                   {[
-                    { title: '题型分布', desc: '各题型答题量占比' },
                     { title: '时段分布', desc: '24小时答题时段热力' },
                     { title: '科目趋势', desc: '近30天各科正确率走势' },
                   ].map((c) => (
