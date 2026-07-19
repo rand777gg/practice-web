@@ -153,8 +153,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const handleResetLong = async () => {
     if (!user) return
     setSaving(true)
-    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
-    await supabase.from('profiles').update({ plan_reset_at: todayEnd.toISOString() }).eq('id', user.id)
+    const now = new Date()
+    await supabase.from('profiles').update({ plan_reset_at: now.toISOString() }).eq('id', user.id)
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
@@ -165,8 +165,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const handleResetDaily = async () => {
     if (!user) return
     setSaving(true)
-    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
-    await supabase.from('profiles').update({ daily_reset_at: todayEnd.toISOString() }).eq('id', user.id)
+    const now = new Date()
+    await supabase.from('profiles').update({ daily_reset_at: now.toISOString() }).eq('id', user.id)
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
