@@ -48,10 +48,9 @@ serve(async (req: Request) => {
     const magicToken = url.searchParams.get("token")
     if (!magicToken) return new Response(JSON.stringify({ error: "no token", detail: url.href }), { status: 500, headers: corsHeaders })
 
-    // SHA256 hash the raw token to get token_hash
-    const tokenHash = Array.from(new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(magicToken))
-    )).map(b => b.toString(16).padStart(2, "0")).join("")
+    const encoder = new TextEncoder()
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(magicToken))
+    const tokenHash = Array.from(new Uint8Array(hashBuffer), b => b.toString(16).padStart(2, "0")).join("")
 
     const { data: verifyData, error: verifyErr } = await supabasePublic.auth.verifyOtp({
       type: "magiclink",
