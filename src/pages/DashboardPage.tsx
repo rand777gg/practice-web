@@ -17,6 +17,7 @@ import { SkeletonCard } from '@/components/ui/skeleton'
 import { LazyChart } from '@/components/layout/LazyChart'
 import { useT } from '@/i18n/use-t'
 import { PlanCompletionChart } from '@/components/charts/PlanCompletionChart'
+import { SubjectAccuracyBar } from '@/components/charts/SubjectAccuracyBar'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
@@ -418,8 +419,8 @@ export function Component() {
                   return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
                 })()}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <SubjectAccuracyBar />
                   {[
-                    { title: '正确率变化', desc: '今日 vs 昨日正确率对比' },
                     { title: '题型分布', desc: '各题型答题量占比' },
                     { title: '时段分布', desc: '24小时答题时段热力' },
                     { title: '科目趋势', desc: '近30天各科正确率走势' },
