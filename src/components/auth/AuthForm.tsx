@@ -65,7 +65,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               {isSubmitting ? (isLogin ? t('auth.signingIn') : t('auth.creatingAccount')) : (isLogin ? t('auth.signIn') : t('auth.createAccount'))}
             </Button>
           </Field>
-          <FieldSeparator>or</FieldSeparator>
+          <FieldSeparator className="[&>span]:bg-transparent">or</FieldSeparator>
           <Field className="flex justify-center gap-4">
             {isLogin && (
               <Button variant="ghost" size="icon" type="button" className="rounded-full size-10 bg-transparent border border-white/20 hover:bg-white/10" onClick={() => setQrOpen(true)} title="扫码登录">
