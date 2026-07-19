@@ -28,6 +28,7 @@ import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Check, ChevronDown, Shuffle } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { isAnswerCorrect } from '@/lib/answer-utils'
+import { naturalSort } from '@/lib/utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
 import { normalizeDailyTargets } from '@/types'
@@ -163,7 +164,7 @@ export function PracticeSession() {
       if (c) return
       const m = new Map<string, Set<string>>()
       for (const r of (data ?? [])) { const s = (r as any).subject || '其他'; if (!m.has(s)) m.set(s, new Set()); if ((r as any).key_points) for (const k of ((r as any).key_points as string).split(/[,，;；]/)) { const t = k.trim(); if (t) m.get(s)!.add(t) } }
-      setKpBySubject([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort((a2, b2) => a2.localeCompare(b2, 'zh-CN')) })))
+      setKpBySubject([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort(naturalSort) })))
     })
     return () => { c = true }
   }, [])
@@ -345,10 +346,20 @@ export function PracticeSession() {
     loadSequentialQuestion(0)
   }, [selectedSubjects, selectedType, planSubjectSet, seqStart, loadSequentialQuestion])
 
-  const prevModeRef = useRef(questionMode)
-  useEffect(() => { const p = prevModeRef.current; prevModeRef.current = questionMode; if (p === questionMode) return
-    if (questionMode === 'sequential') { const user = useAuthStore.getState().user; if (user) { seqLoadFromDb(user.id).then(r => { const s = useSequentialStore.getState(); if (r && s.selectedKps.length > 0 && s.questionIds.length > 0) loadSequentialQuestion(s.currentIndex); else setSequentialDialogOpen(true) }) } else setSequentialDialogOpen(true) }
-    else { seqReset(); fetchRandomQuestion() }
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    if (questionMode === 'sequential') {
+      const user = useAuthStore.getState().user
+      if (!user) { setSequentialDialogOpen(true); return }
+      seqLoadFromDb(user.id).then(r => {
+        const s = useSequentialStore.getState()
+        if (r && s.selectedKps.length > 0 && s.questionIds.length > 0) loadSequentialQuestion(s.currentIndex)
+        else setSequentialDialogOpen(true)
+      })
+    } else if (mountedRef.current) {
+      seqReset(); fetchRandomQuestion()
+    }
+    mountedRef.current = true
   }, [questionMode])
 
   const handleSelect = useCallback((answer: CorrectAnswer) => {

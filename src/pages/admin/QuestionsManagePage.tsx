@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { naturalSort } from '@/lib/utils'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import type { QuestionType } from '@/types'
@@ -109,7 +110,7 @@ export function Component() {
       from += PAGE
     }
     const result = new Map<string, string[]>()
-    for (const [s, kps] of kpMap) result.set(s, [...kps].sort())
+    for (const [s, kps] of kpMap) result.set(s, [...kps].sort(naturalSort))
     setKpsBySubject(result)
     setSubjectCounts(subCounts)
     setCategoryCounts(catCounts)

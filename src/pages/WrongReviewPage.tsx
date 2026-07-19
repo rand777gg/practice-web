@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { naturalSort } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -95,7 +96,7 @@ export function Component() {
       if (!map.has(subj)) map.set(subj, new Set())
       if (q.key_points) for (const k of String(q.key_points).split(/[,，;；]/)) { const t = k.trim(); if (t) map.get(subj)!.add(t) }
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, kps]) => ({ subject: s, keyPoints: [...kps].sort((a, b) => a.localeCompare(b, 'zh-CN')) }))
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, kps]) => ({ subject: s, keyPoints: [...kps].sort(naturalSort) }))
   }, [answers])
 
   useEffect(() => { updateFilteredCategories(selectedSubject) }, [selectedSubject, updateFilteredCategories])

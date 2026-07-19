@@ -401,6 +401,8 @@ export const zh = {
     error: '加载失败',
     notFound: '页面未找到',
     goDashboard: '返回仪表盘',
+    save: '保存',
+    cancel: '取消',
   },
   pwa: {
     updateTitle: '发现新版本',
@@ -813,6 +815,8 @@ export const en = {
     error: 'Failed to load',
     notFound: 'Page not found',
     goDashboard: 'Go to Dashboard',
+    save: 'Save',
+    cancel: 'Cancel',
   },
   pwa: {
     updateTitle: 'New version available',
