@@ -75,6 +75,10 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [confirmReset, setConfirmReset] = useState<'long' | 'daily' | null>(null)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
+  // Mutual exclusion: subjects in long-term plan can't be in daily targets and vice versa
+  const dailyUsedSubjects = new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))
+  const longUsedSubjects = new Set(selectedSubjects)
+
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
 
@@ -283,7 +287,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     {t('plan.selectHint')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  {allSubjects.map((s) => {
+                  {allSubjects.filter(s => !dailyUsedSubjects.has(s) || selectedSubjects.includes(s)).map((s) => {
                     const checked = selectedSubjects.includes(s)
                     return (
                       <DropdownMenuItem
@@ -404,7 +408,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
               )
               const targetSubjectNames = target.subjects.map(s => s.subject)
-              const availableSubjects = allSubjects.filter(s => !usedByOthers.has(s) || targetSubjectNames.includes(s))
+              const availableSubjects = allSubjects.filter(s => (!usedByOthers.has(s) && !longUsedSubjects.has(s)) || targetSubjectNames.includes(s))
               return (
                 <div key={i}>
                   {/* Title outside box */}
