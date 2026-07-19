@@ -904,8 +904,7 @@ export function PracticeSession() {
                 <Skeleton className="h-2.5 w-full" />
               </div>
             ) : (
-              {/* Subject cards */}
-              {subjectBlocks.length > 1 && (
+              <>
                 <div className="flex flex-wrap gap-1.5">
                   {subjectBlocks.map(b => {
                     const isActive = b.subject === currentSubject
@@ -942,6 +941,7 @@ export function PracticeSession() {
                 const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
                 return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} />
               })()}
+            </>
             )}
             </div>
           )}
