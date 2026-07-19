@@ -240,7 +240,7 @@ export function PlanProgress() {
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.daily')}</span>
                 <Progress value={dailyPct} className="w-10 h-2 [&>div]:bg-pink-500" />
-                <span className="tabular-nums shrink-0 text-[10px]">{doneDaily}/{effectiveTotal}<span className="text-[8px] text-muted-foreground/50 ml-0.5">v{version}</span></span>
+                <span className="tabular-nums shrink-0 text-[10px]">{doneDaily}/{effectiveTotal}</span>
               </div>
             ))}
           </>
