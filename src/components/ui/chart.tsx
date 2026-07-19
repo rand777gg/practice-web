@@ -2,8 +2,6 @@ import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 import { cn } from "@/lib/utils"
 
-const THEMES = { light: "", dark: ".dark" } as const
-
 export type ChartConfig = Record<string, { label: string; color?: string }>
 
 interface ChartContextValue { config: ChartConfig }
@@ -59,7 +57,7 @@ const ChartTooltipContent = React.forwardRef<
     hideLabel?: boolean; hideIndicator?: boolean; indicator?: "line" | "dot" | "dashed"
     nameKey?: string; labelKey?: string; className?: string
   }
->(({ active, payload, className, indicator = "dot", hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, formatter, color, nameKey, labelKey }) => {
+>(({ active, payload, className, indicator = "dot", hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, formatter, color, nameKey, labelKey }: any) => {
   const { config } = useChart()
   const tooltipLabel = React.useMemo(() => {
     if (hideLabel || !payload?.length) return null

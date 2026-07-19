@@ -46,7 +46,7 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
       }
       setChartData([...dailyMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date, ...v })))
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }, () => setLoading(false))
   }, [user, planSubjects.join(','), targetSubjects.join(',')])
 
   const totals = useMemo(() => ({

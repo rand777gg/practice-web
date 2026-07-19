@@ -194,5 +194,5 @@ export default function Lightfall({
     };
   }, [dpr, paused, colors.join(','), backgroundColor, speed, streakCount, streakWidth, streakLength, glow, density, twinkle, zoom, backgroundGlow, opacity, mouseInteraction, mouseStrength, mouseRadius, mouseDampening]);
 
-  return <div ref={containerRef} className={`lightfall-container ${className ?? ''}`} style={{ ...(mixBlendMode && { mixBlendMode }) }} />;
+  return <div ref={containerRef} className={`lightfall-container ${className ?? ''}`} style={mixBlendMode ? { mixBlendMode: mixBlendMode as any } : undefined} />;
 }

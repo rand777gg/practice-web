@@ -73,7 +73,7 @@ export function PracticeSession() {
   const isAdmin = profile?.role === 'admin'
   // Restore cached question on mount for instant display
   const [question, setQuestionState] = useState<Question | null>(() => {
-    try { const raw = localStorage.getItem('lastPracticeQuestion'); if (raw) return JSON.parse(raw) as Question } catch { return null }
+    try { const raw = localStorage.getItem('lastPracticeQuestion'); if (raw) return JSON.parse(raw) as Question; return null } catch { return null }
   })
   const setQuestion = useCallback((q: Question | null) => {
     setQuestionState(q)

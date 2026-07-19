@@ -142,7 +142,6 @@ export function DashboardPlanCards() {
 
   if (!user) return null
 
-  const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 1000) / 10 : 0
   const changeFromYesterday = totalDone - yesterdayDone
   const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
