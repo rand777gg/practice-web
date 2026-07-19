@@ -48,7 +48,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
         // Get session from Edge Function
         const res = await fetch(EDGE_FUNCTION_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
           body: JSON.stringify({ token, code: codeRef.current }),
         })
         if (!res.ok) { const err = await res.json().catch(() => ({})); console.error('qr-login error:', res.status, err); setStatus('error'); return }
