@@ -49,7 +49,6 @@ export function DashboardPlanCards() {
   const [customTargetTotal, setCustomTargetTotal] = useState(0)
   const [customTargetDone, setCustomTargetDone] = useState(0)
   const [customTargetTodayDone, setCustomTargetTodayDone] = useState(0)
-  const [kpProgress, setKpProgress] = useState<{ kps: string[]; current: number; total: number; subject: string }[]>([])
 
   useEffect(() => {
     if (!user) return
@@ -133,19 +132,6 @@ export function DashboardPlanCards() {
         setCustomTargetTodayDone(0)
       }
 
-      // Load sequential session KP progress
-      supabase.from('practice_sequential_state').select('*').eq('user_id', uid).then(({ data: sessions }) => {
-        const list = (sessions ?? []) as any[]
-        const allSubjs = [...new Set([...planSubjects, ...dailyTargets.flatMap(t => t.subjects.map(s => s.subject))])]
-        const result: typeof kpProgress = list.map((s: any) => {
-          const total = (s.question_ids?.length || 0)
-          const kps = (s.selected_kps ?? []) as string[]
-          // Match subject by checking if KP codes overlap with known subject names
-          const subj = allSubjs.find(sub => kps.some(k => sub.includes(k.slice(0,2)) || k.includes(sub))) || ''
-          return { kps, current: s.current_index ?? 0, total, subject: subj }
-        }).filter(s => s.total > 0)
-        setKpProgress(result)
-      })
     }
     load()
   }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
@@ -262,26 +248,6 @@ export function DashboardPlanCards() {
           </Card>
         )}
       </div>
-      {kpProgress.length > 0 && (
-        <details className="mt-3">
-          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">顺序模式知识点进度 ({kpProgress.length}个会话)</summary>
-          <div className="mt-2 space-y-1.5">
-            {kpProgress.map((s, i) => {
-              const pct = s.total > 0 ? Math.round((s.current / s.total) * 100) : 0
-              return (
-                <div key={i} className="flex items-center gap-1.5 text-[10px]">
-                  <span className="text-muted-foreground w-20 truncate">{s.subject || `会话${i+1}`}</span>
-                  <span className="text-muted-foreground w-8 tabular-nums">{s.kps.length}KP</span>
-                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="text-muted-foreground tabular-nums">{s.current}/{s.total}</span>
-                </div>
-              )
-            })}
-          </div>
-        </details>
-      )}
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   )
