@@ -46,7 +46,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
             </a>
             <h1 className="text-xl font-bold">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}</h1>
             <FieldDescription>
-              {isLogin ? <>还没有账号？ <Link to="/register">注册</Link></> : <>已有账号？ <Link to="/login">登录</Link></>}
+              {isLogin ? <>还没有账号？ <Link to="/register" className="underline underline-offset-4">注册</Link></> : <>已有账号？ <Link to="/login" className="underline underline-offset-4">登录</Link></>}
             </FieldDescription>
           </div>
           {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
