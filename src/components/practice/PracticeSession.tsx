@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { useDashboardStore } from '@/stores/dashboard-store'
 import { useSequentialStore } from '@/stores/sequential-store'
 
 import { useUserAnswers } from '@/hooks/use-user-answers'
@@ -315,11 +316,48 @@ export function PracticeSession() {
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope])
 
   const seqFetchGenRef = useRef(0)
+  const preloadRef = useRef<{ index: number; question: Question; attempts: number; wrongs: number; note: string; isPublic: boolean } | null>(null)
+
+  const preloadNext = useCallback(async (nextIdx: number, ids: string[], myGen: number) => {
+    if (nextIdx >= ids.length) return
+    const currentUser = useAuthStore.getState().user
+    const [qRes, statsRes] = await Promise.all([
+      supabase.from('questions').select('*').eq('id', ids[nextIdx]).single(),
+      currentUser ? supabase.from('user_answers').select('is_correct, note, is_public').eq('user_id', currentUser.id).eq('question_id', ids[nextIdx]).order('answered_at', { ascending: false }) : Promise.resolve(null),
+    ])
+    if (seqFetchGenRef.current !== myGen) return
+    if (qRes.error || !qRes.data) return
+    const sd = statsRes?.data
+    preloadRef.current = {
+      index: nextIdx,
+      question: qRes.data as unknown as Question,
+      attempts: sd?.length ?? 0,
+      wrongs: sd?.filter((a: any) => !a.is_correct).length ?? 0,
+      note: sd?.find((a: any) => a.note)?.note ?? '',
+      isPublic: sd?.find((a: any) => a.note)?.is_public ?? false,
+    }
+  }, [])
+
   const loadSequentialQuestion = useCallback(async (index: number) => {
     seqFetchGenRef.current++; const myGen = seqFetchGenRef.current
-    setIsLoading(true); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
     const ids = useSequentialStore.getState().questionIds
     if (index >= ids.length) { setNoQuestions(true); setIsLoading(false); return }
+
+    // Use preloaded data if available — no loading flash
+    const preloaded = preloadRef.current
+    if (preloaded && preloaded.index === index) {
+      preloadRef.current = null
+      setQuestion(preloaded.question)
+      setAttemptCount(preloaded.attempts)
+      setWrongCount(preloaded.wrongs)
+      setNote(preloaded.note)
+      setIsPublic(preloaded.isPublic)
+      setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
+      preloadNext(index + 1, ids, myGen)
+      return
+    }
+
+    setIsLoading(true); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
     const currentUser = useAuthStore.getState().user
     const [qRes, statsRes] = await Promise.all([
       supabase.from('questions').select('*').eq('id', ids[index]).single(),
@@ -331,7 +369,10 @@ export function PracticeSession() {
     const sd = statsRes?.data; setAttemptCount(sd?.length ?? 0); setWrongCount(sd?.filter((a: any) => !a.is_correct).length ?? 0)
     setNote(sd?.find((a: any) => a.note)?.note ?? ''); setIsPublic(sd?.find((a: any) => a.note)?.is_public ?? false)
     setIsLoading(false)
-  }, [])
+
+    // Preload next question in background
+    preloadNext(index + 1, ids, myGen)
+  }, [preloadNext])
 
   const mounted = useRef(false)
   useEffect(() => {
@@ -375,6 +416,8 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
+    useDashboardStore.getState().invalidatePlanCache()
 
     if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
     setIsSubmitted(true)
@@ -664,98 +707,27 @@ export function PracticeSession() {
             {t('practice.tryAgain')}
           </Button>
         </div>
-      ) : !question ? null : questionMode === 'sequential' ? (
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="order-2 lg:order-1 lg:flex-[6] space-y-4">
-            <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-              <QuestionCard question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
-            </div>
-            {isSubmitted && (
-              <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
-                <NoteEditor placeholder={t('practice.notePlaceholder')} value={note} onChange={setNote} />
-                <div className="flex items-center justify-between"><div><p className="text-sm">{t('notes.makePublic')}</p><p className="text-xs text-muted-foreground">{isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}</p></div><Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} /></div>
-              </div>
-            )}
-            <div className="flex gap-2 justify-end">
-              {!isSubmitted ? (<>{attemptCount > 0 && <Button variant="outline" onClick={handleNext}>{t('practice.skip')}</Button>}<Button onClick={handleSubmit} disabled={selectedAnswer === null}>{t('practice.submitAnswer')}</Button></>) : (<Button onClick={handleNext}><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</Button>)}
-            </div>
-          </div>
-          {seqActive && seqQuestionIds.length > 0 && (
-            <div className="order-1 lg:order-2 lg:flex-[4] lg:max-h-[calc(100vh-10rem)] overflow-auto">
-              <div className="rounded-xl border bg-card p-4 space-y-3">
-                <h4 className="text-sm font-medium">{t('dashboard.kpProgress')}</h4>
-                {(() => { const ki = seqGetCurrentKpInfo(); const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim(); return <SequentialProgressBar currentIndex={seqIndex} total={seqQuestionIds.length} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} /> })()}
-              </div>
+      ) : !question ? null : (
+        <div className="space-y-4">
+          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
+            <div className="rounded-xl border bg-card p-3">
+              {(() => { const ki = seqGetCurrentKpInfo(); const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim(); return <SequentialProgressBar currentIndex={seqIndex} total={seqQuestionIds.length} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} /> })()}
             </div>
           )}
-        </div>
-      ) : (
-        <>
-          <div
-            className="touch-pan-y select-none"
-            style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }}
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-          >
-            <QuestionCard
-              question={question}
-              selectedAnswer={selectedAnswer}
-              showResult={isSubmitted}
-              onSelect={handleSelect}
-              disabled={isSubmitted}
-              showEditLink={isAdmin}
-              attemptCount={attemptCount}
-              wrongCount={wrongCount}
-              note={note}
-              isFavorited={question ? isFavorite(question.id) : false}
-              onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined}
-              onVerify={question && !question.verified ? async () => {
-                await supabase.from('questions').update({ verified: true }).eq('id', question.id)
-                setQuestion({ ...question, verified: true })
-              } : undefined}
-            />
+          <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+            <QuestionCard question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
           </div>
           {isSubmitted && (
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
-              <NoteEditor
-                placeholder={t('practice.notePlaceholder')}
-                value={note}
-                onChange={setNote}
-              />
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm">{t('notes.makePublic')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}
-                  </p>
-                </div>
-                <Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} />
-              </div>
+              <NoteEditor placeholder={t('practice.notePlaceholder')} value={note} onChange={setNote} />
+              <div className="flex items-center justify-between"><div><p className="text-sm">{t('notes.makePublic')}</p><p className="text-xs text-muted-foreground">{isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}</p></div><Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} /></div>
             </div>
           )}
           <div className="flex gap-2 justify-end">
-            {!isSubmitted ? (
-              <>
-                {attemptCount > 0 && (
-                  <Button variant="outline" onClick={handleNext}>
-                    {t('practice.skip')}
-                  </Button>
-                )}
-                <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
-                  {t('practice.submitAnswer')}
-                </Button>
-              </>
-            ) : (
-              <Button onClick={handleNext}>
-                <Shuffle className="h-4 w-4" />
-                {t('practice.nextQuestion')}
-              </Button>
-            )}
+            {!isSubmitted ? (<>{attemptCount > 0 && <Button variant="outline" onClick={handleNext}>{t('practice.skip')}</Button>}<Button onClick={handleSubmit} disabled={selectedAnswer === null}>{t('practice.submitAnswer')}</Button></>) : (<Button onClick={handleNext}><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</Button>)}
           </div>
-        </>
+        </div>
       )}
     </div>
   )

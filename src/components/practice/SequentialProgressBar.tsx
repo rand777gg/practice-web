@@ -11,23 +11,21 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
   const overallPct = total > 0 ? Math.round(((currentIndex + 1) / total) * 100) : 0
 
   return (
-    <div className="space-y-1.5 w-full">
+    <div className="grid gap-y-1.5 text-xs" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
       {kpName && (
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground w-16 shrink-0 truncate">{kpName}</span>
-          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+        <>
+          <span className="text-muted-foreground whitespace-nowrap pr-2">{kpName}</span>
+          <div className="h-2 rounded-full bg-muted overflow-hidden self-center">
             <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${kpPct}%` }} />
           </div>
-          <span className="text-muted-foreground w-12 text-right shrink-0">{kpCurrent}/{kpTotal}</span>
-        </div>
+          <span className="text-muted-foreground tabular-nums whitespace-nowrap pl-2">{kpCurrent}/{kpTotal}</span>
+        </>
       )}
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground w-16 shrink-0">总进度</span>
-        <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden">
-          <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${overallPct}%` }} />
-        </div>
-        <span className="text-muted-foreground w-12 text-right shrink-0">{currentIndex + 1}/{total}</span>
+      <span className="text-muted-foreground whitespace-nowrap pr-2">总进度</span>
+      <div className="h-2.5 rounded-full bg-muted overflow-hidden self-center">
+        <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${overallPct}%` }} />
       </div>
+      <span className="text-muted-foreground tabular-nums whitespace-nowrap pl-2">{currentIndex + 1}/{total}</span>
     </div>
   )
 }
