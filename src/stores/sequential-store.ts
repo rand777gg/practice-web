@@ -16,6 +16,7 @@ interface SequentialStore {
   questionIds: string[]
   questionKps: (string | null)[]
   currentIndex: number
+  subjectPositions: Record<string, number>
   isLoading: boolean
   sessions: SessionInfo[]
   startSequential: (userId: string, kps: string[], subjects: string[], type: string) => Promise<void>
@@ -37,7 +38,7 @@ function makeSessionKey(kps: string[]): string {
 }
 
 export const useSequentialStore = create<SequentialStore>((set, get) => ({
-  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, sessions: [],
+  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {},
 
   startSequential: async (userId, kps, subjects, type) => {
     const sessionKey = makeSessionKey(kps)
@@ -76,7 +77,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       const { selectedKps: sKps, questionIds: qids, currentIndex: idx } = get()
       supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: sessionKey, selected_kps: sKps, question_ids: qids,
-        current_index: idx, updated_at: new Date().toISOString(),
+        current_index: idx, subject_positions: {}, updated_at: new Date().toISOString(),
       }).then(() => {})
     } catch { set({ isLoading: false }) }
   },
@@ -86,16 +87,16 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (currentIndex < questionIds.length) set({ currentIndex: currentIndex + 1 })
   },
 
-  reset: () => set({ isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false }),
+  reset: () => set({ isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, subjectPositions: {} }),
 
   saveToDb: async (userId) => {
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(async () => {
-      const { selectedKps, questionIds, currentIndex, sessionKey } = get()
+      const { selectedKps, questionIds, currentIndex, sessionKey, subjectPositions } = get()
       if (!sessionKey) return
       await supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: sessionKey, selected_kps: selectedKps, question_ids: questionIds,
-        current_index: currentIndex, updated_at: new Date().toISOString(),
+        current_index: currentIndex, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
       })
     }, 300)
   },
@@ -125,7 +126,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         kpsArr = validIds.map(id => kpMap.get(id) ?? null)
         if (restoredIndex >= validIds.length) restoredIndex = Math.max(0, validIds.length - 1)
       }
-      set({ isActive: validIds.length > 0, sessionKey, selectedKps: data.selected_kps ?? [], questionIds: validIds, questionKps: kpsArr, currentIndex: restoredIndex })
+      set({ isActive: validIds.length > 0, sessionKey, selectedKps: data.selected_kps ?? [], questionIds: validIds, questionKps: kpsArr, currentIndex: restoredIndex, subjectPositions: data.subject_positions ?? {} })
       return validIds.length > 0
     }
     return false
@@ -148,9 +149,10 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (currentKey) {
       // Save current session before switching
       const { selectedKps, questionIds, currentIndex } = get()
+      const { subjectPositions } = get()
       await supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: currentKey, selected_kps: selectedKps, question_ids: questionIds,
-        current_index: currentIndex, updated_at: new Date().toISOString(),
+        current_index: currentIndex, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
       })
     }
     // Load target session
@@ -235,7 +237,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     const { selectedKps: sKps, questionIds: qids, currentIndex: idx } = get()
     supabase.from('practice_sequential_state').upsert({
       user_id: userId, session_key: newKey, selected_kps: sKps, question_ids: qids,
-      current_index: idx, updated_at: new Date().toISOString(),
+      current_index: idx, subject_positions: {}, updated_at: new Date().toISOString(),
     }).then(() => {})
   },
 

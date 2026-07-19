@@ -321,8 +321,9 @@ CREATE TABLE IF NOT EXISTS public.practice_sequential_state (
   session_key   TEXT NOT NULL DEFAULT 'default',
   selected_kps  TEXT[] NOT NULL DEFAULT '{}',
   question_ids  UUID[] NOT NULL DEFAULT '{}',
-  current_index INTEGER NOT NULL DEFAULT 0,
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  current_index    INTEGER NOT NULL DEFAULT 0,
+  subject_positions JSONB NOT NULL DEFAULT '{}',
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, session_key)
 );
 

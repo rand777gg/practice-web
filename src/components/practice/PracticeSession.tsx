@@ -148,16 +148,23 @@ export function PracticeSession() {
   useEffect(() => {
     const key = seqSessionKey
     if (!key) return
-    try {
-      const saved = localStorage.getItem(`sp_${key}`)
-      if (saved) subjectPosRef.current = JSON.parse(saved)
-    } catch {}
+    // Prefer store (from DB), fall back to localStorage
+    const storePos = useSequentialStore.getState().subjectPositions
+    if (storePos && Object.keys(storePos).length > 0) {
+      subjectPosRef.current = { ...storePos }
+    } else {
+      try {
+        const saved = localStorage.getItem(`sp_${key}`)
+        if (saved) subjectPosRef.current = JSON.parse(saved)
+      } catch {}
+    }
   }, [seqSessionKey])
 
   const saveSubjectPos = useCallback(() => {
     const key = useSequentialStore.getState().sessionKey
     if (!key) return
     try { localStorage.setItem(`sp_${key}`, JSON.stringify(subjectPosRef.current)) } catch {}
+    useSequentialStore.setState({ subjectPositions: { ...subjectPosRef.current } })
   }, [])
 
   // Build KP → subject map from selected KPs + kpBySubject
@@ -494,7 +501,7 @@ export function PracticeSession() {
     if (!u) return
     supabase.from('practice_sequential_state').upsert({
       user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
-      question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString(),
+      question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
     }).then(() => {})
   }, [])
 
@@ -560,7 +567,7 @@ export function PracticeSession() {
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
 
-    if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
+    if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
     setIsSubmitted(true)
   }
 
@@ -585,7 +592,7 @@ export function PracticeSession() {
   }, [answerId, note, updateNote])
 
   const handleNext = useCallback(() => {
-    if (questionMode === 'sequential') { seqNext(); const s = useSequentialStore.getState(); const u = useAuthStore.getState().user; if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}); loadSequentialQuestion(s.currentIndex) }
+    if (questionMode === 'sequential') { seqNext(); const s = useSequentialStore.getState(); const u = useAuthStore.getState().user; if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}); loadSequentialQuestion(s.currentIndex) }
     else fetchRandomQuestion()
   }, [questionMode, seqNext, fetchRandomQuestion, loadSequentialQuestion])
 
@@ -607,7 +614,7 @@ export function PracticeSession() {
         useSequentialStore.setState({ questionIds: newIds, questionKps: newKps, currentIndex: newIndex })
         supabase.from('practice_sequential_state').upsert({
           user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
-          question_ids: newIds, current_index: newIndex, updated_at: new Date().toISOString(),
+          question_ids: newIds, current_index: newIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
         }).then(() => {})
       }
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
