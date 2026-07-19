@@ -9,10 +9,10 @@ export function Component() {
   if (user && !isLoading) return <Navigate to="/" replace />
 
   return (
-    <div className="relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10 overflow-hidden bg-[#0a0a2e]">
+    <div className="dark relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10 overflow-hidden bg-[#0f0a1a]">
       <Lightfall
-        colors={['#A6C8FF', '#5227FF', '#FF9FFC']}
-        backgroundColor="#ffffff"
+        colors={['#6366f1', '#8b5cf6', '#a78bfa']}
+        backgroundColor="#0f0a1a"
         speed={0.8}
         streakCount={2}
         streakWidth={1.3}
