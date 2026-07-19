@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button'
 import { PlanProgress } from './PlanProgress'
 import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
 import { Link } from 'react-router-dom'
-import { Settings, Menu, Moon, Sparkles, Sun } from 'lucide-react'
+import { Settings, Menu, Moon, Sparkles, Sun, QrCode } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
+import { QrScanner } from '@/components/auth/QrScanner'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
@@ -21,6 +22,7 @@ export function Header({ onMenuClick }: Props) {
   const { isEnabled } = useSettingsStore()
   const summaryVisible = hasAiConfig() && isEnabled('summary')
   const [aiOpen, setAiOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
 
   return (
     <header className="h-14 border-b flex items-center justify-between px-4 lg:px-6 shrink-0 gap-2">
@@ -58,6 +60,9 @@ export function Header({ onMenuClick }: Props) {
             <Sun className="h-5 w-5" />
           )}
         </Button>
+        <Button variant="ghost" size="icon" onClick={() => setQrOpen(true)} title="扫码登录">
+          <QrCode className="h-5 w-5" />
+        </Button>
         <Button variant="ghost" size="icon" asChild title={t('settings.title')}>
           <Link to="/settings">
             <Settings className="h-5 w-5" />
@@ -65,6 +70,7 @@ export function Header({ onMenuClick }: Props) {
         </Button>
       </div>
       <AiSummaryDialog open={aiOpen} onOpenChange={setAiOpen} />
+      <QrScanner open={qrOpen} onOpenChange={setQrOpen} />
     </header>
   )
 }
