@@ -586,7 +586,9 @@ export function PracticeSession() {
 
   const handleMarkUnsure = useCallback(async () => {
     if (!question) return
-    await saveAnswer(question.id, [], false, 'practice')
+    const id = await saveAnswer(question.id, [], false, 'practice')
+    setAnswerId(id)
+    setIsSubmitted(true)
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
     window.dispatchEvent(new Event('plan-progress-refresh'))
