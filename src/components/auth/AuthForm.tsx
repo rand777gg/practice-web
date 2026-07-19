@@ -91,7 +91,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
             </FieldGroup>
           </form>
           <div className="relative hidden md:block bg-muted h-full">
-            <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover" />
+            <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover opacity-60" />
           </div>
         </CardContent>
       </Card>
