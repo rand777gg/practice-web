@@ -2,6 +2,8 @@ import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { LoadingTips } from '@/components/layout/LoadingTips'
+import { Component as LoginPage } from '@/pages/LoginPage'
+import { Component as RegisterPage } from '@/pages/RegisterPage'
 
 export const router = createBrowserRouter([
   {
@@ -9,11 +11,11 @@ export const router = createBrowserRouter([
     children: [
       {
         path: '/login',
-        lazy: () => import('@/pages/LoginPage'),
+        Component: LoginPage,
       },
       {
         path: '/register',
-        lazy: () => import('@/pages/RegisterPage'),
+        Component: RegisterPage,
       },
       {
         path: '/welcome',

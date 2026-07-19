@@ -10,7 +10,7 @@ export function Component() {
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10 overflow-hidden bg-[#0f0a1a]">
       <Lightfall
-        colors={['#6366f1', '#8b5cf6', '#a78bfa']}
+        colors={['#6366f1', '#8b5cf6', '#f3d62f']}
         backgroundColor="#0f0a1a"
         speed={0.8}
         streakCount={2}
