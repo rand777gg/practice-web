@@ -49,8 +49,7 @@ export function DashboardPlanCards() {
   const [customTargetTotal, setCustomTargetTotal] = useState(0)
   const [customTargetDone, setCustomTargetDone] = useState(0)
   const [customTargetTodayDone, setCustomTargetTodayDone] = useState(0)
-  const [planSubjProgress, setPlanSubjProgress] = useState<{ subject: string; done: number; total: number }[]>([])
-  const [targetSubjProgress, setTargetSubjProgress] = useState<{ subject: string; done: number; total: number }[]>([])
+  const [kpProgress, setKpProgress] = useState<{ kps: string[]; current: number; total: number; subject: string }[]>([])
 
   useEffect(() => {
     if (!user) return
@@ -66,12 +65,9 @@ export function DashboardPlanCards() {
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
 
         let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
-        const planSubj: typeof planSubjProgress = []
         for (const r of (lt ?? [])) {
           scopeTotal += Number(r.total); scopeDoneAll += Number(r.done_all); scopeDoneToday += Number(r.done_today)
-          planSubj.push({ subject: r.subject, done: Number(r.done_all), total: Number(r.total) })
         }
-        setPlanSubjProgress(planSubj)
         setTotalScope(scopeTotal)
         setTotalDone(scopeDoneAll)
         setYesterdayDone(scopeDoneAll - scopeDoneToday)
@@ -100,9 +96,6 @@ export function DashboardPlanCards() {
         }
         const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
         const totalDoneToday = [...subjDoneToday.values()].reduce((a, b) => a + b, 0)
-        const tSubjProg: typeof targetSubjProgress = []
-        for (const [s, t] of subjTotal) tSubjProg.push({ subject: s, done: subjDoneAll.get(s) ?? 0, total: t })
-        setTargetSubjProgress(tSubjProg)
         setCustomTargetTotal(totalAll)
         setCustomTargetDone(totalDoneAll)
         setCustomTargetTodayDone(totalDoneToday)
@@ -138,8 +131,21 @@ export function DashboardPlanCards() {
         setCustomTargetTotal(0)
         setCustomTargetDone(0)
         setCustomTargetTodayDone(0)
-        setTargetSubjProgress([])
       }
+
+      // Load sequential session KP progress
+      supabase.from('practice_sequential_state').select('*').eq('user_id', uid).then(({ data: sessions }) => {
+        const list = (sessions ?? []) as any[]
+        const allSubjs = [...new Set([...planSubjects, ...dailyTargets.flatMap(t => t.subjects.map(s => s.subject))])]
+        const result: typeof kpProgress = list.map((s: any) => {
+          const total = (s.question_ids?.length || 0)
+          const kps = (s.selected_kps ?? []) as string[]
+          // Match subject by checking if KP codes overlap with known subject names
+          const subj = allSubjs.find(sub => kps.some(k => sub.includes(k.slice(0,2)) || k.includes(sub))) || ''
+          return { kps, current: s.current_index ?? 0, total, subject: subj }
+        }).filter(s => s.total > 0)
+        setKpProgress(result)
+      })
     }
     load()
   }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
@@ -200,22 +206,6 @@ export function DashboardPlanCards() {
                   </span>
                 )}
               </p>
-              {planSubjProgress.length > 0 && (
-                <div className="space-y-1 pt-1">
-                  {planSubjProgress.map((s) => {
-                    const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
-                    return (
-                      <div key={s.subject} className="flex items-center gap-1.5 text-[10px]">
-                        <span className="text-muted-foreground w-16 truncate">{s.subject}</span>
-                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-muted-foreground tabular-nums">{s.done}/{s.total}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
             </CardContent>
           </Card>
         )}
@@ -268,26 +258,30 @@ export function DashboardPlanCards() {
                   )
                 })}
               </div>
-              {targetSubjProgress.length > 0 && (
-                <div className="space-y-1 pt-1 border-t border-border/30">
-                  {targetSubjProgress.map((s) => {
-                    const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
-                    return (
-                      <div key={s.subject} className="flex items-center gap-1.5 text-[10px]">
-                        <span className="text-muted-foreground w-16 truncate">{s.subject}</span>
-                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-pink-500 transition-all" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-muted-foreground tabular-nums">{s.done}/{s.total}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
             </CardContent>
           </Card>
         )}
       </div>
+      {kpProgress.length > 0 && (
+        <details className="mt-3">
+          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">顺序模式知识点进度 ({kpProgress.length}个会话)</summary>
+          <div className="mt-2 space-y-1.5">
+            {kpProgress.map((s, i) => {
+              const pct = s.total > 0 ? Math.round((s.current / s.total) * 100) : 0
+              return (
+                <div key={i} className="flex items-center gap-1.5 text-[10px]">
+                  <span className="text-muted-foreground w-20 truncate">{s.subject || `会话${i+1}`}</span>
+                  <span className="text-muted-foreground w-8 tabular-nums">{s.kps.length}KP</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-muted-foreground tabular-nums">{s.current}/{s.total}</span>
+                </div>
+              )
+            })}
+          </div>
+        </details>
+      )}
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   )
