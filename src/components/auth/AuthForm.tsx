@@ -52,11 +52,11 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
           {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
           <Field>
             <FieldLabel htmlFor="email">{t('auth.email')}</FieldLabel>
-            <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="text-white placeholder:text-white/40" />
+            <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="text-white placeholder:text-white/40 border-white/30 focus:border-white/60" />
           </Field>
           <Field>
             <FieldLabel htmlFor="password">{t('auth.password')}</FieldLabel>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="text-white placeholder:text-white/40" />
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="text-white placeholder:text-white/40 border-white/30 focus:border-white/60" />
           </Field>
           <Field>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
