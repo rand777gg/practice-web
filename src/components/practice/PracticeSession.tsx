@@ -144,6 +144,22 @@ export function PracticeSession() {
   const subjectPosRef = useRef<Record<string, number>>({})
   const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
 
+  // Persist per-subject positions to localStorage keyed by sessionKey
+  useEffect(() => {
+    const key = seqSessionKey
+    if (!key) return
+    try {
+      const saved = localStorage.getItem(`sp_${key}`)
+      if (saved) subjectPosRef.current = JSON.parse(saved)
+    } catch {}
+  }, [seqSessionKey])
+
+  const saveSubjectPos = useCallback(() => {
+    const key = useSequentialStore.getState().sessionKey
+    if (!key) return
+    try { localStorage.setItem(`sp_${key}`, JSON.stringify(subjectPosRef.current)) } catch {}
+  }, [])
+
   // Build KP → subject map from selected KPs + kpBySubject
   const kpToSubject = useMemo(() => {
     const m = new Map<string, string>()
@@ -426,7 +442,7 @@ export function PracticeSession() {
     const curKp = s.questionKps[s.currentIndex]
     if (curKp && index !== s.currentIndex) {
       const curSubj = kpBySubjectRef.current.find(x => x.keyPoints.includes(curKp))?.subject || kpToSubjectRef.current.get(curKp)
-      if (curSubj) subjectPosRef.current[curSubj] = s.currentIndex
+      if (curSubj) { subjectPosRef.current[curSubj] = s.currentIndex; saveSubjectPos() }
     }
     useSequentialStore.setState({ currentIndex: index })
     seqFetchGenRef.current++; const myGen = seqFetchGenRef.current
@@ -465,7 +481,7 @@ export function PracticeSession() {
   }, [preloadNext])
 
   const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
-    if (currentSubject) subjectPosRef.current[currentSubject] = seqIndex
+    if (currentSubject) { subjectPosRef.current[currentSubject] = seqIndex; saveSubjectPos() }
     const saved = subjectPosRef.current[block.subject]
     const target = saved != null && saved >= block.start && saved <= block.end ? saved : block.start
     loadSequentialQuestion(target)
@@ -957,7 +973,7 @@ export function PracticeSession() {
             </div>
           )}
           <div className="flex gap-2 justify-end">
-            {!isSubmitted ? (<>{attemptCount > 0 && <Button variant="outline" onClick={handleNext}>{t('practice.skip')}</Button>}<Button onClick={handleSubmit} disabled={selectedAnswer === null}>{t('practice.submitAnswer')}</Button></>) : (<Button onClick={handleNext}><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</Button>)}
+            {!isSubmitted ? (<Button onClick={handleSubmit} disabled={selectedAnswer === null}>{t('practice.submitAnswer')}</Button>) : (<Button onClick={handleNext}><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</Button>)}
           </div>
         </div>
       )}
