@@ -38,6 +38,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/checkbox'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
@@ -581,7 +582,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 : '重置后，自定义目标的今日已完成计数将归零。'}
             </AlertDialogDescription>
             <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
-              <input type="checkbox" checked={resetTooEasy} onChange={(e) => setResetTooEasy(e.target.checked)} className="h-4 w-4 rounded border-gray-300" />
+              <Checkbox checked={resetTooEasy} onCheckedChange={(v) => setResetTooEasy(v === true)} />
               同时将已标记为"太简单"的题目恢复
             </label>
           </AlertDialogHeader>
