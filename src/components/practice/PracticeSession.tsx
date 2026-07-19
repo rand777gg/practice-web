@@ -11,6 +11,7 @@ import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
+import { Icon } from '@iconify/react'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -846,7 +847,20 @@ export function PracticeSession() {
       ) : !question ? null : (
         <div className="space-y-4">
           {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
-            <div className="rounded-xl border bg-card p-3 space-y-2">
+            <div className="rounded-xl border bg-card p-3 space-y-2 relative">
+              {/* Device + sync badge */}
+              {(() => {
+                const ua = navigator.userAgent
+                const deviceIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:macos-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
+                const lastSync = [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
+                const syncText = lastSync ? new Date(lastSync).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', month: 'numeric', day: 'numeric' }) : null
+                return syncText ? (
+                  <div className="absolute top-1.5 right-2 flex items-center gap-0.5 bg-background/80 rounded-full px-1.5 py-0.5">
+                    <Icon icon={deviceIcon} className="h-2.5 w-2.5 text-muted-foreground" />
+                    <span className="text-[8px] text-muted-foreground tabular-nums">{syncText}</span>
+                  </div>
+                ) : null
+              })()}
               {/* Subject cards */}
               {subjectBlocks.length > 1 && (
                 <div className="flex flex-wrap gap-1.5">
