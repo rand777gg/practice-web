@@ -448,9 +448,9 @@ SET search_path = ''
 AS $$
   SELECT
     COALESCE(q.subject, 'Other') AS subject,
-    COUNT(*)                     AS total,
-    COUNT(ua_all.question_id)    AS done_all,
-    COUNT(ua_today.question_id)  AS done_today
+    COUNT(DISTINCT q.id)                  AS total,
+    COUNT(DISTINCT ua_all.question_id)     AS done_all,
+    COUNT(DISTINCT ua_today.question_id)   AS done_today
   FROM public.questions q
   LEFT JOIN public.user_answers ua_all
     ON ua_all.question_id = q.id

@@ -121,7 +121,7 @@ export function PracticeSession() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>((saved.current?.selectedType as QuestionType) ?? '')
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(saved.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed' | 'sequential'>((saved.current?.questionMode as any) ?? 'mixed')
+  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'sequential'>((saved.current?.questionMode as any) ?? 'sequential')
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
   const subjectPosRef = useRef<Record<string, number>>({})
@@ -760,9 +760,9 @@ export function PracticeSession() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => setQuestionMode('mixed')}>
-              混合模式
-              {questionMode === 'mixed' && <Check className="h-4 w-4 ml-auto" />}
+            <DropdownMenuItem onClick={() => setQuestionMode('sequential')}>
+              顺序刷题
+              {questionMode === 'sequential' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionMode('new')}>
               新题优先
@@ -831,7 +831,7 @@ export function PracticeSession() {
           <p className="text-lg font-medium">{t('practice.sequentialDone')}</p>
           <p className="text-muted-foreground">{t('practice.sequentialDoneDesc')}</p>
           <div className="flex gap-2 justify-center">
-            <Button variant="outline" onClick={() => { setQuestionMode('mixed'); seqReset() }}>{t('practice.backToNormalMode')}</Button>
+            <Button variant="outline" onClick={() => { setQuestionMode('new'); seqReset(); fetchRandomQuestion() }}>{t('practice.backToNormalMode')}</Button>
             <Button onClick={() => { const u = useAuthStore.getState().user; if (u) { seqStart(u.id, seqKps, selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet], selectedType).then(() => loadSequentialQuestion(0)) } }}><Shuffle className="h-4 w-4" />{t('practice.tryAgain')}</Button>
           </div>
         </div>
