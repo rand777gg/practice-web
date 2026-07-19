@@ -181,13 +181,6 @@ export function PracticeSession() {
   const kpToSubjectRef = useRef(kpToSubject)
   kpToSubjectRef.current = kpToSubject
 
-  const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
-    if (currentSubject) subjectPosRef.current[currentSubject] = seqIndex
-    const saved = subjectPosRef.current[block.subject]
-    const target = saved != null && saved >= block.start && saved <= block.end ? saved : block.start
-    loadSequentialQuestion(target)
-  }, [currentSubject, seqIndex, loadSequentialQuestion])
-
   // Persist filters to localStorage + DB
   useEffect(() => {
     const filters = { selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope }
@@ -453,6 +446,13 @@ export function PracticeSession() {
     // Preload next question in background
     preloadNext(index + 1, ids, myGen)
   }, [preloadNext])
+
+  const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
+    if (currentSubject) subjectPosRef.current[currentSubject] = seqIndex
+    const saved = subjectPosRef.current[block.subject]
+    const target = saved != null && saved >= block.start && saved <= block.end ? saved : block.start
+    loadSequentialQuestion(target)
+  }, [currentSubject, seqIndex, loadSequentialQuestion])
 
   const mounted = useRef(false)
   useEffect(() => {
