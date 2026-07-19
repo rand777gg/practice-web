@@ -41,6 +41,7 @@
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.17.0",
+    "recharts": "^3.9.2",
     "rehype-raw": "^7.0.0",
     "remark-math": "^6.0.0",
     "shiki": "^4.2.0",
