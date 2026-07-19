@@ -34,3 +34,4 @@ stats.html
 *.njsproj
 *.sln
 *.sw?
+.mcp.json

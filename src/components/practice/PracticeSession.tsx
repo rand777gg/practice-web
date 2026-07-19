@@ -71,7 +71,14 @@ export function PracticeSession() {
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
-  const [question, setQuestion] = useState<Question | null>(null)
+  // Restore cached question on mount for instant display
+  const [question, setQuestionState] = useState<Question | null>(() => {
+    try { const raw = localStorage.getItem('lastPracticeQuestion'); if (raw) return JSON.parse(raw) as Question } catch { return null }
+  })
+  const setQuestion = useCallback((q: Question | null) => {
+    setQuestionState(q)
+    if (q) { try { localStorage.setItem('lastPracticeQuestion', JSON.stringify(q)) } catch {} }
+  }, [])
   const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
