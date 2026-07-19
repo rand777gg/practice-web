@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -16,7 +15,6 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
   const [status, setStatus] = useState<'generating' | 'waiting' | 'loggingIn' | 'expired' | 'error'>('generating')
   const codeRef = useRef('')
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined)
-  const navigate = useNavigate()
 
   const generateToken = async () => {
     setStatus('generating')
@@ -46,13 +44,9 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
         const { data: sessionData, error: fnErr } = await supabase.functions.invoke('qr-login', {
           body: { token, code: codeRef.current, anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
         })
-        if (fnErr || !sessionData?.access_token) { console.error('qr-login error:', fnErr); try { const ctx = await (fnErr as any)?.context?.text?.(); console.error('qr-login body:', ctx) } catch {} setStatus('error'); return }
-        await supabase.auth.setSession({
-          access_token: sessionData.access_token,
-          refresh_token: sessionData.refresh_token,
-        })
-        onOpenChange(false)
-        navigate('/')
+        if (fnErr || !sessionData?.magic_link) { console.error('qr-login error:', fnErr); try { const ctx = await (fnErr as any)?.context?.text?.(); console.error('qr-login body:', ctx) } catch {} setStatus('error'); return }
+        // Redirect to magic link URL — auto-logs in and redirects back to app
+        window.location.href = sessionData.magic_link
       } else if (data.status === 'expired') {
         setStatus('expired')
         clearInterval(pollRef.current)
