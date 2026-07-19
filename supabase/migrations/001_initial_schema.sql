@@ -317,11 +317,13 @@ CREATE TRIGGER trg_question_meta_refresh
 -- 10. PRACTICE SEQUENTIAL STATE — 顺序刷题跨设备进度
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.practice_sequential_state (
-  user_id       UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  session_key   TEXT NOT NULL DEFAULT 'default',
   selected_kps  TEXT[] NOT NULL DEFAULT '{}',
   question_ids  UUID[] NOT NULL DEFAULT '{}',
   current_index INTEGER NOT NULL DEFAULT 0,
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, session_key)
 );
 
 -- ============================================================================
