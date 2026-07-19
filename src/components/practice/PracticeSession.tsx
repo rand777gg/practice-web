@@ -83,7 +83,7 @@ export function PracticeSession() {
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [showSkeleton, setShowSkeleton] = useState(false)
-  const skeletonTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const skeletonTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
   useEffect(() => {
     if (isLoading && !showSkeleton) {
       skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 400)
