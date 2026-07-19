@@ -83,10 +83,10 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
 
   return (
     <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
-      <div>
-        <span className={`text-xs font-medium ${(TYPE_COLORS[type] || '').split(' ').filter(c => c.startsWith('text-')).join(' ')}`}>{typeLabel}</span>
-        <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
+      <div className="flex flex-wrap gap-1.5">
+        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
       </div>
+      <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
       <div className="flex flex-wrap gap-1.5">
         {question.verified ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
