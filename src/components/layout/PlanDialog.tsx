@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { useSequentialStore } from '@/stores/sequential-store'
 
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -210,6 +211,10 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       })
       .eq('id', user.id)
     await refreshProfile()
+    // Sync sequential session with updated plan subjects
+    if (selectedSubjects.length > 0) {
+      useSequentialStore.getState().syncKpsFromPlanSubjects(user.id, selectedSubjects)
+    }
     setSaving(false)
     onOpenChange(false)
   }

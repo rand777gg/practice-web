@@ -488,6 +488,20 @@ export function PracticeSession() {
       seqLoadSessions(user.id)
       loadSequentialQuestion(0)
     }
+    // Sync plan subjects back from selected KPs
+    const kpSubjects = new Set<string>()
+    for (const kp of kps) {
+      const subj = kpToSubjectRef.current.get(kp)
+      if (subj) kpSubjects.add(subj)
+    }
+    const newPlanSubjects = [...kpSubjects].sort()
+    const oldPlanSubjects = useAuthStore.getState().profile?.plan_subjects ? JSON.parse(useAuthStore.getState().profile!.plan_subjects!) as string[] : []
+    const oldSet = new Set(oldPlanSubjects)
+    if (newPlanSubjects.length !== oldSet.size || !newPlanSubjects.every(s => oldSet.has(s))) {
+      await supabase.from('profiles').update({ plan_subjects: JSON.stringify(newPlanSubjects) }).eq('id', user.id)
+      useAuthStore.getState().refreshProfile()
+      useDashboardStore.getState().invalidatePlanCache()
+    }
   }, [selectedSubjects, selectedType, planSubjectSet, seqStart, seqMergeKps, loadSequentialQuestion, saveCurrentSession, seqLoadSessions])
 
   const mountedRef = useRef(false)

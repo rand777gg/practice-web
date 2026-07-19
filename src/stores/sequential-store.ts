@@ -26,6 +26,7 @@ interface SequentialStore {
   loadSessions: (userId: string) => Promise<void>
   switchSession: (userId: string, sessionKey: string) => Promise<void>
   mergeKps: (userId: string, newKps: string[], subjects: string[], type: string) => Promise<void>
+  syncKpsFromPlanSubjects: (userId: string, planSubjects: string[]) => Promise<void>
   getCurrentKpInfo: () => { kpName: string | null; kpCurrent: number; kpTotal: number }
 }
 
@@ -224,6 +225,38 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       user_id: userId, session_key: newKey, selected_kps: sKps, question_ids: qids,
       current_index: idx, updated_at: new Date().toISOString(),
     }).then(() => {})
+  },
+
+  syncKpsFromPlanSubjects: async (userId, planSubjects) => {
+    if (planSubjects.length === 0) return
+
+    // Query all KPs for these subjects
+    const PAGE = 500; let from = 0; const kps = new Set<string>()
+    while (true) {
+      const { data } = await supabase.from('questions').select('key_points').in('subject', planSubjects).not('key_points', 'is', null).range(from, from + PAGE - 1)
+      if (!data || data.length === 0) break
+      for (const r of (data as { key_points: string }[])) {
+        for (const k of r.key_points.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)) kps.add(k)
+      }
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+
+    const newKps = [...kps].sort()
+    if (newKps.length === 0) return
+
+    const { isActive, selectedKps } = get()
+    // Check if KPs actually changed
+    const oldSet = new Set(selectedKps)
+    if (newKps.length === oldSet.size && newKps.every(k => oldSet.has(k))) return
+
+    if (isActive) {
+      // Active session — merge
+      await get().mergeKps(userId, newKps, planSubjects, '')
+    } else {
+      // No active session — start new one
+      await get().startSequential(userId, newKps, planSubjects, '')
+    }
   },
 
   getCurrentKpInfo: () => {
