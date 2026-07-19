@@ -17,7 +17,7 @@ export function Component() {
       <Button variant="ghost" size="icon" className="absolute top-4 right-4" onClick={toggle} title={theme === 'light' ? 'Dark mode' : 'Light mode'}>
         {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
       </Button>
-      <AuthForm defaultTab="register" />
+      <AuthForm mode="register" />
     </div>
   )
 }
