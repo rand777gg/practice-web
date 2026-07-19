@@ -23,10 +23,13 @@ export function QrScanner({ open, onOpenChange }: Props) {
     stoppedRef.current = false
     setStatus('scanning')
 
-    const scanner = new Html5Qrcode('qr-reader')
-    scannerRef.current = scanner
+    // Wait for dialog to render the DOM element
+    const timer = setTimeout(() => {
+      if (stoppedRef.current) return
+      const scanner = new Html5Qrcode('qr-reader')
+      scannerRef.current = scanner
 
-    scanner.start(
+      scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 250, height: 250 } },
       async (decodedText) => {
@@ -50,12 +53,14 @@ export function QrScanner({ open, onOpenChange }: Props) {
         setStatus('success')
       },
       () => {}
-    ).catch(() => {
-      setStatus('error')
-      setErrorMsg('无法打开摄像头，请检查权限')
-    })
+      ).catch(() => {
+        setStatus('error')
+        setErrorMsg('无法打开摄像头，请检查权限')
+      })
+    }, 300)
 
     return () => {
+      clearTimeout(timer)
       stoppedRef.current = true
       if (scannerRef.current) {
         scannerRef.current.stop().catch(() => {})
