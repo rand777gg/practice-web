@@ -40,7 +40,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DatePicker } from '@/components/ui/date-picker'
 import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
@@ -325,7 +324,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               </div>
 
               {/* Deadline */}
-              <DatePicker
+              <DateTimePicker
                 date={deadline ? new Date(deadline + 'T00:00:00') : undefined}
                 onSelect={(d) => setDeadline(d ? d.toISOString().slice(0, 10) : '')}
                 placeholder={t('plan.pickDate')}

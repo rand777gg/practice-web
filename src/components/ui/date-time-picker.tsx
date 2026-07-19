@@ -49,7 +49,7 @@ export function DateTimePicker({ date, onSelect, placeholder = "选择日期", c
         </PopoverContent>
       </Popover>
       <Input type="time" value={timeStr} onChange={(e) => handleTime(e.target.value)} step="60"
-        className="flex-[3] h-8 text-xs px-2 [&::-webkit-calendar-picker-indicator]:hidden" />
+        className="flex-[4] h-8 text-xs px-2 [&::-webkit-calendar-picker-indicator]:hidden" />
     </div>
   )
 }
