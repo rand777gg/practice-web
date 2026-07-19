@@ -82,7 +82,7 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
           <BarChart accessibilityLayer data={chartData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={32}
-              tickFormatter={(value) => { const d = new Date(value); return `${d.getMonth()+1}/${d.getDate()}` }} />
+              tickFormatter={(value) => { const d = new Date(value); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }} />
             <ChartTooltip content={<ChartTooltipContent className="w-[150px]" nameKey={activeChart} />} />
             <Bar dataKey={activeChart} fill={activeChart === 'plan' ? '#3b82f6' : '#ec4899'} radius={[4, 4, 0, 0]} maxBarSize={24} />
           </BarChart>
