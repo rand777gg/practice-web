@@ -455,13 +455,6 @@ export function PracticeSession() {
     loadSequentialQuestion(target)
   }, [currentSubject, seqIndex, loadSequentialQuestion])
 
-  const mounted = useRef(false)
-  useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return }
-    if (questionMode === 'sequential' && seqActive) loadSequentialQuestion(seqIndex)
-    else fetchRandomQuestion()
-  }, [fetchRandomQuestion, questionMode, seqActive, seqIndex])
-
   const saveCurrentSession = useCallback(() => {
     const s = useSequentialStore.getState()
     if (!s.isActive || !s.sessionKey) return
@@ -490,14 +483,13 @@ export function PracticeSession() {
     }
   }, [selectedSubjects, selectedType, planSubjectSet, seqStart, seqMergeKps, loadSequentialQuestion, saveCurrentSession, seqLoadSessions])
 
-  const mountedRef = useRef(false)
+  const modeInitRef = useRef(false)
   useEffect(() => {
     if (questionMode === 'sequential') {
       const user = useAuthStore.getState().user
       if (!user) { setSequentialDialogOpen(true); return }
       seqLoadSessions(user.id).then(() => {
         const sessions = useSequentialStore.getState().sessions
-        // Try to restore the most recent session
         if (sessions.length > 0) {
           const latest = sessions[0]
           seqLoadFromDb(user.id, latest.sessionKey).then(r => {
@@ -509,11 +501,17 @@ export function PracticeSession() {
           setSequentialDialogOpen(true)
         }
       })
-    } else if (mountedRef.current) {
+    } else {
       seqReset(); fetchRandomQuestion()
     }
-    mountedRef.current = true
+    modeInitRef.current = true
   }, [questionMode])
+
+  const subFetchRef = useRef(false)
+  useEffect(() => {
+    if (!subFetchRef.current) { subFetchRef.current = true; return }
+    if (questionMode !== 'sequential') fetchRandomQuestion()
+  }, [fetchRandomQuestion, questionMode])
 
   const handleSelect = useCallback((answer: CorrectAnswer) => {
     if (isSubmitted) return
