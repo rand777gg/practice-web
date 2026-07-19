@@ -121,7 +121,7 @@ export function PracticeSession() {
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
 
-  // Build KP → subject map and subject blocks from current session
+  // Build KP → subject map from selected KPs + kpBySubject
   const kpToSubject = useMemo(() => {
     const m = new Map<string, string>()
     for (const s of kpBySubject) for (const k of s.keyPoints) m.set(k, s.subject)
@@ -129,27 +129,46 @@ export function PracticeSession() {
   }, [kpBySubject])
 
   const seqQuestionKps = useSequentialStore((s) => s.questionKps)
+  const seqSelectedKps = useSequentialStore((s) => s.selectedKps)
+
+  // Build kp→subject map JUST from selected KPs
+  const selectedKpToSubject = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const kp of seqSelectedKps) {
+      const subj = kpToSubject.get(kp)
+      if (subj) m.set(kp, subj)
+    }
+    return m
+  }, [seqSelectedKps, kpToSubject])
+
   const subjectBlocks = useMemo(() => {
     if (!seqActive || seqQuestionKps.length === 0) return [] as { subject: string; start: number; end: number; count: number }[]
+    // Determine subject for each question by checking its KP against selected KPs
+    const qSubjects = seqQuestionKps.map(kp => {
+      if (!kp) return '_unknown_'
+      return selectedKpToSubject.get(kp) || kpToSubject.get(kp) || '_unknown_'
+    })
     const blocks: { subject: string; start: number; end: number; count: number }[] = []
-    let curSubj = kpToSubject.get(seqQuestionKps[0] ?? '') ?? null
+    let curSubj = qSubjects[0]
     let start = 0
-    for (let i = 1; i <= seqQuestionKps.length; i++) {
-      const subj = i < seqQuestionKps.length ? (kpToSubject.get(seqQuestionKps[i] ?? '') ?? null) : null
+    for (let i = 1; i <= qSubjects.length; i++) {
+      const subj = i < qSubjects.length ? qSubjects[i] : null
       if (subj !== curSubj) {
-        if (curSubj) blocks.push({ subject: curSubj, start, end: i - 1, count: i - start })
-        curSubj = subj
+        blocks.push({ subject: curSubj, start, end: i - 1, count: i - start })
+        curSubj = subj!
         start = i
       }
     }
     return blocks
-  }, [seqActive, seqQuestionKps, kpToSubject])
+  }, [seqActive, seqQuestionKps, selectedKpToSubject, kpToSubject])
 
-  // Auto-select active subject based on current question
+  // Auto-select active subject based on current question's KP
   const currentSubject = useMemo(() => {
     if (!seqActive || seqIndex >= seqQuestionKps.length) return null
-    return kpToSubject.get(seqQuestionKps[seqIndex] ?? '') ?? null
-  }, [seqActive, seqIndex, seqQuestionKps, kpToSubject])
+    const kp = seqQuestionKps[seqIndex]
+    if (!kp) return null
+    return selectedKpToSubject.get(kp) || kpToSubject.get(kp) || null
+  }, [seqActive, seqIndex, seqQuestionKps, selectedKpToSubject, kpToSubject])
 
   // Persist filters to localStorage + DB
   useEffect(() => {
@@ -374,6 +393,7 @@ export function PracticeSession() {
   }, [])
 
   const loadSequentialQuestion = useCallback(async (index: number) => {
+    useSequentialStore.setState({ currentIndex: index })
     seqFetchGenRef.current++; const myGen = seqFetchGenRef.current
     const ids = useSequentialStore.getState().questionIds
     if (index >= ids.length) { setNoQuestions(true); setIsLoading(false); return }
