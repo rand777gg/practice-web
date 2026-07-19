@@ -905,6 +905,7 @@ export function PracticeSession() {
               </div>
             ) : (
               <div className="space-y-2">
+                {subjectBlocks.length > 1 && (
                 <div className="flex flex-wrap gap-1.5">
                   {subjectBlocks.map(b => {
                     const isActive = b.subject === currentSubject
@@ -924,7 +925,7 @@ export function PracticeSession() {
                     )
                   })}
                 </div>
-              )}
+                )}
               {(() => {
                 const block = currentSubject ? subjectBlocks.find(b => b.subject === currentSubject) : null
                 const ci = seqIndex
