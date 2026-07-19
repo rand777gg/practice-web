@@ -17,6 +17,7 @@ export function QrScanner({ open, onOpenChange }: Props) {
   const [errorMsg, setErrorMsg] = useState('')
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const stoppedRef = useRef(false)
+  const runningRef = useRef(false)
 
   useEffect(() => {
     if (!open || !user) return
@@ -40,6 +41,7 @@ export function QrScanner({ open, onOpenChange }: Props) {
         if (!token || !url.pathname.includes('qr-confirm')) return
 
         stoppedRef.current = true
+        runningRef.current = false
         setStatus('confirming')
         await scanner.stop()
 
@@ -53,7 +55,7 @@ export function QrScanner({ open, onOpenChange }: Props) {
         setStatus('success')
       },
       () => {}
-      ).catch(() => {
+      ).then(() => { runningRef.current = true }).catch(() => {
         setStatus('error')
         setErrorMsg('无法打开摄像头，请检查权限')
       })
@@ -62,7 +64,8 @@ export function QrScanner({ open, onOpenChange }: Props) {
     return () => {
       clearTimeout(timer)
       stoppedRef.current = true
-      if (scannerRef.current) {
+      if (scannerRef.current && runningRef.current) {
+        runningRef.current = false
         scannerRef.current.stop().catch(() => {})
         scannerRef.current = null
       }
