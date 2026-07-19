@@ -287,17 +287,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     {t('plan.selectHint')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  {allSubjects.filter(s => !dailyUsedSubjects.has(s) || selectedSubjects.includes(s)).map((s) => {
+                  {allSubjects.map((s) => {
                     const checked = selectedSubjects.includes(s)
+                    const disabledByDaily = dailyUsedSubjects.has(s) && !checked
                     return (
                       <DropdownMenuItem
                         key={s}
+                        disabled={disabledByDaily}
                         onSelect={(e) => { e.preventDefault(); toggleSubject(s) }}
-                        className="text-xs"
+                        className={`text-xs ${disabledByDaily ? 'opacity-40' : ''}`}
                       >
                         <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
                         <span>{s}</span>
-                        <span className="ml-auto text-muted-foreground">{subjectCounts.get(s) ?? 0}</span>
+                        <span className="ml-auto text-muted-foreground">{disabledByDaily ? '已用于自定义' : subjectCounts.get(s) ?? 0}</span>
                       </DropdownMenuItem>
                     )
                   })}
@@ -408,7 +410,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
               )
               const targetSubjectNames = target.subjects.map(s => s.subject)
-              const availableSubjects = allSubjects.filter(s => (!usedByOthers.has(s) && !longUsedSubjects.has(s)) || targetSubjectNames.includes(s))
+              const availableSubjects = allSubjects.filter(s => !usedByOthers.has(s) || targetSubjectNames.includes(s))
               return (
                 <div key={i}>
                   {/* Title outside box */}
@@ -434,15 +436,17 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
                       {availableSubjects.map((s) => {
                         const checked = targetSubjectNames.includes(s)
+                        const disabledByLong = longUsedSubjects.has(s) && !checked
                         return (
                           <DropdownMenuItem
                             key={s}
+                            disabled={disabledByLong}
                             onSelect={(e) => { e.preventDefault(); toggleTargetSubject(i, s) }}
-                            className="text-xs"
+                            className={`text-xs ${disabledByLong ? 'opacity-40' : ''}`}
                           >
                             <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
                             <span>{s}</span>
-                            <span className="ml-auto text-muted-foreground">{subjectCounts.get(s) ?? 0}</span>
+                            <span className="ml-auto text-muted-foreground">{disabledByLong ? '已用于长期' : subjectCounts.get(s) ?? 0}</span>
                           </DropdownMenuItem>
                         )
                       })}
