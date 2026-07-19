@@ -44,7 +44,15 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
 
   return (
     <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
-      <Card className="overflow-hidden p-0 md:min-h-[560px] flex flex-col">
+      {!imageLoaded && (
+        <Card className="overflow-hidden p-0 md:min-h-[560px] flex flex-col">
+          <CardContent className="grid p-0 md:grid-cols-2 flex-1">
+            <div className="p-6 md:p-8 space-y-4"><Skeleton className="h-6 w-48" /><Skeleton className="h-4 w-64" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
+            <div className="relative hidden md:block bg-muted"><Skeleton className="absolute inset-0 h-full w-full rounded-none" /></div>
+          </CardContent>
+        </Card>
+      )}
+      <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col", !imageLoaded && "hidden")}>
         <CardContent className="grid p-0 md:grid-cols-2 flex-1">
           <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
             <FieldGroup>
@@ -78,7 +86,6 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
             </FieldGroup>
           </form>
           <div className="relative hidden md:block bg-muted h-full">
-            {!imageLoaded && <Skeleton className="absolute inset-0 h-full w-full rounded-none" />}
             <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover" />
           </div>
         </CardContent>
