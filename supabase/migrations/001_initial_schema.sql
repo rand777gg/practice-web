@@ -328,7 +328,34 @@ CREATE TABLE IF NOT EXISTS public.practice_sequential_state (
 );
 
 -- ============================================================================
--- 11. USER PREFERENCES — 用户偏好云同步
+-- 11. USER EXCLUDED QUESTIONS — "太简单"排除表
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.user_excluded_questions (
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  question_id UUID REFERENCES public.questions(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, question_id)
+);
+
+-- ============================================================================
+-- 12. QR LOGIN TOKENS — 扫码登录令牌
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.qr_login_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  token       TEXT NOT NULL UNIQUE,
+  auth_code   TEXT,
+  status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'expired')),
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  device_info TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at  TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '5 minutes')
+);
+
+CREATE INDEX IF NOT EXISTS idx_qr_token   ON public.qr_login_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_qr_expires ON public.qr_login_tokens(expires_at);
+
+-- ============================================================================
+-- 13. USER PREFERENCES — 用户偏好云同步
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.user_preferences (
   user_id           UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -397,7 +424,7 @@ CREATE OR REPLACE FUNCTION public.get_profile_nicknames(user_ids UUID[])
 RETURNS TABLE(id UUID, nickname TEXT) LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$ BEGIN RETURN QUERY SELECT p.id, p.nickname FROM public.profiles p WHERE p.id = ANY(user_ids); END; $$;
 
--- 随机抽取未做题目（两阶段：先未做，再全部）
+-- 随机抽取未做题目（两阶段：先未做，再全部，排除太简单）
 CREATE OR REPLACE FUNCTION public.get_random_question_id(
   p_user_id UUID, p_subjects TEXT[] DEFAULT NULL, p_categories TEXT[] DEFAULT NULL, p_question_type TEXT DEFAULT NULL
 )
@@ -410,12 +437,14 @@ BEGIN
     AND (p_categories IS NULL OR q.categories ?| p_categories)
     AND (p_question_type IS NULL OR q.question_type = p_question_type)
     AND NOT EXISTS (SELECT 1 FROM public.user_answers ua WHERE ua.question_id = q.id AND ua.user_id = p_user_id)
+    AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id)
   ORDER BY random() LIMIT 1;
   IF v_id IS NOT NULL THEN RETURN v_id; END IF;
   SELECT q.id INTO v_id FROM public.questions q
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
     AND (p_categories IS NULL OR q.categories ?| p_categories)
     AND (p_question_type IS NULL OR q.question_type = p_question_type)
+    AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id)
   ORDER BY random() LIMIT 1;
   RETURN v_id;
 END;
@@ -448,10 +477,10 @@ SECURITY INVOKER
 SET search_path = ''
 AS $$
   SELECT
-    COALESCE(q.subject, 'Other') AS subject,
+    COALESCE(q.subject, 'Other')          AS subject,
     COUNT(DISTINCT q.id)                  AS total,
-    COUNT(DISTINCT ua_all.question_id)     AS done_all,
-    COUNT(DISTINCT ua_today.question_id)   AS done_today
+    COUNT(DISTINCT ua_all.question_id)    AS done_all,
+    COUNT(DISTINCT ua_today.question_id)  AS done_today
   FROM public.questions q
   LEFT JOIN public.user_answers ua_all
     ON ua_all.question_id = q.id
@@ -462,10 +491,76 @@ AS $$
     AND ua_today.user_id = p_user_id
     AND ua_today.answered_at >= p_today_since
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_excluded_questions ueq
+      WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+    )
   GROUP BY COALESCE(q.subject, 'Other')
   ORDER BY subject;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[]) TO authenticated;
+
+-- 每日各学科完成情况
+CREATE OR REPLACE FUNCTION public.get_daily_completion(
+  p_user_id UUID, p_days INTEGER DEFAULT 30, p_subjects TEXT[] DEFAULT NULL
+)
+RETURNS TABLE(day DATE, subject TEXT, count BIGINT)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT ua.answered_at::DATE AS day, COALESCE(q.subject, 'Other') AS subject,
+         COUNT(DISTINCT ua.question_id) AS count
+  FROM public.user_answers ua
+  JOIN public.questions q ON q.id = ua.question_id
+  WHERE ua.user_id = p_user_id
+    AND ua.answered_at >= CURRENT_DATE - p_days
+    AND (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+  GROUP BY day, q.subject
+  ORDER BY day, q.subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_daily_completion(UUID, INTEGER, TEXT[]) TO authenticated;
+
+-- 正确率变化：今日 vs 昨日
+CREATE OR REPLACE FUNCTION public.get_accuracy_change(p_user_id UUID)
+RETURNS TABLE(subject TEXT, today_correct BIGINT, today_total BIGINT, yesterday_correct BIGINT, yesterday_total BIGINT)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$
+  WITH today AS (
+    SELECT COALESCE(q.subject, 'Other') AS subject,
+           COUNT(*) FILTER (WHERE ua.is_correct) AS correct, COUNT(*) AS total
+    FROM public.user_answers ua JOIN public.questions q ON q.id = ua.question_id
+    WHERE ua.user_id = p_user_id AND ua.answered_at::DATE = CURRENT_DATE
+    GROUP BY q.subject
+  ),
+  yesterday AS (
+    SELECT COALESCE(q.subject, 'Other') AS subject,
+           COUNT(*) FILTER (WHERE ua.is_correct) AS correct, COUNT(*) AS total
+    FROM public.user_answers ua JOIN public.questions q ON q.id = ua.question_id
+    WHERE ua.user_id = p_user_id AND ua.answered_at::DATE = CURRENT_DATE - 1
+    GROUP BY q.subject
+  )
+  SELECT COALESCE(t.subject, y.subject) AS subject,
+         COALESCE(t.correct, 0) AS today_correct, COALESCE(t.total, 0) AS today_total,
+         COALESCE(y.correct, 0) AS yesterday_correct, COALESCE(y.total, 0) AS yesterday_total
+  FROM today t FULL OUTER JOIN yesterday y ON t.subject = y.subject
+  WHERE COALESCE(t.total, 0) + COALESCE(y.total, 0) > 0
+  ORDER BY subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_accuracy_change(UUID) TO authenticated;
+
+-- 各学科各题型正确率
+CREATE OR REPLACE FUNCTION public.get_type_accuracy(p_user_id UUID, p_subjects TEXT[] DEFAULT NULL)
+RETURNS TABLE(subject TEXT, question_type TEXT, correct BIGINT, total BIGINT)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT COALESCE(q.subject, 'Other') AS subject, q.question_type,
+         COUNT(*) FILTER (WHERE ua.is_correct) AS correct, COUNT(*) AS total
+  FROM public.user_answers ua JOIN public.questions q ON q.id = ua.question_id
+  WHERE ua.user_id = p_user_id AND q.question_type IS NOT NULL
+    AND (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+  GROUP BY q.subject, q.question_type
+  ORDER BY q.subject, q.question_type;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_type_accuracy(UUID, TEXT[]) TO authenticated;
 
 -- ============================================================================
 -- 14. ROW LEVEL SECURITY — 行级安全
@@ -481,8 +576,9 @@ ALTER TABLE public.question_bank_items     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_daily_stats        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.question_meta_cache     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.practice_sequential_state ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE public.user_preferences        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_excluded_questions  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.qr_login_tokens          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_preferences         ENABLE ROW LEVEL SECURITY;
 
 -- profiles
 DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
@@ -568,6 +664,21 @@ CREATE POLICY qmc_select ON public.question_meta_cache FOR SELECT TO authenticat
 DROP POLICY IF EXISTS pss_own ON public.practice_sequential_state;
 CREATE POLICY pss_own ON public.practice_sequential_state FOR ALL
   USING (user_id = auth.uid() OR public.is_admin());
+
+-- user_excluded_questions
+DROP POLICY IF EXISTS ueq_own ON public.user_excluded_questions;
+CREATE POLICY ueq_own ON public.user_excluded_questions FOR ALL
+  USING (user_id = auth.uid() OR public.is_admin());
+
+-- qr_login_tokens
+DROP POLICY IF EXISTS qr_insert ON public.qr_login_tokens;
+CREATE POLICY qr_insert ON public.qr_login_tokens FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS qr_select ON public.qr_login_tokens;
+CREATE POLICY qr_select ON public.qr_login_tokens FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS qr_update ON public.qr_login_tokens;
+CREATE POLICY qr_update ON public.qr_login_tokens FOR UPDATE TO authenticated
+  USING (status = 'pending' AND expires_at > NOW())
+  WITH CHECK (user_id IS NOT NULL AND status = 'confirmed');
 
 -- user_preferences
 DROP POLICY IF EXISTS upref_own ON public.user_preferences;
