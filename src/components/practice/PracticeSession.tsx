@@ -416,7 +416,6 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
-    window.dispatchEvent(new Event('plan-progress-refresh'))
     useDashboardStore.getState().invalidatePlanCache()
 
     if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
