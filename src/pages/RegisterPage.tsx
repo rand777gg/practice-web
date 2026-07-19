@@ -4,10 +4,9 @@ import { AuthForm } from '@/components/auth/AuthForm'
 import Lightfall from '@/components/ui/Lightfall'
 
 export function Component() {
-  const { user, isLoading } = useAuthStore()
+  const { user } = useAuthStore()
 
-  if (isLoading) return null
-  if (user) return <Navigate to="/" replace />
+  if (user && !isLoading) return <Navigate to="/" replace />
 
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10 overflow-hidden bg-[#0a0a2e]">
