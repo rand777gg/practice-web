@@ -34,14 +34,15 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
         subjMap.get(s)!.set(t, pct)
       }
 
-      const subjs = [...subjMap.keys()]
+      // Ensure all plan subjects appear, even if no data
+      const subjs = [...new Set([...subjMap.keys(), ...planSubjects])]
       setSubjects(subjs)
 
       // Build radar data: one entry per ALL types, with each subject's accuracy
       const radarData = ALL_TYPES.map(t => {
         const entry: any = { type: TYPE_LABELS[t] || t }
         for (const s of subjs) {
-          entry[s] = subjMap.get(s)?.get(t) ?? 100 // default 100% if no data
+          entry[s] = subjMap.get(s)?.get(t) ?? 100
         }
         return entry
       })
