@@ -14,9 +14,9 @@ CREATE INDEX IF NOT EXISTS idx_qr_expires ON public.qr_login_tokens(expires_at);
 
 ALTER TABLE public.qr_login_tokens ENABLE ROW LEVEL SECURITY;
 
--- 任何已登录用户可以创建token（扫码后确认）
-DROP POLICY IF EXISTS qr_insert_auth ON public.qr_login_tokens;
-CREATE POLICY qr_insert_auth ON public.qr_login_tokens FOR INSERT TO authenticated WITH CHECK (true);
+-- 任何人可以创建token（登录页未登录时生成）
+DROP POLICY IF EXISTS qr_insert ON public.qr_login_tokens;
+CREATE POLICY qr_insert ON public.qr_login_tokens FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 -- 任何人可以读取token状态（轮询）
 DROP POLICY IF EXISTS qr_select ON public.qr_login_tokens;
