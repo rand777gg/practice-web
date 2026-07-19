@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
+import { useSequentialStore } from '@/stores/sequential-store'
 
 
 import { Link } from 'react-router-dom'
@@ -162,7 +163,16 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setSaving(true)
     const now = new Date()
     await supabase.from('profiles').update({ plan_reset_at: now.toISOString() }).eq('id', user.id)
-    if (resetTooEasy) { await supabase.from('user_excluded_questions').delete().eq('user_id', user.id) }
+    if (resetTooEasy) {
+      await supabase.from('user_excluded_questions').delete().eq('user_id', user.id)
+      const s = useSequentialStore.getState()
+      if (s.isActive && s.sessionKey) {
+        const savedIndex = s.currentIndex
+        await s.startSequential(user.id, s.selectedKps, selectedSubjects, '')
+        const { questionIds } = useSequentialStore.getState()
+        useSequentialStore.setState({ currentIndex: Math.min(savedIndex, questionIds.length - 1) })
+      }
+    }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
@@ -175,7 +185,16 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setSaving(true)
     const now = new Date()
     await supabase.from('profiles').update({ daily_reset_at: now.toISOString() }).eq('id', user.id)
-    if (resetTooEasy) { await supabase.from('user_excluded_questions').delete().eq('user_id', user.id) }
+    if (resetTooEasy) {
+      await supabase.from('user_excluded_questions').delete().eq('user_id', user.id)
+      const s = useSequentialStore.getState()
+      if (s.isActive && s.sessionKey) {
+        const savedIndex = s.currentIndex
+        await s.startSequential(user.id, s.selectedKps, selectedSubjects, '')
+        const { questionIds } = useSequentialStore.getState()
+        useSequentialStore.setState({ currentIndex: Math.min(savedIndex, questionIds.length - 1) })
+      }
+    }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
