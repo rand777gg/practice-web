@@ -423,7 +423,8 @@ export function Component() {
                   <SubjectAccuracyBar />
                   {(() => {
                     const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
-                    return <SubjectTypeRadar planSubjects={pts} />
+                    const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
+                    return <SubjectTypeRadar planSubjects={[...new Set([...pts, ...tts])]} />
                   })()}
                   {[
                     { title: '时段分布', desc: '24小时答题时段热力' },

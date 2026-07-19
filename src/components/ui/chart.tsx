@@ -100,7 +100,7 @@ const ChartTooltipContent = React.forwardRef<
 ChartTooltipContent.displayName = "ChartTooltip"
 
 const ChartLegend = RechartsPrimitive.Legend
-const ChartLegendContent = React.forwardRef<HTMLDivElement, React.ComponentProps<"div"> & { nameKey?: string }>(({ className, nameKey, ...props }, ref) => {
+const ChartLegendContent = React.forwardRef<HTMLDivElement, any>(({ className, nameKey, iconSize, iconType, layout, align, verticalAlign, payload, ...props }: any, ref) => {
   const { config } = useChart()
   return (
     <div ref={ref} className={cn("flex items-center justify-center gap-3 pt-4", className)} {...props}>
