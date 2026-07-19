@@ -45,7 +45,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   return (
     <div className={cn("flex flex-col gap-6 w-full max-w-5xl", className)} {...props}>
       <Card className="overflow-hidden p-0 md:aspect-[4/3] md:max-h-[90vh]">
-        <CardContent className="grid p-0 md:grid-cols-2">
+        <CardContent className="grid p-0 md:grid-cols-2 h-full">
           <form className="p-6 md:p-8" onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
