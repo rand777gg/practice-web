@@ -9,6 +9,7 @@ import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { Check } from 'lucide-react'
+import { Icon } from '@iconify/react'
 
 function todayStart(): string {
   const d = new Date()
@@ -32,6 +33,16 @@ function getDailyTargets(profile: { daily_targets?: string | null } | null): Dai
 
 function subjectKey(s: string) { return s || 'Other' }
 
+const deviceInfo = (() => {
+  const ua = navigator.userAgent
+  if (/Windows/i.test(ua)) return { icon: 'mingcute:windows-line', name: 'Windows' }
+  if (/Mac/i.test(ua)) return { icon: 'mingcute:macos-line', name: 'macOS' }
+  if (/Android/i.test(ua)) return { icon: 'mingcute:android-line', name: 'Android' }
+  if (/Linux/i.test(ua)) return { icon: 'mingcute:linux-line', name: 'Linux' }
+  if (/iPhone|iPad/i.test(ua)) return { icon: 'mingcute:ios-line', name: 'iOS' }
+  return { icon: 'mingcute:computer-line', name: '' }
+})()
+
 export function PlanProgress() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
@@ -41,6 +52,7 @@ export function PlanProgress() {
   const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
+  const [lastSync, setLastSync] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [dailyGoal, setDailyGoal] = useState(0)
@@ -143,7 +155,7 @@ export function PlanProgress() {
         setDailyTargetGoal(0)
       }
       } catch (e) { console.error('PlanProgress load:', e) }
-      if (!cancelled) setIsLoading(false)
+      if (!cancelled) { setIsLoading(false); setLastSync(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })) }
     }
     load()
     return () => { cancelled = true }
@@ -210,11 +222,12 @@ export function PlanProgress() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setDialogOpen(true)}
-        className="flex items-center gap-3 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors min-w-0"
-      >
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setDialogOpen(true)}
+          className="flex items-center gap-3 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors min-w-0"
+        >
         {bothCompleted ? (
           <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
             <Check className="hidden sm:inline h-3.5 w-3.5" />
@@ -246,6 +259,13 @@ export function PlanProgress() {
           </>
         )}
       </button>
+        {lastSync && (
+          <div className="absolute -top-1 -right-1 flex items-center gap-0.5 bg-background rounded-full px-1 py-0.5 border shadow-sm">
+            <Icon icon={deviceInfo.icon} className="h-2.5 w-2.5 text-muted-foreground" title={deviceInfo.name} />
+            <span className="text-[8px] text-muted-foreground tabular-nums">{lastSync}</span>
+          </div>
+        )}
+      </div>
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   )
