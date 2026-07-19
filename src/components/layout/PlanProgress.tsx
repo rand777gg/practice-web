@@ -73,7 +73,6 @@ export function PlanProgress() {
         })
         if (cancelled) return
         if (ltErr) { console.error('PlanProgress lt:', ltErr); return }
-        console.log('PlanProgress load v=' + version + ' todaySince=' + longTodaySince + ' planResetAt=' + planResetAt + ' subjects=' + planSubjects + ' rows=' + JSON.stringify(lt))
         const rows = lt as { subject: string; total: number; done_all: number; done_today: number }[] | null
 
         let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
@@ -228,7 +227,7 @@ export function PlanProgress() {
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
                 <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
-                <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}<span className="text-[8px] text-muted-foreground/50 ml-0.5">d={todayLongDone} v{version}</span></span>
+                <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
               </div>
             )}
             {hasDailyTargets && (dailyDone ? (
