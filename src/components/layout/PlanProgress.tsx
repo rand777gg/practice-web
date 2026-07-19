@@ -54,7 +54,9 @@ export function PlanProgress() {
     if (!user) return
     const uid = user.id
     if (!hasData) setIsLoading(true)
+    let cancelled = false
     async function load() {
+      try {
       const today = todayStart()
 
       // Long-term goal
@@ -63,15 +65,18 @@ export function PlanProgress() {
         const daysLeft = Math.max(daysBetween(new Date(), deadlineDate), 1)
         const longTodaySince = planResetAt || today
 
-        const { data: lt } = await supabase.rpc('get_subject_progress', {
+        const { data: lt, error: ltErr } = await supabase.rpc('get_subject_progress', {
           p_user_id: uid,
           p_plan_reset_at: planResetAt || null,
           p_today_since: longTodaySince,
           p_subjects: planSubjects.length > 0 ? planSubjects : null,
-        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+        })
+        if (cancelled) return
+        if (ltErr) { console.error('PlanProgress lt:', ltErr); return }
+        const rows = lt as { subject: string; total: number; done_all: number; done_today: number }[] | null
 
         let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
-        for (const r of (lt ?? [])) {
+        for (const r of (rows ?? [])) {
           scopeTotal += Number(r.total)
           scopeDoneAll += Number(r.done_all)
           scopeDoneToday += Number(r.done_today)
@@ -89,17 +94,20 @@ export function PlanProgress() {
         const dailyTodaySince = dailyResetAt || today
         const targetSubjects = [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))]
 
-        const { data: dt } = await supabase.rpc('get_subject_progress', {
+        const { data: dt, error: dtErr } = await supabase.rpc('get_subject_progress', {
           p_user_id: uid,
           p_plan_reset_at: planResetAt || null,
           p_today_since: dailyTodaySince,
           p_subjects: targetSubjects,
-        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+        })
+        if (cancelled) return
+        if (dtErr) { console.error('PlanProgress dt:', dtErr); return }
+        const dtRows = dt as { subject: string; total: number; done_all: number; done_today: number }[] | null
 
         const subjTotal = new Map<string, number>()
         const subjDoneAll = new Map<string, number>()
         const subjDoneToday = new Map<string, number>()
-        for (const r of (dt ?? [])) {
+        for (const r of (dtRows ?? [])) {
           subjTotal.set(r.subject, Number(r.total))
           subjDoneAll.set(r.subject, Number(r.done_all))
           subjDoneToday.set(r.subject, Number(r.done_today))
@@ -134,9 +142,11 @@ export function PlanProgress() {
         setTargetProgress([])
         setDailyTargetGoal(0)
       }
-      setIsLoading(false)
+      } catch (e) { console.error('PlanProgress load:', e) }
+      if (!cancelled) setIsLoading(false)
     }
     load()
+    return () => { cancelled = true }
   }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
 
   // Listen for direct refresh events — bypass React batching entirely
