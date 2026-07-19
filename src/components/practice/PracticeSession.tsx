@@ -75,6 +75,15 @@ export function PracticeSession() {
   const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [showSkeleton, setShowSkeleton] = useState(false)
+  const skeletonTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => {
+    if (isLoading && !showSkeleton) {
+      skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 400)
+    }
+    if (!isLoading) { clearTimeout(skeletonTimerRef.current); setShowSkeleton(false) }
+    return () => clearTimeout(skeletonTimerRef.current)
+  }, [isLoading])
   const [noQuestions, setNoQuestions] = useState(false)
   const [attemptCount, setAttemptCount] = useState(0)
   const [wrongCount, setWrongCount] = useState(0)
@@ -844,7 +853,7 @@ export function PracticeSession() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {isLoading ? (
+      {showSkeleton ? (
         <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
           <Skeleton className="h-6 w-3/4" />
           <div className="flex flex-wrap gap-1.5">
