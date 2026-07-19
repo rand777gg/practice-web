@@ -46,7 +46,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
     <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
       <Card className="overflow-hidden p-0 md:min-h-[560px]">
         <CardContent className="grid p-0 md:grid-cols-2 h-full">
-          <form className="p-6 md:p-8 flex flex-col justify-center" onSubmit={handleSubmit}>
+          <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">{isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}</h1>
@@ -77,7 +77,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               </Field>
             </FieldGroup>
           </form>
-          <div className="relative hidden md:block bg-muted">
+          <div className="relative hidden md:block bg-muted h-full">
             {!imageLoaded && <Skeleton className="absolute inset-0 h-full w-full rounded-none" />}
             <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover" />
           </div>
