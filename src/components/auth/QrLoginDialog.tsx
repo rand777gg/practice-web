@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { QrCode, RefreshCw, Loader2 } from 'lucide-react'
 
+const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qr-login`
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -13,27 +15,25 @@ interface Props {
 
 export function QrLoginDialog({ open, onOpenChange }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState('')
-  const [status, setStatus] = useState<'generating' | 'waiting' | 'expired' | 'error'>('generating')
-  const tokenRef = useRef('')
+  const [status, setStatus] = useState<'generating' | 'waiting' | 'loggingIn' | 'expired' | 'error'>('generating')
+  const codeRef = useRef('')
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined)
   const navigate = useNavigate()
 
   const generateToken = async () => {
     setStatus('generating')
     const token = crypto.randomUUID()
-    tokenRef.current = token
+    const code = crypto.randomUUID().slice(0, 12)
+    codeRef.current = code
 
-    // Store token in DB
-    const { error } = await supabase.from('qr_login_tokens').insert({ token })
+    const { error } = await supabase.from('qr_login_tokens').insert({ token, auth_code: code })
     if (error) { setStatus('error'); return }
 
-    // Generate QR code
-    const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}`
+    const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}&code=${code}`
     const dataUrl = await QRCode.toDataURL(confirmUrl, { width: 240, margin: 1, color: { dark: '#ffffff', light: '#00000000' } })
     setQrDataUrl(dataUrl)
     setStatus('waiting')
 
-    // Start polling
     startPolling(token)
   }
 
@@ -44,10 +44,25 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
       if (error || !data) { setStatus('expired'); clearInterval(pollRef.current); return }
       if (data.status === 'confirmed') {
         clearInterval(pollRef.current)
-        // Refresh session to pick up the new login
-        await supabase.auth.refreshSession()
-        onOpenChange(false)
-        navigate('/')
+        setStatus('loggingIn')
+        // Get session from Edge Function
+        const res = await fetch(EDGE_FUNCTION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, code: codeRef.current }),
+        })
+        if (!res.ok) { setStatus('error'); return }
+        const sessionData = await res.json()
+        if (sessionData.access_token) {
+          await supabase.auth.setSession({
+            access_token: sessionData.access_token,
+            refresh_token: sessionData.refresh_token,
+          })
+          onOpenChange(false)
+          navigate('/')
+        } else {
+          setStatus('error')
+        }
       } else if (data.status === 'expired') {
         setStatus('expired')
         clearInterval(pollRef.current)
@@ -71,12 +86,13 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
           <DialogDescription>
             {status === 'generating' && '正在生成二维码...'}
             {status === 'waiting' && '请使用已登录的手机扫描二维码'}
+            {status === 'loggingIn' && '正在登录...'}
             {status === 'expired' && '二维码已过期，请重新生成'}
-            {status === 'error' && '生成失败，请重试'}
+            {status === 'error' && '登录失败，请重试'}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-4">
-          {status === 'waiting' ? (
+          {status === 'waiting' || status === 'loggingIn' ? (
             <img src={qrDataUrl} alt="QR Code" className="size-60 rounded-xl border border-border/50" />
           ) : status === 'generating' ? (
             <div className="size-60 flex items-center justify-center rounded-xl border border-border/50 bg-muted/20">

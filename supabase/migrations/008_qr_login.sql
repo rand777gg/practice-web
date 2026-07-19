@@ -2,12 +2,15 @@
 CREATE TABLE IF NOT EXISTS public.qr_login_tokens (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   token      TEXT NOT NULL UNIQUE,
+  auth_code  TEXT,
   status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'expired')),
   user_id    UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   device_info TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '5 minutes')
 );
+-- 兼容旧数据
+ALTER TABLE public.qr_login_tokens ADD COLUMN IF NOT EXISTS auth_code TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_qr_token ON public.qr_login_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_qr_expires ON public.qr_login_tokens(expires_at);
