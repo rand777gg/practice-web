@@ -51,7 +51,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token, code: codeRef.current }),
         })
-        if (!res.ok) { setStatus('error'); return }
+        if (!res.ok) { const err = await res.json().catch(() => ({})); console.error('qr-login error:', res.status, err); setStatus('error'); return }
         const sessionData = await res.json()
         if (sessionData.access_token) {
           await supabase.auth.setSession({
