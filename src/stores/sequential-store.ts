@@ -1,28 +1,45 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 
+export interface SessionInfo {
+  sessionKey: string
+  selectedKps: string[]
+  questionIds: string[]
+  currentIndex: number
+  updatedAt: string
+}
+
 interface SequentialStore {
   isActive: boolean
+  sessionKey: string
   selectedKps: string[]
   questionIds: string[]
   questionKps: (string | null)[]
   currentIndex: number
   isLoading: boolean
+  sessions: SessionInfo[]
   startSequential: (userId: string, kps: string[], subjects: string[], type: string) => Promise<void>
   nextQuestion: () => void
   reset: () => void
   saveToDb: (userId: string) => Promise<void>
-  loadFromDb: (userId: string) => Promise<boolean>
+  loadFromDb: (userId: string, sessionKey: string) => Promise<boolean>
+  loadSessions: (userId: string) => Promise<void>
+  switchSession: (userId: string, sessionKey: string) => Promise<void>
   getCurrentKpInfo: () => { kpName: string | null; kpCurrent: number; kpTotal: number }
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+function makeSessionKey(kps: string[]): string {
+  return [...kps].sort().join('|')
+}
+
 export const useSequentialStore = create<SequentialStore>((set, get) => ({
-  isActive: false, selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false,
+  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, sessions: [],
 
   startSequential: async (userId, kps, subjects, type) => {
-    set({ isLoading: true, selectedKps: kps })
+    const sessionKey = makeSessionKey(kps)
+    set({ isLoading: true, selectedKps: kps, sessionKey })
     try {
       const kpFilters = kps.map(k => `key_points.ilike.%${k}%`).join(',')
       let query = supabase.from('questions').select('id, key_points, seq_number').or(kpFilters)
@@ -48,11 +65,10 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         }),
         currentIndex: 0, isActive: true, isLoading: false,
       })
-      // Save immediately so KPs aren't lost on refresh
-      const { selectedKps, questionIds, currentIndex } = get()
+      const { selectedKps: sKps, questionIds: qids, currentIndex: idx } = get()
       supabase.from('practice_sequential_state').upsert({
-        user_id: userId, selected_kps: selectedKps, question_ids: questionIds,
-        current_index: currentIndex, updated_at: new Date().toISOString(),
+        user_id: userId, session_key: sessionKey, selected_kps: sKps, question_ids: qids,
+        current_index: idx, updated_at: new Date().toISOString(),
       }).then(() => {})
     } catch { set({ isLoading: false }) }
   },
@@ -62,28 +78,28 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (currentIndex < questionIds.length) set({ currentIndex: currentIndex + 1 })
   },
 
-  reset: () => set({ isActive: false, selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false }),
+  reset: () => set({ isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false }),
 
   saveToDb: async (userId) => {
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(async () => {
-      const { selectedKps, questionIds, currentIndex } = get()
+      const { selectedKps, questionIds, currentIndex, sessionKey } = get()
+      if (!sessionKey) return
       await supabase.from('practice_sequential_state').upsert({
-        user_id: userId, selected_kps: selectedKps, question_ids: questionIds,
+        user_id: userId, session_key: sessionKey, selected_kps: selectedKps, question_ids: questionIds,
         current_index: currentIndex, updated_at: new Date().toISOString(),
       })
     }, 300)
   },
 
-  loadFromDb: async (userId) => {
-    const { data } = await supabase.from('practice_sequential_state').select('*').eq('user_id', userId).single()
+  loadFromDb: async (userId, sessionKey) => {
+    const { data } = await supabase.from('practice_sequential_state').select('*').eq('user_id', userId).eq('session_key', sessionKey).single()
     if (data) {
       const storedIds: string[] = data.question_ids ?? []
       let validIds = storedIds
       let kpsArr: (string | null)[] = []
       let restoredIndex = data.current_index ?? 0
       if (storedIds.length > 0) {
-        // Validate stored IDs against current questions table (handle deletions)
         const kpMap = new Map<string, string | null>()
         const BATCH = 100
         const batches = []
@@ -97,16 +113,47 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
             kpMap.set(q.id, pk)
           }
         }
-        // Filter to only existing questions; rebuild KP array
         validIds = storedIds.filter(id => kpMap.has(id))
         kpsArr = validIds.map(id => kpMap.get(id) ?? null)
-        // Clamp index if deleted questions pushed it out of bounds
         if (restoredIndex >= validIds.length) restoredIndex = Math.max(0, validIds.length - 1)
       }
-      set({ isActive: validIds.length > 0, selectedKps: data.selected_kps ?? [], questionIds: validIds, questionKps: kpsArr, currentIndex: restoredIndex })
-      return data.question_ids ? data.question_ids.length > 0 : false
+      set({ isActive: validIds.length > 0, sessionKey, selectedKps: data.selected_kps ?? [], questionIds: validIds, questionKps: kpsArr, currentIndex: restoredIndex })
+      return validIds.length > 0
     }
     return false
+  },
+
+  loadSessions: async (userId) => {
+    const { data } = await supabase.from('practice_sequential_state').select('*').eq('user_id', userId).order('updated_at', { ascending: false })
+    const sessions: SessionInfo[] = (data ?? []).map((r: any) => ({
+      sessionKey: r.session_key,
+      selectedKps: r.selected_kps ?? [],
+      questionIds: r.question_ids ?? [],
+      currentIndex: r.current_index ?? 0,
+      updatedAt: r.updated_at,
+    }))
+    set({ sessions })
+  },
+
+  switchSession: async (userId, sessionKey) => {
+    const { sessionKey: currentKey } = get()
+    if (currentKey) {
+      // Save current session before switching
+      const { selectedKps, questionIds, currentIndex } = get()
+      await supabase.from('practice_sequential_state').upsert({
+        user_id: userId, session_key: currentKey, selected_kps: selectedKps, question_ids: questionIds,
+        current_index: currentIndex, updated_at: new Date().toISOString(),
+      })
+    }
+    // Load target session
+    const found = await get().loadFromDb(userId, sessionKey)
+    if (!found) {
+      // Session not found — start fresh with these KPs
+      const session = get().sessions.find(s => s.sessionKey === sessionKey)
+      if (session && session.selectedKps.length > 0) {
+        await get().startSequential(userId, session.selectedKps, [], '')
+      }
+    }
   },
 
   getCurrentKpInfo: () => {

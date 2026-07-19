@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Shuffle } from 'lucide-react'
+import { Check, ChevronDown, Plus, Shuffle } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { naturalSort } from '@/lib/utils'
@@ -87,6 +87,10 @@ export function PracticeSession() {
   const seqStart = useSequentialStore((s) => s.startSequential)
   const seqReset = useSequentialStore((s) => s.reset)
   const seqLoadFromDb = useSequentialStore((s) => s.loadFromDb)
+  const seqSessions = useSequentialStore((s) => s.sessions)
+  const seqLoadSessions = useSequentialStore((s) => s.loadSessions)
+  const seqSwitchSession = useSequentialStore((s) => s.switchSession)
+  const seqSessionKey = useSequentialStore((s) => s.sessionKey)
   const seqGetCurrentKpInfo = useSequentialStore((s) => s.getCurrentKpInfo)
 
   const planSubjects = useMemo(() => {
@@ -381,21 +385,45 @@ export function PracticeSession() {
     else fetchRandomQuestion()
   }, [fetchRandomQuestion, questionMode, seqActive, seqIndex])
 
+  const saveCurrentSession = useCallback(() => {
+    const s = useSequentialStore.getState()
+    if (!s.isActive || !s.sessionKey) return
+    const u = useAuthStore.getState().user
+    if (!u) return
+    supabase.from('practice_sequential_state').upsert({
+      user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
+      question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString(),
+    }).then(() => {})
+  }, [])
+
   const handleKpConfirm = useCallback(async (kps: string[]) => {
     const user = useAuthStore.getState().user; if (!user || kps.length === 0) return
+    // Save current session before starting new one
+    saveCurrentSession()
     await seqStart(user.id, kps, selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet], selectedType)
+    // Refresh sessions list
+    seqLoadSessions(user.id)
     loadSequentialQuestion(0)
-  }, [selectedSubjects, selectedType, planSubjectSet, seqStart, loadSequentialQuestion])
+  }, [selectedSubjects, selectedType, planSubjectSet, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions])
 
   const mountedRef = useRef(false)
   useEffect(() => {
     if (questionMode === 'sequential') {
       const user = useAuthStore.getState().user
       if (!user) { setSequentialDialogOpen(true); return }
-      seqLoadFromDb(user.id).then(r => {
-        const s = useSequentialStore.getState()
-        if (r && s.selectedKps.length > 0 && s.questionIds.length > 0) loadSequentialQuestion(s.currentIndex)
-        else setSequentialDialogOpen(true)
+      seqLoadSessions(user.id).then(() => {
+        const sessions = useSequentialStore.getState().sessions
+        // Try to restore the most recent session
+        if (sessions.length > 0) {
+          const latest = sessions[0]
+          seqLoadFromDb(user.id, latest.sessionKey).then(r => {
+            const s = useSequentialStore.getState()
+            if (r && s.questionIds.length > 0) loadSequentialQuestion(s.currentIndex)
+            else setSequentialDialogOpen(true)
+          })
+        } else {
+          setSequentialDialogOpen(true)
+        }
       })
     } else if (mountedRef.current) {
       seqReset(); fetchRandomQuestion()
@@ -418,7 +446,7 @@ export function PracticeSession() {
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
 
-    if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
+    if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}) }
     setIsSubmitted(true)
   }
 
@@ -443,7 +471,7 @@ export function PracticeSession() {
   }, [answerId, note, updateNote])
 
   const handleNext = useCallback(() => {
-    if (questionMode === 'sequential') { seqNext(); const s = useSequentialStore.getState(); const u = useAuthStore.getState().user; if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}); loadSequentialQuestion(s.currentIndex) }
+    if (questionMode === 'sequential') { seqNext(); const s = useSequentialStore.getState(); const u = useAuthStore.getState().user; if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}); loadSequentialQuestion(s.currentIndex) }
     else fetchRandomQuestion()
   }, [questionMode, seqNext, fetchRandomQuestion, loadSequentialQuestion])
 
@@ -668,7 +696,7 @@ export function PracticeSession() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {questionMode === 'sequential' && (<> <span className="w-px h-4 bg-border mx-1 hidden sm:block" /> <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setSequentialDialogOpen(true)}>{seqKps.length > 0 ? `${seqKps.length}个知识点` : '选择知识点'}<ChevronDown className="h-3 w-3" /></Button> </>)}
+        {questionMode === 'sequential' && (<> <span className="w-px h-4 bg-border mx-1 hidden sm:block" /> <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{seqKps.length > 0 ? `${seqKps.length}个知识点` : '选择知识点'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56"><div className="text-xs text-muted-foreground px-2 py-1.5">已保存的会话</div>{seqSessions.length === 0 && <div className="text-xs text-muted-foreground px-2 py-1">暂无</div>}{seqSessions.map(s => { const kpCount = s.selectedKps.length; const progress = s.questionIds.length > 0 ? Math.round((s.currentIndex / s.questionIds.length) * 100) : 0; const isActive = s.sessionKey === seqSessionKey; return (<DropdownMenuItem key={s.sessionKey} onSelect={async (e) => { e.preventDefault(); const u = useAuthStore.getState().user; if (u) { if (isActive) { setSequentialDialogOpen(true); return } saveCurrentSession(); await seqSwitchSession(u.id, s.sessionKey); loadSequentialQuestion(useSequentialStore.getState().currentIndex); } }} className={isActive ? 'bg-accent' : ''}><div className="flex flex-col gap-0.5"><span className="text-xs font-medium">{s.selectedKps.slice(0, 3).join('、')}{s.selectedKps.length > 3 ? ` 等${s.selectedKps.length}个` : ''}</span><span className="text-[10px] text-muted-foreground">{kpCount}个知识点 · {progress}% ({s.currentIndex}/{s.questionIds.length})</span></div></DropdownMenuItem>)})}<DropdownMenuSeparator /><DropdownMenuItem onSelect={(e) => { e.preventDefault(); setSequentialDialogOpen(true) }} className="text-xs"><Plus className="h-3 w-3 mr-1" />新建会话</DropdownMenuItem></DropdownMenuContent></DropdownMenu> </>)}
       </div>
 
       <KpSelectDialog open={sequentialDialogOpen} onOpenChange={setSequentialDialogOpen} kpBySubject={kpBySubject} planSubjects={[...planSubjectSet]} selectedKps={seqKps} onConfirm={handleKpConfirm} />
