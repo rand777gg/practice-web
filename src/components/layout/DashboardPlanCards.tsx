@@ -49,6 +49,8 @@ export function DashboardPlanCards() {
   const [customTargetTotal, setCustomTargetTotal] = useState(0)
   const [customTargetDone, setCustomTargetDone] = useState(0)
   const [customTargetTodayDone, setCustomTargetTodayDone] = useState(0)
+  const [planSubjProgress, setPlanSubjProgress] = useState<{ subject: string; done: number; total: number }[]>([])
+  const [targetSubjProgress, setTargetSubjProgress] = useState<{ subject: string; done: number; total: number }[]>([])
 
   useEffect(() => {
     if (!user) return
@@ -58,20 +60,18 @@ export function DashboardPlanCards() {
 
       if (deadline) {
         const longTodaySince = planResetAt || today
-
         const { data: lt } = await supabase.rpc('get_subject_progress', {
-          p_user_id: uid,
-          p_plan_reset_at: planResetAt || null,
-          p_today_since: longTodaySince,
+          p_user_id: uid, p_plan_reset_at: planResetAt || null, p_today_since: longTodaySince,
           p_subjects: planSubjects.length > 0 ? planSubjects : null,
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
 
         let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
+        const planSubj: typeof planSubjProgress = []
         for (const r of (lt ?? [])) {
-          scopeTotal += Number(r.total)
-          scopeDoneAll += Number(r.done_all)
-          scopeDoneToday += Number(r.done_today)
+          scopeTotal += Number(r.total); scopeDoneAll += Number(r.done_all); scopeDoneToday += Number(r.done_today)
+          planSubj.push({ subject: r.subject, done: Number(r.done_all), total: Number(r.total) })
         }
+        setPlanSubjProgress(planSubj)
         setTotalScope(scopeTotal)
         setTotalDone(scopeDoneAll)
         setYesterdayDone(scopeDoneAll - scopeDoneToday)
@@ -100,6 +100,9 @@ export function DashboardPlanCards() {
         }
         const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
         const totalDoneToday = [...subjDoneToday.values()].reduce((a, b) => a + b, 0)
+        const tSubjProg: typeof targetSubjProgress = []
+        for (const [s, t] of subjTotal) tSubjProg.push({ subject: s, done: subjDoneAll.get(s) ?? 0, total: t })
+        setTargetSubjProgress(tSubjProg)
         setCustomTargetTotal(totalAll)
         setCustomTargetDone(totalDoneAll)
         setCustomTargetTodayDone(totalDoneToday)
@@ -135,6 +138,7 @@ export function DashboardPlanCards() {
         setCustomTargetTotal(0)
         setCustomTargetDone(0)
         setCustomTargetTodayDone(0)
+        setTargetSubjProgress([])
       }
     }
     load()
@@ -196,6 +200,22 @@ export function DashboardPlanCards() {
                   </span>
                 )}
               </p>
+              {planSubjProgress.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  {planSubjProgress.map((s) => {
+                    const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
+                    return (
+                      <div key={s.subject} className="flex items-center gap-1.5 text-[10px]">
+                        <span className="text-muted-foreground w-16 truncate">{s.subject}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-muted-foreground tabular-nums">{s.done}/{s.total}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -248,6 +268,22 @@ export function DashboardPlanCards() {
                   )
                 })}
               </div>
+              {targetSubjProgress.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-border/30">
+                  {targetSubjProgress.map((s) => {
+                    const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
+                    return (
+                      <div key={s.subject} className="flex items-center gap-1.5 text-[10px]">
+                        <span className="text-muted-foreground w-16 truncate">{s.subject}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-pink-500 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-muted-foreground tabular-nums">{s.done}/{s.total}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
