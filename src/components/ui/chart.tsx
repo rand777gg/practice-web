@@ -57,7 +57,7 @@ const ChartTooltipContent = React.forwardRef<
     hideLabel?: boolean; hideIndicator?: boolean; indicator?: "line" | "dot" | "dashed"
     nameKey?: string; labelKey?: string; className?: string
   }
->(({ active, payload, className, indicator = "dot", hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, color, nameKey, labelKey }: any) => {
+>(({ active, payload, className, indicator = "dot", hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, color, nameKey, labelKey }: any, ref: any) => {
   const { config } = useChart()
   const tooltipLabel = React.useMemo(() => {
     if (hideLabel || !payload?.length) return null
@@ -73,7 +73,7 @@ const ChartTooltipContent = React.forwardRef<
 
   const nestLabel = payload.length === 1 && indicator !== "dot"
   return (
-    <div className={cn("grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl", className)}>
+    <div ref={ref} className={cn("grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl", className)}>
       {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
         {payload.map((p: any, i: number) => {
