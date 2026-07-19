@@ -25,7 +25,7 @@ export function DatePicker({ date, onSelect, placeholder = "选择日期", class
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0 z-50" align="start" sideOffset={4}>
         <Calendar mode="single" selected={date} captionLayout="dropdown" defaultMonth={date}
           onSelect={(d) => { onSelect(d); setOpen(false) }}
-          className="[--cell-size:2.5rem] p-4" />
+          className="[--cell-size:3rem] p-4 w-full" />
       </PopoverContent>
     </Popover>
   )
