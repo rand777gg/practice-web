@@ -5,6 +5,7 @@
 -- 清理已废弃的对象（旧部署兼容）
 DROP TABLE IF EXISTS public.plan_live_progress;
 DROP FUNCTION IF EXISTS public.get_subject_progress(UUID, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[]);
 
 -- ============================================================================
 -- 1. PROFILES — 用户资料表
