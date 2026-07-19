@@ -41,6 +41,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DatePicker } from '@/components/ui/date-picker'
+import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
@@ -455,9 +456,9 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   </div>
 
                   {/* Deadline */}
-                  <DatePicker
+                  <DateTimePicker
                     date={target.deadline ? new Date(target.deadline) : undefined}
-                    onSelect={(d) => updateDailyDeadline(i, d ? d.toISOString().slice(0, 10) + 'T00:00:00' : '')}
+                    onSelect={(d) => updateDailyDeadline(i, d ? d.toISOString() : '')}
                     placeholder={t('plan.deadline')}
                   />
 
