@@ -16,6 +16,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [imageLoaded, setImageLoaded] = useState(false)
+  const [imageHidden, setImageHidden] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
 
@@ -46,7 +47,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
     <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
       <div className="relative md:min-h-[560px]">
         <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0 bg-background/30 backdrop-blur-2xl border-0 shadow-2xl shadow-black/20", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100 z-10")}>
-          <CardContent className="grid p-0 md:grid-cols-2 flex-1">
+          <CardContent className={cn("grid p-0 flex-1", !imageHidden && "md:grid-cols-2")}>
             <div className="p-6 md:p-8 space-y-4 flex flex-col justify-center">
               <Skeleton className="h-7 w-40" />
               <Skeleton className="h-4 w-56" />
@@ -54,11 +55,11 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-            <div className="hidden md:block bg-muted/50" />
+            {!imageHidden && <div className="hidden md:block bg-muted/50" />}
           </CardContent>
         </Card>
         <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 bg-background/30 backdrop-blur-2xl border-0 shadow-2xl shadow-black/20", imageLoaded ? "opacity-100" : "opacity-0")}>
-        <CardContent className="grid p-0 md:grid-cols-2 flex-1">
+        <CardContent className={cn("grid p-0 flex-1", !imageHidden && "md:grid-cols-2")}>
           <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
@@ -90,11 +91,16 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               </Field>
             </FieldGroup>
           </form>
+          {!imageHidden && (
           <div className="relative hidden md:block bg-muted h-full">
             <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover opacity-60" />
           </div>
+          )}
         </CardContent>
       </Card>
+      <button type="button" onClick={() => setImageHidden(!imageHidden)} className="absolute -bottom-3 right-4 z-10 rounded-full bg-background/60 backdrop-blur-sm border border-border/30 px-2.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+        {imageHidden ? '显示图片' : '隐藏图片'}
+      </button>
       </div>
       <FieldDescription className="px-6 text-center">
         {isLogin ? <>还没有账号？<a href="/register" className="underline underline-offset-2 hover:text-foreground">立即注册</a></> : <>已有账号？<a href="/login" className="underline underline-offset-2 hover:text-foreground">去登录</a></>}
