@@ -57,7 +57,7 @@ const ChartTooltipContent = React.forwardRef<
     hideLabel?: boolean; hideIndicator?: boolean; indicator?: "line" | "dot" | "dashed"
     nameKey?: string; labelKey?: string; className?: string
   }
->(({ active, payload, className, indicator = "dot", hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, color, nameKey, labelKey, ..._rest }: any) => {
+>(({ active, payload, className, indicator = "dot", hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, color, nameKey, labelKey, ..._: any }: any) => {
   const { config } = useChart()
   const tooltipLabel = React.useMemo(() => {
     if (hideLabel || !payload?.length) return null

@@ -88,8 +88,8 @@ export function PracticeSession() {
     if (isLoading && !showSkeleton) {
       skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 400)
     }
-    if (!isLoading) { clearTimeout(skeletonTimerRef.current); setShowSkeleton(false) }
-    return () => clearTimeout(skeletonTimerRef.current)
+    if (!isLoading) { if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current); setShowSkeleton(false) }
+    return () => { if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current) }
   }, [isLoading])
   const [noQuestions, setNoQuestions] = useState(false)
   const [attemptCount, setAttemptCount] = useState(0)

@@ -15,7 +15,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [status, setStatus] = useState<'generating' | 'waiting' | 'expired' | 'error'>('generating')
   const tokenRef = useRef('')
-  const pollRef = useRef<ReturnType<typeof setInterval>>()
+  const pollRef = useRef<ReturnType<typeof setInterval>>(undefined)
   const navigate = useNavigate()
 
   const generateToken = async () => {
