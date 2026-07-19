@@ -4,6 +4,8 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Component as LoginPage } from '@/pages/LoginPage'
 import { Component as RegisterPage } from '@/pages/RegisterPage'
+import { Component as TermsPage } from '@/pages/TermsPage'
+import { Component as PrivacyPage } from '@/pages/PrivacyPage'
 
 export const router = createBrowserRouter([
   {
@@ -16,6 +18,14 @@ export const router = createBrowserRouter([
       {
         path: '/register',
         Component: RegisterPage,
+      },
+      {
+        path: '/terms',
+        Component: TermsPage,
+      },
+      {
+        path: '/privacy',
+        Component: PrivacyPage,
       },
       {
         path: '/welcome',

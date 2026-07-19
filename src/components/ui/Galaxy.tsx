@@ -130,6 +130,7 @@ export default function Galaxy({
 
     function update(t: number) {
       animateId = requestAnimationFrame(update);
+      if (!program || !mesh || !renderer.gl) return;
       if (!disableAnimation) { program.uniforms.uTime.value = t * 0.001; program.uniforms.uStarSpeed.value = (t * 0.001 * starSpeed) / 10.0; }
       const lerpFactor = 0.05;
       smoothMousePos.current.x += (targetMousePos.current.x - smoothMousePos.current.x) * lerpFactor;

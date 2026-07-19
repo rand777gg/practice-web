@@ -73,7 +73,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
         </FieldGroup>
       </form>
       <FieldDescription className="px-6 text-center">
-        By clicking continue, you agree to our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+        点击继续即表示同意我们的<a href="/terms" className="underline underline-offset-4 hover:text-foreground">服务条款</a>和<a href="/privacy" className="underline underline-offset-4 hover:text-foreground">隐私政策</a>。
       </FieldDescription>
     </div>
   )
