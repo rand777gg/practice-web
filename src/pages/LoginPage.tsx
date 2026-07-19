@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import { AuthForm } from '@/components/auth/AuthForm'
-import Galaxy from '@/components/ui/Galaxy'
+import LightRays from '@/components/ui/LightRays'
 
 export function Component() {
   const { user } = useAuthStore()
@@ -9,7 +9,7 @@ export function Component() {
 
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10 overflow-hidden bg-[#0a0a1a]">
-      <Galaxy density={1.5} glowIntensity={0.4} saturation={0.3} hueShift={220} speed={0.8} mouseInteraction={false} mouseRepulsion={false} twinkleIntensity={0.3} rotationSpeed={0.05} transparent />
+      <LightRays raysOrigin="top-center" raysColor="#4f6fbf" raysSpeed={1.2} lightSpread={0.6} rayLength={1.5} followMouse mouseInfluence={0.08} saturation={0.6} fadeDistance={1.2} />
       <div className="relative z-10 w-full max-w-sm">
         <AuthForm />
       </div>
