@@ -534,25 +534,6 @@ export function PracticeSession() {
     setSelectedAnswer(answer)
   }, [isSubmitted])
 
-  const handleMarkTooEasy = useCallback(async () => {
-    if (!question) return
-    const u = useAuthStore.getState().user; if (!u) return
-    await supabase.from('user_excluded_questions').upsert({ user_id: u.id, question_id: question.id }, { onConflict: 'user_id, question_id' })
-    bumpRefresh()
-    useDashboardStore.getState().invalidatePlanCache()
-    window.dispatchEvent(new Event('plan-progress-refresh'))
-    if (questionMode === 'sequential') handleNext()
-    else fetchRandomQuestion()
-  }, [question, questionMode, handleNext, fetchRandomQuestion, bumpRefresh])
-
-  const handleMarkUnsure = useCallback(async () => {
-    if (!question) return
-    await saveAnswer(question.id, [], false, 'practice')
-    bumpRefresh()
-    useDashboardStore.getState().invalidatePlanCache()
-    window.dispatchEvent(new Event('plan-progress-refresh'))
-  }, [question, saveAnswer, bumpRefresh])
-
   const bumpRefresh = useRefreshStore((s) => s.bump)
 
   const handleSubmit = async () => {
@@ -591,6 +572,25 @@ export function PracticeSession() {
     if (questionMode === 'sequential') { seqNext(); const s = useSequentialStore.getState(); const u = useAuthStore.getState().user; if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, updated_at: new Date().toISOString() }).then(() => {}); loadSequentialQuestion(s.currentIndex) }
     else fetchRandomQuestion()
   }, [questionMode, seqNext, fetchRandomQuestion, loadSequentialQuestion])
+
+  const handleMarkTooEasy = useCallback(async () => {
+    if (!question) return
+    const u = useAuthStore.getState().user; if (!u) return
+    await supabase.from('user_excluded_questions').upsert({ user_id: u.id, question_id: question.id }, { onConflict: 'user_id, question_id' })
+    bumpRefresh()
+    useDashboardStore.getState().invalidatePlanCache()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
+    if (questionMode === 'sequential') handleNext()
+    else fetchRandomQuestion()
+  }, [question, questionMode, handleNext, fetchRandomQuestion, bumpRefresh])
+
+  const handleMarkUnsure = useCallback(async () => {
+    if (!question) return
+    await saveAnswer(question.id, [], false, 'practice')
+    bumpRefresh()
+    useDashboardStore.getState().invalidatePlanCache()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
+  }, [question, saveAnswer, bumpRefresh])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,
