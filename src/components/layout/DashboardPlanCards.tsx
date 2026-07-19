@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 
-import { Progress } from '@/components/ui/progress'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
 import { Check, TrendingUp, TrendingDown } from 'lucide-react'
@@ -48,6 +48,7 @@ export function DashboardPlanCards() {
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
   const [customTargetTotal, setCustomTargetTotal] = useState(0)
   const [customTargetDone, setCustomTargetDone] = useState(0)
+  const [customTargetTodayDone, setCustomTargetTodayDone] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -98,8 +99,10 @@ export function DashboardPlanCards() {
           totalAll += Number(r.total)
         }
         const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
+        const totalDoneToday = [...subjDoneToday.values()].reduce((a, b) => a + b, 0)
         setCustomTargetTotal(totalAll)
         setCustomTargetDone(totalDoneAll)
+        setCustomTargetTodayDone(totalDoneToday)
 
         // Daily goal for deadline targets
         const deadlineTargets = dailyTargets.filter((t) => t.deadline)
@@ -131,6 +134,7 @@ export function DashboardPlanCards() {
         setDailyTargetGoal(0)
         setCustomTargetTotal(0)
         setCustomTargetDone(0)
+        setCustomTargetTodayDone(0)
       }
     }
     load()
@@ -144,7 +148,6 @@ export function DashboardPlanCards() {
   const isUp = changeFromYesterday >= 0
 
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
-  const dailyPct = dailyTargetGoal > 0 ? Math.min(Math.round((doneDaily / dailyTargetGoal) * 100), 100) : 0
 
   const nearestDeadline = dailyTargets.filter(t => t.deadline)
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
@@ -184,7 +187,7 @@ export function DashboardPlanCards() {
                     )
                   })()}
                 </div>
-                <span className="text-[11px] font-medium tabular-nums">{overallPct.toFixed(1)}%</span>
+                <span className="text-[11px] font-medium tabular-nums">{totalDone}/{totalScope}</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
                 {t('plan.doneCount')}: {totalDone}
@@ -205,7 +208,19 @@ export function DashboardPlanCards() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
+                  {(() => {
+                    const yesterday = customTargetDone - customTargetTodayDone
+                    const yPct = customTargetTotal > 0 ? (yesterday / customTargetTotal) * 100 : 0
+                    const tPct = customTargetTotal > 0 ? (customTargetTodayDone / customTargetTotal) * 100 : 0
+                    return (
+                      <>
+                        {yPct > 0 && <div className="h-full bg-pink-300 dark:bg-pink-800 transition-all" style={{ width: `${yPct}%` }} />}
+                        {tPct > 0 && <div className="h-full bg-pink-500 transition-all" style={{ width: `${tPct}%` }} />}
+                      </>
+                    )
+                  })()}
+                </div>
                 <span className="text-[11px] font-medium tabular-nums">{customTargetDone}/{customTargetTotal}</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
