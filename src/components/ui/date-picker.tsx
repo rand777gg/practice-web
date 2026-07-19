@@ -25,7 +25,7 @@ export function DatePicker({ date, onSelect, placeholder = "Pick a date", classN
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
-        <Calendar mode="single" selected={date} onSelect={(d) => { onSelect(d); setOpen(false) }} />
+        <Calendar mode="single" selected={date} onSelect={(d) => { onSelect(d); setOpen(false) }} className="[--cell-size:2.5rem] p-4" />
       </PopoverContent>
     </Popover>
   )
