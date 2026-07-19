@@ -11,7 +11,7 @@ import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
-import { Icon } from '@iconify/react'
+
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -883,35 +883,6 @@ export function PracticeSession() {
         <div className="space-y-4">
           {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
             <div className="rounded-xl border bg-card p-3 space-y-2 relative">
-              {/* Device + sync badge */}
-              {(() => {
-                const ua = navigator.userAgent
-                let deviceIcon = 'mingcute:computer-line'
-                let osName = ''
-                if (/Windows NT 10/.test(ua)) { deviceIcon = 'mingcute:windows-line'; osName = 'Windows 10' }
-                else if (/Windows NT 11/.test(ua) || /Windows NT 1[2-9]/.test(ua)) { deviceIcon = 'mingcute:windows-line'; osName = 'Windows 11' }
-                else if (/Windows/.test(ua)) { deviceIcon = 'mingcute:windows-line'; osName = 'Windows' }
-                else if (/Android (\d+[\d.]*)/.test(ua)) { deviceIcon = 'mingcute:android-line'; osName = 'Android ' + RegExp.$1 }
-                else if (/Android/.test(ua)) { deviceIcon = 'mingcute:android-line'; osName = 'Android' }
-                else if (/Mac OS X (\d+[._]\d+)/.test(ua)) { deviceIcon = 'mingcute:macos-line'; osName = 'macOS ' + RegExp.$1.replace('_', '.') }
-                else if (/Mac/.test(ua)) { deviceIcon = 'mingcute:macos-line'; osName = 'macOS' }
-                else if (/Linux/.test(ua)) { deviceIcon = 'mingcute:linux-line'; osName = 'Linux' }
-                else if (/iPhone|iPad/.test(ua)) { deviceIcon = 'mingcute:ios-line'; osName = 'iOS' }
-                // Try userAgentData for more detail (Chrome/Edge)
-                try {
-                  const uad = (navigator as any).userAgentData
-                  if (uad?.platform) osName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '')
-                } catch {}
-                const lastSync = [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
-                const syncText = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
-                return syncText ? (
-                  <div className="flex items-center justify-end gap-1 pt-1">
-                    <Icon icon={deviceIcon} className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[9px] text-muted-foreground">{osName}</span>
-                    <span className="text-[9px] text-muted-foreground tabular-nums ml-1">{syncText}</span>
-                  </div>
-                ) : null
-              })()}
               {/* Subject cards */}
               {subjectBlocks.length > 1 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -942,7 +913,13 @@ export function PracticeSession() {
                 const relIndex = block ? ci - offset : ci
                 const ki = seqGetCurrentKpInfo()
                 const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim()
-                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} />
+                const ua = navigator.userAgent
+                const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:macos-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
+                let devName = ''
+                try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
+                const lastSync = [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
+                const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
+                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} />
               })()}
             </div>
           )}
