@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,6 +15,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [imageLoaded, setImageLoaded] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
 
@@ -75,11 +77,9 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
               </Field>
             </FieldGroup>
           </form>
-          <div className="relative hidden bg-muted md:flex items-center justify-center">
-            <div className="text-center px-8">
-              <h2 className="text-2xl font-bold tracking-tight mb-2">Practice Web</h2>
-              <p className="text-sm text-muted-foreground">{t('auth.brandDesc')}</p>
-            </div>
+          <div className="relative hidden md:block bg-muted">
+            {!imageLoaded && <Skeleton className="absolute inset-0 h-full w-full rounded-none" />}
+            <img src="https://r2-rpw.pguide.dev/images/thu.webp" alt="" onLoad={() => setImageLoaded(true)} className="absolute inset-0 h-full w-full object-cover" />
           </div>
         </CardContent>
       </Card>
