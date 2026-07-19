@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Check, Pencil, Star, Sparkles } from 'lucide-react'
+import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle } from 'lucide-react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
@@ -62,10 +62,12 @@ interface Props {
   note?: string | null
   isFavorited?: boolean
   onToggleFavorite?: () => void
+  onMarkTooEasy?: () => void
+  onMarkUnsure?: () => void
   onVerify?: () => void
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onVerify }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify }: Props) {
   const { t } = useT()
   const type = question.question_type
   const isSingle = type === 'single_choice'
@@ -366,14 +368,26 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
         </>
       )}
 
-      {(onToggleFavorite || showResult) && (
+      {(onToggleFavorite || onMarkTooEasy || onMarkUnsure || showResult) && (
         <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
           {onToggleFavorite && (
             <Button variant="outline" size="sm" onClick={onToggleFavorite} className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}>
               {isFavorited ? <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" /> : <Star className="h-3 w-3" />}
               {isFavorited ? t('favorites.remove') : t('favorites.add')}
             </Button>
           )}
+          {onMarkTooEasy && (
+            <Button variant="outline" size="sm" onClick={onMarkTooEasy} className="text-muted-foreground hover:text-green-600 hover:border-green-400">
+              <ThumbsDown className="h-3 w-3 mr-1" />太简单
+            </Button>
+          )}
+          {onMarkUnsure && (
+            <Button variant="outline" size="sm" onClick={onMarkUnsure} className="text-muted-foreground hover:text-orange-600 hover:border-orange-400">
+              <HelpCircle className="h-3 w-3 mr-1" />不确定
+            </Button>
+          )}
+          </div>
           {showResult && (
             <div className="flex items-center gap-1">
               {!question.verified && onVerify && (

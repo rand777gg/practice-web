@@ -534,6 +534,25 @@ export function PracticeSession() {
     setSelectedAnswer(answer)
   }, [isSubmitted])
 
+  const handleMarkTooEasy = useCallback(async () => {
+    if (!question) return
+    const u = useAuthStore.getState().user; if (!u) return
+    await supabase.from('user_excluded_questions').upsert({ user_id: u.id, question_id: question.id }, { onConflict: 'user_id, question_id' })
+    bumpRefresh()
+    useDashboardStore.getState().invalidatePlanCache()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
+    if (questionMode === 'sequential') handleNext()
+    else fetchRandomQuestion()
+  }, [question, questionMode, handleNext, fetchRandomQuestion, bumpRefresh])
+
+  const handleMarkUnsure = useCallback(async () => {
+    if (!question) return
+    await saveAnswer(question.id, [], false, 'practice')
+    bumpRefresh()
+    useDashboardStore.getState().invalidatePlanCache()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
+  }, [question, saveAnswer, bumpRefresh])
+
   const bumpRefresh = useRefreshStore((s) => s.bump)
 
   const handleSubmit = async () => {
@@ -926,7 +945,7 @@ export function PracticeSession() {
             </div>
           )}
           <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-            <QuestionCard question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+            <QuestionCard question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
           </div>
           {isSubmitted && (
             <div className="space-y-1.5">

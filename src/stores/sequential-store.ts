@@ -48,7 +48,13 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       if (subjects.length > 0) query = query.in('subject', subjects)
       if (type) query = query.eq('question_type', type)
       const { data } = await query
-      const rows = (data ?? []) as { id: string; key_points: string | null; seq_number: number | null }[]
+      let rows = (data ?? []) as { id: string; key_points: string | null; seq_number: number | null }[]
+
+      // Filter out excluded questions
+      const { data: excluded } = await supabase.from('user_excluded_questions').select('question_id').eq('user_id', userId)
+      const excludedIds = new Set((excluded ?? []).map((e: any) => e.question_id))
+      rows = rows.filter(r => !excludedIds.has(r.id))
+
       const exactMatch = rows.filter(r => {
         if (!r.key_points) return false
         const kpList = r.key_points.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)
@@ -179,7 +185,13 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (subjects.length > 0) query = query.in('subject', subjects)
     if (type) query = query.eq('question_type', type)
     const { data } = await query
-    const rows = (data ?? []) as { id: string; key_points: string | null; seq_number: number | null }[]
+    let rows = (data ?? []) as { id: string; key_points: string | null; seq_number: number | null }[]
+
+    // Filter out excluded questions
+    const { data: excluded } = await supabase.from('user_excluded_questions').select('question_id').eq('user_id', userId)
+    const excludedIds = new Set((excluded ?? []).map((e: any) => e.question_id))
+    rows = rows.filter(r => !excludedIds.has(r.id))
+
     const existingIds = new Set(oldIds)
     const newQuestions = rows.filter(r => {
       if (!r.key_points) return false
