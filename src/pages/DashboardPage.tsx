@@ -24,7 +24,7 @@ const SubjectAccuracyCharts = lazy(() => import('@/components/charts/SubjectAccu
 const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
 const SubjectTreemap = lazy(() => import('@/components/charts/SubjectTreemap').then(m => ({ default: m.SubjectTreemap })))
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
-const AnswerTimeScatterHistogram = lazy(() => import('@/components/charts/AnswerTimeScatterHistogram').then(m => ({ default: m.AnswerTimeScatterHistogram })))
+
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
 const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').then(m => ({ default: m.AiChartInsight })))
 
@@ -412,31 +412,11 @@ export function Component() {
           <TabsContent value="stats">
             {visitedTabs.has('stats') && chartData ? (
               <div className="space-y-4">
-                <LazyChart>
-                  <Card className="border-0 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground">每日答题分布</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Suspense fallback={<ChartSkeleton />}>
-                        <AnswerTimeScatterHistogram
-                          dates={chartData.dailySubjectData.dates}
-                          subjects={chartData.dailySubjectData.subjects}
-                          data={chartData.dailySubjectData.data}
-                          barData={chartData.barData}
-                        />
-                      </Suspense>
-                      {showAiInsight && (
-                      <Suspense fallback={null}>
-                        <AiChartInsight
-                          title="每日答题分布"
-                          dataDesc={`最近15天每日各学科答题量。学科：${chartData.dailySubjectData.subjects.join('、')}。总答题${chartData.totalAnswered}道，正确${chartData.correctCount}道，错误${chartData.wrongCount}道。`}
-                        />
-                      </Suspense>
-                      )}
-                    </CardContent>
-                  </Card>
-                </LazyChart>
+                {(() => {
+                  const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
+                  const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
+                  return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
+                })()}
                 <LazyChart rootMargin="400px">
                   <Card className="border-0 shadow-none">
                     <CardHeader className="pb-2">
@@ -460,11 +440,6 @@ export function Component() {
                     </CardContent>
                   </Card>
                 </LazyChart>
-                {(() => {
-                  const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
-                  const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
-                  return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
-                })()}
               </div>
             ) : (
               <div className="space-y-4">
