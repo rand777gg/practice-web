@@ -580,9 +580,23 @@ export function PracticeSession() {
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
     window.dispatchEvent(new Event('plan-progress-refresh'))
-    if (questionMode === 'sequential') handleNext()
-    else fetchRandomQuestion()
-  }, [question, questionMode, handleNext, fetchRandomQuestion, bumpRefresh])
+    if (questionMode === 'sequential') {
+      // Remove excluded question from current session
+      const s = useSequentialStore.getState()
+      const idx = s.questionIds.indexOf(question.id)
+      if (idx >= 0) {
+        const newIds = s.questionIds.filter((_, i) => i !== idx)
+        const newKps = s.questionKps.filter((_, i) => i !== idx)
+        const newIndex = idx <= s.currentIndex && s.currentIndex > 0 ? s.currentIndex - 1 : s.currentIndex
+        useSequentialStore.setState({ questionIds: newIds, questionKps: newKps, currentIndex: newIndex })
+        supabase.from('practice_sequential_state').upsert({
+          user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
+          question_ids: newIds, current_index: newIndex, updated_at: new Date().toISOString(),
+        }).then(() => {})
+      }
+      loadSequentialQuestion(useSequentialStore.getState().currentIndex)
+    } else fetchRandomQuestion()
+  }, [question, questionMode, loadSequentialQuestion, fetchRandomQuestion, bumpRefresh])
 
   const handleMarkUnsure = useCallback(async () => {
     if (!question) return
