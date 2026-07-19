@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { usePlanStore } from '@/stores/plan-store'
+
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Calendar, Check, ChevronDown, HelpCircle, Plus, Play, X } from 'lucide-react'
@@ -19,6 +19,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -61,6 +71,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
   const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
   const [planLoading, setPlanLoading] = useState(false)
+  const [confirmReset, setConfirmReset] = useState<'long' | 'daily' | null>(null)
+  const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
   const { fetchPlanCache } = useDashboardStore()
   const refreshVersion = useRefreshStore((s) => s.version)
@@ -71,23 +83,21 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     if (cache && cache.refreshVersion === refreshVersion) {
       const counts = new Map<string, number>()
       for (const [s, p] of Object.entries(cache.subjectProgress)) counts.set(s, p.total)
-      for (const s of selectedSubjects) { if (!counts.has(s)) counts.set(s, 0) }
       setAllSubjects(cache.allSubjects)
       setSubjectCounts(counts)
       setSubjectProgress(new Map(Object.entries(cache.subjectProgress)))
       return
     }
     setPlanLoading(true)
-    fetchPlanCache(user.id, refreshVersion).then((cache) => {
+    fetchPlanCache(user.id, refreshVersion, profile?.plan_reset_at ?? null).then((cache) => {
       const counts = new Map<string, number>()
       for (const [s, p] of Object.entries(cache.subjectProgress)) counts.set(s, p.total)
-      for (const s of selectedSubjects) { if (!counts.has(s)) counts.set(s, 0) }
       setAllSubjects(cache.allSubjects)
       setSubjectCounts(counts)
       setSubjectProgress(new Map(Object.entries(cache.subjectProgress)))
       setPlanLoading(false)
     })
-  }, [open, user, selectedSubjects, fetchPlanCache, refreshVersion])
+  }, [open, user, fetchPlanCache, refreshVersion, profile?.plan_reset_at])
 
   useEffect(() => {
     const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
@@ -125,14 +135,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const updateDailyDeadline = (i: number, deadline: string) => {
     setDailyTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, deadline } : t))
   }
-
-  const updateSubjectCount = (i: number, si: number, count: number) => {
-    setDailyTargets((prev) => prev.map((t, idx) => {
-      if (idx !== i) return t
-      return { ...t, subjects: t.subjects.map((s, sIdx) => sIdx === si ? { ...s, count } : s) }
-    }))
-  }
-
   const toggleTargetSubject = (i: number, subj: string) => {
     setDailyTargets((prev) => prev.map((t, idx) => {
       if (idx !== i) return t
@@ -154,8 +156,9 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
     await supabase.from('profiles').update({ plan_reset_at: todayEnd.toISOString() }).eq('id', user.id)
     await refreshProfile()
-    usePlanStore.getState().reset()
+    useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
+    useDashboardStore.getState().invalidatePlanCache()
     setSaving(false)
   }
 
@@ -165,8 +168,20 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999)
     await supabase.from('profiles').update({ daily_reset_at: todayEnd.toISOString() }).eq('id', user.id)
     await refreshProfile()
-    usePlanStore.getState().reset()
+    useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
+    useDashboardStore.getState().invalidatePlanCache()
+    setSaving(false)
+  }
+
+  const handleDeleteLong = async () => {
+    if (!user) return
+    setSaving(true)
+    await supabase.from('profiles').update({ deadline: null, plan_subjects: null }).eq('id', user.id)
+    await refreshProfile()
+    setDeadline('')
+    setSelectedSubjects([])
+    useDashboardStore.getState().invalidatePlanCache()
     setSaving(false)
   }
 
@@ -226,8 +241,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           </div>
 
           {planTab === 'long-term' && (
-          <div className="border rounded-lg p-3">
-            <div className="text-sm font-semibold mb-2 text-blue-600 dark:text-blue-400">
+          <>
+            <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
               {t('plan.longTerm')}
               <HoverCard openDelay={500}>
                 <HoverCardTrigger asChild>
@@ -241,11 +256,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               </HoverCard>
             </div>
 
-            <div className="space-y-2">
-              {/* Subject selection */}
+            <div className="border rounded-lg p-3 space-y-2">
+              {/* Subject selection + delete */}
+              <div className="flex items-center gap-1.5">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                  <Button ref={ltDropdownRef} variant="outline" size="sm" className="flex-1 justify-between text-xs font-normal h-8">
                     <span className={selectedSubjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
                       {selectedSubjects.length === 0
                         ? t('plan.selectHint')
@@ -278,6 +294,10 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleDeleteLong} disabled={saving}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
 
               {/* Deadline */}
               <button
@@ -335,41 +355,35 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     <p className="text-[11px] pt-1">
                       <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
                       <span className="font-semibold text-blue-600 dark:text-blue-400">{dailyGoal} {t('plan.perDay')}</span>
-                      <span className="text-muted-foreground ml-2">{t('plan.remaining')}: {remaining}/{totalSelected}</span>
+                      <span className="text-muted-foreground ml-2">{t('plan.doneCount')}: {totalDone}/{totalSelected}</span>
                     </p>
                   )}
                 </div>
               )}
+
             </div>
-          </div>
+
+            {/* Add button — outside box */}
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => ltDropdownRef.current?.click()} className="text-xs h-7">
+                <Plus className="h-3 w-3" />
+                {t('plan.addSubject')}
+              </Button>
+            </div>
+          </>
           )}
 
           {planTab === 'daily' && (
-          <div className="border rounded-lg p-3">
-            <div className="text-sm font-semibold mb-2 text-pink-600 dark:text-pink-400">
-              {t('plan.dailyTarget')}
-              <HoverCard openDelay={500}>
-                <HoverCardTrigger asChild>
-                  <span className="inline-flex items-center ml-1 cursor-help">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                  </span>
-                </HoverCardTrigger>
-                <HoverCardContent className="text-xs w-56">
-                  {t('plan.dailyTargetDesc')}
-                </HoverCardContent>
-              </HoverCard>
-            </div>
-
-            <div className="space-y-3">
+          <div className="space-y-3">
             {planLoading ? (
-              <div className="space-y-2">
+              <div className="border rounded-lg p-3 space-y-2">
                 {[...Array(2)].map((_, i) => (
                   <div key={i} className="space-y-2">
-                    <Skeleton className="h-8 w-full" />
-                    <div className="flex items-center gap-2">
-                      <Skeleton className="h-7 flex-1" />
+                    <div className="flex items-center gap-1">
+                      <Skeleton className="h-8 flex-1" />
                       <Skeleton className="h-7 w-7" />
                     </div>
+                    <Skeleton className="h-8 w-full" />
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <Skeleton className="h-3 w-16" />
@@ -387,11 +401,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               const targetSubjectNames = target.subjects.map(s => s.subject)
               const availableSubjects = allSubjects.filter(s => !usedByOthers.has(s) || targetSubjectNames.includes(s))
               return (
-                <div key={i} className="space-y-2">
-                  {/* Subject multi-select */}
+                <div key={i}>
+                  {/* Title outside box */}
+                  <div className="text-sm font-semibold text-pink-600 dark:text-pink-400 truncate mb-1.5">
+                    {t('plan.dailyTarget')}
+                  </div>
+
+                  <div className="border rounded-lg p-3 space-y-2">
+
+                  {/* Subject multi-select + delete */}
+                  <div className="flex items-center gap-1.5">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                      <Button variant="outline" size="sm" className="flex-1 justify-between text-xs font-normal h-8">
                         <span className={target.subjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
                           {target.subjects.length === 0
                             ? t('plan.selectHint')
@@ -417,116 +439,97 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       })}
                     </DropdownMenuContent>
                   </DropdownMenu>
-
-                  {/* Deadline */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const btn = document.querySelector(`.target-date-input-${i}`) as HTMLInputElement
-                        btn?.showPicker()
-                      }}
-                      className="relative flex items-center justify-between flex-1 h-8 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
-                    >
-                      <span className={target.deadline ? '' : 'text-muted-foreground'}>
-                        {target.deadline
-                          ? new Date(target.deadline).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : t('plan.deadline')}
-                      </span>
-                      <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <input
-                        type="datetime-local"
-                        value={target.deadline ?? ''}
-                        onChange={(e) => updateDailyDeadline(i, e.target.value)}
-                        className={`target-date-input-${i} absolute inset-0 opacity-0 cursor-pointer`}
-                        style={{ colorScheme: theme }}
-                      />
-                    </button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeDailyTarget(i)}>
                       <X className="h-3 w-3" />
                     </Button>
                   </div>
 
-                  {/* Per-subject count inputs with progress */}
-                  {target.subjects.map((subj, si) => {
-                    const p = subjectProgress.get(subj.subject)
-                    const total = p?.total ?? 0
-                    const done = p?.done ?? 0
-                    const pct = total > 0 ? Math.round((done / total) * 100) : 0
-                    const remaining = Math.max(total - done, 0)
-                    const targetDaysLeft = target.deadline
-                      ? Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
-                      : 0
-                    const effectiveCount = targetDaysLeft > 0 ? Math.ceil(remaining / targetDaysLeft) : subj.count
-                    return (
-                    <div key={subj.subject} className="space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">{subj.subject}</span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">{done}/{total}</span>
-                        <div className="flex items-center gap-1">
-                          {targetDaysLeft > 0 ? (
-                            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 tabular-nums w-14 text-center">{effectiveCount}</span>
-                          ) : (
-                            <Input
-                              type="number"
-                              min={1}
-                              value={subj.count}
-                              onChange={(e) => updateSubjectCount(i, si, Math.max(1, Number(e.target.value)))}
-                              className="h-7 w-14 text-xs text-center shrink-0"
-                            />
-                          )}
-                          <span className="text-xs text-muted-foreground">{t('plan.questions')}</span>
+                  {/* Deadline */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const btn = document.querySelector(`.target-date-input-${i}`) as HTMLInputElement
+                      btn?.showPicker()
+                    }}
+                    className="relative flex items-center justify-between w-full h-8 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
+                  >
+                    <span className={target.deadline ? '' : 'text-muted-foreground'}>
+                      {target.deadline
+                        ? new Date(target.deadline).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : t('plan.deadline')}
+                    </span>
+                    <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <input
+                      type="datetime-local"
+                      value={target.deadline ?? ''}
+                      onChange={(e) => updateDailyDeadline(i, e.target.value)}
+                      className={`target-date-input-${i} absolute inset-0 opacity-0 cursor-pointer`}
+                      style={{ colorScheme: theme }}
+                    />
+                  </button>
+
+                  {/* Subject progress items — same layout as long-term tab */}
+                  {target.subjects.length > 0 && (
+                    <div className="space-y-1.5">
+                      {target.subjects.map((subj) => {
+                        const p = subjectProgress.get(subj.subject)
+                        const total = p?.total ?? 0
+                        const done = p?.done ?? 0
+                        const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                        return (
+                        <div key={subj.subject} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-muted-foreground truncate max-w-[60%]">{subj.subject}</span>
+                            <span className="tabular-nums">{done}/{total}</span>
+                          </div>
+                          <Progress value={pct} className="h-1.5 [&>div]:bg-pink-500" />
                         </div>
-                      </div>
-                      <Progress value={pct} className="h-1.5 [&>div]:bg-pink-500" />
+                      )})}
                     </div>
-                  )})}
+                  )}
+
+                  {/* Per-group summary at bottom-left */}
+                  {target.subjects.length > 0 && (() => {
+                    const grpDailyGoal = !target.deadline
+                      ? target.subjects.reduce((s, subj) => s + subj.count, 0)
+                      : (() => {
+                          const daysLeft = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
+                          return target.subjects.reduce((s, subj) => {
+                            const p = subjectProgress.get(subj.subject)
+                            const r = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
+                            return s + Math.ceil(r / daysLeft)
+                          }, 0)
+                        })()
+                    let grpTotal = 0, grpDone = 0
+                    for (const subj of target.subjects) {
+                      const p = subjectProgress.get(subj.subject)
+                      grpTotal += p?.total ?? 0
+                      grpDone += p?.done ?? 0
+                    }
+                    return (
+                      <p className="text-[11px] pt-1">
+                        <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
+                        <span className="font-semibold text-pink-600 dark:text-pink-400">{grpDailyGoal} {t('plan.perDay')}</span>
+                        <span className="text-muted-foreground ml-2">{t('plan.doneCount')}: {grpDone}/{grpTotal}</span>
+                      </p>
+                    )
+                  })()}
                 </div>
+              </div>
               )
             })}
-            </div>
 
+            {/* Add button — outside box */}
             {(() => {
               const usedAll = new Set(dailyTargets.flatMap((t) => t.subjects.map(s => s.subject)))
               if (usedAll.size >= allSubjects.length) return null
               return (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addDailyTarget}
-                  className="text-xs h-7 mt-2"
-                >
-                  <Plus className="h-3 w-3" />
-                  {t('plan.addSubject')}
-                </Button>
-              )
-            })()}
-
-            {/* Daily goal summary — same style as long-term plan */}
-            {dailyTargets.length > 0 && dailyTargets.some(t => t.subjects.length > 0) && (() => {
-              const dailyGoalTotal = dailyTargets.reduce((sum, t) => {
-                if (!t.deadline) return sum + t.subjects.reduce((s, subj) => s + subj.count, 0)
-                const daysLeft = Math.max(Math.ceil((new Date(t.deadline).getTime() - Date.now()) / 86400000), 1)
-                return sum + t.subjects.reduce((s, subj) => {
-                  const p = subjectProgress.get(subj.subject)
-                  const r = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
-                  return s + Math.ceil(r / daysLeft)
-                }, 0)
-              }, 0)
-              const uniqueSubjects = new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))
-              let totalScope = 0, totalDoneAll = 0
-              for (const s of uniqueSubjects) {
-                const p = subjectProgress.get(s)
-                totalScope += p?.total ?? 0
-                totalDoneAll += p?.done ?? 0
-              }
-              const remainingAll = Math.max(totalScope - totalDoneAll, 0)
-              return (
-                <p className="text-[11px] pt-1">
-                  <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
-                  <span className="font-semibold text-pink-600 dark:text-pink-400">{dailyGoalTotal} {t('plan.perDay')}</span>
-                  <span className="text-muted-foreground ml-2">{t('plan.remaining')}: {remainingAll}/{totalScope}</span>
-                </p>
+                <div className="flex justify-end">
+                  <Button variant="outline" size="sm" onClick={addDailyTarget} className="text-xs h-7">
+                    <Plus className="h-3 w-3" />
+                    {t('plan.addSubject')}
+                  </Button>
+                </div>
               )
             })()}
           </div>
@@ -535,10 +538,10 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         </div>
 
         <DialogFooter className="flex-row gap-2">
-          <Button variant="outline" size="sm" className="text-destructive" onClick={handleResetLong} disabled={saving}>
+          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmReset('long')} disabled={saving}>
             {saving ? '...' : '重置长期'}
           </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={handleResetDaily} disabled={saving}>
+          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmReset('daily')} disabled={saving}>
             {saving ? '...' : '重置自定义'}
           </Button>
           <DialogClose asChild>
@@ -555,6 +558,32 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog open={confirmReset !== null} onOpenChange={(open) => { if (!open) setConfirmReset(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认重置</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmReset === 'long'
+                ? '重置后，长期计划的已完成题目计数将归零，每日目标将重新计算。确定继续？'
+                : '重置后，自定义目标的今日已完成计数将归零。确定继续？'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmReset === 'long') handleResetLong()
+                else if (confirmReset === 'daily') handleResetDaily()
+                setConfirmReset(null)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              确认重置
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

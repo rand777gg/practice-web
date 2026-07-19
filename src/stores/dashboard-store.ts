@@ -9,7 +9,7 @@ export interface PlanCache {
   refreshVersion: number
 }
 
-const PLAN_CACHE_TTL = 60_000 // 1 minute — frequent enough for progress, cheap enough to not hammer DB
+const PLAN_CACHE_TTL = 300_000 // 5 minutes — RPC is a single round-trip, refreshVersion handles invalidation
 
 interface ChartData {
   totalAnswered: number
@@ -90,59 +90,30 @@ export const useDashboardStore = create<DashboardState>()(
         const state = get()
         if (state.planCache && Date.now() - state.planCache.fetchedAt < PLAN_CACHE_TTL && state.planCache.refreshVersion === refreshVersion) return state.planCache
 
-        // Load subject list from cached meta
-        const { data: meta } = await supabase.from('question_meta_cache').select('subjects').single()
-        const metaSubjects: string[] = (meta?.subjects ?? []) as string[]
+        // Single RPC call replaces: paginated questions + paginated user_answers + client-side Set counting
+        const { data: rows } = await supabase.rpc('get_subject_progress', {
+          p_user_id: userId,
+          p_plan_reset_at: planResetAt || null,
+        }) as { data: { subject: string; total: number; done_all: number }[] | null }
 
-        // Paginate questions to get subject → ids
-        const PAGE = 1000
-        let from = 0
-        const subjectIds = new Map<string, Set<string>>()
-        const counts = new Map<string, number>()
-        for (const s of metaSubjects) counts.set(s, 0)
-
-        while (true) {
-          const { data: page } = await supabase.from('questions').select('id, subject').order('id').range(from, from + PAGE - 1)
-          if (!page || page.length === 0) break
-          for (const q of page) {
-            const s = q.subject || 'Other'
-            if (!counts.has(s)) counts.set(s, 0)
-            counts.set(s, (counts.get(s) ?? 0) + 1)
-            let ids = subjectIds.get(s)
-            if (!ids) { ids = new Set(); subjectIds.set(s, ids) }
-            ids.add(q.id)
-          }
-          if (page.length < PAGE) break
-          from += PAGE
-        }
-
-        // Paginate user answers
-        const doneIds = new Set<string>()
-        from = 0
-        while (true) {
-          let q = supabase.from('user_answers').select('question_id').eq('user_id', userId).order('question_id').range(from, from + PAGE - 1)
-          if (planResetAt) q = q.gte('answered_at', planResetAt)
-          const { data: page } = await q
-          if (!page || page.length === 0) break
-          for (const a of page) doneIds.add(a.question_id)
-          if (page.length < PAGE) break
-          from += PAGE
-        }
-
-        // Build progress
         const subjectProgress: Record<string, { total: number; done: number }> = {}
-        for (const [subject, ids] of subjectIds) {
-          let done = 0
-          for (const id of ids) { if (doneIds.has(id)) done++ }
-          subjectProgress[subject] = { total: ids.size, done }
+        const subjects = new Set<string>()
+
+        // Load subject list from cached meta (fast — single row)
+        const { data: meta } = await supabase.from('question_meta_cache').select('subjects').single()
+        for (const s of ((meta?.subjects ?? []) as string[])) subjects.add(s)
+
+        for (const r of (rows ?? [])) {
+          subjectProgress[r.subject] = { total: Number(r.total), done: Number(r.done_all) }
+          subjects.add(r.subject)
         }
-        // Include subjects from meta that have 0 questions
-        for (const s of metaSubjects) {
-          if (!(s in subjectProgress)) subjectProgress[s] = { total: (counts.get(s) ?? 0), done: 0 }
+        // Ensure meta subjects with 0 questions still appear
+        for (const s of subjects) {
+          if (!(s in subjectProgress)) subjectProgress[s] = { total: 0, done: 0 }
         }
 
         const cache: PlanCache = {
-          allSubjects: [...new Set([...subjectIds.keys(), ...metaSubjects])].sort(),
+          allSubjects: [...subjects].sort(),
           subjectProgress,
           fetchedAt: Date.now(),
           refreshVersion,

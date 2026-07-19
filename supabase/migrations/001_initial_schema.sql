@@ -320,18 +320,7 @@ CREATE TABLE IF NOT EXISTS public.practice_sequential_state (
 );
 
 -- ============================================================================
--- 11. PLAN LIVE PROGRESS — 实时进度计数器
--- ============================================================================
-CREATE TABLE IF NOT EXISTS public.plan_live_progress (
-  user_id    UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-  subject    TEXT NOT NULL,
-  count      INTEGER NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (user_id, subject)
-);
-
--- ============================================================================
--- 12. USER PREFERENCES — 用户偏好云同步
+-- 11. USER PREFERENCES — 用户偏好云同步
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.user_preferences (
   user_id           UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -451,7 +440,7 @@ ALTER TABLE public.question_bank_items     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_daily_stats        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.question_meta_cache     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.practice_sequential_state ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.plan_live_progress      ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.user_preferences        ENABLE ROW LEVEL SECURITY;
 
 -- profiles
@@ -537,11 +526,6 @@ CREATE POLICY qmc_select ON public.question_meta_cache FOR SELECT TO authenticat
 -- practice_sequential_state
 DROP POLICY IF EXISTS pss_own ON public.practice_sequential_state;
 CREATE POLICY pss_own ON public.practice_sequential_state FOR ALL
-  USING (user_id = auth.uid() OR public.is_admin());
-
--- plan_live_progress
-DROP POLICY IF EXISTS plp_own ON public.plan_live_progress;
-CREATE POLICY plp_own ON public.plan_live_progress FOR ALL
   USING (user_id = auth.uid() OR public.is_admin());
 
 -- user_preferences

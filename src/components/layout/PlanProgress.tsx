@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { usePlanStore } from '@/stores/plan-store'
+
 import { Progress } from '@/components/ui/progress'
 import { PlanDialog } from './PlanDialog'
 import type { DailyTarget } from '@/types'
@@ -36,7 +36,6 @@ export function PlanProgress() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const version = useRefreshStore((s) => s.version)
-  const liveDone = usePlanStore((s) => s.todaySubjectDone)
   const deadline = profile?.deadline ?? null
   const planResetAt = profile?.plan_reset_at ?? null
   const dailyResetAt = profile?.daily_reset_at ?? null
@@ -54,54 +53,32 @@ export function PlanProgress() {
   useEffect(() => {
     if (!user) return
     const uid = user.id
-    // Only show skeleton on first load — keep current values visible during refresh
     if (!hasData) setIsLoading(true)
     async function load() {
-      // ponytail: hoist shared all-time answers query for both sections
-      let doneQuery = supabase.from('user_answers').select('question_id').eq('user_id', uid)
-      if (planResetAt) doneQuery = doneQuery.gte('answered_at', planResetAt)
-      const { data: done } = await doneQuery
-      const allDoneIds = new Set((done ?? []).map((a) => a.question_id))
+      const today = todayStart()
 
       // Long-term goal
       if (deadline) {
         const deadlineDate = new Date(deadline + 'T23:59:59')
-        const now = new Date()
-        const daysLeft = Math.max(daysBetween(now, deadlineDate), 1)
+        const daysLeft = Math.max(daysBetween(new Date(), deadlineDate), 1)
+        const longTodaySince = planResetAt || today
 
-        let scopeIds: Set<string> | undefined
-        if (planSubjects.length > 0) {
-          const { data: scopeQs } = await supabase
-            .from('questions')
-            .select('id')
-            .in('subject', planSubjects)
-          scopeIds = new Set((scopeQs ?? []).map((q) => q.id))
+        const { data: lt } = await supabase.rpc('get_subject_progress', {
+          p_user_id: uid,
+          p_plan_reset_at: planResetAt || null,
+          p_today_since: longTodaySince,
+          p_subjects: planSubjects.length > 0 ? planSubjects : null,
+        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+
+        let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
+        for (const r of (lt ?? [])) {
+          scopeTotal += Number(r.total)
+          scopeDoneAll += Number(r.done_all)
+          scopeDoneToday += Number(r.done_today)
         }
 
-        if (scopeIds) {
-          let doneAll = 0
-          for (const id of scopeIds) if (allDoneIds.has(id)) doneAll++
-          setDailyGoal(Math.ceil(Math.max(scopeIds.size - doneAll, 0) / daysLeft))
-        } else {
-          const { count: total } = await supabase
-            .from('questions')
-            .select('id', { count: 'exact', head: true })
-          setDailyGoal(Math.ceil(Math.max((total ?? 0) - allDoneIds.size, 0) / daysLeft))
-        }
-
-        // Today's count in long-term scope
-        let todayQuery2 = supabase.from('user_answers').select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
-        if (planResetAt) todayQuery2 = todayQuery2.gte('answered_at', planResetAt)
-        const { data: todayData } = await todayQuery2
-
-        const todayIds = new Set((todayData ?? []).map((a) => a.question_id))
-        if (scopeIds) {
-          let todayCount = 0
-          for (const id of scopeIds) if (todayIds.has(id)) todayCount++
-          setTodayLongDone(todayCount)
-        } else {
-          setTodayLongDone(todayIds.size)
-        }
+        setDailyGoal(Math.ceil(Math.max(scopeTotal - scopeDoneAll, 0) / daysLeft))
+        setTodayLongDone(scopeDoneToday)
       } else {
         setDailyGoal(0)
         setTodayLongDone(0)
@@ -109,66 +86,50 @@ export function PlanProgress() {
 
       // Daily targets progress
       if (dailyTargets.length > 0) {
-        let todayQuery = supabase.from('user_answers').select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
-        if (dailyResetAt) todayQuery = todayQuery.gte('answered_at', dailyResetAt)
-        const { data: today } = await todayQuery
+        const dailyTodaySince = dailyResetAt || today
+        const targetSubjects = [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))]
 
-        const todayIds = new Set((today ?? []).map((a) => a.question_id))
+        const { data: dt } = await supabase.rpc('get_subject_progress', {
+          p_user_id: uid,
+          p_plan_reset_at: planResetAt || null,
+          p_today_since: dailyTodaySince,
+          p_subjects: targetSubjects,
+        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
 
-        const { data: todayQs } = await supabase
-          .from('questions')
-          .select('id, subject')
-          .in('id', [...todayIds])
-
-        const subjectCounts = new Map<string, number>()
-        for (const q of (todayQs ?? [])) {
-          const s = subjectKey(q.subject)
-          subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
+        const subjTotal = new Map<string, number>()
+        const subjDoneAll = new Map<string, number>()
+        const subjDoneToday = new Map<string, number>()
+        for (const r of (dt ?? [])) {
+          subjTotal.set(r.subject, Number(r.total))
+          subjDoneAll.set(r.subject, Number(r.done_all))
+          subjDoneToday.set(r.subject, Number(r.done_today))
         }
 
-        // ponytail: compute daily goal for targets with deadlines
-        const deadlineTargets = dailyTargets.filter(t => t.deadline)
+        // Compute daily goal for targets with deadlines
+        const deadlineTargets = dailyTargets.filter((t) => t.deadline)
         let computedGoal = 0
-        if (deadlineTargets.length > 0) {
-          const deadlineSubjects = [...new Set(deadlineTargets.flatMap(t => t.subjects.map(s => s.subject)))]
-          const { data: scopeQs } = await supabase.from('questions').select('id, subject').in('subject', deadlineSubjects)
-          const totalPerSubject = new Map<string, number>()
-          const qSubject = new Map<string, string>()
-          for (const q of (scopeQs ?? [])) {
-            const s = subjectKey(q.subject)
-            totalPerSubject.set(s, (totalPerSubject.get(s) ?? 0) + 1)
-            qSubject.set(q.id, s)
-          }
-          const donePerSubject = new Map<string, number>()
-          for (const a of (done ?? [])) {
-            const s = qSubject.get(a.question_id)
-            if (s) donePerSubject.set(s, (donePerSubject.get(s) ?? 0) + 1)
-          }
-          for (const target of deadlineTargets) {
-            const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
-            for (const subj of target.subjects) {
-              const total = totalPerSubject.get(subj.subject) ?? 0
-              const doneSubj = donePerSubject.get(subj.subject) ?? 0
-              computedGoal += Math.ceil(Math.max(total - doneSubj, 0) / daysLeft)
-            }
+        for (const target of deadlineTargets) {
+          const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
+          for (const subj of target.subjects) {
+            const total = subjTotal.get(subj.subject) ?? 0
+            const doneSubj = subjDoneAll.get(subj.subject) ?? 0
+            computedGoal += Math.ceil(Math.max(total - doneSubj, 0) / daysLeft)
           }
         }
-        // Add manual counts for targets without deadlines
         const manualTotal = dailyTargets
-          .filter(t => !t.deadline)
+          .filter((t) => !t.deadline)
           .reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
         setDailyTargetGoal(computedGoal + manualTotal)
 
-        setTargetProgress(dailyTargets.map((t) => {
-          const subjects = t.subjects.map(s => ({
+        setTargetProgress(dailyTargets.map((t) => ({
+          subjects: t.subjects.map((s) => ({
             subject: s.subject,
             count: s.count,
-            done: Math.min(subjectCounts.get(subjectKey(s.subject)) ?? 0, s.count),
-          }))
-          const totalCount = subjects.reduce((sum, s) => sum + s.count, 0)
-          const totalDone = subjects.reduce((sum, s) => sum + s.done, 0)
-          return { subjects, total: totalCount, totalDone }
-        }))
+            done: Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count),
+          })),
+          total: t.subjects.reduce((sum, s) => sum + s.count, 0),
+          totalDone: t.subjects.reduce((sum, s) => sum + Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count), 0),
+        })))
       } else {
         setTargetProgress([])
         setDailyTargetGoal(0)
@@ -190,11 +151,6 @@ export function PlanProgress() {
     }
   }, [])
 
-  // Load live progress from DB on mount and when user changes
-  useEffect(() => {
-    if (user) usePlanStore.getState().loadFromDb(user.id)
-  }, [user?.id])
-
   if (!user) return null
 
   if (isLoading) {
@@ -215,17 +171,13 @@ export function PlanProgress() {
   }
 
   const hasDailyTargets = dailyTargets.length > 0
-  const liveLongTotal = planSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
-  const dailyTargetSubjects = [...new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))]
-  const liveDailyTotal = dailyTargetSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
-  const displayTodayLong = todayLongDone + liveLongTotal
-  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0) + liveDailyTotal
+  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
   const effectiveTotal = dailyTargetGoal
   const dailyPct = effectiveTotal > 0 ? Math.min(Math.round((doneDaily / effectiveTotal) * 100), 100) : 0
   const dailyDone = doneDaily >= effectiveTotal && effectiveTotal > 0
 
   const hasDeadline = !!deadline
-  const longPct = dailyGoal > 0 ? Math.min(Math.round((displayTodayLong / dailyGoal) * 100), 100) : 0
+  const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 0
 
   const longCompleted = !hasDeadline
   const dailyCompleted = !hasDailyTargets || dailyDone
@@ -265,7 +217,7 @@ export function PlanProgress() {
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
                 <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
-                <span className="tabular-nums shrink-0 text-[10px]">{displayTodayLong}/{dailyGoal}</span>
+                <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
               </div>
             )}
             {hasDailyTargets && (dailyDone ? (

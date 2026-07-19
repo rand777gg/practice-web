@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { usePlanStore } from '@/stores/plan-store'
+
 import { Progress } from '@/components/ui/progress'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
@@ -38,7 +38,6 @@ export function DashboardPlanCards() {
   const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
-  const liveDone = usePlanStore((s) => s.todaySubjectDone)
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const [totalScope, setTotalScope] = useState(0)
@@ -47,113 +46,82 @@ export function DashboardPlanCards() {
 
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
-  const [customTargetTotalQuestions, setCustomTargetTotalQuestions] = useState(0)
 
   useEffect(() => {
     if (!user) return
     const uid = user.id
     async function load() {
+      const today = todayStart()
+
       if (deadline) {
-        let scopeIds: Set<string>
-        if (planSubjects.length > 0) {
-          const { data: scopeQs } = await supabase.from('questions').select('id').in('subject', planSubjects)
-          scopeIds = new Set((scopeQs ?? []).map((q) => q.id))
-        } else {
-          const { data: allQs } = await supabase.from('questions').select('id')
-          scopeIds = new Set((allQs ?? []).map((q) => q.id))
+        const longTodaySince = planResetAt || today
+
+        const { data: lt } = await supabase.rpc('get_subject_progress', {
+          p_user_id: uid,
+          p_plan_reset_at: planResetAt || null,
+          p_today_since: longTodaySince,
+          p_subjects: planSubjects.length > 0 ? planSubjects : null,
+        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+
+        let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
+        for (const r of (lt ?? [])) {
+          scopeTotal += Number(r.total)
+          scopeDoneAll += Number(r.done_all)
+          scopeDoneToday += Number(r.done_today)
         }
-
-        let doneQ1 = supabase.from('user_answers').select('question_id').eq('user_id', uid)
-        if (planResetAt) doneQ1 = doneQ1.gte('answered_at', planResetAt)
-        const { data: done } = await doneQ1
-        const doneIds = new Set((done ?? []).map((a) => a.question_id))
-        let doneAll = 0
-        for (const id of scopeIds) if (doneIds.has(id)) doneAll++
-        setTotalScope(scopeIds.size)
-        setTotalDone(doneAll)
-
-        let beforeQ = supabase.from('user_answers').select('question_id').eq('user_id', uid).lt('answered_at', todayStart())
-        if (planResetAt) beforeQ = beforeQ.gte('answered_at', planResetAt)
-        const { data: doneBeforeToday } = await beforeQ
-        const yesterdayIds = new Set((doneBeforeToday ?? []).map((a) => a.question_id))
-        let doneBefore = 0
-        for (const id of scopeIds) if (yesterdayIds.has(id)) doneBefore++
-        setYesterdayDone(doneBefore)
+        setTotalScope(scopeTotal)
+        setTotalDone(scopeDoneAll)
+        setYesterdayDone(scopeDoneAll - scopeDoneToday)
       }
 
       if (dailyTargets.length > 0) {
-        const targetSubjectSet = new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))
-        const allTargetSubjects = [...targetSubjectSet]
+        const dailyTodaySince = dailyResetAt || today
+        const targetSubjects = [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))]
 
-        // Today's answers
-        let todayQ = supabase.from('user_answers').select('question_id').eq('user_id', uid).gte('answered_at', todayStart())
-        if (dailyResetAt) todayQ = todayQ.gte('answered_at', dailyResetAt)
-        const { data: today } = await todayQ
-        const todayIds = new Set((today ?? []).map((a) => a.question_id))
-        const { data: todayQs } = await supabase.from('questions').select('id, subject').in('id', [...todayIds])
+        const { data: dt } = await supabase.rpc('get_subject_progress', {
+          p_user_id: uid,
+          p_plan_reset_at: dailyResetAt || null,
+          p_today_since: dailyTodaySince,
+          p_subjects: targetSubjects,
+        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
 
-        const subjectCounts = new Map<string, number>()
-        for (const q of (todayQs ?? [])) {
-          const s = subjectKey(q.subject)
-          if (targetSubjectSet.has(s)) subjectCounts.set(s, (subjectCounts.get(s) ?? 0) + 1)
+        const subjTotal = new Map<string, number>()
+        const subjDoneAll = new Map<string, number>()
+        const subjDoneToday = new Map<string, number>()
+        for (const r of (dt ?? [])) {
+          subjTotal.set(r.subject, Number(r.total))
+          subjDoneAll.set(r.subject, Number(r.done_all))
+          subjDoneToday.set(r.subject, Number(r.done_today))
         }
-
-        // Total questions for ALL target subjects (for display)
-        const { data: scopeQs } = await supabase.from('questions').select('id, subject').in('subject', allTargetSubjects)
-        const totalPerSubj = new Map<string, number>()
-        const qSubj = new Map<string, string>()
-        for (const q of (scopeQs ?? [])) {
-          const s = subjectKey(q.subject)
-          totalPerSubj.set(s, (totalPerSubj.get(s) ?? 0) + 1)
-          qSubj.set(q.id, s)
-        }
-        let totalAll = 0
-        for (const [, v] of totalPerSubj) totalAll += v
-        setCustomTargetTotalQuestions(totalAll)
 
         // Daily goal for deadline targets
-        const deadlineTargets = dailyTargets.filter(t => t.deadline)
+        const deadlineTargets = dailyTargets.filter((t) => t.deadline)
         let computedGoal = 0
-        if (deadlineTargets.length > 0) {
-          let doneQ2 = supabase.from('user_answers').select('question_id').eq('user_id', uid)
-          if (dailyResetAt) doneQ2 = doneQ2.gte('answered_at', dailyResetAt)
-          const { data: allDone } = await doneQ2
-          const allDoneIds = new Set((allDone ?? []).map(a => a.question_id))
-          const donePerSubj = new Map<string, number>()
-          for (const q of (scopeQs ?? [])) {
-            if (allDoneIds.has(q.id)) {
-              const s = subjectKey(q.subject)
-              donePerSubj.set(s, (donePerSubj.get(s) ?? 0) + 1)
-            }
-          }
-          for (const target of deadlineTargets) {
-            const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
-            for (const subj of target.subjects) {
-              const total = totalPerSubj.get(subj.subject) ?? 0
-              const done = donePerSubj.get(subj.subject) ?? 0
-              computedGoal += Math.ceil(Math.max(total - done, 0) / daysLeft)
-            }
+        for (const target of deadlineTargets) {
+          const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
+          for (const subj of target.subjects) {
+            const total = subjTotal.get(subj.subject) ?? 0
+            const doneSubj = subjDoneAll.get(subj.subject) ?? 0
+            computedGoal += Math.ceil(Math.max(total - doneSubj, 0) / daysLeft)
           }
         }
         const manualTotal = dailyTargets
-          .filter(t => !t.deadline)
+          .filter((t) => !t.deadline)
           .reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
         setDailyTargetGoal(computedGoal + manualTotal)
 
-        setTargetProgress(dailyTargets.map((t) => {
-          const subjects = t.subjects.map(s => ({
+        setTargetProgress(dailyTargets.map((t) => ({
+          subjects: t.subjects.map((s) => ({
             subject: s.subject,
             count: s.count,
-            done: Math.min(subjectCounts.get(subjectKey(s.subject)) ?? 0, s.count),
-          }))
-          const totalCount = subjects.reduce((sum, s) => sum + s.count, 0)
-          const totalDone = subjects.reduce((sum, s) => sum + s.done, 0)
-          return { subjects, total: totalCount, totalDone }
-        }))
+            done: Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count),
+          })),
+          total: t.subjects.reduce((sum, s) => sum + s.count, 0),
+          totalDone: t.subjects.reduce((sum, s) => sum + Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count), 0),
+        })))
       } else {
         setTargetProgress([])
         setDailyTargetGoal(0)
-        setCustomTargetTotalQuestions(0)
       }
     }
     load()
@@ -161,16 +129,12 @@ export function DashboardPlanCards() {
 
   if (!user) return null
 
-  const liveLongTotal = planSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
-  const dailyTargetSubjects = [...new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))]
-  const liveDailyTotal = dailyTargetSubjects.reduce((s, subj) => s + (liveDone[subj] ?? 0), 0)
-  const displayTotalDone = totalDone + liveLongTotal
-  const overallPct = totalScope > 0 ? Math.round((displayTotalDone / totalScope) * 1000) / 10 : 0
-  const changeFromYesterday = displayTotalDone - yesterdayDone
+  const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 1000) / 10 : 0
+  const changeFromYesterday = totalDone - yesterdayDone
   const changePct = yesterdayDone > 0 ? Math.round((Math.abs(changeFromYesterday) / yesterdayDone) * 1000) / 10 : null
   const isUp = changeFromYesterday >= 0
 
-  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0) + liveDailyTotal
+  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
   const dailyPct = dailyTargetGoal > 0 ? Math.min(Math.round((doneDaily / dailyTargetGoal) * 100), 100) : 0
 
   const nearestDeadline = dailyTargets.filter(t => t.deadline)
@@ -202,7 +166,7 @@ export function DashboardPlanCards() {
                 <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
                   {(() => {
                     const yesterdayPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
-                    const todayPct = totalScope > 0 ? ((displayTotalDone - yesterdayDone) / totalScope) * 100 : 0
+                    const todayPct = totalScope > 0 ? ((totalDone - yesterdayDone) / totalScope) * 100 : 0
                     return (
                       <>
                         {yesterdayPct > 0 && <div className="h-full bg-blue-500 transition-all" style={{ width: `${yesterdayPct}%` }} />}
@@ -214,7 +178,7 @@ export function DashboardPlanCards() {
                 <span className="text-[11px] font-medium tabular-nums">{overallPct.toFixed(1)}%</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
-                {t('plan.doneCount')}: {displayTotalDone}
+                {t('plan.doneCount')}: {totalDone}
                 {changePct != null && changePct > 0 && (
                   <span className={isUp ? 'text-green-500' : 'text-red-500'}>
                     {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct.toFixed(1)}%
@@ -233,7 +197,7 @@ export function DashboardPlanCards() {
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
-                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{customTargetTotalQuestions}</span>
+                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{dailyTargetGoal}</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
                 {t('plan.doneCount')}: {doneDaily}
