@@ -43,20 +43,19 @@ serve(async (req: Request) => {
       options: { redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:5173"}/` }
     })
 
-    if (!linkData) return new Response(JSON.stringify({ error: "link failed" }), { status: 500, headers: corsHeaders })
+    if (!linkData) return new Response(JSON.stringify({ error: "link failed", detail: "generateLink returned empty" }), { status: 500, headers: corsHeaders })
 
     const url = new URL(linkData.properties.action_link)
     const tokenHash = url.searchParams.get("token_hash")
-    if (!tokenHash) return new Response(JSON.stringify({ error: "no token" }), { status: 500, headers: corsHeaders })
+    if (!tokenHash) return new Response(JSON.stringify({ error: "no token", detail: url.href }), { status: 500, headers: corsHeaders })
 
-    // Verify OTP with PUBLIC client → creates the USER's session (not admin)
     const { data: verifyData, error: verifyErr } = await supabasePublic.auth.verifyOtp({
       type: "magiclink",
       token_hash: tokenHash,
     })
 
     if (verifyErr || !verifyData.session) {
-      return new Response(JSON.stringify({ error: "verify failed" }), { status: 500, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: "verify failed", detail: verifyErr?.message || String(verifyErr) }), { status: 500, headers: corsHeaders })
     }
 
     await supabaseAdmin.from("qr_login_tokens").update({ status: "expired" }).eq("token", token)
