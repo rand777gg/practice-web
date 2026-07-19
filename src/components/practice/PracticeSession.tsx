@@ -587,7 +587,7 @@ export function PracticeSession() {
       if (idx >= 0) {
         const newIds = s.questionIds.filter((_, i) => i !== idx)
         const newKps = s.questionKps.filter((_, i) => i !== idx)
-        const newIndex = idx <= s.currentIndex && s.currentIndex > 0 ? s.currentIndex - 1 : s.currentIndex
+        const newIndex = idx < s.currentIndex ? s.currentIndex - 1 : s.currentIndex
         useSequentialStore.setState({ questionIds: newIds, questionKps: newKps, currentIndex: newIndex })
         supabase.from('practice_sequential_state').upsert({
           user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
