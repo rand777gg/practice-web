@@ -1,49 +1,44 @@
-import { useState, useEffect, useMemo } from "react"
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from "recharts"
+import { useState, useEffect } from "react"
+import { PolarAngleAxis, PolarGrid, Radar, RadarChart } from "recharts"
 import { supabase } from "@/lib/supabase"
 import { useAuthStore } from "@/stores/auth-store"
 import { QUESTION_TYPE_OPTIONS } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
 interface Props { planSubjects: string[] }
 
 const ALL_TYPES = QUESTION_TYPE_OPTIONS.map(o => o.value)
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(QUESTION_TYPE_OPTIONS.map(o => [o.value, o.label]))
-
 const COLORS = ["#3b82f6","#ec4899","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"]
 
 export function SubjectTypeRadar({ planSubjects }: Props) {
   const user = useAuthStore((s) => s.user)
   const [loading, setLoading] = useState(true)
   const [chartData, setChartData] = useState<any[]>([])
-  const [subjects, setSubjects] = useState<string[]>([])
+  const [chartConfig, setChartConfig] = useState<ChartConfig>({})
 
   useEffect(() => {
     if (!user || !planSubjects.length) { setLoading(false); return }
     supabase.rpc('get_type_accuracy', { p_user_id: user.id, p_subjects: planSubjects }).then(({ data: rows }) => {
       const list = (rows ?? []) as any[]
 
-      // Build subject → type → pct map
       const subjMap = new Map<string, Map<string, number>>()
       for (const r of list) {
-        const s = r.subject
-        const t = r.question_type
+        const s = r.subject; const t = r.question_type
         const pct = Number(r.total) > 0 ? Math.round((Number(r.correct) / Number(r.total)) * 100) : 100
         if (!subjMap.has(s)) subjMap.set(s, new Map())
         subjMap.get(s)!.set(t, pct)
       }
 
-      // Ensure all plan subjects appear, even if no data
       const subjs = [...new Set([...subjMap.keys(), ...planSubjects])]
-      setSubjects(subjs)
+      const cfg: ChartConfig = {}
+      subjs.forEach((s, i) => { cfg[s] = { label: s, color: COLORS[i % COLORS.length] } })
+      setChartConfig(cfg)
 
-      // Build radar data: one entry per ALL types, with each subject's accuracy
       const radarData = ALL_TYPES.map(t => {
         const entry: any = { type: TYPE_LABELS[t] || t }
-        for (const s of subjs) {
-          entry[s] = subjMap.get(s)?.get(t) ?? 100
-        }
+        for (const s of subjs) entry[s] = subjMap.get(s)?.get(t) ?? 100
         return entry
       })
       setChartData(radarData)
@@ -51,29 +46,24 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
     }, () => setLoading(false))
   }, [user, planSubjects.join(',')])
 
-  const chartConfig = useMemo(() => {
-    const cfg: ChartConfig = {}
-    subjects.forEach((s, i) => { cfg[s] = { label: s, color: COLORS[i % COLORS.length] } })
-    return cfg
-  }, [subjects])
-
   if (!planSubjects.length) return null
-  if (loading) return <div className="h-[300px] rounded-lg bg-muted/30 animate-pulse" />
+  if (loading) return <div className="aspect-square max-h-[300px] rounded-lg bg-muted/30 animate-pulse mx-auto" />
 
   return (
     <Card className="border-0 shadow-none">
-      <CardHeader className="pb-2 px-2">
+      <CardHeader className="items-center pb-2 px-2">
         <CardTitle className="text-sm text-muted-foreground">题型正确率</CardTitle>
       </CardHeader>
-      <CardContent className="px-1">
-        <ChartContainer config={chartConfig} className="h-[300px] w-full">
-          <RadarChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-            <PolarGrid />
+      <CardContent>
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[300px]">
+          <RadarChart data={chartData} margin={{ top: -20, bottom: -10 }}>
+            <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
             <PolarAngleAxis dataKey="type" tick={{ fontSize: 11 }} />
-            <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
-            {subjects.map((s, i) => (
+            <PolarGrid />
+            {Object.keys(chartConfig).map((s, i) => (
               <Radar key={s} dataKey={s} stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.15} strokeWidth={2} />
             ))}
+            <ChartLegend className="mt-6" content={<ChartLegendContent />} />
           </RadarChart>
         </ChartContainer>
       </CardContent>
