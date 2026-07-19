@@ -46,6 +46,8 @@ export function DashboardPlanCards() {
 
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
+  const [customTargetTotal, setCustomTargetTotal] = useState(0)
+  const [customTargetDone, setCustomTargetDone] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -88,11 +90,16 @@ export function DashboardPlanCards() {
         const subjTotal = new Map<string, number>()
         const subjDoneAll = new Map<string, number>()
         const subjDoneToday = new Map<string, number>()
+        let totalAll = 0
         for (const r of (dt ?? [])) {
           subjTotal.set(r.subject, Number(r.total))
           subjDoneAll.set(r.subject, Number(r.done_all))
           subjDoneToday.set(r.subject, Number(r.done_today))
+          totalAll += Number(r.total)
         }
+        const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
+        setCustomTargetTotal(totalAll)
+        setCustomTargetDone(totalDoneAll)
 
         // Daily goal for deadline targets
         const deadlineTargets = dailyTargets.filter((t) => t.deadline)
@@ -122,6 +129,8 @@ export function DashboardPlanCards() {
       } else {
         setTargetProgress([])
         setDailyTargetGoal(0)
+        setCustomTargetTotal(0)
+        setCustomTargetDone(0)
       }
     }
     load()
@@ -197,10 +206,10 @@ export function DashboardPlanCards() {
             <CardContent className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Progress value={dailyPct} className="flex-1 h-2 [&>div]:bg-pink-500" />
-                <span className="text-[11px] font-medium tabular-nums">{doneDaily}/{dailyTargetGoal}</span>
+                <span className="text-[11px] font-medium tabular-nums">{customTargetDone}/{customTargetTotal}</span>
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
-                {t('plan.doneCount')}: {doneDaily}
+                {t('plan.doneCount')}: {customTargetDone}
                 {deadlineText && (
                   <span className="text-muted-foreground"> — {deadlineText}</span>
                 )}
