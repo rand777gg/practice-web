@@ -45,7 +45,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   return (
     <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
       <div className="relative md:min-h-[560px]">
-        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0 bg-background/80 backdrop-blur-lg border-border/50", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100 z-10")}>
+        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0 bg-background/30 backdrop-blur-2xl border-0 shadow-2xl shadow-black/20", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100 z-10")}>
           <CardContent className="grid p-0 md:grid-cols-2 flex-1">
             <div className="p-6 md:p-8 space-y-4 flex flex-col justify-center">
               <Skeleton className="h-7 w-40" />
@@ -57,7 +57,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
             <div className="hidden md:block bg-muted/50" />
           </CardContent>
         </Card>
-        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 bg-background/80 backdrop-blur-lg border-border/50", imageLoaded ? "opacity-100" : "opacity-0")}>
+        <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 bg-background/30 backdrop-blur-2xl border-0 shadow-2xl shadow-black/20", imageLoaded ? "opacity-100" : "opacity-0")}>
         <CardContent className="grid p-0 md:grid-cols-2 flex-1">
           <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
             <FieldGroup>
