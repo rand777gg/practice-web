@@ -11,6 +11,10 @@ import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { SequentialProgressBar } from '@/components/practice/SequentialProgressBar'
 import { Button } from '@/components/ui/button'
 import {
@@ -120,6 +124,21 @@ export function PracticeSession() {
   const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'mixed' | 'sequential'>((saved.current?.questionMode as any) ?? 'mixed')
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
+  const subjectPosRef = useRef<Record<string, number>>({})
+  const kpBySubjectRef = useRef(kpBySubject)
+  kpBySubjectRef.current = kpBySubject
+  const kpToSubjectRef = useRef(kpToSubject)
+  kpToSubjectRef.current = kpToSubject
+  const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
+
+  const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
+    // Save current position for current subject before switching
+    if (currentSubject) subjectPosRef.current[currentSubject] = seqIndex
+    // Jump to saved position or start of target subject
+    const saved = subjectPosRef.current[block.subject]
+    const target = saved != null && saved >= block.start && saved <= block.end ? saved : block.start
+    loadSequentialQuestion(target)
+  }, [currentSubject, seqIndex, loadSequentialQuestion])
 
   // Build KP → subject map from selected KPs + kpBySubject
   const kpToSubject = useMemo(() => {
@@ -393,6 +412,13 @@ export function PracticeSession() {
   }, [])
 
   const loadSequentialQuestion = useCallback(async (index: number) => {
+    const s = useSequentialStore.getState()
+    // Save position for current subject before navigating away
+    const curKp = s.questionKps[s.currentIndex]
+    if (curKp && index !== s.currentIndex) {
+      const curSubj = kpBySubjectRef.current.find(x => x.keyPoints.includes(curKp))?.subject || kpToSubjectRef.current.get(curKp)
+      if (curSubj) subjectPosRef.current[curSubj] = s.currentIndex
+    }
     useSequentialStore.setState({ currentIndex: index })
     seqFetchGenRef.current++; const myGen = seqFetchGenRef.current
     const ids = useSequentialStore.getState().questionIds
@@ -754,10 +780,36 @@ export function PracticeSession() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {questionMode === 'sequential' && (<> <span className="w-px h-4 bg-border mx-1 hidden sm:block" /> <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{seqKps.length > 0 ? `${seqKps.length}个知识点` : '选择知识点'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56"><div className="text-xs text-muted-foreground px-2 py-1.5">已保存的会话</div>{seqSessions.length === 0 && <div className="text-xs text-muted-foreground px-2 py-1">暂无</div>}{seqSessions.map(s => { const kpCount = s.selectedKps.length; const progress = s.questionIds.length > 0 ? Math.round((s.currentIndex / s.questionIds.length) * 100) : 0; const isActive = s.sessionKey === seqSessionKey; return (<DropdownMenuItem key={s.sessionKey} onSelect={async (e) => { e.preventDefault(); const u = useAuthStore.getState().user; if (u) { if (isActive) { setSequentialDialogOpen(true); return } saveCurrentSession(); await seqSwitchSession(u.id, s.sessionKey); loadSequentialQuestion(useSequentialStore.getState().currentIndex); } }} className={isActive ? 'bg-accent' : ''}><div className="flex items-center justify-between w-full"><div className="flex flex-col gap-0.5"><span className="text-xs font-medium">{s.selectedKps.slice(0, 3).join('、')}{s.selectedKps.length > 3 ? ` 等${s.selectedKps.length}个` : ''}</span><span className="text-[10px] text-muted-foreground">{kpCount}个知识点 · {progress}% ({s.currentIndex}/{s.questionIds.length})</span></div><button type="button" className="text-[10px] text-destructive hover:underline shrink-0 ml-2" onClick={async (ev) => { ev.stopPropagation(); ev.preventDefault(); const u = useAuthStore.getState().user; if (!u) return; await supabase.from('practice_sequential_state').delete().eq('user_id', u.id).eq('session_key', s.sessionKey); if (isActive) { seqReset(); fetchRandomQuestion(); } seqLoadSessions(u.id) }}>删除</button></div></DropdownMenuItem>)})}<DropdownMenuSeparator /><DropdownMenuItem onSelect={(e) => { e.preventDefault(); setSequentialDialogOpen(true) }} className="text-xs"><Plus className="h-3 w-3 mr-1" />新建会话</DropdownMenuItem></DropdownMenuContent></DropdownMenu> </>)}
+        {questionMode === 'sequential' && (<> <span className="w-px h-4 bg-border mx-1 hidden sm:block" /> <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{seqKps.length > 0 ? `${seqKps.length}个知识点` : '选择知识点'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56"><div className="text-xs text-muted-foreground px-2 py-1.5">已保存的会话</div>{seqSessions.length === 0 && <div className="text-xs text-muted-foreground px-2 py-1">暂无</div>}{seqSessions.map(s => { const kpCount = s.selectedKps.length; const progress = s.questionIds.length > 0 ? Math.round((s.currentIndex / s.questionIds.length) * 100) : 0; const isActive = s.sessionKey === seqSessionKey; return (<DropdownMenuItem key={s.sessionKey} onSelect={async (e) => { e.preventDefault(); const u = useAuthStore.getState().user; if (u) { if (isActive) { setSequentialDialogOpen(true); return } saveCurrentSession(); await seqSwitchSession(u.id, s.sessionKey); loadSequentialQuestion(useSequentialStore.getState().currentIndex); } }} className={isActive ? 'bg-accent' : ''}><div className="flex items-center justify-between w-full"><div className="flex flex-col gap-0.5"><span className="text-xs font-medium">{s.selectedKps.slice(0, 3).join('、')}{s.selectedKps.length > 3 ? ` 等${s.selectedKps.length}个` : ''}</span><span className="text-[10px] text-muted-foreground">{kpCount}个知识点 · {progress}% ({s.currentIndex}/{s.questionIds.length})</span></div><button type="button" className="text-[10px] text-destructive hover:underline shrink-0 ml-2" onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); setDeleteSessionKey(s.sessionKey) }}>删除</button></div></DropdownMenuItem>)})}<DropdownMenuSeparator /><DropdownMenuItem onSelect={(e) => { e.preventDefault(); setSequentialDialogOpen(true) }} className="text-xs"><Plus className="h-3 w-3 mr-1" />新建会话</DropdownMenuItem></DropdownMenuContent></DropdownMenu> </>)}
       </div>
 
       <KpSelectDialog open={sequentialDialogOpen} onOpenChange={setSequentialDialogOpen} kpBySubject={kpBySubject} planSubjects={[...planSubjectSet]} selectedKps={seqKps} onConfirm={handleKpConfirm} />
+
+      <AlertDialog open={deleteSessionKey !== null} onOpenChange={(open) => { if (!open) setDeleteSessionKey(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>删除后将无法恢复，该会话的刷题进度将丢失。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                const key = deleteSessionKey; if (!key) return
+                const u = useAuthStore.getState().user; if (!u) return
+                const isActive = key === useSequentialStore.getState().sessionKey
+                await supabase.from('practice_sequential_state').delete().eq('user_id', u.id).eq('session_key', key)
+                if (isActive) { seqReset(); fetchRandomQuestion() }
+                seqLoadSessions(u.id)
+                setDeleteSessionKey(null)
+              }}
+            >
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isLoading ? (
         <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
@@ -805,7 +857,7 @@ export function PracticeSession() {
                       <button
                         key={b.subject}
                         type="button"
-                        onClick={() => loadSequentialQuestion(b.start)}
+                        onClick={() => switchToSubject(b)}
                         className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
                           isActive
                             ? 'bg-primary text-primary-foreground border-primary'
