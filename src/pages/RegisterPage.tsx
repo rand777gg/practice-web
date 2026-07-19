@@ -5,11 +5,10 @@ import Lightfall from '@/components/ui/Lightfall'
 
 export function Component() {
   const { user } = useAuthStore()
-
-  if (user && !isLoading) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/" replace />
 
   return (
-    <div className="dark relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10 overflow-hidden bg-[#0f0a1a]">
+    <div className="relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10 overflow-hidden bg-[#0f0a1a]">
       <Lightfall
         colors={['#6366f1', '#8b5cf6', '#a78bfa']}
         backgroundColor="#0f0a1a"
@@ -27,7 +26,7 @@ export function Component() {
         mouseStrength={0.6}
         mouseRadius={0.8}
       />
-      <div className="relative z-10 w-full flex justify-center">
+      <div className="relative z-10 w-full max-w-sm">
         <AuthForm mode="register" />
       </div>
     </div>
