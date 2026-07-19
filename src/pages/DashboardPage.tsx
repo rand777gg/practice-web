@@ -20,7 +20,7 @@ import { PlanCompletionChart } from '@/components/charts/PlanCompletionChart'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
-const SubjectAccuracyCharts = lazy(() => import('@/components/charts/SubjectAccuracyCharts').then(m => ({ default: m.SubjectAccuracyCharts })))
+import { SubjectAccuracyBar } from '@/components/charts/SubjectAccuracyBar'
 const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
 const SubjectTreemap = lazy(() => import('@/components/charts/SubjectTreemap').then(m => ({ default: m.SubjectTreemap })))
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
@@ -417,29 +417,7 @@ export function Component() {
                   const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
                   return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
                 })()}
-                <LazyChart rootMargin="400px">
-                  <Card className="border-0 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground">正确率分析</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Suspense fallback={<ChartSkeleton />}>
-                        <SubjectAccuracyCharts
-                          subjectAccuracy={chartData.subjectAccuracy}
-                          heatmapData={chartData.heatmapData}
-                        />
-                      </Suspense>
-                      {showAiInsight && (
-                      <Suspense fallback={null}>
-                        <AiChartInsight
-                          title="正确率分析"
-                          dataDesc={`各学科正确率：${chartData.subjectAccuracy.map(s => `${s.subject} ${Math.round((s.correct/s.total)*100)}%(${s.total}题)`).join('、')}`}
-                        />
-                      </Suspense>
-                      )}
-                    </CardContent>
-                  </Card>
-                </LazyChart>
+                <SubjectAccuracyBar subjectAccuracy={chartData.subjectAccuracy} />
               </div>
             ) : (
               <div className="space-y-4">

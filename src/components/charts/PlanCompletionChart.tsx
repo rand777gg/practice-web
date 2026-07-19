@@ -19,7 +19,7 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
   const [loading, setLoading] = useState(true)
   const [chartData, setChartData] = useState<Record<string, any>[]>([])
   const [allSubjects, setAllSubjects] = useState<string[]>([])
-  const [activeChart, setActiveChart] = useState<"plan" | "target" | "all">("plan")
+  const [activeChart, setActiveChart] = useState<"all" | "plan" | "target">("all")
 
   const chartConfig = useMemo(() => {
     const cfg: ChartConfig = {
