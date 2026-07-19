@@ -6,16 +6,7 @@ import type { Question, QuestionType } from '@/types'
 import { Pencil, Trash2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
-
-const TYPE_COLORS: Record<QuestionType, string> = {
-  single_choice: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  multi_select:  'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
-  true_false:    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-  judge_correct: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-  fill_blank:    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  short_answer:  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
-  analysis:      'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
-}
+import { TYPE_COLORS } from '@/lib/constants'
 
 interface Props {
   questions: Question[]

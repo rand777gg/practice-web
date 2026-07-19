@@ -1,7 +1,7 @@
 import { memo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { OPTION_LABELS, QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { OPTION_LABELS, QUESTION_TYPE_LABELS, TYPE_COLORS } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -84,10 +84,10 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   return (
     <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
       <div className="flex items-start gap-1.5">
+        <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium shrink-0 ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>[{typeLabel}]</span>
         <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{typeLabel}</span>
         {question.verified ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
             <Check className="h-3 w-3" />已验证
