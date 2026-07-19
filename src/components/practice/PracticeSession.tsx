@@ -91,6 +91,7 @@ export function PracticeSession() {
   const seqLoadSessions = useSequentialStore((s) => s.loadSessions)
   const seqSwitchSession = useSequentialStore((s) => s.switchSession)
   const seqSessionKey = useSequentialStore((s) => s.sessionKey)
+  const seqMergeKps = useSequentialStore((s) => s.mergeKps)
   const seqGetCurrentKpInfo = useSequentialStore((s) => s.getCurrentKpInfo)
 
   const planSubjects = useMemo(() => {
@@ -398,13 +399,20 @@ export function PracticeSession() {
 
   const handleKpConfirm = useCallback(async (kps: string[]) => {
     const user = useAuthStore.getState().user; if (!user || kps.length === 0) return
-    // Save current session before starting new one
-    saveCurrentSession()
-    await seqStart(user.id, kps, selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet], selectedType)
-    // Refresh sessions list
-    seqLoadSessions(user.id)
-    loadSequentialQuestion(0)
-  }, [selectedSubjects, selectedType, planSubjectSet, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions])
+    const s = useSequentialStore.getState()
+    const subs = selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
+    if (s.isActive && s.sessionKey) {
+      // Active session — merge new KPs to preserve current position
+      await seqMergeKps(user.id, kps, subs, selectedType)
+      seqLoadSessions(user.id)
+      loadSequentialQuestion(useSequentialStore.getState().currentIndex)
+    } else {
+      saveCurrentSession()
+      await seqStart(user.id, kps, subs, selectedType)
+      seqLoadSessions(user.id)
+      loadSequentialQuestion(0)
+    }
+  }, [selectedSubjects, selectedType, planSubjectSet, seqStart, seqMergeKps, loadSequentialQuestion, saveCurrentSession, seqLoadSessions])
 
   const mountedRef = useRef(false)
   useEffect(() => {

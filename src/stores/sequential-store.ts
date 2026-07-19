@@ -25,6 +25,7 @@ interface SequentialStore {
   loadFromDb: (userId: string, sessionKey: string) => Promise<boolean>
   loadSessions: (userId: string) => Promise<void>
   switchSession: (userId: string, sessionKey: string) => Promise<void>
+  mergeKps: (userId: string, newKps: string[], subjects: string[], type: string) => Promise<void>
   getCurrentKpInfo: () => { kpName: string | null; kpCurrent: number; kpTotal: number }
 }
 
@@ -154,6 +155,75 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         await get().startSequential(userId, session.selectedKps, [], '')
       }
     }
+  },
+
+  mergeKps: async (userId, newKps, subjects, type) => {
+    const { selectedKps: oldKps, questionIds: oldIds, currentIndex, sessionKey: oldKey } = get()
+    const oldKpSet = new Set(oldKps)
+    const addedKps = newKps.filter(k => !oldKpSet.has(k))
+    const removedKps = oldKps.filter(k => !newKps.includes(k))
+
+    if (addedKps.length === 0 && removedKps.length === 0) return
+
+    if (removedKps.length > 0) {
+      const newKey = makeSessionKey(newKps)
+      if (oldKey) supabase.from('practice_sequential_state').delete().eq('user_id', userId).eq('session_key', oldKey).then(() => {})
+      set({ selectedKps: newKps, sessionKey: newKey })
+      await get().startSequential(userId, newKps, subjects, type)
+      return
+    }
+
+    const kpFilters = addedKps.map(k => `key_points.ilike.%${k}%`).join(',')
+    let query = supabase.from('questions').select('id, key_points, seq_number').or(kpFilters)
+    if (subjects.length > 0) query = query.in('subject', subjects)
+    if (type) query = query.eq('question_type', type)
+    const { data } = await query
+    const rows = (data ?? []) as { id: string; key_points: string | null; seq_number: number | null }[]
+    const existingIds = new Set(oldIds)
+    const newQuestions = rows.filter(r => {
+      if (!r.key_points) return false
+      if (existingIds.has(r.id)) return false
+      const kpList = r.key_points.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)
+      return addedKps.some(k => kpList.includes(k))
+    })
+
+    if (newQuestions.length === 0) {
+      const newKey = makeSessionKey(newKps)
+      set({ selectedKps: newKps, sessionKey: newKey })
+      return
+    }
+
+    const allQuestions = [
+      ...oldIds.map((id, i) => ({ id, kp: get().questionKps[i], seq: null as number | null })),
+      ...newQuestions.map(q => ({
+        id: q.id,
+        kp: q.key_points?.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)[0] ?? null,
+        seq: q.seq_number ?? 999999,
+      })),
+    ].sort((a, b) => {
+      const cmp = (a.kp ?? '').localeCompare(b.kp ?? '', 'zh-CN', { numeric: true })
+      if (cmp !== 0) return cmp
+      return (a.seq ?? 999999) - (b.seq ?? 999999)
+    })
+
+    const newIds = allQuestions.map(q => q.id)
+    const newKpsArr = allQuestions.map(q => q.kp)
+    const currentId = oldIds[currentIndex]
+    const newIndex = newIds.indexOf(currentId)
+
+    const newKey = makeSessionKey(newKps)
+    set({
+      selectedKps: newKps, sessionKey: newKey,
+      questionIds: newIds, questionKps: newKpsArr,
+      currentIndex: newIndex >= 0 ? newIndex : currentIndex,
+    })
+
+    if (oldKey) supabase.from('practice_sequential_state').delete().eq('user_id', userId).eq('session_key', oldKey).then(() => {})
+    const { selectedKps: sKps, questionIds: qids, currentIndex: idx } = get()
+    supabase.from('practice_sequential_state').upsert({
+      user_id: userId, session_key: newKey, selected_kps: sKps, question_ids: qids,
+      current_index: idx, updated_at: new Date().toISOString(),
+    }).then(() => {})
   },
 
   getCurrentKpInfo: () => {
