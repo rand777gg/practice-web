@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { Skeleton } from '@/components/ui/skeleton'
+
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -44,14 +44,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
 
   return (
     <div className={cn("flex flex-col gap-6 w-full max-w-4xl", className)} {...props}>
-      <div className="relative md:min-h-[560px]">
-      <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500 absolute inset-0", imageLoaded ? "opacity-0 pointer-events-none" : "opacity-100")}>
-        <CardContent className="grid p-0 md:grid-cols-2 flex-1">
-          <div className="p-6 md:p-8 space-y-4"><Skeleton className="h-6 w-48" /><Skeleton className="h-4 w-64" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
-          <div className="relative hidden md:block bg-muted"><Skeleton className="absolute inset-0 h-full w-full rounded-none" /></div>
-        </CardContent>
-      </Card>
-      <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-500", imageLoaded ? "opacity-100" : "opacity-0")}>
+      <Card className={cn("overflow-hidden p-0 md:min-h-[560px] flex flex-col transition-opacity duration-700", imageLoaded ? "opacity-100" : "opacity-0")}>
         <CardContent className="grid p-0 md:grid-cols-2 flex-1">
           <form className="p-6 md:p-8 flex flex-col justify-center h-full" onSubmit={handleSubmit}>
             <FieldGroup>
@@ -89,7 +82,6 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
           </div>
         </CardContent>
       </Card>
-      </div>
       <FieldDescription className="px-6 text-center">
         {isLogin ? <>还没有账号？<a href="/register" className="underline underline-offset-2 hover:text-foreground">立即注册</a></> : <>已有账号？<a href="/login" className="underline underline-offset-2 hover:text-foreground">去登录</a></>}
       </FieldDescription>
