@@ -125,20 +125,7 @@ export function PracticeSession() {
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
   const subjectPosRef = useRef<Record<string, number>>({})
-  const kpBySubjectRef = useRef(kpBySubject)
-  kpBySubjectRef.current = kpBySubject
-  const kpToSubjectRef = useRef(kpToSubject)
-  kpToSubjectRef.current = kpToSubject
   const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
-
-  const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
-    // Save current position for current subject before switching
-    if (currentSubject) subjectPosRef.current[currentSubject] = seqIndex
-    // Jump to saved position or start of target subject
-    const saved = subjectPosRef.current[block.subject]
-    const target = saved != null && saved >= block.start && saved <= block.end ? saved : block.start
-    loadSequentialQuestion(target)
-  }, [currentSubject, seqIndex, loadSequentialQuestion])
 
   // Build KP → subject map from selected KPs + kpBySubject
   const kpToSubject = useMemo(() => {
@@ -188,6 +175,18 @@ export function PracticeSession() {
     if (!kp) return null
     return selectedKpToSubject.get(kp) || kpToSubject.get(kp) || null
   }, [seqActive, seqIndex, seqQuestionKps, selectedKpToSubject, kpToSubject])
+
+  const kpBySubjectRef = useRef(kpBySubject)
+  kpBySubjectRef.current = kpBySubject
+  const kpToSubjectRef = useRef(kpToSubject)
+  kpToSubjectRef.current = kpToSubject
+
+  const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
+    if (currentSubject) subjectPosRef.current[currentSubject] = seqIndex
+    const saved = subjectPosRef.current[block.subject]
+    const target = saved != null && saved >= block.start && saved <= block.end ? saved : block.start
+    loadSequentialQuestion(target)
+  }, [currentSubject, seqIndex, loadSequentialQuestion])
 
   // Persist filters to localStorage + DB
   useEffect(() => {
