@@ -1,10 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+}
+
 serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
   try {
     const { token, code } = await req.json()
-    if (!token || !code) return new Response(JSON.stringify({ error: "missing params" }), { status: 400 })
+    if (!token || !code) return new Response(JSON.stringify({ error: "missing params" }), { status: 400, headers: corsHeaders })
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -19,12 +27,12 @@ serve(async (req: Request) => {
       .single()
 
     if (rowErr || !row || row.status !== "confirmed" || row.auth_code !== code) {
-      return new Response(JSON.stringify({ error: "invalid" }), { status: 401 })
+      return new Response(JSON.stringify({ error: "invalid" }), { status: 401, headers: corsHeaders })
     }
 
     // Get user email
     const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(row.user_id)
-    if (!user?.email) return new Response(JSON.stringify({ error: "user not found" }), { status: 404 })
+    if (!user?.email) return new Response(JSON.stringify({ error: "user not found" }), { status: 404, headers: corsHeaders })
 
     // Generate a session by signing in as the user via admin API
     // Create a magic link and extract the session from the redirect
@@ -34,7 +42,7 @@ serve(async (req: Request) => {
       options: { redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:5173"}/` }
     })
 
-    if (!linkData) return new Response(JSON.stringify({ error: "link failed" }), { status: 500 })
+    if (!linkData) return new Response(JSON.stringify({ error: "link failed" }), { status: 500, headers: corsHeaders })
 
     // The generateLink response includes hashed_token in the URL
     // We can extract it and use to create a session
@@ -42,7 +50,7 @@ serve(async (req: Request) => {
     const tokenHash = url.searchParams.get("token_hash")
     const type = url.searchParams.get("type")
 
-    if (!tokenHash) return new Response(JSON.stringify({ error: "no token" }), { status: 500 })
+    if (!tokenHash) return new Response(JSON.stringify({ error: "no token" }), { status: 500, headers: corsHeaders })
 
     // Verify the OTP to get a session
     const { data: verifyData, error: verifyErr } = await supabaseAdmin.auth.verifyOtp({
@@ -51,7 +59,7 @@ serve(async (req: Request) => {
     })
 
     if (verifyErr || !verifyData.session) {
-      return new Response(JSON.stringify({ error: "verify failed" }), { status: 500 })
+      return new Response(JSON.stringify({ error: "verify failed" }), { status: 500, headers: corsHeaders })
     }
 
     // Mark token as used
@@ -60,8 +68,8 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({
       access_token: verifyData.session.access_token,
       refresh_token: verifyData.session.refresh_token,
-    }), { headers: { "Content-Type": "application/json" } })
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500 })
+    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders })
   }
 })
