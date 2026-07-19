@@ -50,7 +50,7 @@ interface DashboardState {
   getChartCache: (key: string) => ChartData | null
   setQMetaCache: (data: QMeta[]) => void
   getQMetaCache: () => QMeta[] | null
-  fetchPlanCache: (userId: string, refreshVersion?: number) => Promise<PlanCache>
+  fetchPlanCache: (userId: string, refreshVersion?: number, planResetAt?: string | null) => Promise<PlanCache>
   getPlanCache: () => PlanCache | null
   invalidatePlanCache: () => void
 }
