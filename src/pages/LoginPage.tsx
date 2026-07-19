@@ -14,9 +14,12 @@ export function Component() {
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
-      <Button variant="ghost" size="icon" className="absolute top-4 right-4" onClick={toggle} title={theme === 'light' ? 'Dark mode' : 'Light mode'}>
-        {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
-      </Button>
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        {theme === 'light' && <div className="size-5 rounded-full bg-primary ring-2 ring-primary/20" title="主题色" />}
+        <Button variant="ghost" size="icon" onClick={toggle} title={theme === 'light' ? 'Dark mode' : 'Light mode'}>
+          {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+        </Button>
+      </div>
       <AuthForm />
     </div>
   )
