@@ -2,15 +2,14 @@ import { useState, useEffect, useMemo } from "react"
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from "recharts"
 import { supabase } from "@/lib/supabase"
 import { useAuthStore } from "@/stores/auth-store"
+import { QUESTION_TYPE_OPTIONS } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
 
 interface Props { planSubjects: string[] }
 
-const TYPE_LABELS: Record<string, string> = {
-  single_choice: '单选', multi_select: '多选', true_false: '判断',
-  judge_correct: '判断改错', fill_blank: '填空', short_answer: '简答', analysis: '分析',
-}
+const ALL_TYPES = QUESTION_TYPE_OPTIONS.map(o => o.value)
+const TYPE_LABELS: Record<string, string> = Object.fromEntries(QUESTION_TYPE_OPTIONS.map(o => [o.value, o.label]))
 
 const COLORS = ["#3b82f6","#ec4899","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"]
 
@@ -25,9 +24,6 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
     supabase.rpc('get_type_accuracy', { p_user_id: user.id, p_subjects: planSubjects }).then(({ data: rows }) => {
       const list = (rows ?? []) as any[]
 
-      // Collect all question types
-      const types = [...new Set(list.map((r: any) => r.question_type).filter(Boolean))] as string[]
-
       // Build subject → type → pct map
       const subjMap = new Map<string, Map<string, number>>()
       for (const r of list) {
@@ -41,8 +37,8 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
       const subjs = [...subjMap.keys()]
       setSubjects(subjs)
 
-      // Build radar data: one entry per type, with each subject's accuracy
-      const radarData = types.map(t => {
+      // Build radar data: one entry per ALL types, with each subject's accuracy
+      const radarData = ALL_TYPES.map(t => {
         const entry: any = { type: TYPE_LABELS[t] || t }
         for (const s of subjs) {
           entry[s] = subjMap.get(s)?.get(t) ?? 100 // default 100% if no data
