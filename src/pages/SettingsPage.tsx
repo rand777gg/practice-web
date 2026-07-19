@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { Icon } from '@iconify/react'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -77,9 +77,6 @@ export function Component() {
  const [deleteOpen, setDeleteOpen] = useState(false)
  const [deleting, setDeleting] = useState(false)
  const [logoutOpen, setLogoutOpen] = useState(false)
- const [resetDataOpen, setResetDataOpen] = useState(false)
- const [resettingData, setResettingData] = useState(false)
- const [resetError, setResetError] = useState('')
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
 
@@ -697,52 +694,6 @@ export function Component() {
        <CardTitle className="text-sm text-destructive">危险区域</CardTitle>
       </CardHeader>
       <CardContent>
-       <div className="flex gap-2">
-        <div>
-         <AlertDialog open={resetDataOpen} onOpenChange={(open) => {
-          if (resettingData && !open) return
-          setResetDataOpen(open)
-         }}>
-          <AlertDialogTrigger asChild>
-           <Button variant="outline" size="sm" className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
-            <RotateCcw className="h-3.5 w-3.5" />
-            重置做题数据
-           </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-           <AlertDialogTitle>确认重置做题数据</AlertDialogTitle>
-           <AlertDialogDescription>
-            此操作将删除你的所有答题记录、考试记录和笔记，且无法恢复。收藏和账号信息不受影响。确定要继续吗？
-           </AlertDialogDescription>
-           <div className="flex gap-3 mt-4 justify-end">
-            <AlertDialogCancel asChild>
-             {resetError && <p className="text-xs text-destructive mb-2">{resetError}</p>}
-             <Button variant="outline" size="sm" disabled={resettingData}>取消</Button>
-            </AlertDialogCancel>
-            <Button
-             variant="destructive"
-             size="sm"
-             disabled={resettingData}
-             onClick={async () => {
-              setResettingData(true)
-              try {
-               await supabase.from('user_answers').delete().eq('user_id', user!.id)
-               await supabase.from('exam_sessions').delete().eq('user_id', user!.id)
-              } catch (e) {
-               setResetError('重置失败，请稍后重试')
-               console.error('Reset data failed:', e)
-              }
-              setResettingData(false)
-              setResetDataOpen(false)
-             }}
-            >
-             {resettingData ? '重置中...' : '确认重置'}
-            </Button>
-           </div>
-          </AlertDialogContent>
-         </AlertDialog>
-        </div>
-        <div>
          <AlertDialog open={deleteOpen} onOpenChange={(open) => {
           if (deleting && !open) return
           setDeleteOpen(open)
@@ -782,8 +733,6 @@ export function Component() {
          </div>
         </AlertDialogContent>
        </AlertDialog>
-        </div>
-       </div>
       </CardContent>
      </Card>
     </div>
