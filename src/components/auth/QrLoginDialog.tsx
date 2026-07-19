@@ -46,7 +46,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
         const { data: sessionData, error: fnErr } = await supabase.functions.invoke('qr-login', {
           body: { token, code: codeRef.current, anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
         })
-        if (fnErr || !sessionData?.access_token) { console.error('qr-login error:', fnErr, JSON.stringify((fnErr as any)?.context)); setStatus('error'); return }
+        if (fnErr || !sessionData?.access_token) { console.error('qr-login error:', fnErr); try { const ctx = await (fnErr as any)?.context?.text?.(); console.error('qr-login body:', ctx) } catch {} setStatus('error'); return }
         await supabase.auth.setSession({
           access_token: sessionData.access_token,
           refresh_token: sessionData.refresh_token,
