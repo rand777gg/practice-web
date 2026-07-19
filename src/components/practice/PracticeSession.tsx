@@ -851,13 +851,29 @@ export function PracticeSession() {
               {/* Device + sync badge */}
               {(() => {
                 const ua = navigator.userAgent
-                const deviceIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:macos-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
+                let deviceIcon = 'mingcute:computer-line'
+                let osName = ''
+                if (/Windows NT 10/.test(ua)) { deviceIcon = 'mingcute:windows-line'; osName = 'Windows 10' }
+                else if (/Windows NT 11/.test(ua) || /Windows NT 1[2-9]/.test(ua)) { deviceIcon = 'mingcute:windows-line'; osName = 'Windows 11' }
+                else if (/Windows/.test(ua)) { deviceIcon = 'mingcute:windows-line'; osName = 'Windows' }
+                else if (/Android (\d+[\d.]*)/.test(ua)) { deviceIcon = 'mingcute:android-line'; osName = 'Android ' + RegExp.$1 }
+                else if (/Android/.test(ua)) { deviceIcon = 'mingcute:android-line'; osName = 'Android' }
+                else if (/Mac OS X (\d+[._]\d+)/.test(ua)) { deviceIcon = 'mingcute:macos-line'; osName = 'macOS ' + RegExp.$1.replace('_', '.') }
+                else if (/Mac/.test(ua)) { deviceIcon = 'mingcute:macos-line'; osName = 'macOS' }
+                else if (/Linux/.test(ua)) { deviceIcon = 'mingcute:linux-line'; osName = 'Linux' }
+                else if (/iPhone|iPad/.test(ua)) { deviceIcon = 'mingcute:ios-line'; osName = 'iOS' }
+                // Try userAgentData for more detail (Chrome/Edge)
+                try {
+                  const uad = (navigator as any).userAgentData
+                  if (uad?.platform) osName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '')
+                } catch {}
                 const lastSync = [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
-                const syncText = lastSync ? new Date(lastSync).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', month: 'numeric', day: 'numeric' }) : null
+                const syncText = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
                 return syncText ? (
-                  <div className="absolute top-1.5 right-2 flex items-center gap-0.5 bg-background/80 rounded-full px-1.5 py-0.5">
-                    <Icon icon={deviceIcon} className="h-2.5 w-2.5 text-muted-foreground" />
-                    <span className="text-[8px] text-muted-foreground tabular-nums">{syncText}</span>
+                  <div className="absolute top-1.5 right-2 flex items-center gap-1 bg-background/90 rounded-full px-2 py-0.5 border">
+                    <Icon icon={deviceIcon} className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[9px] text-muted-foreground">{osName}</span>
+                    <span className="text-[9px] text-muted-foreground tabular-nums ml-1">{syncText}</span>
                   </div>
                 ) : null
               })()}
