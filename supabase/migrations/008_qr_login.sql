@@ -28,9 +28,3 @@ CREATE POLICY qr_update_auth ON public.qr_login_tokens FOR UPDATE TO authenticat
   USING (status = 'pending' AND expires_at > NOW())
   WITH CHECK (user_id IS NOT NULL AND status = 'confirmed');
 
--- 定时清理过期token（每5分钟）
-SELECT cron.schedule(
-  'qr-cleanup',
-  '*/5 * * * *',
-  $$ DELETE FROM public.qr_login_tokens WHERE expires_at < NOW() AND status = 'pending' $$
-);
