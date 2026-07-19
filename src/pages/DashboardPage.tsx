@@ -20,7 +20,7 @@ import { PlanCompletionChart } from '@/components/charts/PlanCompletionChart'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
-import { SubjectAccuracyBar } from '@/components/charts/SubjectAccuracyBar'
+
 const SubjectDonutCharts = lazy(() => import('@/components/charts/SubjectDonutCharts').then(m => ({ default: m.SubjectDonutCharts })))
 const SubjectTreemap = lazy(() => import('@/components/charts/SubjectTreemap').then(m => ({ default: m.SubjectTreemap })))
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
@@ -417,7 +417,25 @@ export function Component() {
                   const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
                   return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
                 })()}
-                <SubjectAccuracyBar subjectAccuracy={chartData.subjectAccuracy} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { title: '正确率变化', desc: '今日 vs 昨日正确率对比' },
+                    { title: '题型分布', desc: '各题型答题量占比' },
+                    { title: '时段分布', desc: '24小时答题时段热力' },
+                    { title: '科目趋势', desc: '近30天各科正确率走势' },
+                  ].map((c) => (
+                    <Card key={c.title} className="border-0 shadow-none">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-muted-foreground">{c.title}</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[300px] rounded-lg bg-muted/30 flex items-center justify-center text-sm text-muted-foreground/50 border border-dashed">
+                          {c.desc}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
