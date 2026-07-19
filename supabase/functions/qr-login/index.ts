@@ -18,8 +18,12 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     )
+    // Public client for verifyOtp — must use anon key to get the USER's session
+    const supabasePublic = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!
+    )
 
-    // Verify token is confirmed and code matches
     const { data: row, error: rowErr } = await supabaseAdmin
       .from("qr_login_tokens")
       .select("user_id, status, auth_code")
@@ -30,12 +34,9 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "invalid" }), { status: 401, headers: corsHeaders })
     }
 
-    // Get user email
     const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(row.user_id)
     if (!user?.email) return new Response(JSON.stringify({ error: "user not found" }), { status: 404, headers: corsHeaders })
 
-    // Generate a session by signing in as the user via admin API
-    // Create a magic link and extract the session from the redirect
     const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink",
       email: user.email,
@@ -44,16 +45,12 @@ serve(async (req: Request) => {
 
     if (!linkData) return new Response(JSON.stringify({ error: "link failed" }), { status: 500, headers: corsHeaders })
 
-    // The generateLink response includes hashed_token in the URL
-    // We can extract it and use to create a session
     const url = new URL(linkData.properties.action_link)
     const tokenHash = url.searchParams.get("token_hash")
-    const type = url.searchParams.get("type")
-
     if (!tokenHash) return new Response(JSON.stringify({ error: "no token" }), { status: 500, headers: corsHeaders })
 
-    // Verify the OTP to get a session
-    const { data: verifyData, error: verifyErr } = await supabaseAdmin.auth.verifyOtp({
+    // Verify OTP with PUBLIC client → creates the USER's session (not admin)
+    const { data: verifyData, error: verifyErr } = await supabasePublic.auth.verifyOtp({
       type: "magiclink",
       token_hash: tokenHash,
     })
@@ -62,7 +59,6 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "verify failed" }), { status: 500, headers: corsHeaders })
     }
 
-    // Mark token as used
     await supabaseAdmin.from("qr_login_tokens").update({ status: "expired" }).eq("token", token)
 
     return new Response(JSON.stringify({
