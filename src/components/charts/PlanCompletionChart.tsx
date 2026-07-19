@@ -66,7 +66,7 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
     all: chartData.reduce((s, d) => s + (d.plan || 0) + (d.target || 0), 0),
   }), [chartData])
 
-  const keys = ["plan", "target", "all"] as const
+  const keys = ["all", "plan", "target"] as const
 
   if (!user || (!planSubjects.length && !targetSubjects.length)) return null
   if (loading) return <div className="h-48 rounded-lg bg-muted animate-pulse" />
@@ -84,11 +84,11 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
             <button
               key={key}
               data-active={activeChart === key}
-              className="relative z-30 flex flex-1 flex-col justify-center gap-1 border-t px-4 py-3 text-left even:border-l data-[active=true]:bg-muted/50 sm:border-t-0 sm:border-l"
+              className="relative z-30 flex flex-1 flex-col justify-center gap-0.5 border-t px-4 py-3 text-left even:border-l data-[active=true]:bg-muted/50 sm:border-t-0 sm:border-l whitespace-nowrap"
               onClick={() => setActiveChart(key)}
             >
-              <span className="text-xs text-muted-foreground">{chartConfig[key].label}</span>
-              <span className="text-lg leading-none font-bold">{totals[key].toLocaleString()}</span>
+              <span className="text-sm text-muted-foreground">{chartConfig[key].label}</span>
+              <span className="text-2xl leading-none font-bold">{totals[key].toLocaleString()}</span>
             </button>
           ))}
         </div>
