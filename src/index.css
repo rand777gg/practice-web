@@ -5,6 +5,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
+html, body { background: #0a0a1a; }
+
 :root {
   /* Radix Themes Spinner & ScrollArea vars */
   --spinner-animation-duration: 800ms;
