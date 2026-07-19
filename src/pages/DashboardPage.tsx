@@ -463,16 +463,7 @@ export function Component() {
                 {(() => {
                   const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
                   const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
-                  return (pts.length > 0 || tts.length > 0) ? (
-                    <Card className="border-0 shadow-none">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-muted-foreground">每日计划完成对比</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <PlanCompletionChart planSubjects={pts} targetSubjects={tts} />
-                      </CardContent>
-                    </Card>
-                  ) : null
+                  return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
                 })()}
               </div>
             ) : (
