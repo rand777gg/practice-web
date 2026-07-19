@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { PlanProgress } from './PlanProgress'
 import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
 import { Link } from 'react-router-dom'
-import { Settings, Menu, Moon, Sparkles, Sun, QrCode } from 'lucide-react'
+import { Settings, Menu, Moon, Sparkles, Sun, Scan } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
 import { QrScanner } from '@/components/auth/QrScanner'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -61,7 +61,7 @@ export function Header({ onMenuClick }: Props) {
           )}
         </Button>
         <Button variant="ghost" size="icon" onClick={() => setQrOpen(true)} title="扫码登录">
-          <QrCode className="h-5 w-5" />
+          <Scan className="h-5 w-5" />
         </Button>
         <Button variant="ghost" size="icon" asChild title={t('settings.title')}>
           <Link to="/settings">
