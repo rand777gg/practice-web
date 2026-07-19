@@ -2,6 +2,10 @@
 -- 001_initial_schema.sql — 完整数据库结构 & 行级安全策略
 -- ============================================================================
 
+-- 清理已废弃的对象（旧部署兼容）
+DROP TABLE IF EXISTS public.plan_live_progress;
+DROP FUNCTION IF EXISTS public.get_subject_progress(UUID, TIMESTAMPTZ);
+
 -- ============================================================================
 -- 1. PROFILES — 用户资料表
 -- ============================================================================
@@ -425,6 +429,39 @@ AS $$
   );
 $$;
 GRANT EXECUTE ON FUNCTION public.get_question_meta(TEXT) TO authenticated;
+
+-- 计划进度聚合 — 一次查询替代客户端分页+Set计数
+CREATE OR REPLACE FUNCTION public.get_subject_progress(
+  p_user_id        UUID,
+  p_plan_reset_at  TIMESTAMPTZ DEFAULT NULL,
+  p_today_since    TIMESTAMPTZ DEFAULT NULL,
+  p_subjects       TEXT[]      DEFAULT NULL
+)
+RETURNS TABLE(subject TEXT, total BIGINT, done_all BIGINT, done_today BIGINT)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT
+    COALESCE(q.subject, 'Other') AS subject,
+    COUNT(*)                     AS total,
+    COUNT(ua_all.question_id)    AS done_all,
+    COUNT(ua_today.question_id)  AS done_today
+  FROM public.questions q
+  LEFT JOIN public.user_answers ua_all
+    ON ua_all.question_id = q.id
+    AND ua_all.user_id = p_user_id
+    AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at)
+  LEFT JOIN public.user_answers ua_today
+    ON ua_today.question_id = q.id
+    AND ua_today.user_id = p_user_id
+    AND ua_today.answered_at >= p_today_since
+  WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+  GROUP BY COALESCE(q.subject, 'Other')
+  ORDER BY subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[]) TO authenticated;
 
 -- ============================================================================
 -- 14. ROW LEVEL SECURITY — 行级安全
