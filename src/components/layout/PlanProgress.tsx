@@ -44,7 +44,8 @@ export function PlanProgress() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [dailyGoal, setDailyGoal] = useState(0)
-  const [todayLongDone, setTodayLongDone] = useState(0)
+  const [scopeTotal, setScopeTotal] = useState(0)
+  const [scopeDoneAll, setScopeDoneAll] = useState(0)
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
   const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
 
@@ -83,10 +84,12 @@ export function PlanProgress() {
         }
 
         setDailyGoal(Math.ceil(Math.max(scopeTotal - scopeDoneAll, 0) / daysLeft))
-        setTodayLongDone(scopeDoneToday)
+        setScopeTotal(scopeTotal)
+        setScopeDoneAll(scopeDoneAll)
       } else {
         setDailyGoal(0)
-        setTodayLongDone(0)
+        setScopeTotal(0)
+        setScopeDoneAll(0)
       }
 
       // Daily targets progress
@@ -187,7 +190,7 @@ export function PlanProgress() {
   const dailyDone = doneDaily >= effectiveTotal && effectiveTotal > 0
 
   const hasDeadline = !!deadline
-  const longPct = dailyGoal > 0 ? Math.min(Math.round((todayLongDone / dailyGoal) * 100), 100) : 0
+  const longPct = scopeTotal > 0 ? Math.round((scopeDoneAll / scopeTotal) * 100) : 0
 
   const longCompleted = !hasDeadline
   const dailyCompleted = !hasDailyTargets || dailyDone
@@ -227,7 +230,7 @@ export function PlanProgress() {
               <div className="flex items-center gap-1 shrink-0">
                 <span className="hidden sm:inline text-muted-foreground text-[10px]">{t('plan.longTerm')}</span>
                 <Progress value={longPct} className="w-10 h-2 [&>div]:bg-blue-500" />
-                <span className="tabular-nums shrink-0 text-[10px]">{todayLongDone}/{dailyGoal}</span>
+                <span className="tabular-nums shrink-0 text-[10px]">{scopeDoneAll}/{scopeTotal}</span>
               </div>
             )}
             {hasDailyTargets && (dailyDone ? (
