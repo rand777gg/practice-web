@@ -45,7 +45,10 @@ export function KpSelectDialog({ open, onOpenChange, kpBySubject, planSubjects, 
     return () => { c = true }
   }, [open, filteredSubjects])
 
-  useEffect(() => { setChecked(new Set(selectedKps)) }, [selectedKps, open])
+  useEffect(() => {
+    if (selectedKps.length > 0) { setChecked(new Set(selectedKps)) }
+    else if (open) { setChecked(new Set(allKps)) }
+  }, [selectedKps, open, allKps])
 
   const toggle = (kp: string) => setChecked(prev => { const n = new Set(prev); if (n.has(kp)) n.delete(kp); else n.add(kp); return n })
   const toggleAll = () => { if (allChecked) setChecked(new Set()); else setChecked(new Set(allKps)) }
