@@ -45,8 +45,13 @@ serve(async (req: Request) => {
     if (!linkData) return new Response(JSON.stringify({ error: "link failed", detail: "generateLink returned empty" }), { status: 500, headers: corsHeaders })
 
     const url = new URL(linkData.properties.action_link)
-    const tokenHash = url.searchParams.get("token_hash")
-    if (!tokenHash) return new Response(JSON.stringify({ error: "no token", detail: url.href }), { status: 500, headers: corsHeaders })
+    const magicToken = url.searchParams.get("token")
+    if (!magicToken) return new Response(JSON.stringify({ error: "no token", detail: url.href }), { status: 500, headers: corsHeaders })
+
+    // SHA256 hash the raw token to get token_hash
+    const tokenHash = Array.from(new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(magicToken))
+    )).map(b => b.toString(16).padStart(2, "0")).join("")
 
     const { data: verifyData, error: verifyErr } = await supabasePublic.auth.verifyOtp({
       type: "magiclink",
