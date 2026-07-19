@@ -907,8 +907,8 @@ export function PracticeSession() {
                 return syncText ? (
                   <div className="flex items-center justify-end gap-1 pt-1">
                     <Icon icon={deviceIcon} className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[1.2em] text-muted-foreground">{osName}</span>
-                    <span className="text-[1.2em] text-muted-foreground tabular-nums ml-1">{syncText}</span>
+                    <span className="text-[9px] text-muted-foreground">{osName}</span>
+                    <span className="text-[9px] text-muted-foreground tabular-nums ml-1">{syncText}</span>
                   </div>
                 ) : null
               })()}
