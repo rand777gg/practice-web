@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { useThemeStore } from '@/stores/theme-store'
+
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useSequentialStore } from '@/stores/sequential-store'
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Calendar, Check, ChevronDown, HelpCircle, Plus, Play, X } from 'lucide-react'
+import { Check, ChevronDown, HelpCircle, Plus, Play, X } from 'lucide-react'
 import {
   Dialog,
   DialogClose,
@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DatePicker } from '@/components/ui/date-picker'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
@@ -50,16 +51,9 @@ interface Props {
   onOpenChange: (open: boolean) => void
 }
 
-function formatDate(iso: string): string {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${y}年${parseInt(m)}月${parseInt(d)}日`
-}
-
 export function PlanDialog({ open, onOpenChange }: Props) {
   const { t } = useT()
   const { user, profile, refreshProfile } = useAuthStore()
-  const theme = useThemeStore((s) => s.theme)
 
   const savedSubjects = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
   const savedTargets = normalizeDailyTargets(profile?.daily_targets ? JSON.parse(profile.daily_targets) : null)
@@ -330,27 +324,11 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               </div>
 
               {/* Deadline */}
-              <button
-                type="button"
-                onClick={() => {
-                  const btn = document.querySelector('.plan-date-input') as HTMLInputElement
-                  btn?.showPicker()
-                }}
-                className="relative flex items-center justify-between w-full h-8 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
-              >
-                <span className={deadline ? '' : 'text-muted-foreground'}>
-                  {deadline ? formatDate(deadline) : t('plan.pickDate')}
-                </span>
-                <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
-                <input
-                  type="date"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  min={new Date().toISOString().slice(0, 10)}
-                  className="plan-date-input absolute inset-0 opacity-0 cursor-pointer"
-                  style={{ colorScheme: theme }}
-                />
-              </button>
+              <DatePicker
+                date={deadline ? new Date(deadline + 'T00:00:00') : undefined}
+                onSelect={(d) => setDeadline(d ? d.toISOString().slice(0, 10) : '')}
+                placeholder={t('plan.pickDate')}
+              />
 
               {planLoading ? (
                 <div className="space-y-2">
@@ -477,28 +455,11 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   </div>
 
                   {/* Deadline */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const btn = document.querySelector(`.target-date-input-${i}`) as HTMLInputElement
-                      btn?.showPicker()
-                    }}
-                    className="relative flex items-center justify-between w-full h-8 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer dark:text-foreground"
-                  >
-                    <span className={target.deadline ? '' : 'text-muted-foreground'}>
-                      {target.deadline
-                        ? new Date(target.deadline).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : t('plan.deadline')}
-                    </span>
-                    <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
-                    <input
-                      type="datetime-local"
-                      value={target.deadline ?? ''}
-                      onChange={(e) => updateDailyDeadline(i, e.target.value)}
-                      className={`target-date-input-${i} absolute inset-0 opacity-0 cursor-pointer`}
-                      style={{ colorScheme: theme }}
-                    />
-                  </button>
+                  <DatePicker
+                    date={target.deadline ? new Date(target.deadline) : undefined}
+                    onSelect={(d) => updateDailyDeadline(i, d ? d.toISOString().slice(0, 10) + 'T00:00:00' : '')}
+                    placeholder={t('plan.deadline')}
+                  />
 
                   {/* Subject progress items — same layout as long-term tab */}
                   {target.subjects.length > 0 && (
