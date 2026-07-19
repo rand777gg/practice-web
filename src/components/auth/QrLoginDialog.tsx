@@ -1,0 +1,100 @@
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import QRCode from 'qrcode'
+import { supabase } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { QrCode, RefreshCw, Loader2 } from 'lucide-react'
+
+interface Props {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+export function QrLoginDialog({ open, onOpenChange }: Props) {
+  const [qrDataUrl, setQrDataUrl] = useState('')
+  const [status, setStatus] = useState<'generating' | 'waiting' | 'expired' | 'error'>('generating')
+  const tokenRef = useRef('')
+  const pollRef = useRef<ReturnType<typeof setInterval>>()
+  const navigate = useNavigate()
+
+  const generateToken = async () => {
+    setStatus('generating')
+    const token = crypto.randomUUID()
+    tokenRef.current = token
+
+    // Store token in DB
+    const { error } = await supabase.from('qr_login_tokens').insert({ token })
+    if (error) { setStatus('error'); return }
+
+    // Generate QR code
+    const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}`
+    const dataUrl = await QRCode.toDataURL(confirmUrl, { width: 240, margin: 1, color: { dark: '#ffffff', light: '#00000000' } })
+    setQrDataUrl(dataUrl)
+    setStatus('waiting')
+
+    // Start polling
+    startPolling(token)
+  }
+
+  const startPolling = (token: string) => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      const { data, error } = await supabase.from('qr_login_tokens').select('status').eq('token', token).single()
+      if (error || !data) { setStatus('expired'); clearInterval(pollRef.current); return }
+      if (data.status === 'confirmed') {
+        clearInterval(pollRef.current)
+        // Refresh session to pick up the new login
+        await supabase.auth.refreshSession()
+        onOpenChange(false)
+        navigate('/')
+      } else if (data.status === 'expired') {
+        setStatus('expired')
+        clearInterval(pollRef.current)
+      }
+    }, 2000)
+  }
+
+  useEffect(() => {
+    if (open) generateToken()
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [open])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm text-center">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-center gap-2">
+            <QrCode className="h-5 w-5" />
+            扫码登录
+          </DialogTitle>
+          <DialogDescription>
+            {status === 'generating' && '正在生成二维码...'}
+            {status === 'waiting' && '请使用已登录的手机扫描二维码'}
+            {status === 'expired' && '二维码已过期，请重新生成'}
+            {status === 'error' && '生成失败，请重试'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-4 py-4">
+          {status === 'waiting' ? (
+            <img src={qrDataUrl} alt="QR Code" className="size-60 rounded-xl border border-border/50" />
+          ) : status === 'generating' ? (
+            <div className="size-60 flex items-center justify-center rounded-xl border border-border/50 bg-muted/20">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="size-60 flex items-center justify-center rounded-xl border border-border/50 bg-muted/20">
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground mb-2">{status === 'expired' ? '已过期' : '生成失败'}</p>
+                <Button variant="outline" size="sm" onClick={generateToken}>
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  重新生成
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}

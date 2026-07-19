@@ -28,6 +28,10 @@ export const router = createBrowserRouter([
         Component: PrivacyPage,
       },
       {
+        path: '/qr-confirm',
+        lazy: () => import('@/pages/QrConfirmPage'),
+      },
+      {
         path: '/welcome',
         lazy: () => import('@/pages/WelcomePage'),
       },
