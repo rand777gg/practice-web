@@ -43,7 +43,7 @@ export function DateTimePicker({ date, onSelect, placeholder = "选择日期", c
             {date ? format(date, "yyyy-MM-dd") : placeholder}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0 z-50" align="start" sideOffset={4}>
+        <PopoverContent className="overflow-hidden p-0 z-50" align="center" sideOffset={4} style={{ width: 'calc(var(--radix-popover-trigger-width) * 0.8)' }}>
           <Calendar mode="single" selected={date} captionLayout="dropdown" defaultMonth={date}
             onSelect={handleDate} className="[--cell-size:3rem] p-4 w-full" />
         </PopoverContent>
