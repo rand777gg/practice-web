@@ -11,17 +11,16 @@ serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders })
   }
   try {
-    const { token, code } = await req.json()
-    if (!token || !code) return new Response(JSON.stringify({ error: "missing params" }), { status: 400, headers: corsHeaders })
+    const { token, code, anonKey } = await req.json()
+    if (!token || !code || !anonKey) return new Response(JSON.stringify({ error: "missing params" }), { status: 400, headers: corsHeaders })
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     )
-    // Public client for verifyOtp — must use anon key to get the USER's session
     const supabasePublic = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!
+      anonKey
     )
 
     const { data: row, error: rowErr } = await supabaseAdmin

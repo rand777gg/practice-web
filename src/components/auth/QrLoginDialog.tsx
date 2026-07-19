@@ -44,7 +44,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
         clearInterval(pollRef.current)
         setStatus('loggingIn')
         const { data: sessionData, error: fnErr } = await supabase.functions.invoke('qr-login', {
-          body: { token, code: codeRef.current },
+          body: { token, code: codeRef.current, anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY },
         })
         if (fnErr || !sessionData?.access_token) { console.error('qr-login error:', fnErr, JSON.stringify((fnErr as any)?.context)); setStatus('error'); return }
         await supabase.auth.setSession({
