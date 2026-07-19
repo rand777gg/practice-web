@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
-import { LoginForm } from '@/components/auth/LoginForm'
+import { AuthForm } from '@/components/auth/AuthForm'
 import { Button } from '@/components/ui/button'
 import { Moon, Sun } from 'lucide-react'
 
@@ -13,21 +13,11 @@ export function Component() {
   if (user) return <Navigate to="/" replace />
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/50 p-4">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute top-4 right-4"
-        onClick={toggle}
-        title={theme === 'light' ? 'Dark mode' : 'Light mode'}
-      >
-        {theme === 'light' ? (
-          <Moon className="h-5 w-5" />
-        ) : (
-          <Sun className="h-5 w-5" />
-        )}
+    <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
+      <Button variant="ghost" size="icon" className="absolute top-4 right-4" onClick={toggle} title={theme === 'light' ? 'Dark mode' : 'Light mode'}>
+        {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
       </Button>
-      <LoginForm />
+      <AuthForm />
     </div>
   )
 }
