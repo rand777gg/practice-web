@@ -73,6 +73,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
   const [planLoading, setPlanLoading] = useState(false)
   const [confirmReset, setConfirmReset] = useState<'long' | 'daily' | null>(null)
+  const [resetTooEasy, setResetTooEasy] = useState(false)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
   // Mutual exclusion: subjects in long-term plan can't be in daily targets and vice versa
@@ -160,6 +161,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setSaving(true)
     const now = new Date()
     await supabase.from('profiles').update({ plan_reset_at: now.toISOString() }).eq('id', user.id)
+    if (resetTooEasy) { await supabase.from('user_excluded_questions').delete().eq('user_id', user.id) }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
@@ -172,6 +174,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setSaving(true)
     const now = new Date()
     await supabase.from('profiles').update({ daily_reset_at: now.toISOString() }).eq('id', user.id)
+    if (resetTooEasy) { await supabase.from('user_excluded_questions').delete().eq('user_id', user.id) }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
@@ -568,15 +571,19 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         </DialogFooter>
       </DialogContent>
 
-      <AlertDialog open={confirmReset !== null} onOpenChange={(open) => { if (!open) setConfirmReset(null) }}>
+      <AlertDialog open={confirmReset !== null} onOpenChange={(open) => { if (!open) { setConfirmReset(null); setResetTooEasy(false) } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认重置</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmReset === 'long'
-                ? '重置后，长期计划的已完成题目计数将归零，每日目标将重新计算。确定继续？'
-                : '重置后，自定义目标的今日已完成计数将归零。确定继续？'}
+                ? '重置后，长期计划的已完成题目计数将归零，每日目标将重新计算。'
+                : '重置后，自定义目标的今日已完成计数将归零。'}
             </AlertDialogDescription>
+            <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
+              <input type="checkbox" checked={resetTooEasy} onChange={(e) => setResetTooEasy(e.target.checked)} className="h-4 w-4 rounded border-gray-300" />
+              同时将已标记为"太简单"的题目恢复
+            </label>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
@@ -584,6 +591,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               onClick={() => {
                 if (confirmReset === 'long') handleResetLong()
                 else if (confirmReset === 'daily') handleResetDaily()
+                setResetTooEasy(false)
                 setConfirmReset(null)
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
