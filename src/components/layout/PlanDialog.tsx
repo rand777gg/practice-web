@@ -167,7 +167,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     if (s.isActive && s.sessionKey) {
       const savedSps = { ...s.subjectPositions }
       await s.startSequential(user.id, s.selectedKps, [], '')
-      const { questionIds } = useSequentialStore.getState()
+      useSequentialStore.getState()
       useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
     }
     await refreshProfile()
@@ -196,7 +196,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     if (s.isActive && s.sessionKey) {
       const savedSps = { ...s.subjectPositions }
       await s.startSequential(user.id, s.selectedKps, [], '')
-      const { questionIds } = useSequentialStore.getState()
+      useSequentialStore.getState()
       useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
     }
     await refreshProfile()

@@ -34,7 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -125,7 +125,6 @@ export function PracticeSession() {
   const seqQuestionIds = useSequentialStore((s) => s.questionIds)
   const seqIndex = useSequentialStore((s) => s.currentIndex)
   const seqKps = useSequentialStore((s) => s.selectedKps)
-  const seqNext = useSequentialStore((s) => s.nextQuestion)
   const seqStart = useSequentialStore((s) => s.startSequential)
   const seqReset = useSequentialStore((s) => s.reset)
   const seqLoadFromDb = useSequentialStore((s) => s.loadFromDb)
@@ -787,7 +786,7 @@ export function PracticeSession() {
               )}
             </div>
             <DrawerFooter>
-              <DrawerClose render={<Button variant="outline" className="w-full">关闭</Button>} />
+              <DrawerClose asChild><Button variant="outline" className="w-full">关闭</Button></DrawerClose>
             </DrawerFooter>
           </DrawerContent>
         </Drawer>

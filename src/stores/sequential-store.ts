@@ -249,7 +249,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (addedKps.length === 0 && removedKps.size === 0) return
 
     // 1. Fetch new questions for added KPs
-    let newQuestions: { id: string; key_points: string | null; seq_number: number | null }[] = []
+    let newQuestions: { id: string; subject: string | null; key_points: string | null; seq_number: number | null }[] = []
     if (addedKps.length > 0) {
       const kpFilters = addedKps.map(k => `key_points.ilike.%${k}%`).join(',')
       let query = supabase.from('questions').select('id, subject, key_points, seq_number').or(kpFilters)

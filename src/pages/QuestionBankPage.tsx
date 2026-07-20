@@ -6,10 +6,8 @@ import { BankCard } from '@/components/question-bank/BankCard'
 import { BankDialog } from '@/components/question-bank/BankDialog'
 import { BankDetail } from '@/components/question-bank/BankDetail'
 import { Library, Plus } from 'lucide-react'
-import { useT } from '@/i18n/use-t'
 
 export function Component() {
- const { t } = useT()
  const { banks, isLoading, fetchBanks, createBank, updateBank, deleteBank } = useQuestionBanks()
  const [dialogOpen, setDialogOpen] = useState(false)
  const [editingBank, setEditingBank] = useState<QuestionBank | null>(null)
