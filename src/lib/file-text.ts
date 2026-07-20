@@ -12,12 +12,31 @@ async function getPdfjsLib() {
   return pdfjsLibPromise
 }
 
-export async function extractPdfText(file: File): Promise<string> {
+function parsePageRanges(ranges: string, totalPages: number): number[] {
+  if (!ranges.trim()) return Array.from({ length: totalPages }, (_, i) => i + 1)
+  const pages = new Set<number>()
+  for (const part of ranges.split(',')) {
+    const trimmed = part.trim()
+    if (trimmed.includes('-')) {
+      const [s, e] = trimmed.split('-').map(Number)
+      if (!isNaN(s) && !isNaN(e)) {
+        for (let p = Math.max(1, s); p <= Math.min(totalPages, e); p++) pages.add(p)
+      }
+    } else {
+      const n = Number(trimmed)
+      if (!isNaN(n) && n >= 1 && n <= totalPages) pages.add(n)
+    }
+  }
+  return pages.size > 0 ? [...pages].sort((a, b) => a - b) : Array.from({ length: totalPages }, (_, i) => i + 1)
+}
+
+export async function extractPdfText(file: File, pageRanges?: string): Promise<string> {
   const pdfjsLib = await getPdfjsLib()
   const buf = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise
+  const targetPages = parsePageRanges(pageRanges || '', pdf.numPages)
   const parts: string[] = []
-  for (let i = 1; i <= pdf.numPages; i++) {
+  for (const i of targetPages) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
     const pageText = content.items
@@ -35,9 +54,9 @@ export async function extractDocxText(file: File): Promise<string> {
   return result.value
 }
 
-export async function extractFileText(file: File): Promise<string> {
+export async function extractFileText(file: File, pageRanges?: string): Promise<string> {
   const name = file.name.toLowerCase()
-  if (name.endsWith('.pdf')) return extractPdfText(file)
+  if (name.endsWith('.pdf')) return extractPdfText(file, pageRanges)
   if (name.endsWith('.docx')) return extractDocxText(file)
   if (name.endsWith('.doc')) {
     throw new Error('.doc 格式暂不支持，请转换为 .docx 后上传')

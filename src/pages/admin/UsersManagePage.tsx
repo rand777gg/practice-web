@@ -99,7 +99,7 @@ export function Component() {
        <TableHead className="min-w-[160px]">{t('users.email')}</TableHead>
        <TableHead>{t('users.role')}</TableHead>
        <TableHead>{t('users.joined')}</TableHead>
-       <TableHead className="min-w-[160px]">最后在线</TableHead>
+       <TableHead className="min-w-[160px]">上次登录</TableHead>
        <TableHead className="w-20">{t('users.action')}</TableHead>
       </TableRow>
      </TableHeader>
@@ -125,7 +125,7 @@ export function Component() {
          {new Date(p.created_at).toLocaleDateString()}
         </TableCell>
         <TableCell className="text-muted-foreground whitespace-nowrap text-xs font-mono">
-         {p.lastSignIn ? new Date(p.lastSignIn).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '从未在线'}
+         {p.lastSignIn ? new Date(p.lastSignIn).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '从未登录'}
         </TableCell>
         <TableCell>
          <Button

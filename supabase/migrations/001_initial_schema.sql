@@ -409,14 +409,11 @@ RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$ DELETE FROM auth.identities WHERE provider = p_provider AND user_id::text = p_user_id; $$;
 GRANT EXECUTE ON FUNCTION public.unlink_oauth_identity TO authenticated;
 
--- 最后在线时间
+-- 上次登录时间
 CREATE OR REPLACE FUNCTION public.get_user_last_online(user_id UUID)
 RETURNS TIMESTAMPTZ LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$
-  SELECT COALESCE(
-    (SELECT answered_at FROM public.user_answers WHERE user_id = $1 ORDER BY answered_at DESC LIMIT 1),
-    (SELECT last_sign_in_at FROM auth.users WHERE id = $1)
-  );
+  SELECT last_sign_in_at FROM auth.users WHERE id = $1;
 $$;
 
 -- 安全获取昵称（绕过 RLS）

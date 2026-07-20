@@ -166,6 +166,9 @@ export function Component() {
   const [genFile, setGenFile] = useState<File | null>(null)
   const [genFileText, setGenFileText] = useState('')
   const [extracting, setExtracting] = useState(false)
+  const [genPageRanges, setGenPageRanges] = useState('')
+  const genPageRangesRef = useRef(genPageRanges)
+  genPageRangesRef.current = genPageRanges
 
   // Manual import state
 
@@ -703,7 +706,7 @@ export function Component() {
       } else {
         let historyId: number | null = null
         if (genFile) {
-          historyId = await saveToHistory({ fileName: genFile.name, markdown: genFileText, questions, mode: 'generate' })
+          historyId = await saveToHistory({ fileName: genFile.name, markdown: genFileText, questions, mode: 'generate', pageRanges: genPageRangesRef.current || undefined })
         } else {
           historyId = await saveToHistory({ fileName: genSubject || '手动生成', markdown: genTopic || '', questions, mode: 'generate' })
         }
@@ -721,7 +724,7 @@ export function Component() {
     setExtracting(true)
     setError('')
     try {
-      const text = await extractFileText(f)
+      const text = await extractFileText(f, genPageRangesRef.current)
       setGenFileText(text)
       // Auto-select history records with same file name for dedup
       const matched = history.filter((h) => h.file_name === f.name && h.questions_json)
@@ -1216,6 +1219,15 @@ export function Component() {
               {parseMode === 'generate' ? (
                 <div className="space-y-5">
                   <p className="text-xs text-muted-foreground">上传原始资料，AI 直接阅读文献并生成练习题。支持 PDF、Word、TXT。</p>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground whitespace-nowrap">指定页数</label>
+                    <Input
+                      placeholder="如: 1-10,15-20 (留空=全部)"
+                      value={genPageRanges}
+                      onChange={(e) => setGenPageRanges(e.target.value)}
+                      className="h-7 text-xs max-w-[220px]"
+                    />
+                  </div>
 
                   {/* File upload */}
                   <Card>
