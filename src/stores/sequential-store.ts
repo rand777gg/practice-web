@@ -22,6 +22,9 @@ interface SequentialStore {
   subjectPositions: Record<string, number>
   isLoading: boolean
   sessions: SessionInfo[]
+  preloadedQuestion: Record<string, unknown> | null
+  preloadedStats: { total: number; wrong: number; note: string | null; isPublic: boolean } | null
+  preloadedIndex: number
   startSequential: (userId: string, kps: string[], subjects: string[], type: string) => Promise<void>
   nextQuestion: () => void
   reset: () => void
@@ -32,6 +35,7 @@ interface SequentialStore {
   mergeKps: (userId: string, newKps: string[], subjects: string[], type: string) => Promise<void>
   syncKpsFromPlanSubjects: (userId: string, planSubjects: string[]) => Promise<void>
   getCurrentKpInfo: () => { kpName: string | null; kpCurrent: number; kpTotal: number }
+  consumePreloaded: () => { question: Record<string, unknown> | null; stats: { total: number; wrong: number; note: string | null; isPublic: boolean } | null } | null
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -41,7 +45,7 @@ function makeSessionKey(kps: string[]): string {
 }
 
 export const useSequentialStore = create<SequentialStore>((set, get) => ({
-  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {},
+  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1,
 
   startSequential: async (userId, kps, subjects, type) => {
     set({ isLoading: true, selectedKps: kps })
@@ -75,7 +79,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (currentIndex < questionIds.length) set({ currentIndex: currentIndex + 1 })
   },
 
-  reset: () => set({ isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, subjectPositions: {} }),
+  reset: () => set({ isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1 }),
 
   saveToDb: async (userId) => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -94,6 +98,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (error || !data || !data.found) return false
 
     const ids: string[] = data.questionIds ?? []
+    const idx = data.currentIndex ?? 0
     set({
       isActive: ids.length > 0,
       sessionKey,
@@ -101,10 +106,20 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       questionIds: ids,
       questionKps: data.questionKps ?? [],
       questionSubjects: data.questionSubjects ?? [],
-      currentIndex: data.currentIndex ?? 0,
+      currentIndex: idx,
       subjectPositions: data.subjectPositions ?? {},
+      preloadedQuestion: (data.firstQuestion ?? null) as Record<string, unknown> | null,
+      preloadedStats: data.firstStats as { total: number; wrong: number; note: string | null; isPublic: boolean } | null,
+      preloadedIndex: ids.length > 0 ? idx : -1,
     })
     return ids.length > 0
+  },
+
+  consumePreloaded: () => {
+    const { preloadedQuestion, preloadedStats, preloadedIndex } = get()
+    if (!preloadedQuestion || preloadedIndex < 0) return null
+    set({ preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1 })
+    return { question: preloadedQuestion, stats: preloadedStats }
   },
 
   loadSessions: async (userId) => {

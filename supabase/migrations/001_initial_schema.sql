@@ -349,6 +349,44 @@ CREATE TRIGGER trg_question_meta_refresh
   AFTER INSERT OR UPDATE OR DELETE ON public.questions
   FOR EACH STATEMENT EXECUTE FUNCTION public.trg_refresh_question_meta();
 
+-- KP–Question mapping (pre-computed, replaces ILIKE scans)
+CREATE TABLE IF NOT EXISTS public.kp_question_map (
+  kp          TEXT NOT NULL,
+  question_id UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  subject     TEXT,
+  seq_number  INT,
+  PRIMARY KEY (kp, question_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kqm_kp ON public.kp_question_map(kp);
+CREATE INDEX IF NOT EXISTS idx_kqm_question ON public.kp_question_map(question_id);
+
+INSERT INTO public.kp_question_map (kp, question_id, subject, seq_number)
+SELECT DISTINCT trim(kpx) AS kp, q.id, q.subject, q.seq_number
+FROM public.questions q,
+LATERAL unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx
+WHERE q.key_points IS NOT NULL AND trim(kpx) <> ''
+ON CONFLICT (kp, question_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.refresh_kp_question_map()
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
+AS $$
+  DELETE FROM public.kp_question_map;
+  INSERT INTO public.kp_question_map (kp, question_id, subject, seq_number)
+  SELECT DISTINCT trim(kpx) AS kp, q.id, q.subject, q.seq_number
+  FROM public.questions q,
+  LATERAL unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx
+  WHERE q.key_points IS NOT NULL AND trim(kpx) <> '';
+$$;
+
+-- Update trigger to also refresh kp_question_map
+CREATE OR REPLACE FUNCTION public.trg_refresh_question_meta()
+RETURNS trigger LANGUAGE plpgsql SET search_path = ''
+AS $$ BEGIN PERFORM public.refresh_question_meta_cache(); PERFORM public.refresh_kp_question_map(); RETURN NULL; END; $$;
+
+ALTER TABLE public.kp_question_map ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS kqm_select ON public.kp_question_map;
+CREATE POLICY kqm_select ON public.kp_question_map FOR SELECT TO authenticated USING (true);
+
 -- ============================================================================
 -- 10. PRACTICE SEQUENTIAL STATE — 顺序刷题跨设备进度
 -- ============================================================================
@@ -503,6 +541,9 @@ DECLARE
   v_all_subjs TEXT[];
   v_current_id UUID;
   v_new_idx INT;
+  v_first_q_id UUID;
+  v_first_question JSONB;
+  v_first_stats JSONB;
   v_result JSONB;
 BEGIN
   SELECT * INTO v_session FROM public.practice_sequential_state
@@ -541,18 +582,17 @@ BEGIN
     v_restored_index := GREATEST(0, array_length(v_existing_ids, 1) - 1);
   END IF;
 
-  -- Find new questions for session KPs
+  -- Find new questions via kp_question_map (pre-computed, no ILIKE scan)
   v_new_data := '[]'::jsonb;
   IF array_length(v_saved_kps, 1) > 0 THEN
     WITH new_qs AS (
       SELECT DISTINCT q.id, q.subject,
              COALESCE(q.seq_number, 999999) AS seq_number,
-             (SELECT trim(kpx) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '' LIMIT 1) AS first_kp,
-             (SELECT bool_or(trim(kpx) = ANY(v_saved_kps)) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '') AS exact_match
-      FROM public.questions q
-      WHERE (SELECT bool_or(q.key_points ILIKE '%' || kp || '%') FROM unnest(v_saved_kps) kp)
+             kqm.kp
+      FROM public.kp_question_map kqm
+      JOIN public.questions q ON q.id = kqm.question_id
+      WHERE kqm.kp = ANY(v_saved_kps)
         AND NOT (q.id = ANY(v_existing_ids))
-        AND q.key_points IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM public.user_excluded_questions ueq
           WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
@@ -562,12 +602,11 @@ BEGIN
       jsonb_build_object(
         'id', nq.id,
         'subject', nq.subject,
-        'kp', nq.first_kp,
+        'kp', nq.kp,
         'seq', nq.seq_number
       )
     ), '[]'::jsonb) INTO v_new_data
-    FROM new_qs nq
-    WHERE nq.exact_match;
+    FROM new_qs nq;
   END IF;
 
   -- Merge existing + new, sort by (kp, seq)
@@ -603,6 +642,27 @@ BEGIN
     v_restored_index := 0;
   END IF;
 
+  -- P1: Preload first question + stats into response (skip loadSequentialQuestion round-trip)
+  v_first_question := NULL;
+  v_first_stats := NULL;
+  IF array_length(v_all_ids, 1) > 0 THEN
+    v_first_q_id := v_all_ids[v_restored_index + 1];
+    SELECT row_to_json(q) INTO v_first_question FROM public.questions q WHERE q.id = v_first_q_id;
+
+    SELECT jsonb_build_object(
+      'total', COUNT(*),
+      'wrong', COUNT(*) FILTER (WHERE NOT is_correct),
+      'note', (SELECT ua2.note FROM public.user_answers ua2 WHERE ua2.user_id = p_user_id AND ua2.question_id = v_first_q_id AND ua2.note IS NOT NULL ORDER BY ua2.answered_at DESC LIMIT 1),
+      'isPublic', (SELECT ua3.is_public FROM public.user_answers ua3 WHERE ua3.user_id = p_user_id AND ua3.question_id = v_first_q_id AND ua3.note IS NOT NULL ORDER BY ua3.answered_at DESC LIMIT 1)
+    ) INTO v_first_stats
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id AND ua.question_id = v_first_q_id;
+
+    IF v_first_stats IS NULL THEN
+      v_first_stats := jsonb_build_object('total', 0, 'wrong', 0, 'note', NULL, 'isPublic', false);
+    END IF;
+  END IF;
+
   v_result := jsonb_build_object(
     'found', true,
     'savedKps', to_jsonb(v_saved_kps),
@@ -610,7 +670,9 @@ BEGIN
     'questionIds', to_jsonb(v_all_ids),
     'questionKps', to_jsonb(v_all_kps),
     'questionSubjects', to_jsonb(v_all_subjs),
-    'currentIndex', v_restored_index
+    'currentIndex', v_restored_index,
+    'firstQuestion', v_first_question,
+    'firstStats', v_first_stats
   );
 
   RETURN v_result;
@@ -637,24 +699,23 @@ DECLARE
 BEGIN
   SELECT array_to_string(array_agg(kp ORDER BY kp), '|') INTO v_session_key FROM unnest(p_kps) kp;
 
-  -- 1. Query matching questions, filter excluded, exact KP match, sort
+  -- 1. Query matching questions via kp_question_map (pre-computed, no ILIKE scan)
   WITH matched AS (
     SELECT DISTINCT q.id, q.subject,
            COALESCE(q.seq_number, 999999) AS seq_number,
-           (SELECT trim(kpx) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '' LIMIT 1) AS kp
-    FROM public.questions q
-    WHERE (SELECT bool_or(q.key_points ILIKE '%' || kp || '%') FROM unnest(p_kps) kp)
+           kqm.kp
+    FROM public.kp_question_map kqm
+    JOIN public.questions q ON q.id = kqm.question_id
+    WHERE kqm.kp = ANY(p_kps)
       AND (p_subjects IS NULL OR q.subject = ANY(p_subjects))
       AND (p_question_type IS NULL OR q.question_type = p_question_type)
       AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id)
-      AND q.key_points IS NOT NULL
   ),
-  exact_matched AS (
-    SELECT m.* FROM matched m
-    WHERE EXISTS (SELECT 1 FROM unnest(regexp_split_to_array((SELECT q2.key_points FROM public.questions q2 WHERE q2.id = m.id), '[,，;；]')) kpx WHERE trim(kpx) = ANY(p_kps))
+  deduped AS (
+    SELECT DISTINCT ON (m.id) m.id, m.subject, m.seq_number, m.kp FROM matched m
   ),
   sorted AS (
-    SELECT em.id, em.subject, em.kp, em.seq_number FROM exact_matched em ORDER BY em.kp, em.seq_number
+    SELECT d.id, d.subject, d.kp, d.seq_number FROM deduped d ORDER BY d.kp, d.seq_number
   )
   SELECT array_agg(s.id), array_agg(s.kp), array_agg(COALESCE(s.subject, ''))
   INTO v_ids, v_kps_arr, v_subj_arr FROM sorted s;

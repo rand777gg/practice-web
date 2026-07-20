@@ -48,6 +48,9 @@ import { useT } from '@/i18n/use-t'
 
 const PS_FILTERS = 'practice_filters'
 
+// Module-level KP cache (P3: avoid repeated question_meta_cache queries across mounts)
+let kpCache: { subject: string; keyPoints: string[] }[] | null = null
+
 interface PracticeFilters {
   selectedSubjects: string[]
   selectedCategory: string
@@ -302,18 +305,23 @@ export function PracticeSession() {
   useEffect(() => { kpRetryRef.current = 0 }, [selectedKeyPoint])
 
   // Load distinct key_points from cached meta (single row, no full table scan)
+  // P3: module-level cache avoids repeated queries across page navigations
   const [kpVersion, setKpVersion] = useState(0)
-  const triggerKpRefresh = useCallback(() => setKpVersion(v => v + 1), [])
+  const triggerKpRefresh = useCallback(() => { kpCache = null; setKpVersion(v => v + 1) }, [])
   useEffect(() => {
     let c = false
+    if (kpCache) {
+      setKpBySubject(kpCache)
+      return
+    }
     supabase.from('question_meta_cache').select('key_points_by_subject').single().then(({ data }) => {
       if (c) return
       const items = (data?.key_points_by_subject ?? []) as { subject: string; key_points: string[] }[]
-      setKpBySubject(
-        items
-          .map(item => ({ subject: item.subject || '其他', keyPoints: [...item.key_points].sort(naturalSort) }))
-          .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN'))
-      )
+      const result = items
+        .map(item => ({ subject: item.subject || '其他', keyPoints: [...item.key_points].sort(naturalSort) }))
+        .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN'))
+      kpCache = result
+      setKpBySubject(result)
     })
     return () => { c = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -509,6 +517,25 @@ export function PracticeSession() {
     seqFetchGenRef.current++; const myGen = seqFetchGenRef.current
     const ids = useSequentialStore.getState().questionIds
     if (index >= ids.length) { setNoQuestions(true); setIsLoading(false); return }
+
+    // P1: Check for preloaded question from load_practice_session RPC (skip 1 round-trip)
+    const rpcPreloaded = useSequentialStore.getState().consumePreloaded()
+    if (rpcPreloaded?.question && index === useSequentialStore.getState().currentIndex) {
+      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
+      if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
+      if (seqFetchGenRef.current !== myGen) return
+      setQuestion(rpcPreloaded.question as unknown as Question)
+      setAttemptCount(rpcPreloaded.stats?.total ?? 0)
+      setWrongCount(rpcPreloaded.stats?.wrong ?? 0)
+      setNote(rpcPreloaded.stats?.note ?? '')
+      setIsPublic(rpcPreloaded.stats?.isPublic ?? false)
+      setIsLoading(false)
+      if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
+      if (seqFetchGenRef.current !== myGen) return
+      setQuestionReady(true)
+      preloadNext(index + 1, ids, myGen)
+      return
+    }
 
     // Use preloaded data if available
     const preloaded = preloadRef.current
