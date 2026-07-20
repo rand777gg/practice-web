@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
-import { useSequentialStore } from '@/stores/sequential-store'
+import { useSequentialStore, markPracticeSync } from '@/stores/sequential-store'
 
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
@@ -145,6 +145,17 @@ export function PracticeSession() {
   const seqSessionKey = useSequentialStore((s) => s.sessionKey)
   const seqMergeKps = useSequentialStore((s) => s.mergeKps)
   const seqGetCurrentKpInfo = useSequentialStore((s) => s.getCurrentKpInfo)
+  const seqSyncStatus = useSequentialStore((s) => s.syncStatus)
+  const seqLastSyncAt = useSequentialStore((s) => s.lastSyncAt)
+  const seqStartSync = useSequentialStore((s) => s.startSync)
+  const seqStopSync = useSequentialStore((s) => s.stopSync)
+
+  // Realtime cross-device sync: start on mount, stop on unmount
+  useEffect(() => {
+    const user = useAuthStore.getState().user
+    if (user) seqStartSync(user.id)
+    return () => { seqStopSync() }
+  }, [seqStartSync, seqStopSync])
 
   const planSubjects = useMemo(() => {
     if (!profile?.plan_subjects) return [] as string[]
@@ -591,6 +602,7 @@ export function PracticeSession() {
     if (!s.isActive || !s.sessionKey) return
     const u = useAuthStore.getState().user
     if (!u) return
+    markPracticeSync()
     supabase.from('practice_sequential_state').upsert({
       user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
       question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
@@ -662,7 +674,7 @@ export function PracticeSession() {
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
 
-    if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+    if (questionMode === 'sequential') { markPracticeSync(); const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
     answeredThisSession.current.add(question.id)
     setIsSubmitted(true)
   }
@@ -701,7 +713,7 @@ export function PracticeSession() {
       // Save to DB after successful load
       const s2 = useSequentialStore.getState()
       const u = useAuthStore.getState().user
-      if (u) supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {})
+      if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
     }
     else fetchRandomQuestion()
   }, [questionMode, isSubmitted, question, fetchRandomQuestion, loadSequentialQuestion])
@@ -721,6 +733,7 @@ export function PracticeSession() {
         const newKps = s.questionKps.filter((_, i) => i !== idx)
         const newIndex = idx < s.currentIndex ? s.currentIndex - 1 : s.currentIndex
         useSequentialStore.setState({ questionIds: newIds, questionKps: newKps, currentIndex: newIndex })
+        markPracticeSync()
         supabase.from('practice_sequential_state').upsert({
           user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
           question_ids: newIds, current_index: newIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
@@ -1005,9 +1018,9 @@ export function PracticeSession() {
                 const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:macos-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
                 let devName = ''
                 try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
-                const lastSync = [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
+                const lastSync = seqLastSyncAt || [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
                 const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
-                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} />
+                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} syncStatus={seqSyncStatus} />
               })()}
             </div>
             </div>

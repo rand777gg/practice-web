@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 export interface SessionInfo {
   sessionKey: string
@@ -25,6 +26,8 @@ interface SequentialStore {
   preloadedQuestion: Record<string, unknown> | null
   preloadedStats: { total: number; wrong: number; note: string | null; isPublic: boolean } | null
   preloadedIndex: number
+  syncStatus: 'idle' | 'syncing' | 'synced'
+  lastSyncAt: string | null
   startSequential: (userId: string, kps: string[], subjects: string[], type: string) => Promise<void>
   nextQuestion: () => void
   reset: () => void
@@ -36,16 +39,24 @@ interface SequentialStore {
   syncKpsFromPlanSubjects: (userId: string, planSubjects: string[]) => Promise<void>
   getCurrentKpInfo: () => { kpName: string | null; kpCurrent: number; kpTotal: number }
   consumePreloaded: () => { question: Record<string, unknown> | null; stats: { total: number; wrong: number; note: string | null; isPublic: boolean } | null } | null
+  startSync: (userId: string) => void
+  stopSync: () => void
+  markLocalSave: () => void
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let syncChannel: RealtimeChannel | null = null
+let syncTimeout: ReturnType<typeof setTimeout> | null = null
+let gLastLocalSave = 0
 
 function makeSessionKey(kps: string[]): string {
   return [...kps].sort().join('|')
 }
 
+export function markPracticeSync() { gLastLocalSave = Date.now() }
+
 export const useSequentialStore = create<SequentialStore>((set, get) => ({
-  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1,
+  isActive: false, sessionKey: '', selectedKps: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1, syncStatus: 'idle', lastSyncAt: null,
 
   startSequential: async (userId, kps, subjects, type) => {
     set({ isLoading: true, selectedKps: kps })
@@ -67,6 +78,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         isActive: true, isLoading: false,
       })
       const { selectedKps: sKps, questionIds: qids, currentIndex: idx, subjectPositions: sps } = get()
+      gLastLocalSave = Date.now()
       supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: sessionKey, selected_kps: sKps, question_ids: qids,
         current_index: idx, subject_positions: sps, updated_at: new Date().toISOString(),
@@ -86,6 +98,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     saveTimer = setTimeout(async () => {
       const { selectedKps, questionIds, currentIndex, sessionKey, subjectPositions } = get()
       if (!sessionKey) return
+      gLastLocalSave = Date.now()
       await supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: sessionKey, selected_kps: selectedKps, question_ids: questionIds,
         current_index: currentIndex, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
@@ -142,6 +155,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       // Save current session before switching
       const { selectedKps, questionIds, currentIndex } = get()
       const { subjectPositions } = get()
+      gLastLocalSave = Date.now()
       await supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: currentKey, selected_kps: selectedKps, question_ids: questionIds,
         current_index: currentIndex, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
@@ -240,6 +254,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
 
     if (oldKey) supabase.from('practice_sequential_state').delete().eq('user_id', userId).eq('session_key', oldKey).then(() => {})
     const { selectedKps: sKps, questionIds: qids, currentIndex: idx } = get()
+    gLastLocalSave = Date.now()
     supabase.from('practice_sequential_state').upsert({
       user_id: userId, session_key: newKey, selected_kps: sKps, question_ids: qids,
       current_index: idx, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
@@ -287,5 +302,58 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     while (s > 0 && questionKps[s - 1] === currentKp) s--
     while (e < questionKps.length - 1 && questionKps[e + 1] === currentKp) e++
     return { kpName: currentKp, kpCurrent: currentIndex - s + 1, kpTotal: e - s + 1 }
+  },
+
+  markLocalSave: () => { gLastLocalSave = Date.now() },
+
+  startSync: (userId) => {
+    if (syncChannel) return
+    const channel = supabase
+      .channel(`practice-sync-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'practice_sequential_state', filter: `user_id=eq.${userId}` },
+        async (payload) => {
+          // Ignore own changes (within 2s of local save)
+          if (Date.now() - gLastLocalSave < 2000) return
+
+          const remoteUpdated = payload.new.updated_at as string
+          const newIndex = payload.new.current_index as number
+          const newIds = payload.new.question_ids as string[]
+          const sessionKey = payload.new.session_key as string
+
+          set({ syncStatus: 'syncing' })
+
+          // Reload sessions list
+          await get().loadSessions(userId)
+
+          // If the changed session is our current one, check if we need to reload
+          const current = get()
+          if (sessionKey === current.sessionKey && current.isActive) {
+            // Only reload if remote has different progress (more questions answered)
+            if (newIndex !== current.currentIndex || newIds.length !== current.questionIds.length) {
+              await get().loadFromDb(userId, sessionKey)
+            }
+          }
+
+          set({ syncStatus: 'synced', lastSyncAt: remoteUpdated })
+          if (syncTimeout) clearTimeout(syncTimeout)
+          syncTimeout = setTimeout(() => {
+            if (get().syncStatus === 'synced') set({ syncStatus: 'idle' })
+          }, 3000)
+        }
+      )
+      .subscribe()
+
+    syncChannel = channel
+  },
+
+  stopSync: () => {
+    if (syncChannel) {
+      syncChannel.unsubscribe()
+      supabase.removeChannel(syncChannel)
+      syncChannel = null
+    }
+    if (syncTimeout) { clearTimeout(syncTimeout); syncTimeout = null }
   },
 }))

@@ -9,9 +9,10 @@ interface Props {
   deviceIcon?: string
   deviceName?: string
   syncText?: string | null
+  syncStatus?: 'idle' | 'syncing' | 'synced'
 }
 
-export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal, kpName, deviceIcon, deviceName, syncText }: Props) {
+export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal, kpName, deviceIcon, deviceName, syncText, syncStatus }: Props) {
   const kpPct = kpTotal > 0 ? Math.round((kpCurrent / kpTotal) * 100) : 0
   const overallPct = total > 0 ? Math.round(((currentIndex + 1) / total) * 100) : 0
 
@@ -33,11 +34,17 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
         </div>
         <span className="text-muted-foreground tabular-nums whitespace-nowrap pl-2">{currentIndex + 1}/{total}</span>
       </div>
-      {deviceIcon && syncText && (
+      {deviceIcon && (
         <div className="flex items-center justify-end gap-1">
           <Icon icon={deviceIcon} className="h-3 w-3 text-muted-foreground" />
           <span className="text-[9px] text-muted-foreground">{deviceName}</span>
-          <span className="text-[9px] text-muted-foreground tabular-nums ml-1">{syncText}</span>
+          {syncStatus === 'syncing' ? (
+            <Icon icon="mingcute:loading-line" className="h-3 w-3 text-blue-500 animate-spin ml-1" />
+          ) : syncStatus === 'synced' ? (
+            <Icon icon="mingcute:check-circle-fill" className="h-3 w-3 text-green-500 ml-1" />
+          ) : syncText ? (
+            <span className="text-[9px] text-muted-foreground tabular-nums ml-1">{syncText}</span>
+          ) : null}
         </div>
       )}
     </div>
