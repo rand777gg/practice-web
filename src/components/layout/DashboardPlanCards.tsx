@@ -35,6 +35,7 @@ export function DashboardPlanCards() {
   const version = useRefreshStore((s) => s.version)
   const deadline = profile?.deadline ?? null
   const planResetAt = profile?.plan_reset_at ?? null
+  const subjectResetAt = profile?.subject_reset_at ?? null
   const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
@@ -53,6 +54,7 @@ export function DashboardPlanCards() {
   useEffect(() => {
     if (!user) return
     const uid = user.id
+    let cancelled = false
     async function load() {
       const today = todayStart()
 
@@ -61,12 +63,15 @@ export function DashboardPlanCards() {
         const { data: lt } = await supabase.rpc('get_subject_progress', {
           p_user_id: uid, p_plan_reset_at: planResetAt || null, p_today_since: longTodaySince,
           p_subjects: planSubjects.length > 0 ? planSubjects : null,
+          p_subject_resets: subjectResetAt,
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+        if (cancelled) return
 
         let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
         for (const r of (lt ?? [])) {
           scopeTotal += Number(r.total); scopeDoneAll += Number(r.done_all); scopeDoneToday += Number(r.done_today)
         }
+        if (cancelled) return
         setTotalScope(scopeTotal)
         setTotalDone(scopeDoneAll)
         setYesterdayDone(scopeDoneAll - scopeDoneToday)
@@ -81,7 +86,9 @@ export function DashboardPlanCards() {
           p_plan_reset_at: dailyResetAt || null,
           p_today_since: dailyTodaySince,
           p_subjects: targetSubjects,
+          p_subject_resets: subjectResetAt,
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+        if (cancelled) return
 
         const subjTotal = new Map<string, number>()
         const subjDoneAll = new Map<string, number>()
@@ -95,6 +102,7 @@ export function DashboardPlanCards() {
         }
         const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
         const totalDoneToday = [...subjDoneToday.values()].reduce((a, b) => a + b, 0)
+        if (cancelled) return
         setCustomTargetTotal(totalAll)
         setCustomTargetDone(totalDoneAll)
         setCustomTargetTodayDone(totalDoneToday)
@@ -134,6 +142,7 @@ export function DashboardPlanCards() {
 
     }
     load()
+    return () => { cancelled = true }
   }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
 
   if (!user) return null

@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS, TYPE_COLORS } from '@/lib/constants'
@@ -14,6 +14,8 @@ import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle } from 'lucide-re
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
+
+const rowBase = 'transition-[opacity,transform] duration-500 ease-out'
 
 function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
   const [open, setOpen] = useState(false)
@@ -69,6 +71,12 @@ interface Props {
 
 export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify }: Props) {
   const { t } = useT()
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    setVisible(false)
+    const id = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(id)
+  }, [question.id])
   const type = question.question_type
   const isSingle = type === 'single_choice'
   const isMulti = type === 'multi_select'
@@ -80,11 +88,14 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isTextInput = isFillBlank || isShort || isAnalysis
   const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered)
   const typeLabel = QUESTION_TYPE_LABELS[type]
+  const row = (delay: number) => ({ className: cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'), style: { transitionDelay: `${delay}ms` } })
 
   return (
     <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
-      <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
-      <div className="flex flex-wrap gap-1.5">
+      <div {...row(100)}>
+        <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
+      </div>
+      <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
         <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
         {question.verified ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
@@ -161,6 +172,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       </div>
 
       {/* Choice options (single / multi) */}
+      <div {...row(300)}>
       {(isSingle || isMulti) && (
         <div className="space-y-2">
           {question.options.map((option, index) => {
@@ -317,8 +329,10 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
         </div>
       )}
+      </div>
 
       {/* Result display */}
+      <div {...row(400)}>
       {showResult && (
         <>
           {isJudgeCorrect && selectedAnswer != null && (
@@ -365,7 +379,9 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           ) : <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed invisible">placeholder</div>}
         </>
       )}
+      </div>
 
+      <div {...row(500)}>
       {(onToggleFavorite || onMarkTooEasy || onMarkUnsure || showResult) && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
@@ -404,6 +420,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
         </div>
       )}
+      </div>
     </div>
   )
 })
