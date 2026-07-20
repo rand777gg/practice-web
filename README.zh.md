@@ -1,118 +1,139 @@
 中文 | [English](README.md)
 
+<br/>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/Practice-Web-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjMiLz48cGF0aCBkPSJNNiAxMGg0djZIOHoiLz48cGF0aCBkPSJNOSA2djQiLz48cGF0aCBkPSJNMTQgN2g0djVoLTJ6Ii8+PHBhdGggZD0iTTE2IDEwdjEiLz48L3N2Zz4="/>
+    <img alt="Practice Web" src="https://img.shields.io/badge/Practice-Web-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjMiLz48cGF0aCBkPSJNNiAxMGg0djZIOHoiLz48cGF0aCBkPSJNOSA2djQiLz48cGF0aCBkPSJNMTQgN2g0djVoLTJ6Ii8+PHBhdGggZD0iTTE2IDEwdjEiLz48L3N2Zz4="/>
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/rand777gg/react-practice-web/releases"><img src="https://img.shields.io/github/v/release/rand777gg/react-practice-web?color=blue" alt="Release"></a>
+  <a href="https://github.com/rand777gg/react-practice-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/rand777gg/react-practice-web/ci.yml?branch=master" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
+  <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react" alt="React">
+  <img src="https://img.shields.io/badge/typescript-~6.0-3178C6?logo=typescript" alt="TypeScript">
+</p>
+
 #  刷题网站
 
-基于 React + Supabase 的全题型刷题网站。支持练习/考试模式、错题回顾、公开笔记、题目管理（增删改查 + 批量导入）、AI 智能解析、ECharts 仪表盘分析。界面支持中英文切换。支持 PWA 离线缓存。移动端底部导航栏 + 左右滑动切换题目。
+基于 React + Supabase 的 AI 全题型刷题平台。支持六种题型的练习与考试模式，配备 ECharts 仪表盘分析、双学习计划系统、知识点顺序刷题、扫码登录，完整 PWA 离线支持。
+
+## 亮点
+
+- **仪表盘分析** — ECharts 图表：每日热力图、时间分布、堆叠柱状图、散点图、正确率柱状图、热力图、矩阵树图、桑基图、嵌套环形图
+- **AI 驱动** — 题目智能解析、知识点一键生成、每日学习总结、艾宾浩斯遗忘曲线学习计划、智能出题配置
+- **双学习计划** — 长期计划（学科 + 截止日期 → 每日目标）+ 自定义每日目标，学科进度条追踪
+- **顺序刷题** — 按知识点分科分组，跨设备进度同步，知识点批量会话管理
+- **扫码登录** — 桌面端二维码 → 手机扫码 → 即时登录，无需输入密码
+- **移动端适配** — iOS 风格底部导航栏、滑动切题、可折叠侧边栏、图表自适应
+- **PWA** — Service Worker 离线缓存，手机和桌面端均可安装
+- **深色 + 护眼模式** — 跟随系统深色模式，六种中国传统配色主题
 
 ## 技术栈
 
-- **前端**：React 19、TypeScript、Vite
-- **UI**：Tailwind CSS 4、shadcn/ui、Radix UI、Lucide 图标
-- **图表**：ECharts 6（仪表盘分析）
-- **状态管理**：Zustand
-- **路由**：React Router v7（懒加载）
-- **后端**：Supabase（认证、数据库、RLS）
-- **AI**：Vercel AI SDK + DeepSeek（题目解析、知识点生成、智能出题、学习计划、每日总结）
-- **国际化**：内置中英文切换
-
-## 功能
-
-| 功能 | 说明 |
+| 层级 | 技术 |
 |---|---|
-| **仪表盘分析** | ECharts 图表：每日学习热力图、环形时间分布（7环×24h）、学科堆叠柱状图、时间散点图、正确率横向柱状图+学科×题型热力图、扇形图+矩阵树图（中国传统色配色，支持下钻）、桑基流向图 |
-| **计划进度** | 顶栏进度条追踪长期目标+自定义每日目标，完成后显示恭喜消息 |
-| **移动端底部导航** | iOS 风格底部 Tab 栏（仪表盘/练习/考试/收藏/错题回顾），手机和平板显示，磨砂玻璃质感，偏好设置中可自定义 |
-| **练习模式** | 题目范围筛选（全部/仅收藏/仅错题），选题模式（混合/新题优先/错题优先），学科/分类/题型多选筛选，笔记+公开/私有切换，滑动切换 |
-| **考试模式** | 可配置题目数量和时长，多选学科/分类/题型筛选，题目导航器，断点续考，超时自动提交，ECharts 出分报告 |
-| **错题回顾** | 按模式筛选，行内笔记编辑，收藏，答案对错高亮 |
-| **公开笔记** | 统一卡片布局，答案对比+可见性徽章+作者信息 |
-| **题目管理** | CRUD，动态选项数量，学科/分类/题型/导入模式/验证状态筛选，每页条数选择，批量编辑/删除 |
-| **批量导入** | CSV、JSON 或 AI 文档解析导入 |
-| **用户角色** | 管理员（管理题目和用户、AI 配置）和普通用户（仅练习） |
-| **首用户自动管理员** | 第一位注册用户通过数据库触发器自动成为管理员 |
-| **移动端/平板适配** | 底部导航栏（磨砂玻璃质感）、可折叠侧边栏、图表自适应、左右滑动切换题目 |
-| **PWA** | Service Worker 离线缓存，可在手机和桌面端安装 |
-| **深色模式** | 跟随系统偏好、localStorage 持久化，顶栏和登录页均有切换按钮 |
-| **护眼模式** | 6 种中国传统配色主题（绢色/青瓷/藕荷/茶白/竹青） |
-| **国际化** | 顶栏 中英文切换 |
+| 框架 | React 19、TypeScript、Vite 8 |
+| UI | Tailwind CSS 4、shadcn/ui、Radix UI、Lucide |
+| 图表 | ECharts 6、Recharts |
+| 状态管理 | Zustand |
+| 路由 | React Router v7（懒加载） |
+| 后端 | Supabase（PostgreSQL、Auth、RLS、Edge Functions） |
+| AI | Vercel AI SDK + DeepSeek / OpenAI |
+| 国际化 | 内置中英文切换 |
+| PWA | vite-plugin-pwa + Workbox |
 
 ## 快速开始
 
 ### 前置条件
 
 - Node.js 18+
-- 一个 [Supabase](https://supabase.com) 项目
+- [Supabase](https://supabase.com) 项目
 
-### 1. 克隆并安装
+### 初始化
 
 ```bash
 git clone https://github.com/rand777gg/react-practice-web.git
 cd practice-web
 npm install
-```
-
-### 2. 配置环境变量
-
-```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，填入你的 Supabase 凭据（在 Supabase 项目设置 → API 中获取）：
+编辑 `.env`：
 
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
 
-> `.env` 已被 gitignore 忽略，切勿提交真实密钥。
-
-### 3. 初始化 Supabase 数据库
-
-打开 Supabase 项目 → **SQL Editor**，将 `supabase/migrations/001_initial_schema.sql` 全部内容粘贴并执行。
-
-这会创建所有表、索引、首用户管理员触发器，以及行级安全（RLS）策略。
-
-### 4. 启动开发服务器
+初始化数据库：打开 Supabase 项目 → **SQL Editor**，粘贴并执行 `supabase/migrations/001_initial_schema.sql`。
 
 ```bash
 npm run dev
 ```
 
-访问 `http://localhost:5173`，注册账号——第一个用户自动成为管理员。
+访问 `http://localhost:5173`，注册账号 — 首位用户自动成为管理员。
 
-### 5. 添加题目
+## 功能
 
-以管理员身份进入 **题目管理** → **导入**，上传 `sample-questions.csv`（含 18 道示例题目），或使用 **添加题目** 手动创建。
+### 练习
 
-## 项目结构
+| 功能 | 说明 |
+|---|---|
+| 题目范围 | 全部 / 仅收藏 / 仅错题 |
+| 选题模式 | 混合 / 新题优先 / 错题优先 / 顺序刷题 |
+| 多维筛选 | 学科、分类、题型、知识点 |
+| 顺序模式 | 知识点分科分组，进度自动保存，跨设备同步 |
+| 滑动切题 | 触屏左右滑动切换题目 |
+| 笔记 | 富文本笔记，公开/私有切换 |
 
-```
-practice-web/
-├── index.html
-├── .env.example                  # 环境变量模板
-├── sample-questions.csv          # 导入测试用示例题目
-├── supabase/
-│   └── migrations/
-│       └── 001_initial_schema.sql
-└── src/
-    ├── main.tsx
-    ├── App.tsx                   # 鉴权初始化 + 会话监听
-    ├── index.css                 # Tailwind + CSS 自定义属性
-    ├── types/                    # TypeScript 类型定义
-    ├── lib/                      # supabase 客户端、工具函数、常量
-    ├── stores/                   # Zustand 状态（auth、exam、lang、theme）
-    ├── hooks/                    # 自定义 Hook（useQuestions、useTimer、useSwipe 等）
-    ├── i18n/                     # 翻译文件（中/英）+ useT Hook
-    ├── router/                   # 路由定义（懒加载）
-    ├── components/
-    │   ├── ui/                   # shadcn 基础组件
-    │   ├── auth/                 # 登录/注册表单、路由守卫
-    │   ├── layout/               # 布局、侧边栏、顶栏、加载页
-    │   ├── questions/            # 题目卡片、表单、列表、导入弹窗
-    │   ├── practice/             # 练习会话
-    │   └── exam/                 # 考试会话、计时器、进度条、成绩单
-    └── pages/                    # 路由页面（admin/ 子目录为管理页）
-```
+### 考试
+
+| 功能 | 说明 |
+|---|---|
+| 灵活配置 | 题数、时长、学科/分类/题型筛选 |
+| 题目导航 | 网格视图，已答/未答一目了然 |
+| 断点续考 | 自动检测未完成会话 |
+| 超时提交 | 倒计时结束自动交卷 |
+| 成绩报告 | ECharts 仪表盘 + 环形图 + 柱状图 |
+
+### AI
+
+| 功能 | 说明 |
+|---|---|
+| 文档导入 | 上传 PDF/Word/图片 → OCR + LLM 自动提取题目 |
+| 知识点生成 | 一键生成知识点，动画逐字展示 |
+| 学习总结 | 好友式对话总结，打字机逐行动画 |
+| 智能出题 | 分析练习历史，推荐考试配置 |
+| 学习计划 | 艾宾浩斯遗忘曲线 + 学科紧急度评分 |
+
+### 仪表盘
+
+- **每日热力图** — 学习活跃度概览
+- **时间分布图** — 七环同心圆 × 24 小时
+- **每日堆叠柱状图** — 按学科拆分，正确/错误分色
+- **时间散点图** — 今日答题时刻气泡
+- **正确率柱状图 + 热力图** — 学科正确率 + 学科×题型矩阵
+- **环形图 + 矩阵树图** — 嵌套层级，中国传统配色
+- **桑基流向图** — 学科 ↔ 分类流向
+
+### 题目管理（管理员）
+
+- 完整 CRUD，动态选项数量
+- 批量导入：CSV、JSON、AI 文档解析
+- 按学科/分类/题型/导入模式/验证状态筛选
+- 批量编辑、删除、验证切换
+
+### 账户与安全
+
+- 邮箱 + GitHub OAuth 登录
+- 二维码扫码登录（轮询确认）
+- 全表行级安全策略（RLS）
+- 管理员 / 普通用户角色分离
+- 首位注册用户自动成为管理员
 
 ## 路由表
 
@@ -121,14 +142,41 @@ practice-web/
 | `/login` | 登录 | 公开 |
 | `/register` | 注册 | 公开 |
 | `/` | 仪表盘 | 需登录 |
-| `/practice` | 练习模式 | 需登录 |
-| `/exam` | 考试模式 | 需登录 |
+| `/practice` | 练习 | 需登录 |
+| `/exam` | 考试 | 需登录 |
 | `/exam/result/:sessionId` | 考试成绩 | 需登录 |
+| `/favorites` | 收藏 | 需登录 |
+| `/notes` | 公开笔记 | 需登录 |
 | `/review` | 错题回顾 | 需登录 |
-| `/admin/questions` | 题目管理 | 管理员 |
-| `/admin/questions/new` | 创建题目 | 管理员 |
+| `/settings` | 设置 | 需登录 |
+| `/admin/questions` | 题目列表 | 管理员 |
+| `/admin/questions/new` | 新建题目 | 管理员 |
 | `/admin/questions/:id/edit` | 编辑题目 | 管理员 |
 | `/admin/users` | 用户管理 | 管理员 |
+| `/admin/ai` | AI 配置 | 管理员 |
+| `/admin/ai-import` | AI 导入 | 管理员 |
+
+## 项目结构
+
+```
+src/
+├── components/
+│   ├── ui/          shadcn 基础组件
+│   ├── auth/        登录/注册表单、扫码器、路由守卫
+│   ├── layout/      应用布局、侧边栏、顶栏、学习计划组件
+│   ├── ai/          AI 总结弹窗、导入向导
+│   ├── charts/      ECharts 与 Recharts 图表
+│   ├── practice/    练习会话、知识点选择器
+│   ├── exam/        考试会话、计时器、导航器、成绩单
+│   └── questions/   题目卡片、表单、列表、导入弹窗
+├── hooks/           自定义 Hook
+├── i18n/            中英文翻译
+├── lib/             Supabase 客户端、AI SDK、工具函数
+├── pages/           路由级页面组件
+├── router/          懒加载路由定义
+├── stores/          Zustand 状态管理
+└── types/           TypeScript 类型定义
+```
 
 ## 命令
 
@@ -140,13 +188,13 @@ npm run preview   # 本地预览生产构建
 
 ## 部署
 
-构建项目，将 `dist/` 文件夹部署到任意静态托管服务（Vercel、Netlify、Cloudflare Pages 等）：
+构建项目，将 `dist/` 部署到任意静态托管服务（Vercel、Netlify、Cloudflare Pages 等）：
 
 ```bash
 npm run build
 ```
 
-在托管平台设置环境变量 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY`（不要放在仓库中）。
+在托管平台设置环境变量 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY`。
 
 ## CI / CD
 
@@ -155,25 +203,21 @@ npm run build
 | `lint.yml` | ESLint 代码检查 |
 | `typecheck.yml` | TypeScript 类型检查 |
 | `tests.yml` | 测试运行 |
-| `ci.yml` | 构建 + 缓存 |
+| `ci.yml` | 构建 + 依赖缓存 |
 | `deploy-site.yml` | 部署到静态托管 |
-| `pr-review.yml` | 每 4 小时自动 PR 审查（DeepSeek + 飞书通知） |
-| `perf-monitor.yml` | 每次 push master 构建并报告 Bundle 体积 |
+| `pr-review.yml` | 自动 PR 审查（DeepSeek + 飞书通知） |
 
 ### PR Review 设置
 
-启用自动 PR 审查需要在仓库 Secrets 中配置：
+在仓库 **Settings → Secrets → Actions** 中配置：
 
 | Secret | 说明 |
 |---|---|
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥（[platform.deepseek.com](https://platform.deepseek.com)） |
-| `FEISHU_WEBHOOK_URL` | 飞书自定义机器人 Webhook URL |
+| `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `FEISHU_WEBHOOK_URL` | 飞书机器人 Webhook 地址 |
 
-**飞书安全设置：**
-1. 在飞书群 → 设置 → 群机器人 → 编辑自定义机器人
-2. **安全设置** → 添加**自定义关键词**：`PR Review`（消息必须包含此关键词才能发送）
-
+飞书机器人安全设置：添加自定义关键词 `PR Review`。
 
 ## 开源协议
 
-MIT
+[MIT](LICENSE)

@@ -1,128 +1,139 @@
 [中文](README.zh.md) | English
 
+<br/>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/Practice-Web-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjMiLz48cGF0aCBkPSJNNiAxMGg0djZIOHoiLz48cGF0aCBkPSJNOSA2djQiLz48cGF0aCBkPSJNMTQgN2g0djVoLTJ6Ii8+PHBhdGggZD0iTTE2IDEwdjEiLz48L3N2Zz4="/>
+    <img alt="Practice Web" src="https://img.shields.io/badge/Practice-Web-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjMiLz48cGF0aCBkPSJNNiAxMGg0djZIOHoiLz48cGF0aCBkPSJNOSA2djQiLz48cGF0aCBkPSJNMTQgN2g0djVoLTJ6Ii8+PHBhdGggZD0iTTE2IDEwdjEiLz48L3N2Zz4="/>
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/rand777gg/react-practice-web/releases"><img src="https://img.shields.io/github/v/release/rand777gg/react-practice-web?color=blue" alt="Release"></a>
+  <a href="https://github.com/rand777gg/react-practice-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/rand777gg/react-practice-web/ci.yml?branch=master" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
+  <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react" alt="React">
+  <img src="https://img.shields.io/badge/typescript-~6.0-3178C6?logo=typescript" alt="TypeScript">
+</p>
+
 # Practice Web
 
-A comprehensive question practice platform built with React + Supabase. Supports multiple question types (single/multi-choice, true/false, fill-blank, short-answer), practice & exam modes, AI-powered study summaries and question import, ECharts-rich dashboard analytics, dual study plan system, and PWA offline support. Interface available in Chinese and English.
+A modern, AI-powered question practice platform. Supports six question types across practice and exam modes, with rich dashboard analytics, dual study plan system, and full PWA offline support.
+
+## Highlights
+
+- **Dashboard** — ECharts-powered analytics: calendar heatmap, time distribution, stacked bar charts, scatter plots, accuracy bars, heatmaps, treemaps, Sankey diagrams, nested donuts
+- **AI-Powered** — smart question parsing, knowledge point generation, personalized study summaries, Ebbinghaus learning plan, intelligent exam configuration
+- **Dual Study Plan** — long-term plan with deadline-based daily goals, custom daily targets with per-subject progress tracking
+- **Sequential Practice** — subject-aware ordered question flow with cross-device progress sync and knowledge-point batched sessions
+- **QR Code Login** — desktop QR → mobile scan → instant login, no password needed
+- **Mobile First** — iOS-style bottom tab bar, swipe navigation, collapsible sidebar, responsive charts
+- **PWA** — offline caching, installable on mobile and desktop
+- **Dark & Eye-care Modes** — system-aware dark mode plus six traditional Chinese color themes
 
 ## Tech Stack
 
-- **Frontend**: React 19, TypeScript, Vite
-- **UI**: Tailwind CSS 4, shadcn/ui, Radix UI, Lucide icons, ECharts
-- **State**: Zustand
-- **Routing**: React Router v7 (lazy loading)
-- **Backend**: Supabase (Auth, Database, RLS)
-- **AI**: Vercel AI SDK + DeepSeek (question parsing, key points generation, smart exam setup, Ebbinghaus learning plan, daily study summary)
-- **I18n**: Built-in (Chinese / English toggle)
-
-## Features
-
-| Feature | Description |
+| Layer | Technology |
 |---|---|
-| **Dashboard Analytics** | ECharts-rich charts: calendar heatmap, concentric-circle time distribution (7 rings × 24h), daily stacked bar (subjects + correct/wrong), time scatter (today's hourly bubbles), accuracy horizontal bar + subject×type heatmap, nested donut + treemap (zhongguose palette, drill-down), Sankey flow (subject↔category) |
-| **Plan Progress** | Header progress bar with long-term & daily goal tracking, congratulatory messages when goals are completed |
-| **Mobile Bottom Nav** | iOS-style bottom tab bar (Dashboard / Practice / Exam / Favorites / Wrong Review), visible on mobile & tablet, frosted glass effect, customizable in Preferences |
-| **AI Study Summary** | Click the ✨ button in the header to get a friend-style AI summary of today's performance, weak areas, and personalized study suggestions — with typewriter reveal animation |
-| **AI Question Import** | Upload documents (PDF, Word, images), auto-extract questions via MinerU OCR + DeepSeek parsing, 6-step wizard with preview and batch import |
-| **AI Key Points** | One-click generate knowledge points for any question, with color-shift border animation and typewriter text reveal |
-| **AI Smart Exam** | Analyzes practice history via DeepSeek, auto-recommends subjects/categories/types/count/duration for exams — with border glow animation |
-| **AI Learning Plan** | Ebbinghaus forgetting curve analysis + subject urgency scoring + AI-generated personalized study advice, cached for session |
-| **Study Plan** | Dual system: long-term plan (pick subjects + deadline → auto daily goal) and custom daily targets with per-subject progress bars. Click dashboard cards to edit directly. |
-| **Practice Mode** | Scope filter (all / favorites-only / wrong-only), priority mode (mixed / new-first / wrong-first), subject/category/type multi-filter, skip button, persistent notes with public/private toggle, swipe navigation |
-| **Exam Mode** | Configurable question count and duration, multi-select subject/category/type filter, grid question navigator, resume detection, auto-submit on timeout, ECharts gauge + donut + bar chart score report |
-| **Wrong Answer Review** | Filter by mode, inline note editing, favorites, answer highlighted |
-| **Question Management** | CRUD with dynamic option count, subject/category/type/import-mode/verified filtering, page size selector, bulk edit/delete, analysis & key points fields |
-| **Bulk Import** | CSV, JSON, or AI-powered document import |
-| **User Roles** | Admin (CRUD questions, manage users, AI config) and User (practice only) |
-| **First-user Auto-admin** | First registered user automatically becomes admin via DB trigger |
-| **Mobile Responsive** | Collapsible sidebar, responsive charts (horizontal scroll for Sankey), swipe navigation |
-| **PWA** | Service worker with offline caching, installable |
-| **Dark Mode** | System-preference detection, localStorage persistence, toggle in header and login page |
-| **Public Notes** | Share notes with other users; unified card layout with answer comparison, visibility badges, and author info |
-| **Favorites** | Star questions, sync to Supabase, accessible from sidebar |
-| **I18n** | Chinese/English toggle in sidebar footer |
-| **Loading Tips** | Rotating tips with fade transitions during loading states |
-| **GitHub Release Badge** | Sidebar shows latest release version from GitHub |
+| Framework | React 19, TypeScript, Vite 8 |
+| UI | Tailwind CSS 4, shadcn/ui, Radix UI, Lucide |
+| Charts | ECharts 6, Recharts |
+| State | Zustand |
+| Routing | React Router v7 (lazy loading) |
+| Backend | Supabase (PostgreSQL, Auth, RLS, Edge Functions) |
+| AI | Vercel AI SDK + DeepSeek / OpenAI |
+| I18n | Built-in zh / en |
+| PWA | vite-plugin-pwa + Workbox |
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- A [Supabase](https://supabase.com) project
+- [Supabase](https://supabase.com) project
 
-### 1. Clone and install
+### Setup
 
 ```bash
 git clone https://github.com/rand777gg/react-practice-web.git
 cd practice-web
 npm install
-```
-
-### 2. Environment variables
-
-```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your Supabase credentials (find them in Supabase Project Settings → API):
+Edit `.env`:
 
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
 
-> `.env` is gitignored — never commit your real keys.
-
-### 3. Set up Supabase database
-
-Open your Supabase project → **SQL Editor**, paste and run the entire contents of `supabase/migrations/001_initial_schema.sql`.
-
-This creates all tables, indexes, the first-user-admin trigger, and row-level security (RLS) policies.
-
-### 4. Start dev server
+Initialize the database: open your Supabase project → **SQL Editor**, paste and run `supabase/migrations/001_initial_schema.sql`.
 
 ```bash
 npm run dev
 ```
 
-Visit `http://localhost:5173`, register an account — the first user automatically becomes admin.
+Visit `http://localhost:5173`, register — the first user automatically becomes admin.
 
-### 5. Add questions
+## Features
 
-As admin, go to **Questions** → **Import** and upload `sample-questions.csv` (18 sample questions), or use **Add Question** to create them manually.
+### Practice
 
-## Project Structure
+| Feature | Description |
+|---|---|
+| Scope Filter | All / favorites-only / wrong-only |
+| Priority Modes | Mixed / new-first / wrong-first / sequential |
+| Multi-Filter | Subject, category, question type, knowledge point |
+| Sequential Mode | KP-batched subject blocks, auto-saved progress, cross-device sync |
+| Swipe Navigation | Touch swipe to move between questions |
+| Notes | Rich-text notes with public/private toggle |
 
-```
-practice-web/
-├── index.html
-├── .env.example                  # Environment variable template
-├── sample-questions.csv          # Sample questions for import testing
-├── supabase/
-│   └── migrations/
-│       └── 001_initial_schema.sql
-└── src/
-    ├── main.tsx
-    ├── App.tsx                   # Auth initializer + session listener
-    ├── index.css                 # Tailwind + CSS custom properties
-    ├── types/                    # TypeScript types (Question, ExamSession, etc.)
-    ├── lib/                      # supabase client, cn util, constants, ai (deepseek, ebbinghaus, summary)
-    ├── stores/                   # Zustand stores (auth, exam, lang, theme, refresh)
-    ├── hooks/                    # useQuestions, useTimer, useUserAnswers, useFavorites, useSwipe
-    ├── i18n/                     # translations (zh/en) + useT hook
-    ├── router/                   # Route definitions (lazy loaded)
-    ├── components/
-    │   ├── ui/                   # shadcn primitives (button, card, dialog, etc.)
-    │   ├── auth/                 # LoginForm, RegisterForm, ProtectedRoute
-    │   ├── layout/               # AppLayout, Sidebar, Header, PlanDialog, PlanProgress, DashboardPlanCards, LoadingScreen, LoadingTips
-    │   ├── ai/                   # AiSummaryDialog
-    │   ├── ai-import/            # AiImportUpload, AiImportPreview, AiImportQuestionCard, AiImportMetadata
-    │   ├── questions/            # QuestionCard, QuestionForm, QuestionList, ImportDialog
-    │   ├── practice/             # PracticeSession
-    │   ├── exam/                 # ExamSession, ExamTimer, ExamProgress, ExamResultCard
-    │   └── charts/               # ECharts: TimeDistributionHistogram, TimeScatterChart, AnswerTimeScatterHistogram, SubjectCategorySunburst, SubjectDonutCharts, SubjectAccuracyCharts, SubjectRankChart, DailyGoalHeatmap, EbbinghausCurve, UrgencyChart
-    └── pages/                    # Route pages (admin/ subfolder for admin pages)
-```
+### Exam
+
+| Feature | Description |
+|---|---|
+| Configurable | Question count, time limit, subject/category/type filters |
+| Grid Navigator | Jump to any question, see answered/skipped status at a glance |
+| Resume | Auto-detects interrupted sessions |
+| Auto-Submit | Submits on timeout |
+| Score Report | ECharts gauge + donut + bar chart with breakdown |
+
+### AI
+
+| Feature | Description |
+|---|---|
+| Document Import | Upload PDF/Word/image → auto-extract questions via OCR + LLM |
+| Knowledge Points | One-click generate KPs with animated reveal |
+| Study Summary | Friend-style daily recap with typewriter animation |
+| Smart Exam | Analyzes practice history, recommends exam config |
+| Learning Plan | Ebbinghaus forgetting curve + subject urgency scoring |
+
+### Dashboard
+
+- **Calendar Heatmap** — daily activity overview
+- **Time Distribution** — concentric rings (7 categories × 24 hours)
+- **Daily Stacked Bar** — per-subject breakdown with correct/wrong split
+- **Time Scatter** — today's answers as hourly bubbles
+- **Accuracy Bar + Heatmap** — horizontal bars by subject + subject×type matrix
+- **Donut + Treemap** — nested hierarchy with traditional Chinese color palette
+- **Sankey Diagram** — subject ↔ category flow
+
+### Question Management (Admin)
+
+- Full CRUD with dynamic option counts
+- Bulk import: CSV, JSON, AI document parsing
+- Filter by subject, category, type, import mode, verification status
+- Bulk edit, delete, and verification toggle
+
+### Account & Security
+
+- Email + OAuth (GitHub) login
+- QR code login with session-based polling
+- Row-Level Security on all tables
+- Admin / User role separation
+- First registered user auto-admin via DB trigger
 
 ## Routes
 
@@ -131,18 +142,41 @@ practice-web/
 | `/login` | Login | Public |
 | `/register` | Register | Public |
 | `/` | Dashboard | Authenticated |
-| `/practice` | Practice Mode | Authenticated |
-| `/exam` | Exam Mode | Authenticated |
+| `/practice` | Practice | Authenticated |
+| `/exam` | Exam | Authenticated |
 | `/exam/result/:sessionId` | Exam Results | Authenticated |
 | `/favorites` | Favorites | Authenticated |
 | `/notes` | Public Notes | Authenticated |
 | `/review` | Wrong Answer Review | Authenticated |
-| `/admin/questions` | Question Management | Admin |
-| `/admin/questions/new` | Create Question | Admin |
+| `/settings` | Settings | Authenticated |
+| `/admin/questions` | Question List | Admin |
+| `/admin/questions/new` | New Question | Admin |
 | `/admin/questions/:id/edit` | Edit Question | Admin |
 | `/admin/users` | User Management | Admin |
-| `/admin/ai` | AI Management | Admin |
-| `/admin/ai-import` | AI Question Import | Admin |
+| `/admin/ai` | AI Config | Admin |
+| `/admin/ai-import` | AI Import | Admin |
+
+## Project Structure
+
+```
+src/
+├── components/
+│   ├── ui/          shadcn primitives
+│   ├── auth/        login/register forms, QR scanner, route guard
+│   ├── layout/      app shell, sidebar, header, plan progress & dialog
+│   ├── ai/          AI summary dialog, import wizard
+│   ├── charts/      ECharts & Recharts components
+│   ├── practice/    practice session & KP selector
+│   ├── exam/        exam session, timer, navigator, result card
+│   └── questions/   question card, form, list, import dialog
+├── hooks/           custom hooks (answers, favorites, filters, swipe)
+├── i18n/            zh/en translations
+├── lib/             supabase client, AI SDK, constants, utilities
+├── pages/           route-level page components
+├── router/          lazy-loaded route definitions
+├── stores/          Zustand state (auth, exam, settings, sequential, dashboard)
+└── types/           TypeScript type definitions
+```
 
 ## Scripts
 
@@ -154,40 +188,36 @@ npm run preview   # Preview production build locally
 
 ## Deploy
 
-Build the project and deploy the `dist/` folder to any static hosting (Vercel, Netlify, Cloudflare Pages, etc.):
+Build and deploy `dist/` to any static host (Vercel, Netlify, Cloudflare Pages):
 
 ```bash
 npm run build
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment variables in your hosting platform (not in the repo).
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment variables on your hosting platform.
 
 ## CI / CD
 
 | Workflow | Description |
 |---|---|
-| `lint.yml` | ESLint code check |
-| `typecheck.yml` | TypeScript type checking |
-| `tests.yml` | Test runner |
-| `ci.yml` | Build + caching |
-| `deploy-site.yml` | Deploy to static hosting |
-| `pr-review.yml` | Automated PR review every 4h (DeepSeek + Feishu notify) |
+| `lint.yml` | ESLint |
+| `typecheck.yml` | TypeScript type check |
+| `tests.yml` | Test suite |
+| `ci.yml` | Build + dependency caching |
+| `deploy-site.yml` | Static hosting deploy |
+| `pr-review.yml` | Automated PR review (DeepSeek + Feishu notify) |
 
 ### PR Review Setup
 
-Add these secrets in your repository Settings → Secrets → Actions:
+Add to repository **Settings → Secrets → Actions**:
 
 | Secret | Description |
 |---|---|
-| `DEEPSEEK_API_KEY` | DeepSeek API key ([platform.deepseek.com](https://platform.deepseek.com)) |
-| `FEISHU_WEBHOOK_URL` | Feishu custom bot Webhook URL |
-| `FEISHU_WEBHOOK_SECRET` | (Optional) Feishu bot signing secret |
+| `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `FEISHU_WEBHOOK_URL` | Feishu bot webhook URL |
 
-**Feishu security settings:**
-1. In Feishu group → Settings → Bots → Edit custom bot
-2. **Security** → Add **custom keyword**: `PR Review`
-3. **Security** → Enable **signature verification**, copy the secret as `FEISHU_WEBHOOK_SECRET`
+Feishu bot security: add custom keyword `PR Review` in bot settings.
 
 ## License
 
-MIT
+[MIT](LICENSE)
