@@ -485,6 +485,230 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_random_question_id(UUID, TEXT[], TEXT[], TEXT) TO authenticated;
 
+-- 加载顺序刷体会话（合并12+次查询为1次RPC）
+CREATE OR REPLACE FUNCTION public.load_practice_session(p_user_id UUID, p_session_key TEXT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  v_session RECORD;
+  v_existing_ids UUID[];
+  v_kp_arr TEXT[];
+  v_subj_arr TEXT[];
+  v_restored_index INT;
+  v_saved_kps TEXT[];
+  v_sps JSONB;
+  v_new_data JSONB;
+  v_all_ids UUID[];
+  v_all_kps TEXT[];
+  v_all_subjs TEXT[];
+  v_current_id UUID;
+  v_new_idx INT;
+  v_result JSONB;
+BEGIN
+  SELECT * INTO v_session FROM public.practice_sequential_state
+  WHERE user_id = p_user_id AND session_key = p_session_key;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('found', false);
+  END IF;
+
+  v_saved_kps := COALESCE(v_session.selected_kps, '{}'::TEXT[]);
+  v_sps := COALESCE(v_session.subject_positions, '{}'::jsonb);
+  v_restored_index := COALESCE(v_session.current_index, 0);
+
+  -- Validate stored IDs, preserve order, extract first KP + subject
+  WITH ordered AS (
+    SELECT q.id, q.subject,
+           (SELECT trim(kpx) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '' LIMIT 1) AS kp,
+           t.pos
+    FROM unnest(v_session.question_ids) WITH ORDINALITY AS t(qid, pos)
+    JOIN public.questions q ON q.id = t.qid
+  )
+  SELECT
+    array_agg(o.id ORDER BY o.pos),
+    array_agg(o.kp ORDER BY o.pos),
+    array_agg(COALESCE(o.subject, '') ORDER BY o.pos)
+  INTO v_existing_ids, v_kp_arr, v_subj_arr
+  FROM ordered o;
+
+  IF v_existing_ids IS NULL THEN
+    v_existing_ids := '{}'::UUID[];
+    v_kp_arr := '{}'::TEXT[];
+    v_subj_arr := '{}'::TEXT[];
+  END IF;
+
+  IF v_restored_index >= array_length(v_existing_ids, 1) THEN
+    v_restored_index := GREATEST(0, array_length(v_existing_ids, 1) - 1);
+  END IF;
+
+  -- Find new questions for session KPs
+  v_new_data := '[]'::jsonb;
+  IF array_length(v_saved_kps, 1) > 0 THEN
+    WITH new_qs AS (
+      SELECT DISTINCT q.id, q.subject,
+             COALESCE(q.seq_number, 999999) AS seq_number,
+             (SELECT trim(kpx) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '' LIMIT 1) AS first_kp,
+             (SELECT bool_or(trim(kpx) = ANY(v_saved_kps)) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '') AS exact_match
+      FROM public.questions q
+      WHERE (SELECT bool_or(q.key_points ILIKE '%' || kp || '%') FROM unnest(v_saved_kps) kp)
+        AND NOT (q.id = ANY(v_existing_ids))
+        AND q.key_points IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public.user_excluded_questions ueq
+          WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+        )
+    )
+    SELECT COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'id', nq.id,
+        'subject', nq.subject,
+        'kp', nq.first_kp,
+        'seq', nq.seq_number
+      )
+    ), '[]'::jsonb) INTO v_new_data
+    FROM new_qs nq
+    WHERE nq.exact_match;
+  END IF;
+
+  -- Merge existing + new, sort by (kp, seq)
+  v_current_id := v_existing_ids[v_restored_index + 1];
+
+  WITH existing AS (
+    SELECT e.id, e.kp, e.subj, NULL::INT AS seq
+    FROM unnest(v_existing_ids, v_kp_arr, v_subj_arr) AS e(id, kp, subj)
+  ),
+  new_items AS (
+    SELECT (n->>'id')::UUID AS id, n->>'kp' AS kp, n->>'subject' AS subj, (n->>'seq')::INT AS seq
+    FROM jsonb_array_elements(v_new_data) n
+  ),
+  sorted AS (
+    SELECT id, kp, subj,
+           row_number() OVER (ORDER BY kp, seq, id) - 1 AS rn
+    FROM (SELECT * FROM existing UNION ALL SELECT * FROM new_items) u
+  )
+  SELECT
+    array_agg(s.id ORDER BY s.rn),
+    array_agg(s.kp ORDER BY s.rn),
+    array_agg(s.subj ORDER BY s.rn)
+  INTO v_all_ids, v_all_kps, v_all_subjs
+  FROM sorted s;
+
+  -- Find new position of current question
+  v_new_idx := array_position(v_all_ids, v_current_id);
+  IF v_new_idx IS NOT NULL THEN
+    v_restored_index := v_new_idx - 1;
+  ELSIF array_length(v_all_ids, 1) > 0 THEN
+    v_restored_index := LEAST(v_restored_index, array_length(v_all_ids, 1) - 1);
+  ELSE
+    v_restored_index := 0;
+  END IF;
+
+  v_result := jsonb_build_object(
+    'found', true,
+    'savedKps', to_jsonb(v_saved_kps),
+    'subjectPositions', v_sps,
+    'questionIds', to_jsonb(v_all_ids),
+    'questionKps', to_jsonb(v_all_kps),
+    'questionSubjects', to_jsonb(v_all_subjs),
+    'currentIndex', v_restored_index
+  );
+
+  RETURN v_result;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.load_practice_session(UUID, TEXT) TO authenticated;
+
+-- 开始顺序刷体会话（合并ILIK+excluded+profiles+answers查询为1次RPC）
+CREATE OR REPLACE FUNCTION public.start_sequential_session(p_user_id UUID, p_kps TEXT[], p_subjects TEXT[] DEFAULT NULL, p_question_type TEXT DEFAULT NULL)
+RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  v_ids UUID[];
+  v_kps_arr TEXT[];
+  v_subj_arr TEXT[];
+  v_resume_idx INT := 0;
+  v_plan_reset TIMESTAMPTZ;
+  v_subject_resets JSONB;
+  v_answered_set UUID[];
+  v_q_subj TEXT;
+  v_i INT;
+  v_session_key TEXT;
+  v_result JSONB;
+BEGIN
+  SELECT array_to_string(array_agg(kp ORDER BY kp), '|') INTO v_session_key FROM unnest(p_kps) kp;
+
+  -- 1. Query matching questions, filter excluded, exact KP match, sort
+  WITH matched AS (
+    SELECT DISTINCT q.id, q.subject,
+           COALESCE(q.seq_number, 999999) AS seq_number,
+           (SELECT trim(kpx) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '' LIMIT 1) AS kp
+    FROM public.questions q
+    WHERE (SELECT bool_or(q.key_points ILIKE '%' || kp || '%') FROM unnest(p_kps) kp)
+      AND (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+      AND (p_question_type IS NULL OR q.question_type = p_question_type)
+      AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id)
+      AND q.key_points IS NOT NULL
+  ),
+  exact_matched AS (
+    SELECT m.* FROM matched m
+    WHERE EXISTS (SELECT 1 FROM unnest(regexp_split_to_array((SELECT q2.key_points FROM public.questions q2 WHERE q2.id = m.id), '[,，;；]')) kpx WHERE trim(kpx) = ANY(p_kps))
+  ),
+  sorted AS (
+    SELECT em.id, em.subject, em.kp, em.seq_number FROM exact_matched em ORDER BY em.kp, em.seq_number
+  )
+  SELECT array_agg(s.id), array_agg(s.kp), array_agg(COALESCE(s.subject, ''))
+  INTO v_ids, v_kps_arr, v_subj_arr FROM sorted s;
+
+  IF v_ids IS NULL THEN
+    v_ids := '{}'::UUID[]; v_kps_arr := '{}'::TEXT[]; v_subj_arr := '{}'::TEXT[];
+  END IF;
+
+  -- 2. Get profile reset timestamps
+  SELECT pd.plan_reset_at, COALESCE(pd.subject_reset_at, '{}'::jsonb)
+  INTO v_plan_reset, v_subject_resets FROM public.profiles pd WHERE pd.id = p_user_id;
+
+  -- 3. Get answered question set (respecting per-subject resets)
+  IF array_length(v_ids, 1) > 0 THEN
+    SELECT array_agg(ua.question_id) INTO v_answered_set
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id AND ua.question_id = ANY(v_ids)
+      AND (v_plan_reset IS NULL OR ua.answered_at >= v_plan_reset);
+
+    IF v_answered_set IS NULL THEN v_answered_set := '{}'::UUID[]; END IF;
+
+    FOR v_i IN 1..array_length(v_ids, 1) LOOP
+      v_q_subj := v_subj_arr[v_i];
+      IF v_subject_resets ? v_q_subj THEN
+        PERFORM 1 FROM public.user_answers ua
+        WHERE ua.user_id = p_user_id AND ua.question_id = v_ids[v_i]
+          AND ua.answered_at >= (v_subject_resets->>v_q_subj)::TIMESTAMPTZ;
+        IF NOT FOUND THEN v_answered_set := array_remove(v_answered_set, v_ids[v_i]); END IF;
+      END IF;
+    END LOOP;
+
+    -- 4. Find first unanswered question
+    v_resume_idx := 0;
+    FOR v_i IN 1..array_length(v_ids, 1) LOOP
+      IF NOT (v_ids[v_i] = ANY(v_answered_set)) THEN v_resume_idx := v_i - 1; EXIT; END IF;
+      v_resume_idx := v_i;
+    END LOOP;
+    IF v_resume_idx >= array_length(v_ids, 1) THEN
+      v_resume_idx := GREATEST(0, array_length(v_ids, 1) - 1);
+    END IF;
+  END IF;
+
+  v_result := jsonb_build_object(
+    'sessionKey', v_session_key,
+    'questionIds', to_jsonb(v_ids),
+    'questionKps', to_jsonb(v_kps_arr),
+    'questionSubjects', to_jsonb(v_subj_arr),
+    'currentIndex', v_resume_idx
+  );
+  RETURN v_result;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT) TO authenticated;
+
 -- 获取学科/分类元数据
 CREATE OR REPLACE FUNCTION public.get_question_meta(p_subject TEXT DEFAULT NULL)
 RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path = ''
