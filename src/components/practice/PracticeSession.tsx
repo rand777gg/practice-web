@@ -301,16 +301,19 @@ export function PracticeSession() {
 
   useEffect(() => { kpRetryRef.current = 0 }, [selectedKeyPoint])
 
-  // Load distinct key_points for filter dropdown, grouped by subject
+  // Load distinct key_points from cached meta (single row, no full table scan)
   const [kpVersion, setKpVersion] = useState(0)
   const triggerKpRefresh = useCallback(() => setKpVersion(v => v + 1), [])
   useEffect(() => {
     let c = false
-    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null).then(({ data }) => {
+    supabase.from('question_meta_cache').select('key_points_by_subject').single().then(({ data }) => {
       if (c) return
-      const m = new Map<string, Set<string>>()
-      for (const r of (data ?? [])) { const s = (r as any).subject || '其他'; if (!m.has(s)) m.set(s, new Set()); if ((r as any).key_points) for (const k of ((r as any).key_points as string).split(/[,，;；]/)) { const t = k.trim(); if (t) m.get(s)!.add(t) } }
-      setKpBySubject([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort(naturalSort) })))
+      const items = (data?.key_points_by_subject ?? []) as { subject: string; key_points: string[] }[]
+      setKpBySubject(
+        items
+          .map(item => ({ subject: item.subject || '其他', keyPoints: [...item.key_points].sort(naturalSort) }))
+          .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN'))
+      )
     })
     return () => { c = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -19,33 +19,12 @@ export function KpSelectDialog({ open, onOpenChange, kpBySubject, planSubjects, 
   const { t } = useT()
   const [checked, setChecked] = useState<Set<string>>(new Set(selectedKps))
   const [kpCounts, setKpCounts] = useState<Map<string, number>>(new Map())
-  const [freshSubjects, setFreshSubjects] = useState<{ subject: string; keyPoints: string[] }[]>([])
 
-  // Fetch fresh kpBySubject data when dialog opens
-  useEffect(() => {
-    if (!open) return
-    let c = false
-    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null)
-      .in('subject', planSubjects.length > 0 ? planSubjects : (kpBySubject.map(s => s.subject)))
-      .then(({ data }) => {
-        if (c) return
-        const m = new Map<string, Set<string>>()
-        for (const r of (data ?? []) as { subject: string; key_points: string }[]) {
-          const s = r.subject || '其他'
-          if (!m.has(s)) m.set(s, new Set())
-          for (const k of r.key_points.split(/[,，;；]/).map(x => x.trim()).filter(Boolean)) m.get(s)!.add(k)
-        }
-        setFreshSubjects([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort() })))
-      })
-    return () => { c = true }
-  }, [open, planSubjects, kpBySubject])
-
-  const displaySubjects = freshSubjects.length > 0 ? freshSubjects : kpBySubject
-
+  // kpBySubject is always fresh from question_meta_cache — filter client-side
   const filteredSubjects = useMemo(() => {
-    if (planSubjects.length === 0) return displaySubjects
-    return displaySubjects.filter(s => planSubjects.includes(s.subject))
-  }, [displaySubjects, planSubjects])
+    if (planSubjects.length === 0) return kpBySubject
+    return kpBySubject.filter(s => planSubjects.includes(s.subject))
+  }, [kpBySubject, planSubjects])
 
   const allKps = useMemo(() => filteredSubjects.flatMap(s => s.keyPoints), [filteredSubjects])
   const allChecked = allKps.length > 0 && allKps.every(k => checked.has(k))

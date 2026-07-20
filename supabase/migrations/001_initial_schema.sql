@@ -277,32 +277,67 @@ $$;
 -- 9. QUESTION META CACHE — 学科/分类缓存
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.question_meta_cache (
-  id         BOOLEAN PRIMARY KEY DEFAULT true,
-  subjects   JSONB NOT NULL DEFAULT '[]',
-  categories JSONB NOT NULL DEFAULT '[]',
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                   BOOLEAN PRIMARY KEY DEFAULT true,
+  subjects             JSONB NOT NULL DEFAULT '[]',
+  categories           JSONB NOT NULL DEFAULT '[]',
+  key_points_by_subject JSONB NOT NULL DEFAULT '[]',
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO public.question_meta_cache (subjects, categories)
+INSERT INTO public.question_meta_cache (subjects, categories, key_points_by_subject)
 SELECT
   (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
   (SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
     SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
     UNION SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
-  ) t);
+  ) t),
+  (WITH expanded AS (
+    SELECT DISTINCT q.subject, trim(kp) AS kp
+    FROM public.questions q,
+    LATERAL unnest(regexp_split_to_array(q.key_points, '[,，;；]')) AS kp
+    WHERE q.key_points IS NOT NULL AND trim(kp) <> ''
+  )
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object('subject', subject, 'key_points', key_points)
+    ORDER BY subject
+  ), '[]'::jsonb)
+  FROM (
+    SELECT subject, jsonb_agg(kp ORDER BY kp) AS key_points
+    FROM expanded
+    GROUP BY subject
+  ) t2);
 
 CREATE OR REPLACE FUNCTION public.refresh_question_meta_cache()
 RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$
-  INSERT INTO public.question_meta_cache (subjects, categories, updated_at)
+  INSERT INTO public.question_meta_cache (subjects, categories, key_points_by_subject, updated_at)
   SELECT
     (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
     (SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
       SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
       UNION SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
-    ) t), NOW()
+    ) t),
+    (WITH expanded AS (
+      SELECT DISTINCT q.subject, trim(kp) AS kp
+      FROM public.questions q,
+      LATERAL unnest(regexp_split_to_array(q.key_points, '[,，;；]')) AS kp
+      WHERE q.key_points IS NOT NULL AND trim(kp) <> ''
+    )
+    SELECT COALESCE(jsonb_agg(
+      jsonb_build_object('subject', subject, 'key_points', key_points)
+      ORDER BY subject
+    ), '[]'::jsonb)
+    FROM (
+      SELECT subject, jsonb_agg(kp ORDER BY kp) AS key_points
+      FROM expanded
+      GROUP BY subject
+    ) t2),
+    NOW()
   ON CONFLICT (id) DO UPDATE SET
-    subjects = EXCLUDED.subjects, categories = EXCLUDED.categories, updated_at = NOW();
+    subjects = EXCLUDED.subjects,
+    categories = EXCLUDED.categories,
+    key_points_by_subject = EXCLUDED.key_points_by_subject,
+    updated_at = NOW();
 $$;
 
 CREATE OR REPLACE FUNCTION public.trg_refresh_question_meta()
