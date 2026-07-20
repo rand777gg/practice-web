@@ -68,7 +68,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
   const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
   const [planLoading, setPlanLoading] = useState(false)
-  const [confirmReset, setConfirmReset] = useState<'long' | 'daily' | null>(null)
+  const [confirmReset, setConfirmReset] = useState<'long' | number | null>(null)
   const [resetTooEasy, setResetTooEasy] = useState(false)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
@@ -127,11 +127,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   }
 
   const addDailyTarget = () => {
-    if (allSubjects.length === 0) return
-    const used = new Set(dailyTargets.flatMap((t) => t.subjects.map(s => s.subject)))
-    const next = allSubjects.find((s) => !used.has(s))
-    if (!next) return
-    setDailyTargets((prev) => [...prev, { subjects: [{ subject: next, count: 5 }], deadline: null }])
+    setDailyTargets((prev) => [...prev, { subjects: [] as { subject: string; count: number }[], deadline: null }])
   }
 
   const updateDailyDeadline = (i: number, deadline: string) => {
@@ -155,17 +151,24 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const handleResetLong = async () => {
     if (!user) return
     setSaving(true)
-    const now = new Date()
-    await supabase.from('profiles').update({ plan_reset_at: now.toISOString() }).eq('id', user.id)
+    const now = new Date().toISOString()
+    // Only reset the selected subjects
+    const resetEntries: Record<string, string> = {}
+    for (const s of selectedSubjects) resetEntries[s] = now
+    const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', user.id).single()
+    const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
+    const merged = { ...existingResets, ...resetEntries }
+    await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', user.id)
     if (resetTooEasy) {
       await supabase.from('user_excluded_questions').delete().eq('user_id', user.id)
-      const s = useSequentialStore.getState()
-      if (s.isActive && s.sessionKey) {
-        const savedIndex = s.currentIndex
-        await s.startSequential(user.id, s.selectedKps, selectedSubjects, '')
-        const { questionIds } = useSequentialStore.getState()
-        useSequentialStore.setState({ currentIndex: Math.min(savedIndex, questionIds.length - 1) })
-      }
+    }
+    // Rebuild active session so position recovery re-scans answers with new reset timestamps
+    const s = useSequentialStore.getState()
+    if (s.isActive && s.sessionKey) {
+      const savedSps = { ...s.subjectPositions }
+      await s.startSequential(user.id, s.selectedKps, [], '')
+      const { questionIds } = useSequentialStore.getState()
+      useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
     }
     await refreshProfile()
     useRefreshStore.getState().bump()
@@ -174,25 +177,33 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     setSaving(false)
   }
 
-  const handleResetDaily = async () => {
+  const handleResetDaily = async (groupIdx: number) => {
     if (!user) return
     setSaving(true)
-    const now = new Date()
-    await supabase.from('profiles').update({ daily_reset_at: now.toISOString() }).eq('id', user.id)
+    const now = new Date().toISOString()
+    // Reset subjects in this daily target group
+    const resetEntries: Record<string, string> = {}
+    const target = dailyTargets[groupIdx]
+    if (target) for (const s of target.subjects) resetEntries[s.subject] = now
+    const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', user.id).single()
+    const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
+    const merged = { ...existingResets, ...resetEntries }
+    await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', user.id)
     if (resetTooEasy) {
       await supabase.from('user_excluded_questions').delete().eq('user_id', user.id)
-      const s = useSequentialStore.getState()
-      if (s.isActive && s.sessionKey) {
-        const savedIndex = s.currentIndex
-        await s.startSequential(user.id, s.selectedKps, selectedSubjects, '')
-        const { questionIds } = useSequentialStore.getState()
-        useSequentialStore.setState({ currentIndex: Math.min(savedIndex, questionIds.length - 1) })
-      }
+    }
+    const s = useSequentialStore.getState()
+    if (s.isActive && s.sessionKey) {
+      const savedSps = { ...s.subjectPositions }
+      await s.startSequential(user.id, s.selectedKps, [], '')
+      const { questionIds } = useSequentialStore.getState()
+      useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
     }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
     setSaving(false)
   }
 
@@ -203,7 +214,10 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     await refreshProfile()
     setDeadline('')
     setSelectedSubjects([])
+    useRefreshStore.getState().bump()
+    useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
+    window.dispatchEvent(new Event('plan-progress-refresh'))
     setSaving(false)
   }
 
@@ -232,18 +246,40 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       })
       .eq('id', user.id)
     await refreshProfile()
+
+    // Sync active sequential session with new plan subjects
+    const allPlanSubs = [...new Set([...selectedSubjects, ...effectiveTargets.flatMap(t => t.subjects.map(s => s.subject))])]
+    if (allPlanSubs.length > 0) {
+      const s = useSequentialStore.getState()
+      if (s.isActive && s.sessionKey) {
+        // Fetch all KPs for the new plan subjects
+        const { data: kpRows } = await supabase.from('questions').select('key_points').in('subject', allPlanSubs).not('key_points', 'is', null)
+        const planKps = new Set<string>()
+        for (const r of (kpRows ?? []) as { key_points: string }[]) {
+          for (const k of r.key_points.split(/[,，;；]/).map(x => x.trim()).filter(Boolean)) planKps.add(k)
+        }
+        // Merge: keep existing session KPs that are still in plan, add new ones
+        const newPlanKps = [...planKps].sort()
+        if (newPlanKps.length > 0) {
+          await s.mergeKps(user.id, newPlanKps, allPlanSubs, '')
+        }
+      } else {
+        await s.syncKpsFromPlanSubjects(user.id, allPlanSubs)
+      }
+    }
+
     setSaving(false)
     onOpenChange(false)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl mx-4 sm:mx-auto">
         <DialogHeader className="sm:text-center">
           <DialogTitle>{t('plan.title')}</DialogTitle>
         </DialogHeader>
 
-        <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-3">
+        <div className="max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1 space-y-3">
           <div className="inline-flex rounded-lg bg-muted p-0.5 w-full">
             {(['long-term', 'daily'] as const).map((v) => (
               <button
@@ -279,7 +315,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             </div>
 
             <div className="border rounded-lg p-3 space-y-2">
-              {/* Subject selection + delete */}
+              {/* Subject selection + action buttons */}
               <div className="flex items-center gap-1.5">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -318,9 +354,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
-                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleDeleteLong} disabled={saving}>
-                  <X className="h-3 w-3" />
-                </Button>
               </div>
 
               {/* Deadline */}
@@ -369,6 +402,14 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 </div>
               )}
 
+              <div className="flex justify-end gap-1.5 pt-1">
+                <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => setConfirmReset('long')} disabled={saving}>
+                  {saving ? '...' : '重置进度'}
+                </Button>
+                <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={handleDeleteLong} disabled={saving}>
+                  <X className="h-3 w-3 mr-1" />删除计划
+                </Button>
+              </div>
             </div>
 
             {/* Add button — outside box */}
@@ -402,6 +443,11 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                   </div>
                 ))}
               </div>
+            ) : dailyTargets.length === 0 ? (
+              <div className="border rounded-lg p-6 text-center space-y-2">
+                <p className="text-sm text-muted-foreground">{t('plan.selectHint')}</p>
+                <p className="text-xs text-muted-foreground">点击下方按钮添加自定义目标</p>
+              </div>
             ) : dailyTargets.map((target, i) => {
               const usedByOthers = new Set(
                 dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
@@ -411,13 +457,11 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               return (
                 <div key={i}>
                   {/* Title outside box */}
-                  <div className="text-sm font-semibold text-pink-600 dark:text-pink-400 truncate mb-1.5">
-                    {t('plan.dailyTarget')}
-                  </div>
+                  <div className="text-sm font-semibold text-pink-600 dark:text-pink-400 truncate mb-1.5">{t('plan.dailyTarget')}</div>
 
                   <div className="border rounded-lg p-3 space-y-2">
 
-                  {/* Subject multi-select + delete */}
+                  {/* Subject multi-select + action buttons */}
                   <div className="flex items-center gap-1.5">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -449,9 +493,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       })}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeDailyTarget(i)}>
-                      <X className="h-3 w-3" />
-                    </Button>
                   </div>
 
                   {/* Deadline */}
@@ -507,43 +548,40 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       </p>
                     )
                   })()}
+
+                  <div className="flex justify-end gap-1.5 pt-1">
+                    <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => setConfirmReset(i)} disabled={saving}>
+                      {saving ? '...' : '重置进度'}
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => removeDailyTarget(i)} disabled={saving}>
+                      <X className="h-3 w-3 mr-1" />删除目标
+                    </Button>
+                  </div>
                 </div>
               </div>
               )
             })}
 
             {/* Add button — outside box */}
-            {(() => {
-              const usedAll = new Set(dailyTargets.flatMap((t) => t.subjects.map(s => s.subject)))
-              if (usedAll.size >= allSubjects.length) return null
-              return (
-                <div className="flex justify-end">
-                  <Button variant="outline" size="sm" onClick={addDailyTarget} className="text-xs h-7">
-                    <Plus className="h-3 w-3" />
-                    {t('plan.addSubject')}
-                  </Button>
-                </div>
-              )
-            })()}
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={addDailyTarget} className="text-xs h-7">
+                <Plus className="h-3 w-3" />
+                新增目标
+              </Button>
+            </div>
           </div>
           )}
 
         </div>
 
-        <DialogFooter className="flex-row gap-2">
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmReset('long')} disabled={saving}>
-            {saving ? '...' : '重置长期'}
-          </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmReset('daily')} disabled={saving}>
-            {saving ? '...' : '重置自定义'}
-          </Button>
+        <DialogFooter className="flex-row flex-wrap gap-2">
           <DialogClose asChild>
-            <Button variant="outline" size="sm">{t('plan.cancel')}</Button>
+            <Button variant="outline" size="sm" className="text-xs">{t('plan.cancel')}</Button>
           </DialogClose>
-          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
+          <Button variant="outline" size="sm" className="text-xs" onClick={handleSave} disabled={saving}>
             {saving ? t('questions.saving') : t('plan.save')}
           </Button>
-          <Button size="sm" asChild>
+          <Button size="sm" className="text-xs" asChild>
             <Link to="/practice">
               <Play className="h-3.5 w-3.5" />
               开始学习
@@ -558,8 +596,8 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             <AlertDialogTitle>确认重置</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmReset === 'long'
-                ? '重置后，长期计划的已完成题目计数将归零，每日目标将重新计算。'
-                : '重置后，自定义目标的今日已完成计数将归零。'}
+                ? '重置后，所选科目的已完成题目计数将归零。'
+                : '重置后，该组自定义目标的已完成计数将归零。'}
             </AlertDialogDescription>
             <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
               <Checkbox checked={resetTooEasy} onCheckedChange={(v) => setResetTooEasy(v === true)} />
@@ -571,7 +609,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             <AlertDialogAction
               onClick={() => {
                 if (confirmReset === 'long') handleResetLong()
-                else if (confirmReset === 'daily') handleResetDaily()
+                else if (typeof confirmReset === 'number') handleResetDaily(confirmReset)
                 setResetTooEasy(false)
                 setConfirmReset(null)
               }}

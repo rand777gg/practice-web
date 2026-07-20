@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ScrollArea, Spinner } from '@radix-ui/themes'
+import { ScrollArea } from '@radix-ui/themes'
+import { Spinner } from '@/components/ui/spinner'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
@@ -330,15 +331,12 @@ export function Component() {
 
   return (
     <div className="space-y-6 w-full">
-      <div className="flex items-center gap-2 pb-1">
-        <h1 className="text-xl lg:text-2xl font-bold">{t('dashboard.title')}</h1>
-        {isRefreshing && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Spinner size="1" />
-            更新中
-          </div>
-        )}
-      </div>
+      {isRefreshing && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground pb-1">
+          <Spinner className="size-3" />
+          更新中
+        </div>
+      )}
 
       <Tabs
         defaultValue="plan"

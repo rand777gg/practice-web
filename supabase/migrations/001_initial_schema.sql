@@ -18,8 +18,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   plan_subjects   TEXT,
   daily_targets   TEXT,
   daily_deadline  TEXT,
-  plan_reset_at   TIMESTAMPTZ,
-  daily_reset_at  TIMESTAMPTZ,
+  plan_reset_at     TIMESTAMPTZ,
+  subject_reset_at  JSONB DEFAULT '{}'::jsonb,
+  daily_reset_at    TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -323,6 +324,7 @@ CREATE TABLE IF NOT EXISTS public.practice_sequential_state (
   question_ids  UUID[] NOT NULL DEFAULT '{}',
   current_index    INTEGER NOT NULL DEFAULT 0,
   subject_positions JSONB NOT NULL DEFAULT '{}',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, session_key)
 );
@@ -462,10 +464,11 @@ GRANT EXECUTE ON FUNCTION public.get_question_meta(TEXT) TO authenticated;
 
 -- 计划进度聚合 — 一次查询替代客户端分页+Set计数
 CREATE OR REPLACE FUNCTION public.get_subject_progress(
-  p_user_id        UUID,
-  p_plan_reset_at  TIMESTAMPTZ DEFAULT NULL,
-  p_today_since    TIMESTAMPTZ DEFAULT NULL,
-  p_subjects       TEXT[]      DEFAULT NULL
+  p_user_id          UUID,
+  p_plan_reset_at    TIMESTAMPTZ DEFAULT NULL,
+  p_today_since      TIMESTAMPTZ DEFAULT NULL,
+  p_subjects         TEXT[]      DEFAULT NULL,
+  p_subject_resets   JSONB       DEFAULT NULL
 )
 RETURNS TABLE(subject TEXT, total BIGINT, done_all BIGINT, done_today BIGINT)
 LANGUAGE sql
@@ -482,11 +485,20 @@ AS $$
   LEFT JOIN public.user_answers ua_all
     ON ua_all.question_id = q.id
     AND ua_all.user_id = p_user_id
-    AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at)
+    AND (
+      (p_subject_resets IS NOT NULL AND p_subject_resets ? q.subject AND ua_all.answered_at >= (p_subject_resets->>q.subject)::TIMESTAMPTZ)
+      OR
+      (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at)
+    )
   LEFT JOIN public.user_answers ua_today
     ON ua_today.question_id = q.id
     AND ua_today.user_id = p_user_id
     AND ua_today.answered_at >= p_today_since
+    AND (
+      (p_subject_resets IS NOT NULL AND p_subject_resets ? q.subject AND ua_today.answered_at >= (p_subject_resets->>q.subject)::TIMESTAMPTZ)
+      OR
+      (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_today.answered_at >= p_plan_reset_at)
+    )
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
     AND NOT EXISTS (
       SELECT 1 FROM public.user_excluded_questions ueq
@@ -495,7 +507,7 @@ AS $$
   GROUP BY COALESCE(q.subject, 'Other')
   ORDER BY subject;
 $$;
-GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[], JSONB) TO authenticated;
 
 -- 每日各学科完成情况
 CREATE OR REPLACE FUNCTION public.get_daily_completion(

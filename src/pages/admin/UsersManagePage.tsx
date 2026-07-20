@@ -89,8 +89,7 @@ export function Component() {
 
  return (
   <div className="space-y-4">
-   <h1 className="text-xl lg:text-2xl font-bold">{t('users.title')}</h1>
-   <div className="overflow-x-auto -mx-4 sm:mx-0">
+<div className="overflow-x-auto -mx-4 sm:mx-0">
     <Table>
      <TableHeader>
       <TableRow>

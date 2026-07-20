@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -19,11 +19,33 @@ export function KpSelectDialog({ open, onOpenChange, kpBySubject, planSubjects, 
   const { t } = useT()
   const [checked, setChecked] = useState<Set<string>>(new Set(selectedKps))
   const [kpCounts, setKpCounts] = useState<Map<string, number>>(new Map())
+  const [freshSubjects, setFreshSubjects] = useState<{ subject: string; keyPoints: string[] }[]>([])
+
+  // Fetch fresh kpBySubject data when dialog opens
+  useEffect(() => {
+    if (!open) return
+    let c = false
+    supabase.from('questions').select('subject, key_points').not('key_points', 'is', null)
+      .in('subject', planSubjects.length > 0 ? planSubjects : (kpBySubject.map(s => s.subject)))
+      .then(({ data }) => {
+        if (c) return
+        const m = new Map<string, Set<string>>()
+        for (const r of (data ?? []) as { subject: string; key_points: string }[]) {
+          const s = r.subject || '其他'
+          if (!m.has(s)) m.set(s, new Set())
+          for (const k of r.key_points.split(/[,，;；]/).map(x => x.trim()).filter(Boolean)) m.get(s)!.add(k)
+        }
+        setFreshSubjects([...m.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, ks]) => ({ subject: s, keyPoints: [...ks].sort() })))
+      })
+    return () => { c = true }
+  }, [open, planSubjects, kpBySubject])
+
+  const displaySubjects = freshSubjects.length > 0 ? freshSubjects : kpBySubject
 
   const filteredSubjects = useMemo(() => {
-    if (planSubjects.length === 0) return kpBySubject
-    return kpBySubject.filter(s => planSubjects.includes(s.subject))
-  }, [kpBySubject, planSubjects])
+    if (planSubjects.length === 0) return displaySubjects
+    return displaySubjects.filter(s => planSubjects.includes(s.subject))
+  }, [displaySubjects, planSubjects])
 
   const allKps = useMemo(() => filteredSubjects.flatMap(s => s.keyPoints), [filteredSubjects])
   const allChecked = allKps.length > 0 && allKps.every(k => checked.has(k))
@@ -45,9 +67,17 @@ export function KpSelectDialog({ open, onOpenChange, kpBySubject, planSubjects, 
     return () => { c = true }
   }, [open, filteredSubjects])
 
+  const initRef = useRef(false)
   useEffect(() => {
-    if (selectedKps.length > 0) { setChecked(new Set(selectedKps)) }
-    else if (open) { setChecked(new Set(allKps)) }
+    if (!open) { initRef.current = false; return }
+    if (initRef.current) return
+    if (allKps.length === 0) return
+    if (selectedKps.length > 0) {
+      setChecked(new Set(selectedKps))
+    } else {
+      setChecked(new Set(allKps))
+    }
+    initRef.current = true
   }, [selectedKps, open, allKps])
 
   const toggle = (kp: string) => setChecked(prev => { const n = new Set(prev); if (n.has(kp)) n.delete(kp); else n.add(kp); return n })

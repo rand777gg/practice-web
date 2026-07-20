@@ -56,7 +56,6 @@ export function Component() {
  return (
  <div className="">
  <div className="flex items-center justify-between mb-6">
- <h1 className="text-xl lg:text-2xl font-bold">{t('nav.questionBank')}</h1>
  <Button size="sm" onClick={() => setDialogOpen(true)}>
  <Plus className="h-4 w-4 mr-1" />创建试题库
  </Button>

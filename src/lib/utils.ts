@@ -49,9 +49,10 @@ export function normalizeChineseText(text: string): string {
   result = result.replace(new RegExp(`(${CJK})"`, 'g'), '$1」')
   result = result.replace(new RegExp(`'(${CJK})`, 'g'), '『$1')
   result = result.replace(new RegExp(`(${CJK})'`, 'g'), '$1』')
-  // ___ 前后加空格，避免 Markdown 渲染为强调/分隔线语法
-  result = result.replace(/([^\s])___/g, '$1 ___')
-  result = result.replace(/___([^\s])/g, '___ $1')
+  // 下划线填空标记前后加空格，避免 Markdown 渲染为强调/分隔线语法
+  result = result.replace(/([^\s])(_{3,})([^\s])/g, '$1 $2 $3')
+  result = result.replace(/([^\s])(_{3,})/g, '$1 $2')
+  result = result.replace(/(_{3,})([^\s])/g, '$1 $2')
   // Restore LaTeX math regions
   result = result.replace(/\x00MATH(\d+)\x00/g, (_, i) => mathBlocks[Number(i)] || '')
   return result

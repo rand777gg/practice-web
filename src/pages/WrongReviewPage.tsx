@@ -155,7 +155,6 @@ export function Component() {
   if (isLoading) {
     return (
       <div>
-        <h1 className="text-xl lg:text-2xl font-bold mb-6">{t('wrongReview.title')}</h1>
         <div className="space-y-3">{[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}</div>
       </div>
     )
@@ -163,7 +162,6 @@ export function Component() {
 
   return (
     <div>
-      <h1 className="text-xl lg:text-2xl font-bold mb-4">{t('wrongReview.title')}</h1>
 
       <div className="flex flex-wrap gap-2 mb-4">
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant={mode === 'all' ? 'default' : 'outline'} size="sm" className="gap-1 text-xs">{mode === 'all' ? '全部' : mode === 'practice' ? '练习' : '考试'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>

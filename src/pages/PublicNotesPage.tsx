@@ -356,7 +356,6 @@ export function Component() {
 
  return (
   <div className="space-y-4">
-   <h1 className="text-xl lg:text-2xl font-bold">{t('notes.title')}</h1>
    <Tabs value={activeTab} onValueChange={handleTabChange}>
     <TabsList>
      <TabsTrigger value="my">{t('notes.tabMy')}</TabsTrigger>

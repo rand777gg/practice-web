@@ -90,10 +90,15 @@ export const useDashboardStore = create<DashboardState>()(
         const state = get()
         if (state.planCache && Date.now() - state.planCache.fetchedAt < PLAN_CACHE_TTL && state.planCache.refreshVersion === refreshVersion) return state.planCache
 
+        // Get per-subject reset timestamps
+        const { data: profile } = await supabase.from('profiles').select('subject_reset_at').eq('id', userId).single()
+        const subjectResets = (profile?.subject_reset_at ?? null) as Record<string, string> | null
+
         // Single RPC call replaces: paginated questions + paginated user_answers + client-side Set counting
         const { data: rows } = await supabase.rpc('get_subject_progress', {
           p_user_id: userId,
           p_plan_reset_at: planResetAt || null,
+          p_subject_resets: subjectResets,
         }) as { data: { subject: string; total: number; done_all: number }[] | null }
 
         const subjectProgress: Record<string, { total: number; done: number }> = {}

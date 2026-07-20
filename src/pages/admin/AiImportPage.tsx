@@ -831,8 +831,7 @@ export function Component() {
         <Button variant="ghost" size="icon" asChild>
           <Link to="/admin/questions"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <h1 className="text-xl font-bold">AI 智能解析</h1>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => setShowHistoryDialog(true)}>
+<Button variant="ghost" size="sm" className="gap-1 text-xs ml-auto" onClick={() => setShowHistoryDialog(true)}>
           <Clock className="h-3.5 w-3.5" />
           历史记录{history.length > 0 ? ` (${history.length})` : ''}
         </Button>

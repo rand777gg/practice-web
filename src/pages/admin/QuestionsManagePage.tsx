@@ -255,8 +255,7 @@ export function Component() {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold">{t('questions.title')}</h1>
-          <p className="text-sm text-muted-foreground">{count} {t('questions.total')}</p>
+<p className="text-sm text-muted-foreground">{count} {t('questions.total')}</p>
         </div>
         <div className="flex gap-2" ref={btnRowRef}>
           {([

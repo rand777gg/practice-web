@@ -38,6 +38,7 @@ export function PlanProgress() {
   const version = useRefreshStore((s) => s.version)
   const deadline = profile?.deadline ?? null
   const planResetAt = profile?.plan_reset_at ?? null
+  const subjectResetAt = profile?.subject_reset_at ?? null
   const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
@@ -70,6 +71,7 @@ export function PlanProgress() {
           p_plan_reset_at: planResetAt || null,
           p_today_since: longTodaySince,
           p_subjects: planSubjects.length > 0 ? planSubjects : null,
+          p_subject_resets: subjectResetAt,
         })
         if (cancelled) return
         if (ltErr) { console.error('PlanProgress lt:', ltErr); return }
@@ -99,6 +101,7 @@ export function PlanProgress() {
           p_plan_reset_at: dailyResetAt || null,
           p_today_since: dailyTodaySince,
           p_subjects: targetSubjects,
+          p_subject_resets: subjectResetAt,
         })
         if (cancelled) return
         if (dtErr) { console.error('PlanProgress dt:', dtErr); return }
@@ -147,7 +150,7 @@ export function PlanProgress() {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
+  }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), JSON.stringify(subjectResetAt), version])
 
   // Listen for direct refresh events — bypass React batching entirely
   useEffect(() => {
