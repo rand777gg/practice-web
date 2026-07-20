@@ -106,13 +106,17 @@ export function PracticeSession() {
   const [showSkeleton, setShowSkeleton] = useState(false)
   const [questionReady, setQuestionReady] = useState(true)
   const skeletonTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
+  const skeletonVisibleRef = useRef(false)
+  useEffect(() => { skeletonVisibleRef.current = showSkeleton }, [showSkeleton])
+  const isInitialMount = useRef(true)
   useEffect(() => {
-    if (isLoading && !showSkeleton && !question) {
+    if (isLoading && !showSkeleton && (isInitialMount.current || !question)) {
       skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 150)
     }
     if (!isLoading) {
       if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current)
       setShowSkeleton(false)
+      isInitialMount.current = false
     }
     return () => { if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current) }
   }, [isLoading, question])
@@ -446,7 +450,7 @@ export function PracticeSession() {
       return
     }
 
-    await new Promise(r => setTimeout(r, 400))
+    if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (fetchGenRef.current !== myGen) return
 
     setQuestion(qRes.data as unknown as Question)
@@ -462,7 +466,7 @@ export function PracticeSession() {
     setIsPublic(latestIsPublic)
 
     setIsLoading(false)
-    await new Promise(r => setTimeout(r, 400))
+    if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (fetchGenRef.current !== myGen) return
     setQuestionReady(true)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope])
@@ -508,7 +512,7 @@ export function PracticeSession() {
     if (preloaded && preloaded.index === index) {
       preloadRef.current = null
       setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
-      await new Promise(r => setTimeout(r, 400))
+      if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
       setQuestion(preloaded.question)
       setAttemptCount(preloaded.attempts)
@@ -516,7 +520,7 @@ export function PracticeSession() {
       setNote(preloaded.note)
       setIsPublic(preloaded.isPublic)
       setIsLoading(false)
-      await new Promise(r => setTimeout(r, 400))
+      if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
       setQuestionReady(true)
       preloadNext(index + 1, ids, myGen)
@@ -531,13 +535,13 @@ export function PracticeSession() {
     ])
     if (seqFetchGenRef.current !== myGen) return
     if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
-    await new Promise(r => setTimeout(r, 400))
+    if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (seqFetchGenRef.current !== myGen) return
     setQuestion(qRes.data as unknown as Question)
     const sd = statsRes?.data; setAttemptCount(sd?.length ?? 0); setWrongCount(sd?.filter((a: any) => !a.is_correct).length ?? 0)
     setNote(sd?.find((a: any) => a.note)?.note ?? ''); setIsPublic(sd?.find((a: any) => a.note)?.is_public ?? false)
     setIsLoading(false)
-    await new Promise(r => setTimeout(r, 400))
+    if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (seqFetchGenRef.current !== myGen) return
     setQuestionReady(true)
 
@@ -626,7 +630,6 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
-    useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
 
     if (questionMode === 'sequential') { const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
@@ -678,7 +681,6 @@ export function PracticeSession() {
     const u = useAuthStore.getState().user; if (!u) return
     await supabase.from('user_excluded_questions').upsert({ user_id: u.id, question_id: question.id }, { onConflict: 'user_id, question_id' })
     bumpRefresh()
-    useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
     if (questionMode === 'sequential') {
       // Remove excluded question from current session
@@ -705,7 +707,6 @@ export function PracticeSession() {
     answeredThisSession.current.add(question.id)
     setIsSubmitted(true)
     bumpRefresh()
-    useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
   }, [question, saveAnswer, bumpRefresh])
 
@@ -1005,7 +1006,7 @@ export function PracticeSession() {
           ) : question ? (
             <>
               <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                <QuestionCard question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+                <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
               </div>
               {isSubmitted && (
                 <div className="space-y-1.5">

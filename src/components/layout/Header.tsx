@@ -7,7 +7,6 @@ import { Link } from 'react-router-dom'
 import { Settings, Menu, Moon, Sparkles, Sun, Scan } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
 import { QrScanner } from '@/components/auth/QrScanner'
-import { useRefreshStore } from '@/stores/refresh-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useT } from '@/i18n/use-t'
 
@@ -18,7 +17,6 @@ interface Props {
 export function Header({ onMenuClick }: Props) {
   const { t } = useT()
   const { theme, toggle } = useThemeStore()
-  const planV = useRefreshStore((s) => s.planVersion)
   const { isEnabled } = useSettingsStore()
   const summaryVisible = hasAiConfig() && isEnabled('summary')
   const [aiOpen, setAiOpen] = useState(false)
@@ -35,7 +33,7 @@ export function Header({ onMenuClick }: Props) {
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <PlanProgress key={planV} />
+        <PlanProgress />
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {summaryVisible && (
