@@ -852,19 +852,43 @@ export function PracticeSession() {
           </Button>
         </div>
       ) : showSkeleton ? (
-        <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
-          <Skeleton className="h-6 w-3/4" />
-          <div className="flex flex-wrap gap-1.5">
-            <Skeleton className="h-5 w-16 rounded-full" />
-            <Skeleton className="h-5 w-20 rounded-full" />
+        <div className="space-y-4 animate-pulse">
+          <div className="rounded-xl border bg-card p-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Skeleton className="h-6 w-14 rounded-md" />
+              <Skeleton className="h-6 w-20 rounded-md" />
+              <Skeleton className="h-6 w-16 rounded-md" />
+              <Skeleton className="h-7 w-7 rounded-md ml-auto" />
+            </div>
+            <div className="grid gap-y-1.5 text-xs" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
+              <Skeleton className="h-3 w-10" />
+              <Skeleton className="h-2 rounded-full" />
+              <Skeleton className="h-3 w-8" />
+              <Skeleton className="h-3 w-8" />
+              <Skeleton className="h-2.5 rounded-full" />
+              <Skeleton className="h-3 w-8" />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Skeleton className="h-12 w-full rounded-lg" />
-            <Skeleton className="h-12 w-full rounded-lg" />
-            <Skeleton className="h-12 w-full rounded-lg" />
-            <Skeleton className="h-12 w-full rounded-lg" />
+          <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Skeleton className="h-5 w-12 rounded-full" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <div className="space-y-1.5">
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-5/6" />
+              <Skeleton className="h-5 w-3/4" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+            </div>
+            <div className="flex justify-end">
+              <Skeleton className="h-10 w-32" />
+            </div>
           </div>
-          <Skeleton className="h-10 w-32" />
         </div>
       ) : noQuestions && questionMode === 'sequential' ? (
         <div className="text-center py-12 space-y-4">
