@@ -317,21 +317,24 @@ AS $$
       SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
       UNION SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
     ) t),
-    (WITH expanded AS (
-      SELECT DISTINCT q.subject, trim(kp) AS kp
-      FROM public.questions q,
-      LATERAL unnest(regexp_split_to_array(q.key_points, '[,，;；]')) AS kp
-      WHERE q.key_points IS NOT NULL AND trim(kp) <> ''
+    (WITH with_kp AS (
+      SELECT subject, jsonb_agg(kp ORDER BY kp) AS key_points
+      FROM (
+        SELECT DISTINCT q.subject, trim(kp) AS kp
+        FROM public.questions q,
+        LATERAL unnest(regexp_split_to_array(q.key_points, '[,，;；]')) AS kp
+        WHERE q.key_points IS NOT NULL AND trim(kp) <> ''
+      ) sub
+      GROUP BY subject
+    ), all_subj AS (
+      SELECT DISTINCT subject FROM public.questions WHERE subject IS NOT NULL
     )
     SELECT COALESCE(jsonb_agg(
-      jsonb_build_object('subject', subject, 'key_points', key_points)
-      ORDER BY subject
+      jsonb_build_object('subject', a.subject, 'key_points', COALESCE(w.key_points, '[]'::jsonb))
+      ORDER BY a.subject
     ), '[]'::jsonb)
-    FROM (
-      SELECT subject, jsonb_agg(kp ORDER BY kp) AS key_points
-      FROM expanded
-      GROUP BY subject
-    ) t2),
+    FROM all_subj a
+    LEFT JOIN with_kp w ON a.subject = w.subject),
     NOW()
   ON CONFLICT (id) DO UPDATE SET
     subjects = EXCLUDED.subjects,
@@ -394,6 +397,7 @@ CREATE TABLE IF NOT EXISTS public.practice_sequential_state (
   user_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   session_key   TEXT NOT NULL DEFAULT 'default',
   selected_kps  TEXT[] NOT NULL DEFAULT '{}',
+  plan_subjects TEXT[] NOT NULL DEFAULT '{}',
   question_ids  UUID[] NOT NULL DEFAULT '{}',
   current_index    INTEGER NOT NULL DEFAULT 0,
   subject_positions JSONB NOT NULL DEFAULT '{}',
@@ -533,6 +537,11 @@ DECLARE
   v_kp_arr TEXT[];
   v_subj_arr TEXT[];
   v_restored_index INT;
+  v_plan_reset TIMESTAMPTZ;
+  v_subject_resets JSONB;
+  v_answered_set UUID[];
+  v_q_subj TEXT;
+  v_i INT;
   v_saved_kps TEXT[];
   v_sps JSONB;
   v_new_data JSONB;
@@ -642,6 +651,36 @@ BEGIN
     v_restored_index := 0;
   END IF;
 
+  -- Recalculate resume index based on answered questions (same logic as start_sequential_session)
+  v_answered_set := '{}'::UUID[];
+  SELECT pd.plan_reset_at, COALESCE(pd.subject_reset_at, '{}'::jsonb)
+  INTO v_plan_reset, v_subject_resets FROM public.profiles pd WHERE pd.id = p_user_id;
+  IF array_length(v_all_ids, 1) > 0 THEN
+    SELECT array_agg(ua.question_id) INTO v_answered_set
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id AND ua.question_id = ANY(v_all_ids)
+      AND (v_plan_reset IS NULL OR ua.answered_at >= v_plan_reset);
+    IF v_answered_set IS NULL THEN v_answered_set := '{}'::UUID[]; END IF;
+    FOR v_i IN 1..array_length(v_all_ids, 1) LOOP
+      v_q_subj := v_all_subjs[v_i];
+      IF v_subject_resets ? v_q_subj THEN
+        PERFORM 1 FROM public.user_answers ua
+        WHERE ua.user_id = p_user_id AND ua.question_id = v_all_ids[v_i]
+          AND ua.answered_at >= (v_subject_resets->>v_q_subj)::TIMESTAMPTZ;
+        IF NOT FOUND THEN v_answered_set := array_remove(v_answered_set, v_all_ids[v_i]); END IF;
+      END IF;
+    END LOOP;
+    -- Find first unanswered question
+    v_restored_index := 0;
+    FOR v_i IN 1..array_length(v_all_ids, 1) LOOP
+      IF NOT (v_all_ids[v_i] = ANY(v_answered_set)) THEN v_restored_index := v_i - 1; EXIT; END IF;
+      v_restored_index := v_i;
+    END LOOP;
+    IF v_restored_index >= array_length(v_all_ids, 1) THEN
+      v_restored_index := GREATEST(0, array_length(v_all_ids, 1) - 1);
+    END IF;
+  END IF;
+
   -- P1: Preload first question + stats into response (skip loadSequentialQuestion round-trip)
   v_first_question := NULL;
   v_first_stats := NULL;
@@ -681,7 +720,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.load_practice_session(UUID, TEXT) TO authenticated;
 
 -- 开始顺序刷体会话（合并ILIK+excluded+profiles+answers查询为1次RPC）
-CREATE OR REPLACE FUNCTION public.start_sequential_session(p_user_id UUID, p_kps TEXT[], p_subjects TEXT[] DEFAULT NULL, p_question_type TEXT DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.start_sequential_session(p_user_id UUID, p_kps TEXT[], p_subjects TEXT[] DEFAULT NULL, p_question_type TEXT DEFAULT NULL, p_session_key TEXT DEFAULT NULL)
 RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE
@@ -697,7 +736,11 @@ DECLARE
   v_session_key TEXT;
   v_result JSONB;
 BEGIN
-  SELECT array_to_string(array_agg(kp ORDER BY kp), '|') INTO v_session_key FROM unnest(p_kps) kp;
+  IF p_session_key IS NOT NULL THEN
+    v_session_key := p_session_key;
+  ELSE
+    SELECT array_to_string(array_agg(kp ORDER BY kp), '|') INTO v_session_key FROM unnest(p_kps) kp;
+  END IF;
 
   -- 1. Query matching questions via kp_question_map (pre-computed, no ILIKE scan)
   WITH matched AS (
@@ -768,7 +811,7 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT, TEXT) TO authenticated;
 
 -- 获取学科/分类元数据
 CREATE OR REPLACE FUNCTION public.get_question_meta(p_subject TEXT DEFAULT NULL)

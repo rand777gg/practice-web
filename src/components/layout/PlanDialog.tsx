@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Check, ChevronDown, HelpCircle, Plus, Play, X } from 'lucide-react'
+import { Check, ChevronDown, HelpCircle, Plus, X } from 'lucide-react'
 import {
   Dialog,
   DialogClose,
@@ -39,7 +39,6 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { Checkbox } from '@/components/ui/checkbox'
 import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget } from '@/types'
@@ -69,7 +68,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
   const [planLoading, setPlanLoading] = useState(false)
   const [confirmReset, setConfirmReset] = useState<'long' | number | null>(null)
-  const [resetTooEasy, setResetTooEasy] = useState(false)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
   // Mutual exclusion: subjects in long-term plan can't be in daily targets and vice versa
@@ -159,8 +157,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
     const merged = { ...existingResets, ...resetEntries }
     await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', user.id)
-    if (resetTooEasy) {
-      await supabase.from('user_excluded_questions').delete().eq('user_id', user.id)
+    // Clear "too easy" exclusions only for the reset subjects
+    if (selectedSubjects.length > 0) {
+      const { data: qids } = await supabase.from('questions').select('id').in('subject', selectedSubjects)
+      if (qids && qids.length > 0) {
+        await supabase.from('user_excluded_questions').delete().eq('user_id', user.id).in('question_id', qids.map(q => q.id))
+      }
     }
     // Rebuild active session so position recovery re-scans answers with new reset timestamps
     const s = useSequentialStore.getState()
@@ -184,13 +186,18 @@ export function PlanDialog({ open, onOpenChange }: Props) {
     // Reset subjects in this daily target group
     const resetEntries: Record<string, string> = {}
     const target = dailyTargets[groupIdx]
+    const resetSubjects = target ? target.subjects.map(s => s.subject) : []
     if (target) for (const s of target.subjects) resetEntries[s.subject] = now
     const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', user.id).single()
     const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
     const merged = { ...existingResets, ...resetEntries }
     await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', user.id)
-    if (resetTooEasy) {
-      await supabase.from('user_excluded_questions').delete().eq('user_id', user.id)
+    // Clear "too easy" exclusions only for the reset subjects
+    if (resetSubjects.length > 0) {
+      const { data: qids } = await supabase.from('questions').select('id').in('subject', resetSubjects)
+      if (qids && qids.length > 0) {
+        await supabase.from('user_excluded_questions').delete().eq('user_id', user.id).in('question_id', qids.map(q => q.id))
+      }
     }
     const s = useSequentialStore.getState()
     if (s.isActive && s.sessionKey) {
@@ -247,6 +254,14 @@ export function PlanDialog({ open, onOpenChange }: Props) {
       .eq('id', user.id)
     await refreshProfile()
 
+    // Preserve the old plan's session as history. A changed plan gets its own
+    // session scope instead of rewriting the old question sequence.
+    const activeSession = useSequentialStore.getState()
+    if (activeSession.isActive && activeSession.sessionKey) {
+      await activeSession.saveToDb(user.id)
+      activeSession.reset()
+    }
+
     // Sync active sequential session with new plan subjects
     const allPlanSubs = [...new Set([...selectedSubjects, ...effectiveTargets.flatMap(t => t.subjects.map(s => s.subject))])]
     if (allPlanSubs.length > 0) {
@@ -263,8 +278,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         if (newPlanKps.length > 0) {
           await s.mergeKps(user.id, newPlanKps, allPlanSubs, '')
         }
-      } else {
-        await s.syncKpsFromPlanSubjects(user.id, allPlanSubs)
       }
     }
 
@@ -581,16 +594,26 @@ export function PlanDialog({ open, onOpenChange }: Props) {
           <Button variant="outline" size="sm" className="text-xs" onClick={handleSave} disabled={saving}>
             {saving ? t('questions.saving') : t('plan.save')}
           </Button>
-          <Button size="sm" className="text-xs" asChild>
-            <Link to="/practice">
-              <Play className="h-3.5 w-3.5" />
-              开始学习
-            </Link>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="text-xs">
+                顺序刷题
+                <ChevronDown className="h-3 w-3 ml-0.5 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem asChild>
+                <Link to="/practice?mode=seq">顺序刷题</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/practice?mode=random">随机刷题</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </DialogFooter>
       </DialogContent>
 
-      <AlertDialog open={confirmReset !== null} onOpenChange={(open) => { if (!open) { setConfirmReset(null); setResetTooEasy(false) } }}>
+      <AlertDialog open={confirmReset !== null} onOpenChange={(open) => { if (!open) setConfirmReset(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认重置</AlertDialogTitle>
@@ -599,10 +622,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                 ? '重置后，所选科目的已完成题目计数将归零。'
                 : '重置后，该组自定义目标的已完成计数将归零。'}
             </AlertDialogDescription>
-            <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
-              <Checkbox checked={resetTooEasy} onCheckedChange={(v) => setResetTooEasy(v === true)} />
-              同时将已标记为"太简单"的题目恢复
-            </label>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
@@ -610,7 +629,6 @@ export function PlanDialog({ open, onOpenChange }: Props) {
               onClick={() => {
                 if (confirmReset === 'long') handleResetLong()
                 else if (typeof confirmReset === 'number') handleResetDaily(confirmReset)
-                setResetTooEasy(false)
                 setConfirmReset(null)
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

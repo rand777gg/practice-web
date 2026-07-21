@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -12,6 +12,7 @@ import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
+import { PlanDialog } from '@/components/layout/PlanDialog'
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -50,6 +51,12 @@ const PS_FILTERS = 'practice_filters'
 
 // Module-level KP cache (P3: avoid repeated question_meta_cache queries across mounts)
 let kpCache: { subject: string; keyPoints: string[] }[] | null = null
+
+function sameSubjects(left: string[], right: string[]) {
+  if (left.length !== right.length) return false
+  const rightSet = new Set(right)
+  return left.every((subject) => rightSet.has(subject))
+}
 
 interface PracticeFilters {
   selectedSubjects: string[]
@@ -92,6 +99,7 @@ function FilterBtn({ label, children }: { label: string; children: React.ReactNo
 
 export function PracticeSession() {
   const saved = useRef(loadFilters())
+  const [searchParams, setSearchParams] = useSearchParams()
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
@@ -143,7 +151,6 @@ export function PracticeSession() {
   const seqLoadSessions = useSequentialStore((s) => s.loadSessions)
   const seqSwitchSession = useSequentialStore((s) => s.switchSession)
   const seqSessionKey = useSequentialStore((s) => s.sessionKey)
-  const seqMergeKps = useSequentialStore((s) => s.mergeKps)
   const seqGetCurrentKpInfo = useSequentialStore((s) => s.getCurrentKpInfo)
   const seqSyncStatus = useSequentialStore((s) => s.syncStatus)
   const seqLastSyncAt = useSequentialStore((s) => s.lastSyncAt)
@@ -172,6 +179,9 @@ export function PracticeSession() {
   }, [profile?.daily_targets, planSubjects])
 
   const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
+  const planSessionScope = useMemo(() => JSON.stringify([...planSubjectSet].sort()), [planSubjectSet])
+  const planSubjectSetRef = useRef(planSubjectSet)
+  planSubjectSetRef.current = planSubjectSet
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
 
   const initRef = useRef(false)
@@ -180,9 +190,15 @@ export function PracticeSession() {
   const [selectedType, setSelectedType] = useState<QuestionType | ''>((saved.current?.selectedType as QuestionType) ?? '')
   const [selectedKeyPoint, setSelectedKeyPoint] = useState(saved.current?.selectedKeyPoint ?? '')
   const [kpBySubject, setKpBySubject] = useState<{ subject: string; keyPoints: string[] }[]>([])
-  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'sequential'>((saved.current?.questionMode as any) ?? 'sequential')
+  const [questionMode, setQuestionMode] = useState<'new' | 'wrong' | 'sequential'>(() => {
+    const urlMode = searchParams.get('mode')
+    if (urlMode === 'seq') return 'sequential'
+    if (urlMode === 'random') return 'new'
+    return (saved.current?.questionMode as any) ?? 'sequential'
+  })
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
+  const [planDialogOpen, setPlanDialogOpen] = useState(false)
   const subjectPosRef = useRef<Record<string, number>>({})
   const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -219,6 +235,14 @@ export function PracticeSession() {
     for (const s of kpBySubject) for (const k of s.keyPoints) m.set(k, s.subject)
     return m
   }, [kpBySubject])
+
+  // Sequential mode must scope questions to the subjects the chosen KPs actually
+  // belong to — the unrelated "学科" filter dropdown can point at a different
+  // subject and would otherwise filter out every matched question.
+  const subjectsForKps = useCallback((kps: string[]) => {
+    const subs = [...new Set(kps.map((k) => kpToSubjectRef.current.get(k)).filter((s): s is string => Boolean(s)))]
+    return subs.length > 0 ? subs : [...planSubjectSet]
+  }, [planSubjectSet])
 
   const seqQuestionKps = useSequentialStore((s) => s.questionKps)
   const seqSelectedKps = useSequentialStore((s) => s.selectedKps)
@@ -281,8 +305,17 @@ export function PracticeSession() {
     if (user) saveFiltersToDb(user.id, filters)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
 
+  // Sync questionMode to URL param
+  useEffect(() => {
+    const mode = questionMode === 'sequential' ? 'seq' : 'random'
+    if (searchParams.get('mode') !== mode) {
+      setSearchParams(prev => { prev.set('mode', mode); return prev }, { replace: true })
+    }
+  }, [questionMode])
+
   // Load filters from DB on mount, fallback to localStorage
   const dbFiltersRef = useRef(false)
+  const urlModeRef = useRef(searchParams.get('mode'))
   useEffect(() => {
     if (dbFiltersRef.current) return
     dbFiltersRef.current = true
@@ -295,7 +328,7 @@ export function PracticeSession() {
         if (f.selectedCategory) setSelectedCategory(f.selectedCategory)
         if (f.selectedType) setSelectedType(f.selectedType as QuestionType)
         if (f.selectedKeyPoint) setSelectedKeyPoint(f.selectedKeyPoint)
-        if (f.questionMode) setQuestionMode(f.questionMode as any)
+        if (f.questionMode && !urlModeRef.current) setQuestionMode(f.questionMode as any)
         if (f.questionScope) setQuestionScope(f.questionScope as any)
       }
     })
@@ -361,6 +394,7 @@ export function PracticeSession() {
     setSelectedAnswer(null)
     setIsSubmitted(false)
     setAnswerId(null)
+    setNoQuestions(false)
 
     const currentUser = useAuthStore.getState().user
 
@@ -532,7 +566,7 @@ export function PracticeSession() {
     // P1: Check for preloaded question from load_practice_session RPC (skip 1 round-trip)
     const rpcPreloaded = useSequentialStore.getState().consumePreloaded()
     if (rpcPreloaded?.question && index === useSequentialStore.getState().currentIndex) {
-      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
+      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
       setQuestion(rpcPreloaded.question as unknown as Question)
@@ -552,7 +586,7 @@ export function PracticeSession() {
     const preloaded = preloadRef.current
     if (preloaded && preloaded.index === index) {
       preloadRef.current = null
-      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
+      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
       setQuestion(preloaded.question)
@@ -568,7 +602,7 @@ export function PracticeSession() {
       return
     }
 
-    setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null)
+    setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
     const currentUser = useAuthStore.getState().user
     const [qRes, statsRes] = await Promise.all([
       supabase.from('questions').select('*').eq('id', ids[index]).single(),
@@ -605,7 +639,7 @@ export function PracticeSession() {
     markPracticeSync()
     supabase.from('practice_sequential_state').upsert({
       user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
-      question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
+      plan_subjects: s.planSubjects, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
     }).then(() => {})
   }, [])
 
@@ -613,37 +647,48 @@ export function PracticeSession() {
     const user = useAuthStore.getState().user; if (!user || kps.length === 0) return
     triggerKpRefresh()
     const s = useSequentialStore.getState()
-    const subs = selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
+    const subs = subjectsForKps(kps)
+    saveCurrentSession()
     if (s.isActive && s.sessionKey) {
       // Save current subject position before merging
       if (currentSubject) { subjectPosRef.current[currentSubject] = s.currentIndex; saveSubjectPos() }
       // Active session — merge new KPs to preserve current position
-      await seqMergeKps(user.id, kps, subs, selectedType)
+      await seqStart(user.id, kps, subs, '')
       seqLoadSessions(user.id)
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
     } else {
       saveCurrentSession()
-      await seqStart(user.id, kps, subs, selectedType)
+      await seqStart(user.id, kps, subs, '')
       seqLoadSessions(user.id)
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
     }
-  }, [selectedSubjects, selectedType, planSubjectSet, seqStart, seqMergeKps, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh])
+  }, [subjectsForKps, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh])
 
   const modeInitRef = useRef(false)
   useEffect(() => {
     if (questionMode === 'sequential') {
       const user = useAuthStore.getState().user
-      if (!user) { setSequentialDialogOpen(true); return }
+      if (!user) { setIsLoading(false); setSequentialDialogOpen(true); return }
+      const currentPlanSubjects = [...planSubjectSetRef.current]
+      if (currentPlanSubjects.length === 0) { seqReset(); setIsLoading(false); return }
+      const s = useSequentialStore.getState()
+      if (s.isActive && s.questionIds.length > 0 && sameSubjects(s.planSubjects, currentPlanSubjects)) {
+        loadSequentialQuestion(s.currentIndex); return
+      }
+      if (s.isActive) seqReset()
       seqLoadSessions(user.id).then(() => {
         const sessions = useSequentialStore.getState().sessions
-        if (sessions.length > 0) {
-          const latest = sessions[0]
-          seqLoadFromDb(user.id, latest.sessionKey).then(r => {
-            const s = useSequentialStore.getState()
-            if (r && s.questionIds.length > 0) loadSequentialQuestion(s.currentIndex)
-            else setSequentialDialogOpen(true)
+        const validSession = sessions.find((session) =>
+          (session.questionIds?.length ?? 0) > 0 && sameSubjects(session.planSubjects, currentPlanSubjects),
+        )
+        if (validSession) {
+          seqLoadFromDb(user.id, validSession.sessionKey).then(r => {
+            const s2 = useSequentialStore.getState()
+            if (r && s2.questionIds.length > 0) loadSequentialQuestion(s2.currentIndex)
+            else { setIsLoading(false); setSequentialDialogOpen(true) }
           })
         } else {
+          setIsLoading(false)
           setSequentialDialogOpen(true)
         }
       })
@@ -651,7 +696,7 @@ export function PracticeSession() {
       seqReset(); fetchRandomQuestion()
     }
     modeInitRef.current = true
-  }, [questionMode])
+  }, [questionMode, planSessionScope])
 
   const subFetchRef = useRef(false)
   useEffect(() => {
@@ -815,7 +860,7 @@ export function PracticeSession() {
                         for (const kp of s.selectedKps) { const subj = kpToSubjectRef.current.get(kp); if (subj) subjCounts[subj] = (subjCounts[subj] || 0) + 1 }
                         const subjEntries = Object.entries(subjCounts)
                         return (
-                          <button key={s.sessionKey} type="button" className={cn('w-full rounded-lg border p-2.5 text-left transition-colors hover:bg-accent', isActive && 'border-primary/50 bg-primary/5')}
+                          <div key={s.sessionKey} role="button" tabIndex={0} className={cn('w-full rounded-lg border p-2.5 text-left transition-colors hover:bg-accent cursor-pointer', isActive && 'border-primary/50 bg-primary/5')}
                             onClick={async () => {
                               const u = useAuthStore.getState().user; if (!u) return
                               if (isActive) { setSequentialDialogOpen(true); setDrawerOpen(false); return }
@@ -823,7 +868,8 @@ export function PracticeSession() {
                               await seqSwitchSession(u.id, s.sessionKey)
                               loadSequentialQuestion(useSequentialStore.getState().currentIndex)
                               setDrawerOpen(false)
-                            }}>
+                            }}
+                            onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); (ev.currentTarget as HTMLElement).click() } }}>
                             <div className="flex items-center gap-1.5 mb-1">
                               {subjEntries.length > 0 ? subjEntries.map(([subj, n], idx) => (
                                 <span key={subj} className="inline-flex items-center gap-1.5">
@@ -844,7 +890,7 @@ export function PracticeSession() {
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
-                          </button>
+                          </div>
                         )
                       })}
                     </div>
@@ -858,7 +904,10 @@ export function PracticeSession() {
           </DrawerContent>
         </Drawer>
 
-      <KpSelectDialog open={sequentialDialogOpen} onOpenChange={setSequentialDialogOpen} kpBySubject={kpBySubject} planSubjects={[...planSubjectSet]} selectedKps={seqKps} onConfirm={handleKpConfirm} />
+      {planSubjectSet.size > 0 && (
+        <KpSelectDialog open={sequentialDialogOpen} onOpenChange={setSequentialDialogOpen} kpBySubject={kpBySubject} planSubjects={[...planSubjectSet]} selectedKps={seqKps} onConfirm={handleKpConfirm} />
+      )}
+      <PlanDialog open={planDialogOpen} onOpenChange={setPlanDialogOpen} />
 
       <AlertDialog open={blockSkipOpen} onOpenChange={setBlockSkipOpen}>
         <AlertDialogContent>
@@ -902,21 +951,19 @@ export function PracticeSession() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {questionMode === 'sequential' && !seqActive && !isLoading ? (
-        <div className="text-center py-12 space-y-4">
-          <p className="text-muted-foreground">尚未选择知识点</p>
-          <Button onClick={() => setSequentialDialogOpen(true)}>选择知识点开始刷题</Button>
-        </div>
-      ) : planSubjectSet.size === 0 && selectedSubjects.length === 0 && !isLoading ? (
+      {planSubjectSet.size === 0 && (questionMode === 'sequential' || selectedSubjects.length === 0) && !isLoading ? (
         <div className="text-center py-12 space-y-4">
           <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground/40" />
           <p className="text-lg font-medium">尚未设置学习计划</p>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto">
             设置学习计划后，系统将自动推荐对应科目的题目，并追踪每日进度。
           </p>
-          <Button asChild>
-            <Link to="/">去设置学习计划</Link>
-          </Button>
+          <Button onClick={() => setPlanDialogOpen(true)}>去设置学习计划</Button>
+        </div>
+      ) : questionMode === 'sequential' && !seqActive && !isLoading ? (
+        <div className="text-center py-12 space-y-4">
+          <p className="text-muted-foreground">尚未选择知识点</p>
+          <Button onClick={() => setSequentialDialogOpen(true)}>选择知识点开始刷题</Button>
         </div>
       ) : showSkeleton ? (
         <div className="space-y-4 animate-pulse">
@@ -964,7 +1011,7 @@ export function PracticeSession() {
           <p className="text-muted-foreground">{t('practice.sequentialDoneDesc')}</p>
           <div className="flex gap-2 justify-center">
             <Button variant="outline" onClick={() => { setQuestionMode('new'); seqReset(); fetchRandomQuestion() }}>{t('practice.backToNormalMode')}</Button>
-            <Button onClick={() => { const u = useAuthStore.getState().user; if (u) { seqStart(u.id, seqKps, selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet], selectedType).then(() => loadSequentialQuestion(0)) } }}><Shuffle className="h-4 w-4" />{t('practice.tryAgain')}</Button>
+            <Button onClick={() => { const u = useAuthStore.getState().user; if (u) { seqStart(u.id, seqKps, subjectsForKps(seqKps), '').then(() => loadSequentialQuestion(0)) } }}><Shuffle className="h-4 w-4" />{t('practice.tryAgain')}</Button>
           </div>
         </div>
       ) : noQuestions ? (

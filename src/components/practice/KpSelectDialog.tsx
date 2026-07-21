@@ -22,8 +22,9 @@ export function KpSelectDialog({ open, onOpenChange, kpBySubject, planSubjects, 
 
   // kpBySubject is always fresh from question_meta_cache — filter client-side
   const filteredSubjects = useMemo(() => {
-    if (planSubjects.length === 0) return kpBySubject
-    return kpBySubject.filter(s => planSubjects.includes(s.subject))
+    const withKps = kpBySubject.filter(s => s.keyPoints.length > 0)
+    if (planSubjects.length === 0) return withKps
+    return withKps.filter(s => planSubjects.includes(s.subject))
   }, [kpBySubject, planSubjects])
 
   const allKps = useMemo(() => filteredSubjects.flatMap(s => s.keyPoints), [filteredSubjects])
