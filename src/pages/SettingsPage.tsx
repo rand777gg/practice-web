@@ -29,7 +29,7 @@ import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { DeviceLabel } from '@/components/ui/device-label'
-import { getTrustInfo, getDeviceId } from '@/lib/otp-trust'
+import { getTrustInfo, getDeviceIdSync } from '@/lib/otp-trust'
 import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -85,7 +85,7 @@ export function Component() {
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
  const trustInfo = getTrustInfo()
- const currentDeviceId = getDeviceId()
+ const currentDeviceId = getDeviceIdSync() || ''
 
  // Detect OAuth redirect result
  useEffect(() => {

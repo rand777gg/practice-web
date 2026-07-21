@@ -49,7 +49,7 @@ export function OtpVerifyDialog({ open, onVerified }: Props) {
       const valid = await verifyOtp(user.id, code)
       if (valid) {
         if (trustThisDevice) {
-          const deviceId = getDeviceId()
+          const deviceId = await getDeviceId()
           const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000
           await setTrustInfo(deviceId, expiresAt)
           trustDeviceRemote(user.id, deviceId).catch(() => {})

@@ -1055,6 +1055,8 @@ CREATE TABLE IF NOT EXISTS public.user_trusted_devices (
   user_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   device_id  TEXT NOT NULL,
   device_name TEXT,
+  custom_name TEXT,
+  device_info JSONB,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, device_id)

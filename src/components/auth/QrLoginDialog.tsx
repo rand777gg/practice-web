@@ -69,7 +69,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
           </DialogTitle>
           <DialogDescription>
             {status === 'generating' && '正在生成二维码...'}
-            {status === 'waiting' && '请使用已登录的手机扫描二维码'}
+            {status === 'waiting' && '请使用信任设备扫描二维码'}
             {status === 'loggingIn' && '正在登录...'}
             {status === 'expired' && '二维码已过期，请重新生成'}
             {status === 'error' && '登录失败，请重试'}

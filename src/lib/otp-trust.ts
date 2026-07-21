@@ -1,4 +1,4 @@
-import { getDeviceInfo } from '@/lib/device-info'
+import { getFingerprint, getDeviceDetail, getFpComponents } from '@/lib/device-info'
 
 export const DEVICE_ID_KEY = 'otp_device_id'
 export const TRUST_KEY = 'otp_trusted_until'
@@ -9,13 +9,17 @@ export interface TrustInfo {
   expiresAt: number
 }
 
-export function getDeviceId(): string {
+export async function getDeviceId(): Promise<string> {
   let id = localStorage.getItem(DEVICE_ID_KEY)
   if (!id) {
-    id = crypto.randomUUID()
+    id = await getFingerprint()
     localStorage.setItem(DEVICE_ID_KEY, id)
   }
   return id
+}
+
+export function getDeviceIdSync(): string | null {
+  return localStorage.getItem(DEVICE_ID_KEY)
 }
 
 export function getTrustInfo(): TrustInfo | null {
@@ -33,13 +37,17 @@ export function getTrustInfo(): TrustInfo | null {
 export function isDeviceTrusted(): boolean {
   const info = getTrustInfo()
   if (!info) return false
-  const currentId = getDeviceId()
-  return info.deviceId === currentId && info.expiresAt > Date.now()
+  const currentId = localStorage.getItem(DEVICE_ID_KEY)
+  return currentId != null && info.deviceId === currentId && info.expiresAt > Date.now()
 }
 
 export async function setTrustInfo(deviceId: string, expiresAt: number): Promise<void> {
-  const { displayName } = await getDeviceInfo()
-  localStorage.setItem(TRUST_KEY, JSON.stringify({ deviceId, deviceName: displayName, expiresAt }))
+  const detail = await getDeviceDetail()
+  localStorage.setItem(TRUST_KEY, JSON.stringify({
+    deviceId,
+    deviceName: detail.displayName,
+    expiresAt,
+  }))
 }
 
 export function clearDeviceTrust(): void {
@@ -47,7 +55,8 @@ export function clearDeviceTrust(): void {
 }
 
 export async function trustDeviceRemote(userId: string, deviceId: string): Promise<void> {
-  const { displayName } = await getDeviceInfo()
+  const detail = await getDeviceDetail()
+  const components = getFpComponents() || {}
   const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`
   await fetch(fnUrl, {
     method: 'POST',
@@ -55,6 +64,12 @@ export async function trustDeviceRemote(userId: string, deviceId: string): Promi
       'Content-Type': 'application/json',
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ action: 'trust', userId, deviceId, deviceName: displayName }),
+    body: JSON.stringify({
+      action: 'trust',
+      userId,
+      deviceId,
+      deviceName: detail.displayName,
+      deviceInfo: { ...components, os: detail.os, browser: detail.browser },
+    }),
   })
 }

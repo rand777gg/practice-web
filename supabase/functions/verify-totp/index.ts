@@ -13,7 +13,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { action, userId, code, secret, deviceId, deviceName } = await req.json()
+    const { action, userId, code, secret, deviceId, deviceName, deviceInfo, customName } = await req.json()
 
     if (!action || !userId) {
       return new Response(JSON.stringify({ error: "missing params" }), {
@@ -99,10 +99,12 @@ serve(async (req: Request) => {
       }
 
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null
+      const info = deviceInfo ? { ...deviceInfo, ip } : { ip }
 
       const { error: upsertErr } = await supabaseAdmin
         .from("user_trusted_devices")
-        .upsert({ user_id: userId, device_id: deviceId, device_name: deviceName || null, expires_at: expiresAt }, {
+        .upsert({ user_id: userId, device_id: deviceId, device_name: deviceName || null, custom_name: customName || null, device_info: info, expires_at: expiresAt }, {
           onConflict: "user_id,device_id",
         })
 

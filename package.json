@@ -12,6 +12,7 @@
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
     "@ai-sdk/openai": "^3.0.69",
+    "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@iconify/react": "^6.0.2",
     "@lobehub/icons": "^5.10.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -50,6 +51,7 @@
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^4.12.2",
     "react-router-dom": "^7.17.0",
     "recharts": "^3.9.2",
     "rehype-raw": "^7.0.0",
