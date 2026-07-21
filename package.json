@@ -1,7 +1,7 @@
 {
   "name": "react-practice-web",
   "private": true,
-  "version": "1.16.5",
+  "version": "1.17.14-beta",
   "type": "module",
   "scripts": {
     "dev": "vite",
