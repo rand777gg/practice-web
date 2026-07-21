@@ -26,6 +26,7 @@ import {
  DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { ProviderIcon } from '@/components/ui/provider-icon'
+import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -177,6 +178,8 @@ export function Component() {
      <ArrowLeft className="h-4 w-4" />
     </Button>
     <h1 className="text-xl font-bold">{t('settings.title')}</h1>
+   <div className="flex-1" />
+   <SyncSettingsCard />
    </div>
 
    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
