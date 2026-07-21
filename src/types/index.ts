@@ -71,6 +71,7 @@ export interface Profile {
   plan_reset_at: string | null
   subject_reset_at: Record<string, string> | null
   daily_reset_at: string | null
+  totp_enabled?: boolean
   created_at: string
 }
 

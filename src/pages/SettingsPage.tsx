@@ -27,6 +27,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
+import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
+import { DeviceLabel } from '@/components/ui/device-label'
+import { getTrustInfo, getDeviceId } from '@/lib/otp-trust'
 import { Icon } from '@iconify/react'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -78,8 +81,11 @@ export function Component() {
  const [deleteOpen, setDeleteOpen] = useState(false)
  const [deleting, setDeleting] = useState(false)
  const [logoutOpen, setLogoutOpen] = useState(false)
+ const [trustedDevicesOpen, setTrustedDevicesOpen] = useState(false)
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
+ const trustInfo = getTrustInfo()
+ const currentDeviceId = getDeviceId()
 
  // Detect OAuth redirect result
  useEffect(() => {
@@ -278,6 +284,39 @@ export function Component() {
            </Badge>
           </td>
          </tr>
+         <tr>
+          <td className="py-1.5 pr-4 text-muted-foreground">{t('auth.otpStatus')}</td>
+          <td className="py-1.5">
+           <Badge color={profile?.totp_enabled ? 'green' : 'gray'} variant="soft" radius="full">
+            {profile?.totp_enabled ? t('auth.otpEnabled') : t('auth.otpDisabled')}
+           </Badge>
+          </td>
+         </tr>
+         {profile?.totp_enabled && trustInfo && (
+          <tr>
+           <td className="py-1.5 pr-4 text-muted-foreground align-top">{t('auth.otpCurrentDevice')}</td>
+           <td className="py-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+             <DeviceLabel
+              deviceName={trustInfo.deviceName}
+              fallback={`${currentDeviceId.slice(0, 8)}…`}
+              className="text-xs text-muted-foreground"
+             />
+             <span className="text-xs text-muted-foreground">
+              {t('auth.otpTrustExpires')}: {new Date(trustInfo.expiresAt).toLocaleDateString()}
+             </span>
+             <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px]"
+              onClick={() => setTrustedDevicesOpen(true)}
+             >
+              {t('auth.otpManageDevices')}
+             </Button>
+            </div>
+           </td>
+          </tr>
+         )}
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground">GitHub</td>
           <td className="py-1.5">
@@ -740,6 +779,7 @@ export function Component() {
      </Card>
     </div>
    </div>
+   <TrustedDevicesDialog open={trustedDevicesOpen} onOpenChange={setTrustedDevicesOpen} />
   </div>
  )
 }

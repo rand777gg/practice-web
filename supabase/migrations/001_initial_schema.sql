@@ -1041,3 +1041,35 @@ DO $$ BEGIN
     ALTER TABLE public.user_answers ALTER COLUMN selected_answer TYPE JSONB USING to_jsonb(selected_answer);
   END IF;
 END $$;
+
+-- ============================================================================
+-- 17. TOTP 二次验证 & 设备信任
+-- ============================================================================
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS totp_secret  TEXT,
+  ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS public.user_trusted_devices (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  device_id  TEXT NOT NULL,
+  device_name TEXT,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_utd_user ON public.user_trusted_devices(user_id);
+
+ALTER TABLE public.user_trusted_devices ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS utd_own ON public.user_trusted_devices;
+CREATE POLICY utd_own ON public.user_trusted_devices FOR ALL
+  USING (user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION public.cleanup_expired_devices()
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
+AS $$
+  DELETE FROM public.user_trusted_devices WHERE expires_at < NOW();
+$$;
