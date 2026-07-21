@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { OtpSetupDialog } from '@/components/auth/OtpSetupDialog'
 import { OtpVerifyDialog } from '@/components/auth/OtpVerifyDialog'
+import { PasskeyVerifyDialog } from '@/components/auth/PasskeyVerifyDialog'
 import { isDeviceTrusted, getTrustInfo } from '@/lib/otp-trust'
 import { DeviceLabel } from '@/components/ui/device-label'
 import { useT } from '@/i18n/use-t'
@@ -41,6 +42,7 @@ export function OtpGuard({ children }: Props) {
   const { user, isInitialized, refreshProfile } = useAuthStore()
   const [showSetup, setShowSetup] = useState(false)
   const [showVerify, setShowVerify] = useState(false)
+  const [showPasskeyVerify, setShowPasskeyVerify] = useState(false)
   const [otpCleared, setOtpCleared] = useState(false)
   const [showTrustedToast, setShowTrustedToast] = useState(false)
 
@@ -57,6 +59,13 @@ export function OtpGuard({ children }: Props) {
       return
     }
 
+    // Check preferred 2FA method
+    if (p.preferred_2fa === 'passkey') {
+      setShowPasskeyVerify(true)
+      return
+    }
+
+    // Default TOTP flow
     if (isDeviceTrusted()) {
       setShowTrustedToast(true)
       setOtpCleared(true)
@@ -82,6 +91,22 @@ export function OtpGuard({ children }: Props) {
     setOtpCleared(true)
   }, [])
 
+  const handlePasskeyVerified = useCallback(() => {
+    setShowPasskeyVerify(false)
+    setOtpCleared(true)
+  }, [])
+
+  const handlePasskeyFallback = useCallback(() => {
+    setShowPasskeyVerify(false)
+    // Check device trust before falling back to TOTP
+    if (isDeviceTrusted()) {
+      setShowTrustedToast(true)
+      setOtpCleared(true)
+    } else {
+      setShowVerify(true)
+    }
+  }, [])
+
   if (!user || !isInitialized) return <>{children}</>
   if (!otpCleared) {
     return (
@@ -89,6 +114,11 @@ export function OtpGuard({ children }: Props) {
         {children}
         <OtpSetupDialog open={showSetup} onSetupComplete={handleSetupComplete} />
         <OtpVerifyDialog open={showVerify} onVerified={handleVerifyComplete} />
+        <PasskeyVerifyDialog
+          open={showPasskeyVerify}
+          onVerified={handlePasskeyVerified}
+          onFallback={handlePasskeyFallback}
+        />
       </>
     )
   }

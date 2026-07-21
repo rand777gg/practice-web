@@ -72,7 +72,20 @@ export interface Profile {
   subject_reset_at: Record<string, string> | null
   daily_reset_at: string | null
   totp_enabled?: boolean
+  preferred_2fa?: 'totp' | 'passkey'
   created_at: string
+}
+
+export interface PasskeyCredential {
+  id: string
+  user_id: string
+  credential_id: string
+  public_key: string
+  counter: number
+  transports: string[]
+  device_name: string | null
+  created_at: string
+  last_used_at: string | null
 }
 
 export interface Question {

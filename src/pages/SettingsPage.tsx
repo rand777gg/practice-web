@@ -28,6 +28,7 @@ import {
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
+import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
 import { DeviceLabel } from '@/components/ui/device-label'
 import { getTrustInfo, getDeviceIdSync } from '@/lib/otp-trust'
 import { Icon } from '@iconify/react'
@@ -82,6 +83,7 @@ export function Component() {
  const [deleting, setDeleting] = useState(false)
  const [logoutOpen, setLogoutOpen] = useState(false)
  const [trustedDevicesOpen, setTrustedDevicesOpen] = useState(false)
+ const [passkeySetupOpen, setPasskeySetupOpen] = useState(false)
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
  const trustInfo = getTrustInfo()
@@ -285,17 +287,48 @@ export function Component() {
           </td>
          </tr>
          <tr>
-          <td className="py-1.5 pr-4 text-muted-foreground">{t('auth.otpStatus')}</td>
-          <td className="py-1.5">
-           <Badge color={profile?.totp_enabled ? 'green' : 'gray'} variant="soft" radius="full">
-            {profile?.totp_enabled ? t('auth.otpEnabled') : t('auth.otpDisabled')}
-           </Badge>
-          </td>
-         </tr>
-         {profile?.totp_enabled && trustInfo && (
-          <tr>
-           <td className="py-1.5 pr-4 text-muted-foreground align-top">{t('auth.otpCurrentDevice')}</td>
-           <td className="py-1.5">
+          <td className="py-1.5 pr-4 text-muted-foreground align-top">{t('auth.otpStatus')}</td>
+          <td className="py-1.5 space-y-2">
+           <div className="flex items-center gap-2 flex-wrap">
+            <Badge color={profile?.totp_enabled ? 'green' : 'gray'} variant="soft" radius="full">
+             {profile?.totp_enabled ? t('auth.otpEnabled') : t('auth.otpDisabled')}
+            </Badge>
+            {profile?.totp_enabled && (
+             <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+               <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1">
+                {profile?.preferred_2fa === 'passkey' ? t('auth.passkeyMethod') : t('auth.totpMethod')}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+               </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+               <DropdownMenuItem
+                onClick={async () => {
+                 await supabase.from('profiles').update({ preferred_2fa: 'totp' }).eq('id', user!.id)
+                 await refreshProfile()
+                }}
+               >
+                <Icon icon="mdi:cellphone-text" className="h-4 w-4 mr-2" />
+                {t('auth.totpMethod')}
+                {profile?.preferred_2fa === 'totp' && <Check className="h-4 w-4 ml-auto" />}
+               </DropdownMenuItem>
+               <DropdownMenuItem
+                onClick={async () => {
+                 await supabase.from('profiles').update({ preferred_2fa: 'passkey' }).eq('id', user!.id)
+                 await refreshProfile()
+                }}
+               >
+                <Icon icon="mdi:key-chain" className="h-4 w-4 mr-2" />
+                {t('auth.passkeyMethod')}
+                {profile?.preferred_2fa === 'passkey' && <Check className="h-4 w-4 ml-auto" />}
+               </DropdownMenuItem>
+              </DropdownMenuContent>
+             </DropdownMenu>
+            )}
+           </div>
+
+           {/* TOTP: device trust info */}
+           {profile?.totp_enabled && profile?.preferred_2fa !== 'passkey' && trustInfo && (
             <div className="flex items-center gap-2 flex-wrap">
              <DeviceLabel
               deviceName={trustInfo.deviceName}
@@ -314,9 +347,22 @@ export function Component() {
               {t('auth.otpManageDevices')}
              </Button>
             </div>
-           </td>
-          </tr>
-         )}
+           )}
+
+           {/* Passkey: manage button */}
+           {profile?.totp_enabled && profile?.preferred_2fa === 'passkey' && (
+            <Button
+             variant="outline"
+             size="sm"
+             className="h-6 text-[10px] gap-1"
+             onClick={() => setPasskeySetupOpen(true)}
+            >
+             <Icon icon="mdi:key-chain" className="h-3 w-3" />
+             {t('auth.passkeyManage')}
+            </Button>
+           )}
+          </td>
+         </tr>
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground">GitHub</td>
           <td className="py-1.5">
@@ -780,6 +826,7 @@ export function Component() {
     </div>
    </div>
    <TrustedDevicesDialog open={trustedDevicesOpen} onOpenChange={setTrustedDevicesOpen} />
+   <PasskeySetupDialog open={passkeySetupOpen} onOpenChange={setPasskeySetupOpen} onRegistered={() => refreshProfile()} />
   </div>
  )
 }

@@ -1125,3 +1125,67 @@ RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$
   DELETE FROM public.user_trusted_devices WHERE expires_at < NOW();
 $$;
+
+-- ============================================================================
+-- Section 8: WebAuthn / Passkey 支持
+-- ============================================================================
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS preferred_2fa TEXT NOT NULL DEFAULT 'totp'
+  CHECK (preferred_2fa IN ('totp', 'passkey'));
+
+CREATE TABLE IF NOT EXISTS public.passkey_credentials (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key    TEXT NOT NULL,
+  counter       BIGINT NOT NULL DEFAULT 0,
+  transports    JSONB DEFAULT '[]'::jsonb,
+  device_name   TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_passkey_user ON public.passkey_credentials(user_id);
+
+ALTER TABLE public.passkey_credentials ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pkc_own ON public.passkey_credentials;
+CREATE POLICY pkc_own ON public.passkey_credentials
+  FOR ALL
+  USING (user_id = auth.uid());
+
+-- Challenge store for WebAuthn registration/authentication flows
+CREATE TABLE IF NOT EXISTS public.auth_challenges (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  challenge  TEXT NOT NULL,
+  type       TEXT NOT NULL CHECK (type IN ('registration', 'authentication')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_challenges_user ON public.auth_challenges(user_id);
+
+-- Cleanup expired challenges
+CREATE OR REPLACE FUNCTION public.cleanup_expired_challenges()
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
+AS $$
+  DELETE FROM public.auth_challenges WHERE expires_at < NOW();
+$$;
+
+-- ============================================================================
+-- Section 9: 登录审计日志 & Session 管理
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.auth_log (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  ip         TEXT,
+  user_agent TEXT,
+  region     TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_log_user    ON public.auth_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_log_created ON public.auth_log(created_at DESC);
