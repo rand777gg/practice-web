@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 
 
+import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
 import { Check, TrendingUp, TrendingDown } from 'lucide-react'
@@ -45,7 +46,7 @@ export function DashboardPlanCards() {
   const [totalDone, setTotalDone] = useState(0)
   const [yesterdayDone, setYesterdayDone] = useState(0)
 
-  const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number }[]; total: number; totalDone: number }[]>([])
+  const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number; missingKp: number }[]; total: number; totalDone: number }[]>([])
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
   const [customTargetTotal, setCustomTargetTotal] = useState(0)
   const [customTargetDone, setCustomTargetDone] = useState(0)
@@ -93,11 +94,13 @@ export function DashboardPlanCards() {
         const subjTotal = new Map<string, number>()
         const subjDoneAll = new Map<string, number>()
         const subjDoneToday = new Map<string, number>()
+        const subjMissingKp = new Map<string, number>()
         let totalAll = 0
         for (const r of (dt ?? [])) {
           subjTotal.set(r.subject, Number(r.total))
           subjDoneAll.set(r.subject, Number(r.done_all))
           subjDoneToday.set(r.subject, Number(r.done_today))
+          subjMissingKp.set(r.subject, Number((r as any).missing_kp ?? 0))
           totalAll += Number(r.total)
         }
         const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
@@ -128,6 +131,7 @@ export function DashboardPlanCards() {
             subject: s.subject,
             count: s.count,
             done: Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count),
+            missingKp: subjMissingKp.get(subjectKey(s.subject)) ?? 0,
           })),
           total: t.subjects.reduce((sum, s) => sum + s.count, 0),
           totalDone: t.subjects.reduce((sum, s) => sum + Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count), 0),
@@ -245,7 +249,7 @@ export function DashboardPlanCards() {
                               {subjDone ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border" />}
                             </span>
                             <span className={subjDone ? 'line-through text-muted-foreground' : ''}>{subj.subject}</span>
-                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}</span>
+                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}{subj.missingKp > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp_missing=1`} className="ml-1 text-amber-500 hover:text-amber-600 underline text-[10px]">{subj.missingKp}题缺知识点</Link>}</span>
                           </div>
                         )
                       })}

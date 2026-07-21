@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 
 export interface PlanCache {
   allSubjects: string[]
-  subjectProgress: Record<string, { total: number; done: number }>
+  subjectProgress: Record<string, { total: number; done: number; missing_kp: number }>
   fetchedAt: number
   refreshVersion: number
 }
@@ -99,9 +99,9 @@ export const useDashboardStore = create<DashboardState>()(
           p_user_id: userId,
           p_plan_reset_at: planResetAt || null,
           p_subject_resets: subjectResets,
-        }) as { data: { subject: string; total: number; done_all: number }[] | null }
+        }) as { data: { subject: string; total: number; done_all: number; missing_kp: number }[] | null }
 
-        const subjectProgress: Record<string, { total: number; done: number }> = {}
+        const subjectProgress: Record<string, { total: number; done: number; missing_kp: number }> = {}
         const subjects = new Set<string>()
 
         // Load subject list from cached meta (fast — single row)
@@ -109,12 +109,12 @@ export const useDashboardStore = create<DashboardState>()(
         for (const s of ((meta?.subjects ?? []) as string[])) subjects.add(s)
 
         for (const r of (rows ?? [])) {
-          subjectProgress[r.subject] = { total: Number(r.total), done: Number(r.done_all) }
+          subjectProgress[r.subject] = { total: Number(r.total), done: Number(r.done_all), missing_kp: Number((r as any).missing_kp ?? 0) }
           subjects.add(r.subject)
         }
         // Ensure meta subjects with 0 questions still appear
         for (const s of subjects) {
-          if (!(s in subjectProgress)) subjectProgress[s] = { total: 0, done: 0 }
+          if (!(s in subjectProgress)) subjectProgress[s] = { total: 0, done: 0, missing_kp: 0 }
         }
 
         const cache: PlanCache = {

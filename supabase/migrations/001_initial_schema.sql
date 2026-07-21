@@ -833,7 +833,7 @@ CREATE OR REPLACE FUNCTION public.get_subject_progress(
   p_subjects         TEXT[]      DEFAULT NULL,
   p_subject_resets   JSONB       DEFAULT NULL
 )
-RETURNS TABLE(subject TEXT, total BIGINT, done_all BIGINT, done_today BIGINT)
+RETURNS TABLE(subject TEXT, total BIGINT, done_all BIGINT, done_today BIGINT, missing_kp BIGINT)
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
@@ -843,7 +843,13 @@ AS $$
     COALESCE(q.subject, 'Other')          AS subject,
     COUNT(DISTINCT q.id)                  AS total,
     COUNT(DISTINCT ua_all.question_id)    AS done_all,
-    COUNT(DISTINCT ua_today.question_id)  AS done_today
+    COUNT(DISTINCT ua_today.question_id)  AS done_today,
+    (SELECT COUNT(*) FROM public.questions q2
+     WHERE q2.subject = COALESCE(q.subject, 'Other')
+       AND (p_subjects IS NULL OR q2.subject = ANY(p_subjects))
+       AND (q2.key_points IS NULL OR q2.key_points = '')
+       AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq2 WHERE ueq2.question_id = q2.id AND ueq2.user_id = p_user_id)
+    )                                   AS missing_kp
   FROM public.questions q
   LEFT JOIN public.user_answers ua_all
     ON ua_all.question_id = q.id
@@ -863,6 +869,7 @@ AS $$
       (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_today.answered_at >= p_plan_reset_at)
     )
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+    AND q.key_points IS NOT NULL AND q.key_points != ''
     AND NOT EXISTS (
       SELECT 1 FROM public.user_excluded_questions ueq
       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id

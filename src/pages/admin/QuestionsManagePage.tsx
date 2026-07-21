@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { naturalSort } from '@/lib/utils'
 import { useQuestions } from '@/hooks/use-questions'
@@ -37,6 +37,7 @@ import { useT } from '@/i18n/use-t'
 export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
   const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
@@ -65,6 +66,15 @@ export function Component() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [expandedBtn])
+
+  // Handle kp_missing URL param (from PlanDialog / DashboardPlanCards)
+  useEffect(() => {
+    if (searchParams.get('kp_missing') === '1') {
+      const subject = searchParams.get('subject')
+      if (subject) setSelectedSubject(subject)
+      setSelectedKeyPoints('__none__')
+    }
+  }, [searchParams])
 
   const sortedSubjects = useMemo(
     () => [...subjects].sort((a, b) => a.localeCompare(b, 'zh-CN')),
@@ -434,7 +444,7 @@ export function Component() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1 text-xs">
-                {selectedKeyPoints || '知识点'}
+                {selectedKeyPoints === '__none__' ? '未设置' : (selectedKeyPoints || '知识点')}
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -442,6 +452,10 @@ export function Component() {
               <DropdownMenuItem onClick={() => setSelectedKeyPoints('')}>
                 <span className="text-muted-foreground">知识点</span>
                 {!selectedKeyPoints && <Check className="h-4 w-4 ml-auto" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSelectedKeyPoints('__none__')}>
+                <span className="text-amber-500">未设置</span>
+                {selectedKeyPoints === '__none__' && <Check className="h-4 w-4 ml-auto" />}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {[...kpsBySubject.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([subject, kps]) => (

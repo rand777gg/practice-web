@@ -47,7 +47,8 @@ export function useQuestions() {
     if (importMode) query = query.eq('import_mode', importMode)
     if (verified === 'true') query = query.eq('verified', true)
     else if (verified === 'false') query = query.eq('verified', false)
-    if (keyPoints) query = query.ilike('key_points', `%${keyPoints}%`)
+    if (keyPoints === '__none__') query = query.or('key_points.is.null,key_points.eq.""')
+    else if (keyPoints) query = query.ilike('key_points', `%${keyPoints}%`)
 
     query = query.order('created_at', { ascending: false }).range(from, to)
 

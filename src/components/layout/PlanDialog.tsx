@@ -66,7 +66,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
 
   const [allSubjects, setAllSubjects] = useState<string[]>([])
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
-  const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number }>>(new Map())
+  const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number; missing_kp: number }>>(new Map())
   const [planLoading, setPlanLoading] = useState(false)
   const [confirmReset, setConfirmReset] = useState<'long' | number | null>(null)
   const [resetTooEasy, setResetTooEasy] = useState(false)
@@ -395,11 +395,12 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                     const total = p?.total ?? 0
                     const done = p?.done ?? 0
                     const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                    const mk = p?.missing_kp ?? 0
                     return (
                       <div key={s} className="space-y-0.5">
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="text-muted-foreground truncate max-w-[60%]">{s}</span>
-                          <span className="tabular-nums">{done}/{total}</span>
+                          <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(s)}&kp_missing=1`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
                         </div>
                         <Progress value={pct} className="h-1.5 [&>div]:bg-blue-500" />
                       </div>
@@ -522,12 +523,13 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                         const p = subjectProgress.get(subj.subject)
                         const total = p?.total ?? 0
                         const done = p?.done ?? 0
+                        const mk = p?.missing_kp ?? 0
                         const pct = total > 0 ? Math.round((done / total) * 100) : 0
                         return (
                         <div key={subj.subject} className="space-y-0.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="text-muted-foreground truncate max-w-[60%]">{subj.subject}</span>
-                            <span className="tabular-nums">{done}/{total}</span>
+                            <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp_missing=1`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
                           </div>
                           <Progress value={pct} className="h-1.5 [&>div]:bg-pink-500" />
                         </div>
