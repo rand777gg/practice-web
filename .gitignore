@@ -18,6 +18,7 @@ dist-ssr
 # Claude
 .claude
 CLAUDE.md
+TODO.md
 
 # Supabase
 supabase/.temp

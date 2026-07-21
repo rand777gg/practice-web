@@ -10,6 +10,10 @@ import {
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableRow, TableCell } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getDeviceIdSync, clearDeviceTrust } from '@/lib/otp-trust'
@@ -244,11 +248,12 @@ interface Props { open: boolean; onOpenChange: (open: boolean) => void }
 
 export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
   const { t } = useT()
-  const { user } = useAuthStore()
+  const { user, signOut } = useAuthStore()
   const [devices, setDevices] = useState<TrustedDevice[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [revoking, setRevoking] = useState<string | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<{ deviceId: string; isCurrent: boolean } | null>(null)
   const selectedIdRef = useRef<string | null>(null)
   selectedIdRef.current = selectedId
 
@@ -276,11 +281,21 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
     setDevices((prev) => prev.map((d) => d.id === id ? { ...d, custom_name: trimmed || null } : d))
   }, [])
 
-  const handleRevoke = useCallback(async (deviceId: string) => {
-    if (!user) return
+  const handleAskRevoke = useCallback((deviceId: string) => {
+    setRevokeTarget({ deviceId, isCurrent: deviceId === currentDeviceId })
+  }, [currentDeviceId])
+
+  const confirmRevoke = useCallback(async () => {
+    if (!user || !revokeTarget) return
+    const { deviceId, isCurrent } = revokeTarget
+    setRevokeTarget(null)
     setRevoking(deviceId)
     await supabase.from('user_trusted_devices').delete().eq('user_id', user.id).eq('device_id', deviceId)
-    if (deviceId === currentDeviceId) clearDeviceTrust()
+    if (isCurrent) {
+      clearDeviceTrust()
+      signOut()
+      return
+    }
     setDevices((prev) => {
       const next = prev.filter((d) => d.device_id !== deviceId)
       if (selectedIdRef.current && !next.find((d) => d.id === selectedIdRef.current)) {
@@ -289,7 +304,7 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
       return next
     })
     setRevoking(null)
-  }, [user, currentDeviceId])
+  }, [user, revokeTarget])
 
   const selectHandlers = useRef<Map<string, () => void>>(new Map())
   const revokeHandlers = useRef<Map<string, () => void>>(new Map())
@@ -301,9 +316,9 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
   }, [])
   const getRevokeHandler = useCallback((deviceId: string) => {
     let h = revokeHandlers.current.get(deviceId)
-    if (!h) { h = () => handleRevoke(deviceId); revokeHandlers.current.set(deviceId, h) }
+    if (!h) { h = () => handleAskRevoke(deviceId); revokeHandlers.current.set(deviceId, h) }
     return h
-  }, [handleRevoke])
+  }, [handleAskRevoke])
 
   useEffect(() => {
     const ids = new Set(devices.map((d) => d.device_id))
@@ -395,15 +410,32 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
 
           {/* Detail */}
           <div className="flex-1 min-w-0 overflow-y-auto max-h-[60vh]">
-            {loading ? <DetailSkeleton /> : <DeviceDetailPanel device={selected} onRename={handleRename} onRevoke={() => selected && handleRevoke(selected.device_id)} revoking={selected ? revoking === selected.device_id : false} />}
+            {loading ? <DetailSkeleton /> : <DeviceDetailPanel device={selected} onRename={handleRename} onRevoke={() => selected && handleAskRevoke(selected.device_id)} revoking={selected ? revoking === selected.device_id : false} />}
           </div>
         </div>
 
         {/* Mobile: list below dropdown, detail below that */}
         <div className="sm:hidden flex flex-col gap-3 min-h-0 flex-1 overflow-y-auto">
-          {loading ? <DetailSkeleton /> : <DeviceDetailPanel device={selected} onRename={handleRename} onRevoke={() => selected && handleRevoke(selected.device_id)} revoking={selected ? revoking === selected.device_id : false} />}
+          {loading ? <DetailSkeleton /> : <DeviceDetailPanel device={selected} onRename={handleRename} onRevoke={() => selected && handleAskRevoke(selected.device_id)} revoking={selected ? revoking === selected.device_id : false} />}
         </div>
       </DialogContent>
+
+      <AlertDialog open={revokeTarget != null} onOpenChange={() => setRevokeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('auth.otpRevokeDevice')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {revokeTarget?.isCurrent
+                ? '撤销当前设备的信任后，你需要退出登录。下次登录将需要重新输入验证码。确定撤销吗？'
+                : '撤销该设备的信任后，该设备下次登录将需要重新输入验证码。确定撤销吗？'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRevoke}>确定撤销</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

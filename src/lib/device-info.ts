@@ -44,39 +44,44 @@ const OS_ICONS: Record<OsCategory, { icon: string; label: string }> = {
 }
 
 const BROWSER_ICONS: Record<string, { icon: string; label: string }> = {
-  chrome:  { icon: 'selfhst:google-chrome', label: 'Chrome' },
+  chrome:  { icon: 'logos:chrome', label: 'Chrome' },
   edge:    { icon: 'mdi:microsoft-edge', label: 'Edge' },
   firefox: { icon: 'mdi:firefox', label: 'Firefox' },
   safari:  { icon: 'mdi:safari', label: 'Safari' },
+  wechat:  { icon: 'mdi:wechat', label: 'WeChat' },
+  samsung: { icon: 'mdi:android', label: 'Samsung' },
   unknown: { icon: 'mdi:web', label: 'Unknown' },
 }
 
 // --- OS category detection (no version, just platform type) ---
 
 function detectOsCategory(): OsCategory {
+  // iOS must be checked first — its UA also contains "Mac OS X"
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios'
+  if (/Android/i.test(ua)) return 'android'
   if (/Windows/i.test(ua)) return 'windows'
   if (/Mac OS X/i.test(ua)) return 'macos'
-  if (/Linux/i.test(ua) && !/Android/i.test(ua)) return 'linux'
-  if (/Android/i.test(ua)) return 'android'
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios'
+  if (/Linux/i.test(ua)) return 'linux'
 
-  // Fallback: use navigator.platform
+  // Fallback: navigator.platform
   const p = (navigator.platform || '').toLowerCase()
+  if (/iphone|ipad|ipod/.test(p)) return 'ios'
+  if (p.includes('android')) return 'android'
   if (p.startsWith('win')) return 'windows'
   if (p.startsWith('mac')) return 'macos'
   if (p.startsWith('linux')) return 'linux'
-  if (p.includes('android')) return 'android'
-  if (/iphone|ipad|ipod/.test(p)) return 'ios'
 
   return 'unknown'
 }
 
 // --- Browser detection ---
 
-type BrowserKey = 'chrome' | 'edge' | 'firefox' | 'safari' | 'unknown'
+type BrowserKey = 'chrome' | 'edge' | 'firefox' | 'safari' | 'wechat' | 'samsung' | 'unknown'
 
 function detectBrowser(): BrowserKey {
   if (/Edg\//i.test(ua)) return 'edge'
+  if (/MicroMessenger/i.test(ua)) return 'wechat'
+  if (/SamsungBrowser/i.test(ua)) return 'samsung'
   if (/Chrome\//i.test(ua)) return 'chrome'
   if (/Firefox\//i.test(ua)) return 'firefox'
   if (/Safari\//i.test(ua)) return 'safari'

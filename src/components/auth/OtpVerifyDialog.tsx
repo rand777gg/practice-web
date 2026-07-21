@@ -38,7 +38,7 @@ export function OtpVerifyDialog({ open, onVerified }: Props) {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [trustThisDevice, setTrustThisDevice] = useState(true)
+  const [trustThisDevice, setTrustThisDevice] = useState(false)
 
   const handleVerify = useCallback(async () => {
     if (code.length !== 6 || !user) return
