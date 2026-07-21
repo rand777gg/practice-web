@@ -6,16 +6,23 @@ import { Button } from '@/components/ui/button'
 import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
 
+function useBgImage() {
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    const isMobile = window.innerWidth < 768
+    const img = new Image()
+    img.onload = () => setSrc(`url(https://r2-rpw.pguide.dev/images/${isMobile ? 'mobile' : 'desktop'}.webp)`)
+    img.src = `https://r2-rpw.pguide.dev/images/${isMobile ? 'mobile' : 'desktop'}.webp`
+  }, [])
+
+  return src
+}
+
 export function Component() {
   const { user } = useAuthStore()
   const { theme, toggle } = useThemeStore()
-  const [show, setShow] = useState(false)
-
-  useEffect(() => {
-    const img = new Image()
-    img.onload = () => setShow(true)
-    img.src = 'https://r2-rpw.pguide.dev/images/thu.webp'
-  }, [])
+  const bgImage = useBgImage()
   if (user) return <Navigate to="/" replace />
 
   const isDark = theme === 'dark'
@@ -23,9 +30,9 @@ export function Component() {
   return (
     <div
       className="relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10"
-      style={{
-        background: `linear-gradient(rgba(0,0,0,0.20), rgba(0,0,0,0.20)), url(https://r2-rpw.pguide.dev/images/thu.webp) center/cover no-repeat`,
-      }}
+      style={bgImage ? {
+        background: `linear-gradient(rgba(0,0,0,0.20), rgba(0,0,0,0.20)), ${bgImage} center/cover no-repeat`,
+      } : undefined}
     >
       <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/60 to-transparent" />
       <Button
@@ -40,7 +47,7 @@ export function Component() {
         {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
       </Button>
       <div className="relative z-10 w-full max-w-sm">
-        <RegisterForm visible={show} />
+        <RegisterForm visible={!!bgImage} />
       </div>
     </div>
   )
