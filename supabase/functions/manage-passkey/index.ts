@@ -63,13 +63,14 @@ serve(async (req: Request) => {
     // ============================================================
     if (action === "register-begin") {
       // Fetch existing credentials to exclude from re-registration
+      // credential_id is already stored as base64url — server expects base64url strings
       const { data: existing } = await supabaseAdmin
         .from("passkey_credentials")
         .select("credential_id")
         .eq("user_id", userId)
 
       const excludeCredentials = (existing || []).map((c) => ({
-        id: Uint8Array.from(atob(c.credential_id), (ch) => ch.charCodeAt(0)),
+        id: c.credential_id,
         type: "public-key" as const,
         transports: ["internal"] as AuthenticatorTransport[],
       }))
@@ -195,7 +196,7 @@ serve(async (req: Request) => {
         .eq("user_id", userId)
 
       const allowCredentials = (credentials || []).map((c) => ({
-        id: Uint8Array.from(atob(c.credential_id), (ch) => ch.charCodeAt(0)),
+        id: c.credential_id,
         type: "public-key" as const,
         transports: c.transports || ["internal"],
       }))
