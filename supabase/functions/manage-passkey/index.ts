@@ -12,11 +12,21 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-/** Convert Uint8Array to base64url string — JSON.stringify can't handle binary */
+/** Convert Uint8Array to base64url string */
 function b64url(buf: Uint8Array): string {
   let bin = ""
   for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i])
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+/** Convert base64url string to Uint8Array */
+function b64urlToBytes(str: string): Uint8Array {
+  const base64 = str.replace(/-/g, "+").replace(/_/g, "/")
+  const pad = base64.length % 4 === 3 ? "=" : base64.length % 4 === 2 ? "==" : ""
+  const bin = atob(base64 + pad)
+  const buf = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
+  return buf
 }
 
 /** Recursively walk an object and convert any Uint8Array values to base64url */
@@ -155,14 +165,13 @@ serve(async (req: Request) => {
       }
 
       const { credentialPublicKey, credentialID, counter } = verification.registrationInfo
-      const credIdBuf = credentialID instanceof Uint8Array ? credentialID : new Uint8Array(credentialID)
-      if (credIdBuf.length === 0) {
+      // credentialID is a base64url string (from isoBase64URL.fromBuffer internally)
+      if (!credentialID || typeof credentialID !== 'string' || credentialID.length === 0) {
         return new Response(JSON.stringify({ error: "credentialID is empty, registration data corrupted" }), {
           status: 500,
           headers: corsHeaders,
         })
       }
-      const credIdB64 = b64url(credIdBuf)
       const pubKeyB64 = b64url(new Uint8Array(credentialPublicKey))
 
       // Determine device name from transports
@@ -177,7 +186,7 @@ serve(async (req: Request) => {
       const { error: upsertErr } = await supabaseAdmin
         .from("passkey_credentials")
         .upsert(
-          { user_id: userId, credential_id: credIdB64, public_key: pubKeyB64, counter, transports, device_name: deviceName },
+          { user_id: userId, credential_id: credentialID, public_key: pubKeyB64, counter, transports, device_name: deviceName },
           { onConflict: "credential_id", ignoreDuplicates: false },
         )
 
@@ -286,7 +295,7 @@ serve(async (req: Request) => {
           expectedRPID: rpId,
           credential: {
             id: storedCred.credential_id,
-            publicKey: Uint8Array.from(atob(storedCred.public_key), (ch) => ch.charCodeAt(0)),
+            publicKey: b64urlToBytes(storedCred.public_key),
             counter: storedCred.counter,
             transports: storedCred.transports || [],
           },
