@@ -8,10 +8,9 @@ import {
   useMessageScrollerScrollable,
 } from "@shadcn/react/message-scroller"
 
-function MessageScrollerProvider({
-  className,
-  ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Provider>) {
+function MessageScrollerProvider(
+  props: React.ComponentProps<typeof MessageScrollerPrimitive.Provider>
+) {
   return <MessageScrollerPrimitive.Provider {...props} />
 }
 
