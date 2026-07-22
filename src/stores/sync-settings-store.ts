@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 
 export const ALL_SYNCED_KEYS = [
-  'theme',
   'lang',
   'ai_feature_flags',
   'eye_care',
@@ -15,6 +14,7 @@ export const ALL_SYNCED_KEYS = [
   'note_recognition_mode',
   'bottom_nav_tabs',
   'sidebar_collapsed',
+  'practice_shortcuts',
 ] as const
 
 export type SyncedKey = (typeof ALL_SYNCED_KEYS)[number]

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
+import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
 import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
 import { DeviceLabel } from '@/components/ui/device-label'
@@ -62,7 +63,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, practiceShortcuts, setPracticeShortcut } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -580,6 +581,14 @@ export function Component() {
         敏捷的棕色狐狸跳过懒狗。<br />
         The quick brown fox jumps over the lazy dog.<br />
         0123456789 · 敏捷的棕色狐狸
+       </div>
+
+       <div className="border-t pt-4" />
+
+       {/* Practice shortcuts */}
+       <div>
+        <p className="text-sm mb-3">刷题快捷键</p>
+        <ShortcutSettings shortcuts={practiceShortcuts} onChange={setPracticeShortcut} />
        </div>
 
        <div className="border-t pt-4" />

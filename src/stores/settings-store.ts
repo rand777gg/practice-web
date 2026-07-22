@@ -13,6 +13,7 @@ const FLAGS_KEY = 'ai_feature_flags'
 const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
 const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
 const OFFLINE_KEY = 'offline_mode'
+const PRACTICE_SHORTCUTS_KEY = 'practice_shortcuts'
 const EYE_CARE_KEY = 'eye_care'
 const DARK_CODE_THEME_KEY = 'dark_code_theme'
 const LIGHT_CODE_THEME_KEY = 'light_code_theme'
@@ -71,6 +72,19 @@ function loadFlags(): AiFeatureFlags {
   return { exam: true, summary: false, suggestions: false, analysis: false, mineru: true, keypoints: true }
 }
 
+export type ShortcutAction = 'prev' | 'next' | 'submit'
+export type ShortcutConfig = Record<ShortcutAction, string>
+
+export const DEFAULT_SHORTCUTS: ShortcutConfig = { prev: 'ArrowLeft', next: 'ArrowRight', submit: 'Enter' }
+
+function loadPracticeShortcuts(): ShortcutConfig {
+  try {
+    const raw = localStorage.getItem(PRACTICE_SHORTCUTS_KEY)
+    if (raw) return JSON.parse(raw) as ShortcutConfig
+  } catch { /* ignore */ }
+  return { ...DEFAULT_SHORTCUTS }
+}
+
 function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
 }
@@ -107,6 +121,7 @@ interface SettingsState {
   fontWeight: number
   noteRecognitionMode: NoteRecognitionMode
   bottomNavTabs: BottomNavTabKey[]
+  practiceShortcuts: ShortcutConfig
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -117,6 +132,7 @@ interface SettingsState {
   setFontWeight: (value: number) => void
   setNoteRecognitionMode: (value: NoteRecognitionMode) => void
   setBottomNavTabs: (tabs: BottomNavTabKey[]) => void
+  setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -144,6 +160,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   fontWeight: loadFontWeight(),
   noteRecognitionMode: loadNoteRecognitionMode(),
   bottomNavTabs: loadBottomNavTabs(),
+  practiceShortcuts: loadPracticeShortcuts(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -192,6 +209,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setBottomNavTabs: (tabs) => {
     localStorage.setItem(BOTTOM_NAV_TABS_KEY, JSON.stringify(tabs))
     set({ bottomNavTabs: tabs })
+  },
+  setPracticeShortcut: (action, keys) => {
+    set((s) => {
+      const next = { ...s.practiceShortcuts, [action]: keys }
+      localStorage.setItem(PRACTICE_SHORTCUTS_KEY, JSON.stringify(next))
+      return { practiceShortcuts: next }
+    })
   },
   isEnabled: (key) => get().flags[key],
 }))

@@ -20,7 +20,6 @@ const directions = [
 ] as const
 
 const KEY_LABELS: Record<SyncedKey, string> = {
-  theme: '主题 (light/dark)',
   lang: '语言',
   ai_feature_flags: 'AI 功能开关',
   eye_care: '护眼模式',
@@ -33,6 +32,7 @@ const KEY_LABELS: Record<SyncedKey, string> = {
   note_recognition_mode: '笔记识别方式',
   bottom_nav_tabs: '底部导航栏',
   sidebar_collapsed: '侧边栏折叠',
+  practice_shortcuts: '刷题快捷键',
 }
 
 function collectLocalSettings(keys: SyncedKey[]): Record<string, unknown> {
@@ -59,97 +59,94 @@ export function SyncSettingsCard() {
   const [importErr, setImportErr] = useState(false)
   const [open, setOpen] = useState(false)
 
-  // Conflict detection
-  const [conflictData, setConflictData] = useState<{ action: 'upload' | 'download'; label: string } | null>(null)
-  const [checkingConflict, setCheckingConflict] = useState(false)
+  const [conflictKeys, setConflictKeys] = useState<string[]>([])
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'checking' | 'ok' | 'conflict'>('idle')
+  const checkedRef = useRef(false)
 
-  // When the dialog opens, check for conflicts
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setCheckingConflict(true)
+  const checkConflict = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSyncStatus('idle'); return }
 
-    const check = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user || cancelled) { setCheckingConflict(false); return }
+    const { data } = await supabase
+      .from('user_settings')
+      .select('settings')
+      .eq('user_id', user.id)
+      .maybeSingle()
 
-      const { data } = await supabase
-        .from('user_settings')
-        .select('settings, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle()
+    if (!data?.settings) { setSyncStatus('ok'); setConflictKeys([]); return }
 
-      if (cancelled) return
-      setCheckingConflict(false)
-
-      if (!data?.settings) {
-        setConflictData(null)
-        return
-      }
-
-      const server = data.settings as Record<string, unknown>
-
-      // Compare with local settings
-      const local = collectLocalSettings(syncedKeys)
-      const serverFiltered: Record<string, unknown> = {}
-      let hasDiff = false
-      for (const key of syncedKeys) {
-        if (key in server) {
-          serverFiltered[key] = server[key]
-          const localVal = local[key]
-          const serverVal = server[key]
-          if (JSON.stringify(localVal) !== JSON.stringify(serverVal)) {
-            hasDiff = true
-          }
-        }
-      }
-
-      if (hasDiff && syncDirection === 'bidirectional') {
-        setConflictData({
-          action: 'upload',
-          label: `${Object.keys(serverFiltered).length} 项设置`,
-        })
-        // setConflictOpen(true)
-      } else {
-        setConflictData(null)
+    const server = data.settings as Record<string, unknown>
+    const local = collectLocalSettings(syncedKeys)
+    const diffKeys: string[] = []
+    for (const key of syncedKeys) {
+      if (key in server) {
+        if (JSON.stringify(local[key]) !== JSON.stringify(server[key])) diffKeys.push(key)
       }
     }
 
-    check()
-    return () => { cancelled = true }
-  }, [open, syncedKeys, syncDirection])
+    if (diffKeys.length > 0 && syncDirection === 'bidirectional') {
+      setConflictKeys(diffKeys)
+      setSyncStatus('conflict')
+    } else {
+      setConflictKeys([])
+      setSyncStatus('ok')
+    }
+  }, [syncedKeys, syncDirection])
 
-  const handleConflictUpload = useCallback(async () => {
-    // setConflictOpen(false)
+  // Run on mount
+  useEffect(() => {
+    if (checkedRef.current) return
+    checkedRef.current = true
+    setSyncStatus('checking')
+    checkConflict()
+  }, [checkConflict])
+
+  // Also check when dialog opens
+  useEffect(() => {
+    if (!open) return
+    setSyncStatus('checking')
+    checkConflict()
+  }, [open, checkConflict])
+
+  const handleUpload = async () => {
     await uploadSettings()
-  }, [uploadSettings])
+    setSyncStatus('checking')
+    checkConflict()
+  }
 
-  const handleConflictDownload = useCallback(async () => {
-    // setConflictOpen(false)
+  const handleDownload = async () => {
     await downloadSettings()
-  }, [downloadSettings])
+    setSyncStatus('checking')
+    checkConflict()
+  }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const ok = await importFromFile(file)
-    if (ok) {
-      setImportOk(true)
-      setTimeout(() => setImportOk(false), 3000)
-    } else {
-      setImportErr(true)
-      setTimeout(() => setImportErr(false), 3000)
-    }
+    if (ok) { setImportOk(true); setTimeout(() => setImportOk(false), 3000) }
+    else { setImportErr(true); setTimeout(() => setImportErr(false), 3000) }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
+
+  const btnIcon = syncStatus === 'checking' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+    : syncStatus === 'conflict' ? <AlertTriangle className="h-3.5 w-3.5" />
+    : syncStatus === 'ok' ? <Check className="h-3.5 w-3.5 text-green-500" />
+    : <RefreshCw className="h-3.5 w-3.5" />
+
+  const btnClass = cn('gap-1.5 text-xs relative',
+    syncStatus === 'conflict' && 'border-amber-500 text-amber-600',
+    syncStatus === 'ok' && 'border-green-500/50 text-green-600',
+  )
 
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-            <RefreshCw className="h-3.5 w-3.5" />
+          <Button variant="outline" size="sm" className={btnClass}>
+            {btnIcon}
             {t('settings.sync.title')}
+            {syncStatus === 'conflict' && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500" />}
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-md page-enter">
@@ -159,32 +156,37 @@ export function SyncSettingsCard() {
               {lastSyncAt
                 ? `${t('settings.sync.lastSync')}: ${new Date(lastSyncAt).toLocaleString()}`
                 : t('settings.sync.direction')}
-              {checkingConflict && <span className="ml-2 text-[10px] text-muted-foreground animate-pulse">检查同步状态...</span>}
+              {syncStatus === 'checking' && <span className="ml-2 text-[10px] text-muted-foreground animate-pulse">检查中...</span>}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-5 max-h-[65vh] overflow-y-auto pr-1">
-            {/* Conflict banner */}
-            {!checkingConflict && conflictData && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-800 dark:bg-amber-950/40 page-enter">
+            {syncStatus === 'conflict' && conflictKeys.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-800 dark:bg-amber-950/40">
                 <p className="text-xs font-medium text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   本地与服务器设置不一致
                 </p>
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                  {conflictKeys.map(k => KEY_LABELS[k] || k).join('、')}
+                </p>
                 <div className="flex gap-1.5 mt-2">
-                  <Button size="sm" className="h-6 text-[10px] gap-1 flex-1" onClick={handleConflictUpload}>
+                  <Button size="sm" className="h-6 text-[10px] gap-1 flex-1" onClick={handleUpload}>
                     <ArrowUp className="h-3 w-3" />上传本地
                   </Button>
-                  <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 flex-1" onClick={handleConflictDownload}>
+                  <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 flex-1" onClick={handleDownload}>
                     <ArrowDown className="h-3 w-3" />下载服务器
                   </Button>
                 </div>
-                <p className="text-[9px] text-amber-600 dark:text-amber-400 mt-1">同步方向：双向同步 · {conflictData.label}</p>
               </div>
             )}
+            {syncStatus === 'ok' && (
+              <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5" />本地设置与服务器一致
+              </p>
+            )}
 
-            {/* Sync direction */}
-            <div className="page-enter" style={{ animationDelay: '50ms' }}>
+            <div>
               <p className="text-xs text-muted-foreground mb-2">{t('settings.sync.direction')}</p>
               <div className="grid grid-cols-4 gap-1.5">
                 {directions.map(({ key, icon: Icon }) => (
@@ -206,8 +208,7 @@ export function SyncSettingsCard() {
               </div>
             </div>
 
-            {/* Select settings to sync */}
-            <div className="page-enter" style={{ animationDelay: '100ms' }}>
+            <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-muted-foreground">{t('settings.sync.selectKeys')}</p>
                 <div className="flex gap-2">
@@ -231,8 +232,7 @@ export function SyncSettingsCard() {
               </div>
             </div>
 
-            {/* Auto sync */}
-            <div className="page-enter flex items-center justify-between" style={{ animationDelay: '150ms' }}>
+            <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm">{t('settings.sync.auto')}</p>
                 <p className="text-xs text-muted-foreground">{t('settings.sync.autoDesc')}</p>
@@ -240,8 +240,7 @@ export function SyncSettingsCard() {
               <Switch checked={autoSync} disabled={syncDirection === 'none'} onCheckedChange={setAutoSync} />
             </div>
 
-            {/* Action buttons */}
-            <div className="page-enter flex gap-2" style={{ animationDelay: '200ms' }}>
+            <div className="flex gap-2">
               <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-xs" disabled={syncing || syncDirection === 'none'} onClick={() => syncNow()}>
                 <RefreshCw className={cn('h-3.5 w-3.5', syncing && 'animate-spin')} />
                 {t('settings.sync.syncNow')}
@@ -257,9 +256,7 @@ export function SyncSettingsCard() {
             </div>
 
             <div className="border-t pt-4" />
-
-            {/* Export / Import */}
-            <div className="page-enter" style={{ animationDelay: '250ms' }}>
+            <div>
               <p className="text-xs text-muted-foreground mb-2">{t('settings.sync.exportImport')}</p>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={exportToFile}>

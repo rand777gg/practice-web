@@ -45,6 +45,7 @@ export function Component() {
   const [showImport, setShowImport] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'single'; id: string } | { type: 'bulk'; count: number } | null>(null)
   const [selectedSubject, setSelectedSubject] = useState(() => new URLSearchParams(window.location.search).get('subject') || '')
   const [selectedCategory, setSelectedCategory] = useState(() => new URLSearchParams(window.location.search).get('category') || '')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>(() => (new URLSearchParams(window.location.search).get('type') || '') as QuestionType | '')
@@ -194,11 +195,17 @@ export function Component() {
 
   const handleBulkDelete = async () => {
     setBulkDeleting(true)
+    setDeleteConfirm(null)
     const ids = [...selectedIds]
     await supabase.from('questions').delete().in('id', ids)
     setSelectedIds(new Set())
     setBulkDeleting(false)
     refetch()
+  }
+
+  const handleSingleDelete = async (id: string) => {
+    setDeleteConfirm(null)
+    await deleteQuestion(id)
   }
 
   const [kpConfirm, setKpConfirm] = useState<{ oldKp: string; newKp: string; selectedCount: number; totalCount: number } | null>(null)
@@ -515,7 +522,7 @@ export function Component() {
         <>
           <QuestionList
             questions={questions}
-            onDelete={deleteQuestion}
+            onDelete={(id) => setDeleteConfirm({ type: 'single', id })}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}
@@ -666,7 +673,7 @@ export function Component() {
                 </Button>
                 <Button variant="outline" size="sm" onClick={clearSelection}>取消选择</Button>
                 <Button variant="destructive" size="sm" disabled={bulkDeleting}
-                  onClick={handleBulkDelete}>
+                  onClick={() => setDeleteConfirm({ type: 'bulk', count: selectedIds.size })}>
                   <Trash2 className="h-4 w-4" />
                   {bulkDeleting ? '删除中...' : `删除选中 (${selectedIds.size})`}
                 </Button>
@@ -738,6 +745,33 @@ export function Component() {
         onClose={() => setShowImport(false)}
         onImported={refetch}
       />
+
+      <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirm?.type === 'single'
+                ? '确定要删除这道题目吗？删除后不可恢复。'
+                : `确定要删除选中的 ${deleteConfirm?.type === 'bulk' ? deleteConfirm.count : 0} 道题目吗？删除后不可恢复。`
+              }
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!deleteConfirm) return
+                if (deleteConfirm.type === 'single') handleSingleDelete(deleteConfirm.id)
+                else handleBulkDelete()
+              }}
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!kpConfirm} onOpenChange={() => setKpConfirm(null)}>
         <AlertDialogContent>

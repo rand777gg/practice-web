@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useSequentialStore, markPracticeSync } from '@/stores/sequential-store'
@@ -38,7 +39,7 @@ import { NoteEditor } from '@/components/notes/NoteEditor'
 import { ArrowLeft, Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { Kbd } from '@/components/ui/kbd'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { cn, naturalSort } from '@/lib/utils'
@@ -80,6 +81,32 @@ function saveFiltersToDb(userId: string, v: PracticeFilters) {
       user_id: userId, practice_filters: v, updated_at: new Date().toISOString(),
     }).then(() => {})
   }, 500)
+}
+
+function matchShortcut(e: KeyboardEvent, shortcut: string): boolean {
+  if (!shortcut) return false
+  const parts = shortcut.split('+').filter(Boolean)
+  if (parts.length === 0) return false
+  const mainKey = parts[parts.length - 1]
+  const eventKey = e.key === ' ' ? 'Space' : e.key
+  return eventKey === mainKey
+    && e.ctrlKey === parts.includes('Control')
+    && e.shiftKey === parts.includes('Shift')
+    && e.altKey === parts.includes('Alt')
+    && e.metaKey === parts.includes('Meta')
+}
+
+const KEY_DISPLAY: Record<string, string> = {
+  ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
+  Enter: '⏎', Escape: 'Esc', Control: 'Ctrl', Shift: '⇧', Alt: 'Alt', Meta: '⌘', Space: 'Space',
+}
+function keyToDisplay(key: string): string { return KEY_DISPLAY[key] || (key.length === 1 ? key.toUpperCase() : key) }
+
+function ShortcutKbd({ shortcut }: { shortcut: string }) {
+  const parts = shortcut.split('+').filter(Boolean)
+  if (parts.length === 0) return null
+  if (parts.length === 1) return <Kbd data-icon="inline-end" className="translate-x-0.5">{keyToDisplay(parts[0])}</Kbd>
+  return <KbdGroup>{parts.map((k, i) => <Kbd key={i}>{keyToDisplay(k)}</Kbd>)}</KbdGroup>
 }
 
 function FilterBtn({ label, children }: { label: string; children: React.ReactNode }) {
@@ -210,6 +237,7 @@ export function PracticeSession() {
   useEffect(() => { snapRef.current = { question, answer: selectedAnswer, submitted: isSubmitted, note, isPublic, answerId, attempts: attemptCount, wrongs: wrongCount } })
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
   const isMobile = useIsMobile()
+  const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
 
   // Persist per-subject positions to localStorage keyed by sessionKey
   useEffect(() => {
@@ -840,15 +868,17 @@ export function PracticeSession() {
   const prevRef = useRef(handlePrev)
   const nextRef = useRef(handleNext)
   const submitRef = useRef(handleSubmit)
-  useEffect(() => { prevRef.current = handlePrev; nextRef.current = handleNext; submitRef.current = handleSubmit })
+  const shortcutsRef = useRef(practiceShortcuts)
+  useEffect(() => { prevRef.current = handlePrev; nextRef.current = handleNext; submitRef.current = handleSubmit; shortcutsRef.current = practiceShortcuts })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (isLoading || showSkeleton) return
-      if (e.key === 'ArrowLeft') { e.preventDefault(); prevRef.current() }
-      if (e.key === 'ArrowRight') { e.preventDefault(); nextRef.current() }
-      if (e.key === 'Enter' && !isSubmitted && selectedAnswer !== null) { e.preventDefault(); submitRef.current() }
+      const sc = shortcutsRef.current
+      if (matchShortcut(e, sc.prev)) { e.preventDefault(); prevRef.current() }
+      if (matchShortcut(e, sc.next)) { e.preventDefault(); nextRef.current() }
+      if (!isSubmitted && selectedAnswer !== null && matchShortcut(e, sc.submit)) { e.preventDefault(); submitRef.current() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1202,17 +1232,17 @@ export function PracticeSession() {
                 <Button variant="outline" onClick={handlePrev} disabled={!hasPrev}>
                   <ArrowLeft className="h-4 w-4" />
                   {t('practice.previousQuestion')}{" "}
-                  <Kbd data-icon="inline-end" className="translate-x-0.5">⇦</Kbd>
+                  <ShortcutKbd shortcut={practiceShortcuts.prev} />
                 </Button>
                 {!isSubmitted ? (
                   <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
                     {t('practice.submitAnswer')}{" "}
-                    <Kbd data-icon="inline-end" className="translate-x-0.5">⏎</Kbd>
+                    <ShortcutKbd shortcut={practiceShortcuts.submit} />
                   </Button>
                 ) : (
                   <Button onClick={handleNext}>
                     {t('practice.nextQuestion')}{" "}
-                    <Kbd data-icon="inline-end" className="translate-x-0.5">⇨</Kbd>
+                    <ShortcutKbd shortcut={practiceShortcuts.next} />
                   </Button>
                 )}
               </div>
