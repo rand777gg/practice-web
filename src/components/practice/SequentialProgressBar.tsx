@@ -1,4 +1,4 @@
-import { Icon } from '@iconify/react'
+import { Icon } from '@/lib/icons'
 
 interface Props {
   currentIndex: number

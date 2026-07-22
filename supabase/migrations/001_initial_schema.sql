@@ -1189,3 +1189,15 @@ CREATE TABLE IF NOT EXISTS public.auth_log (
 
 CREATE INDEX IF NOT EXISTS idx_auth_log_user    ON public.auth_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_log_created ON public.auth_log(created_at DESC);
+
+-- ============================================================================
+-- Section 10: Passkey enhancement — platform info & re-verification timeout
+-- ============================================================================
+
+ALTER TABLE public.passkey_credentials
+  ADD COLUMN IF NOT EXISTS platform              TEXT,
+  ADD COLUMN IF NOT EXISTS credential_device_type TEXT,
+  ADD COLUMN IF NOT EXISTS credential_backed_up  BOOLEAN;
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS passkey_timeout_minutes INTEGER NOT NULL DEFAULT 0;

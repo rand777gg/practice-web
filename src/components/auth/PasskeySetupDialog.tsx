@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { registerPasskey, listPasskeys, deletePasskey } from '@/lib/passkey'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Icon } from '@iconify/react'
+import { Icon } from '@/lib/icons'
 import type { PasskeyCredential } from '@/types'
 
 interface Props {
@@ -27,6 +27,7 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
   const [passkeys, setPasskeys] = useState<PasskeyCredential[]>([])
   const [loading, setLoading] = useState(false)
   const [registering, setRegistering] = useState(false)
+  const [deviceName, setDeviceName] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -54,8 +55,18 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
     setRegistering(true)
     setError('')
     try {
-      await registerPasskey(user.id)
+      const ua = navigator.userAgent
+      let platform = ''
+      if (/Windows/i.test(ua)) platform = 'Windows'
+      else if (/Mac OS X/i.test(ua)) platform = 'macOS'
+      else if (/Android/i.test(ua)) platform = 'Android'
+      else if (/Linux/i.test(ua) && !/Android/i.test(ua)) platform = 'Linux'
+      else if (/iPhone|iPad|iPod/i.test(ua)) platform = 'iOS'
+      else platform = 'Unknown'
+
+      await registerPasskey(user.id, deviceName.trim() || undefined, platform)
       setSuccess(true)
+      setDeviceName('')
       await fetchPasskeys()
       onRegistered?.()
     } catch (e: any) {
@@ -70,7 +81,7 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
       }
     }
     setRegistering(false)
-  }, [user, fetchPasskeys, onRegistered, t])
+  }, [user, fetchPasskeys, onRegistered, t, deviceName])
 
   const handleDelete = useCallback(async () => {
     if (!user || !deleteTarget) return
@@ -79,11 +90,14 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
     setDeleteTarget(null)
   }, [user, deleteTarget])
 
-  const deviceIcon = (name: string | null) => {
-    if (!name) return 'mdi:key-chain'
-    if (name.includes('Platform')) return 'mdi:laptop'
-    if (name.includes('Security Key')) return 'mdi:usb-flash-drive'
-    return 'mdi:key-chain'
+  const platformIcon = (p: string | null) => {
+    if (!p) return 'mingcute:computer-line'
+    if (p === 'Windows') return 'devicon:windows11'
+    if (p === 'macOS') return 'catppuccin:macos'
+    if (p === 'Android') return 'catppuccin:android'
+    if (p === 'Linux') return 'selfhst:linux'
+    if (p === 'iOS') return 'mingcute:ios-fill'
+    return 'mingcute:computer-line'
   }
 
   return (
@@ -108,6 +122,30 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
               </div>
             )}
 
+            {/* Device name input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder={t('auth.passkeyDeviceNamePlaceholder') || '为这个设备起个名字...'}
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+                maxLength={50}
+                className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+              />
+              <Button
+                onClick={handleRegister}
+                disabled={registering}
+                className="gap-2 shrink-0"
+              >
+                {registering ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                ) : (
+                  <Icon icon="mdi:key-chain" className="h-4 w-4" />
+                )}
+                {registering ? t('auth.passkeyRegistering') : t('auth.passkeyRegister')}
+              </Button>
+            </div>
+
             {/* Registered passkeys list */}
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground">{t('auth.passkeySavedDevices')}</p>
@@ -123,7 +161,7 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
                   {passkeys.map((pk) => (
                     <div key={pk.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Icon icon={deviceIcon(pk.device_name)} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <Icon icon={platformIcon(pk.platform)} className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div className="min-w-0">
                           <p className="text-sm truncate">{pk.device_name || 'Passkey'}</p>
                           <p className="text-[10px] text-muted-foreground">
@@ -143,19 +181,6 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
                 </div>
               )}
             </div>
-
-            <Button
-              onClick={handleRegister}
-              disabled={registering}
-              className="w-full gap-2"
-            >
-              {registering ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <Icon icon="mdi:key-chain" className="h-4 w-4" />
-              )}
-              {registering ? t('auth.passkeyRegistering') : t('auth.passkeyRegister')}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

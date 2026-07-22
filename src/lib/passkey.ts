@@ -21,13 +21,13 @@ async function callFn(action: string, payload: Record<string, unknown>) {
 }
 
 /** Register a new passkey for the current user */
-export async function registerPasskey(userId: string): Promise<boolean> {
+export async function registerPasskey(userId: string, deviceName?: string, platform?: string): Promise<boolean> {
   const options = await callFn('register-begin', { userId })
   if (options.error) throw new Error(options.error)
 
   const credential = await startRegistration({ optionsJSON: options })
 
-  const result = await callFn('register-complete', { userId, credential })
+  const result = await callFn('register-complete', { userId, credential, deviceName, platform })
   if (result.error) throw new Error(result.error)
 
   return result.verified === true

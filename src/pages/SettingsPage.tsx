@@ -31,7 +31,7 @@ import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
 import { DeviceLabel } from '@/components/ui/device-label'
 import { getTrustInfo, getDeviceIdSync } from '@/lib/otp-trust'
-import { Icon } from '@iconify/react'
+import { Icon } from '@/lib/icons'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
@@ -349,17 +349,41 @@ export function Component() {
             </div>
            )}
 
-           {/* Passkey: manage button */}
+           {/* Passkey: manage button + re-verify timeout */}
            {profile?.totp_enabled && profile?.preferred_2fa === 'passkey' && (
-            <Button
-             variant="outline"
-             size="sm"
-             className="h-6 text-[10px] gap-1"
-             onClick={() => setPasskeySetupOpen(true)}
-            >
-             <Icon icon="mdi:key-chain" className="h-3 w-3" />
-             {t('auth.passkeyManage')}
-            </Button>
+            <div className="flex gap-2">
+             <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px] gap-1 flex-1"
+              onClick={() => setPasskeySetupOpen(true)}
+             >
+              <Icon icon="mdi:key-chain" className="h-3 w-3" />
+              {t('auth.passkeyManage')}
+             </Button>
+             <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="flex-1 h-7 text-[10px] gap-1 justify-between">
+                    <span>{profile?.passkey_timeout_minutes ? `${profile.passkey_timeout_minutes} 分钟` : "免密周期"}</span>
+                    <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" style={{ width: 'var(--radix-dropdown-menu-trigger-width)' }}>
+                  {[0, 5, 10, 15, 20, 25, 30].map((m) => (
+                    <DropdownMenuItem
+                      key={m}
+                      onClick={async () => {
+                        await supabase.from("profiles").update({ passkey_timeout_minutes: m }).eq("id", user!.id)
+                        refreshProfile()
+                      }}
+                    >
+                      <span className="flex-1">{m === 0 ? "免密周期" : `${m} 分钟`}</span>
+                      {(profile?.passkey_timeout_minutes ?? 0) === m && <Check className="h-3 w-3 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
            )}
           </td>
          </tr>

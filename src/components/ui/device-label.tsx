@@ -1,4 +1,4 @@
-import { Icon } from '@iconify/react'
+import { Icon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { getOsIcon, getBrowserIcon, getOsLabel, getBrowserLabel } from '@/lib/device-info'
 import { Separator } from '@/components/ui/separator'

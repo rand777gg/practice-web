@@ -73,6 +73,7 @@ export interface Profile {
   daily_reset_at: string | null
   totp_enabled?: boolean
   preferred_2fa?: 'totp' | 'passkey'
+  passkey_timeout_minutes?: number
   created_at: string
 }
 
@@ -84,6 +85,9 @@ export interface PasskeyCredential {
   counter: number
   transports: string[]
   device_name: string | null
+  platform: string | null
+  credential_device_type: string | null
+  credential_backed_up: boolean | null
   created_at: string
   last_used_at: string | null
 }

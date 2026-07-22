@@ -40,7 +40,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import { Icon } from '@iconify/react'
+import { Icon } from '@/lib/icons'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Pencil, Play, Plus, Upload, X } from 'lucide-react'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'

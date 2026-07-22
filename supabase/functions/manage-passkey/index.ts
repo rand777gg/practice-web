@@ -109,7 +109,7 @@ serve(async (req: Request) => {
     // REGISTER: verify and store credential
     // ============================================================
     if (action === "register-complete") {
-      const { credential } = body
+      const { credential, deviceName: customDeviceName, platform } = body
       if (!credential) {
         return new Response(JSON.stringify({ error: "missing credential" }), {
           status: 400,
@@ -164,7 +164,7 @@ serve(async (req: Request) => {
         })
       }
 
-      const { credentialPublicKey, credentialID, counter } = verification.registrationInfo
+      const { credentialPublicKey, credentialID, counter, credentialDeviceType, credentialBackedUp } = verification.registrationInfo
       // credentialID is a base64url string (from isoBase64URL.fromBuffer internally)
       if (!credentialID || typeof credentialID !== 'string' || credentialID.length === 0) {
         return new Response(JSON.stringify({ error: "credentialID is empty, registration data corrupted" }), {
@@ -174,19 +174,19 @@ serve(async (req: Request) => {
       }
       const pubKeyB64 = b64url(new Uint8Array(credentialPublicKey))
 
-      // Determine device name from transports
+      // Determine device name: custom name > transport-based heuristic
       const transports = credential.response?.transports || []
-      const deviceName = transports.includes("internal")
+      const deviceName = customDeviceName || (transports.includes("internal")
         ? "Platform Authenticator"
         : transports.includes("usb")
         ? "Security Key"
-        : "Passkey"
+        : "Passkey")
 
       // Upsert to handle edge case where credential_id already exists
       const { error: upsertErr } = await supabaseAdmin
         .from("passkey_credentials")
         .upsert(
-          { user_id: userId, credential_id: credentialID, public_key: pubKeyB64, counter, transports, device_name: deviceName },
+          { user_id: userId, credential_id: credentialID, public_key: pubKeyB64, counter, transports, device_name: deviceName, platform, credential_device_type: credentialDeviceType, credential_backed_up: credentialBackedUp },
           { onConflict: "credential_id", ignoreDuplicates: false },
         )
 
@@ -293,9 +293,9 @@ serve(async (req: Request) => {
           expectedChallenge: storedChallenge,
           expectedOrigin: origin,
           expectedRPID: rpId,
-          credential: {
-            id: storedCred.credential_id,
-            publicKey: b64urlToBytes(storedCred.public_key),
+          authenticator: {
+            credentialID: storedCred.credential_id,
+            credentialPublicKey: b64urlToBytes(storedCred.public_key),
             counter: storedCred.counter,
             transports: storedCred.transports || [],
           },
@@ -331,7 +331,7 @@ serve(async (req: Request) => {
     if (action === "list") {
       const { data: credentials } = await supabaseAdmin
         .from("passkey_credentials")
-        .select("id, credential_id, device_name, transports, created_at, last_used_at")
+        .select("id, credential_id, device_name, platform, credential_device_type, credential_backed_up, transports, created_at, last_used_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
 

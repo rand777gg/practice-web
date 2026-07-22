@@ -20,6 +20,7 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [githubLoggingIn, setGithubLoggingIn] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
   const navigate = useNavigate()
 
@@ -30,6 +31,12 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) { setError(authError.message); setIsSubmitting(false) }
     else navigate('/')
+  }
+
+  const handleGitHubLogin = () => {
+    setGithubLoggingIn(true)
+    setError('')
+    supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin } })
   }
 
   const v = visible ? rowIn : rowOut
@@ -51,7 +58,7 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
               <div className="grid gap-6">
                 <div className={cn(rowBase, v)} style={{ transitionDelay: '400ms' }}>
                   <div className="flex justify-center gap-4">
-                    <Button variant="outline" size="icon" type="button" className="rounded-full size-12 border-gray-300 bg-white hover:bg-gray-50 dark:border-white/20 dark:bg-white/5 dark:hover:bg-white/10 backdrop-blur" onClick={() => supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin } })} title="GitHub 登录">
+                    <Button variant="outline" size="icon" type="button" className="rounded-full size-12 border-gray-300 bg-white hover:bg-gray-50 dark:border-white/20 dark:bg-white/5 dark:hover:bg-white/10 backdrop-blur" onClick={handleGitHubLogin} disabled={githubLoggingIn} title="GitHub 登录">
                       <svg className="h-6 w-6 text-gray-800 dark:text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
                     </Button>
                     <Button variant="outline" size="icon" type="button" className="rounded-full size-12 border-gray-300 bg-white hover:bg-gray-50 dark:border-white/20 dark:bg-white/5 dark:hover:bg-white/10 backdrop-blur" onClick={() => setQrOpen(true)} title="扫码登录">
@@ -59,34 +66,42 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
                     </Button>
                   </div>
                 </div>
-                <div className={cn(rowBase, v)} style={{ transitionDelay: '500ms' }}>
-                  <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-gray-200 dark:after:border-white/15">
-                    <span className="relative z-10 px-2 text-gray-500 dark:text-white/50">{t('auth.email')}</span>
-                  </div>
-                </div>
                 {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive dark:bg-destructive/20 dark:text-red-300 backdrop-blur-md">{error}</div>}
-                <div className={cn(rowBase, v)} style={{ transitionDelay: '600ms' }}>
-                  <div className="grid gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="email" className="text-gray-800 dark:text-white/80">{t('auth.email')}</Label>
-                      <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="text-gray-900 placeholder:text-gray-400 border-gray-300 bg-white dark:text-white dark:placeholder:text-white/30 dark:border-white/20 dark:bg-white/5 backdrop-blur-md focus:border-gray-400 dark:focus:border-white/50" />
+                <div className="relative">
+                  <div className={cn(rowBase, v)} style={{ transitionDelay: '500ms' }}>
+                    <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-gray-200 dark:after:border-white/15">
+                      <span className="relative z-10 px-2 text-gray-500 dark:text-white/50">{t('auth.email')}</span>
                     </div>
-                    <div className="grid gap-2">
-                      <div className="flex items-center">
-                        <Label htmlFor="password" className="text-gray-800 dark:text-white/80">{t('auth.password')}</Label>
+                  </div>
+                  <div className={cn(rowBase, v)} style={{ transitionDelay: '600ms' }}>
+                    <div className="grid gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="email" className="text-gray-800 dark:text-white/80">{t('auth.email')}</Label>
+                        <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="text-gray-900 placeholder:text-gray-400 border-gray-300 bg-white dark:text-white dark:placeholder:text-white/30 dark:border-white/20 dark:bg-white/5 backdrop-blur-md focus:border-gray-400 dark:focus:border-white/50" />
                       </div>
-                      <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="text-gray-900 placeholder:text-gray-400 border-gray-300 bg-white dark:text-white dark:placeholder:text-white/30 dark:border-white/20 dark:bg-white/5 backdrop-blur-md focus:border-gray-400 dark:focus:border-white/50" />
+                      <div className="grid gap-2">
+                        <div className="flex items-center">
+                          <Label htmlFor="password" className="text-gray-800 dark:text-white/80">{t('auth.password')}</Label>
+                        </div>
+                        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="text-gray-900 placeholder:text-gray-400 border-gray-300 bg-white dark:text-white dark:placeholder:text-white/30 dark:border-white/20 dark:bg-white/5 backdrop-blur-md focus:border-gray-400 dark:focus:border-white/50" />
+                      </div>
+                      <Button type="submit" className="w-full" disabled={isSubmitting}>
+                        {isSubmitting ? t('auth.signingIn') : t('auth.signIn')}
+                      </Button>
                     </div>
-                    <Button type="submit" className="w-full" disabled={isSubmitting}>
-                      {isSubmitting ? t('auth.signingIn') : t('auth.signIn')}
-                    </Button>
                   </div>
-                </div>
-                <div className={cn(rowBase, v)} style={{ transitionDelay: '700ms' }}>
-                  <div className="text-center text-sm">
-                    <span className="text-gray-500 dark:text-white/50">{t('auth.noAccount')} </span>
-                    <Link to="/register" className="text-gray-800 underline underline-offset-4 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">{t('auth.register')}</Link>
+                  <div className={cn(rowBase, v)} style={{ transitionDelay: '700ms' }}>
+                    <div className="text-center text-sm">
+                      <span className="text-gray-500 dark:text-white/50">{t('auth.noAccount')} </span>
+                      <Link to="/register" className="text-gray-800 underline underline-offset-4 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">{t('auth.register')}</Link>
+                    </div>
                   </div>
+                  {githubLoggingIn && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-black/50 transition-opacity duration-300 animate-[passkey-success-pop_0.3s_ease-out]">
+                      <span className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
+                      <p className="text-sm text-muted-foreground">{t('auth.signingInWithGitHub')}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </form>
