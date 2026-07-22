@@ -14,6 +14,7 @@ export const ALL_SYNCED_KEYS = [
   'offline_mode',
   'note_recognition_mode',
   'bottom_nav_tabs',
+  'sidebar_collapsed',
 ] as const
 
 export type SyncedKey = (typeof ALL_SYNCED_KEYS)[number]
@@ -53,7 +54,7 @@ interface SyncSettingsState {
 function loadSyncDirection(): SyncDirection {
   const v = localStorage.getItem(SYNC_DIRECTION_KEY)
   if (v === 'upload_only' || v === 'download_only' || v === 'bidirectional') return v
-  return 'none'
+  return 'bidirectional'
 }
 
 function loadAutoSync(): boolean {
