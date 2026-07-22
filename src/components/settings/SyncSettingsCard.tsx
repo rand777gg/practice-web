@@ -61,7 +61,6 @@ export function SyncSettingsCard() {
 
   // Conflict detection
   const [conflictData, setConflictData] = useState<{ action: 'upload' | 'download'; label: string } | null>(null)
-  const [serverSettings, setServerSettings] = useState<Record<string, unknown> | null>(null)
   const [checkingConflict, setCheckingConflict] = useState(false)
 
   // When the dialog opens, check for conflicts
@@ -84,13 +83,11 @@ export function SyncSettingsCard() {
       setCheckingConflict(false)
 
       if (!data?.settings) {
-        setServerSettings(null)
         setConflictData(null)
         return
       }
 
       const server = data.settings as Record<string, unknown>
-      setServerSettings(server)
 
       // Compare with local settings
       const local = collectLocalSettings(syncedKeys)
