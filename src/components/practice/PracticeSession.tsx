@@ -35,7 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Kbd } from '@/components/ui/kbd'
@@ -622,7 +622,6 @@ export function PracticeSession() {
 
     const cached = sessionStateRef.current.get(ids[index])
     if (cached) {
-      const currentUser = useAuthStore.getState().user
       const [qRes] = await Promise.all([
         supabase.from('questions').select('*').eq('id', ids[index]).single(),
       ])

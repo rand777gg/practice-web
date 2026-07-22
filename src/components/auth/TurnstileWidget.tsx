@@ -26,7 +26,7 @@ function loadScript(): Promise<void> {
 
 export const TurnstileWidget = forwardRef<TurnstileHandle>(function TurnstileWidget(_props, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const widgetId = useRef<string>()
+  const widgetId = useRef<string>('')
   const resolveRef = useRef<((token: string) => void) | null>(null)
 
   useImperativeHandle(ref, () => ({

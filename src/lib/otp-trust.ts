@@ -54,7 +54,7 @@ export function clearDeviceTrust(): void {
   localStorage.removeItem(TRUST_KEY)
 }
 
-export async function trustDeviceRemote(userId: string, deviceId: string): Promise<void> {
+export async function trustDeviceRemote(_userId: string, deviceId: string): Promise<void> {
   const detail = await getDeviceDetail()
   const components = getFpComponents() || {}
   const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`

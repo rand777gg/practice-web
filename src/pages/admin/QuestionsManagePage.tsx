@@ -37,7 +37,7 @@ import { useT } from '@/i18n/use-t'
 export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [, setSearchParams] = useSearchParams()
   const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
   const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
