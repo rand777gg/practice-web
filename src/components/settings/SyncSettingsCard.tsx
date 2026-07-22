@@ -169,7 +169,7 @@ export function SyncSettingsCard() {
                   本地与服务器设置不一致
                 </p>
                 <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-                  {conflictKeys.map(k => KEY_LABELS[k] || k).join('、')}
+                  {conflictKeys.map(k => KEY_LABELS[k as SyncedKey] || k).join('、')}
                 </p>
                 <div className="flex gap-1.5 mt-2">
                   <Button size="sm" className="h-6 text-[10px] gap-1 flex-1" onClick={handleUpload}>

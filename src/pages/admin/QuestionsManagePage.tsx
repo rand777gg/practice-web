@@ -522,7 +522,7 @@ export function Component() {
         <>
           <QuestionList
             questions={questions}
-            onDelete={(id) => setDeleteConfirm({ type: 'single', id })}
+            onDelete={async (id) => { setDeleteConfirm({ type: 'single', id }) }}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}

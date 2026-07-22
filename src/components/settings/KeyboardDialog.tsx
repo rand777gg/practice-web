@@ -23,7 +23,7 @@ interface Props {
 const BASE_KEY_W = 42
 const GAP = 3
 
-function keyStyle(w: number, h: number, totalW: number) {
+function keyStyle(w: number, h: number) {
   return { width: BASE_KEY_W * w + GAP * (w - 1), height: h === 2 ? 85 : 40 }
 }
 
@@ -116,7 +116,7 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
             ? 'bg-[rgba(5,25,70,0.53)] text-white'
             : isDark ? 'bg-[#3a3a4a] text-[#d0d0d8] border-b border-[#555] shadow-[0_1px_0_#555]' : 'bg-white text-[#333] border-b border-[#b5b5b5] shadow-[0_0_2px_rgba(0,0,0,0.15)]',
         )}
-        style={keyStyle(k.w, h, totalW)}
+        style={keyStyle(k.w, h)}
       >
         {getKeyLabel(k.code)}
       </div>
