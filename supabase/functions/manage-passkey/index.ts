@@ -5,7 +5,7 @@ import {
   verifyRegistrationResponse,
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
-} from "https://esm.sh/@simplewebauthn/server@10.0.0"
+} from "npm:@simplewebauthn/server@10.0.0"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
