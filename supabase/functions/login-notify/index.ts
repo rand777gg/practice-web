@@ -6,33 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-// Auth Hook 调用时会用这个 header 传递 secret
-const HOOK_SECRET = Deno.env.get("AUTH_HOOK_SECRET")
-
-interface AuthEvent {
-  user?: { id: string; email?: string }
-  ip_address?: string
-  user_agent?: string
-  timestamp?: string
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
   }
 
   try {
-    // 验证 Auth Hook secret（如果有配置）
-    if (HOOK_SECRET) {
-      const hookSecret = req.headers.get("x-supabase-auth-hook-secret")
-      if (!hookSecret || hookSecret !== HOOK_SECRET) {
-        return new Response(JSON.stringify({ error: "unauthorized" }), {
-          status: 401,
-          headers: corsHeaders,
-        })
-      }
-    }
-
     const body = await req.json()
     const ip = body.ip_address || body.ip || req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown"
     const userAgent = body.user_agent || body.userAgent || req.headers.get("user-agent") || "unknown"

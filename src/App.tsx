@@ -154,14 +154,14 @@ function AuthInitializer({ children }: { children: ReactNode }) {
         // Skip token refresh entirely — no store update, no re-render
         if (event === 'TOKEN_REFRESHED') return
 
-        // 登录后调用 login-notify 记录日志并判断是否新设备
+        // 登录后记录日志并判断是否新设备（首次 SIGNED_IN 或登录后恢复 session）
         if (event === 'SIGNED_IN' && session?.user) {
           const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/login-notify`
           fetch(fnUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
             },
             body: JSON.stringify({ userId: session.user.id }),
           }).catch(() => {})
