@@ -15,6 +15,7 @@ export const ALL_SYNCED_KEYS = [
   'bottom_nav_tabs',
   'sidebar_collapsed',
   'practice_shortcuts',
+  'default_page',
 ] as const
 
 export type SyncedKey = (typeof ALL_SYNCED_KEYS)[number]

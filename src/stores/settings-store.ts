@@ -14,6 +14,7 @@ const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
 const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
 const OFFLINE_KEY = 'offline_mode'
 const PRACTICE_SHORTCUTS_KEY = 'practice_shortcuts'
+const DEFAULT_PAGE_KEY = 'default_page'
 const EYE_CARE_KEY = 'eye_care'
 const DARK_CODE_THEME_KEY = 'dark_code_theme'
 const LIGHT_CODE_THEME_KEY = 'light_code_theme'
@@ -85,6 +86,27 @@ function loadPracticeShortcuts(): ShortcutConfig {
   return { ...DEFAULT_SHORTCUTS }
 }
 
+export const USER_PAGE_OPTIONS = [
+  { value: '/', label: '仪表盘' },
+  { value: '/practice', label: '练习' },
+  { value: '/exam', label: '考试' },
+  { value: '/favorites', label: '收藏' },
+  { value: '/review', label: '错题回顾' },
+  { value: '/notes', label: '公开笔记' },
+  { value: '/question-bank', label: '题库' },
+]
+
+export const ADMIN_PAGE_OPTIONS = [
+  { value: '/admin/questions', label: '题目管理' },
+  { value: '/admin/ai-import', label: 'AI 智能解析' },
+  { value: '/admin/users', label: '用户管理' },
+  { value: '/admin/ai', label: 'AI 管理' },
+]
+
+function loadDefaultPage(): string {
+  return localStorage.getItem(DEFAULT_PAGE_KEY) || '/'
+}
+
 function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
 }
@@ -122,6 +144,7 @@ interface SettingsState {
   noteRecognitionMode: NoteRecognitionMode
   bottomNavTabs: BottomNavTabKey[]
   practiceShortcuts: ShortcutConfig
+  defaultPage: string
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -133,6 +156,7 @@ interface SettingsState {
   setNoteRecognitionMode: (value: NoteRecognitionMode) => void
   setBottomNavTabs: (tabs: BottomNavTabKey[]) => void
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
+  setDefaultPage: (page: string) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -161,6 +185,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   noteRecognitionMode: loadNoteRecognitionMode(),
   bottomNavTabs: loadBottomNavTabs(),
   practiceShortcuts: loadPracticeShortcuts(),
+  defaultPage: loadDefaultPage(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -216,6 +241,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       localStorage.setItem(PRACTICE_SHORTCUTS_KEY, JSON.stringify(next))
       return { practiceShortcuts: next }
     })
+  },
+  setDefaultPage: (page) => {
+    localStorage.setItem(DEFAULT_PAGE_KEY, page)
+    set({ defaultPage: page })
   },
   isEnabled: (key) => get().flags[key],
 }))

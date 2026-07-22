@@ -69,7 +69,7 @@ export function Component() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
   const navigate = useNavigate()
-  const { isEnabled } = useSettingsStore()
+  const { isEnabled, defaultPage } = useSettingsStore()
   const showAiInsight = hasAiConfig() && isEnabled('analysis')
   const dashboardStore = useDashboardStore()
 
@@ -84,6 +84,10 @@ export function Component() {
   const needsCharts = chartsRequested || visitedTabs.has('stats') || visitedTabs.has('subjects') || visitedTabs.has('journey')
   const btnRowRef = useRef<HTMLDivElement>(null)
   const loadGenRef = useRef(0)
+
+  useEffect(() => {
+    if (defaultPage && defaultPage !== '/') navigate(defaultPage, { replace: true })
+  }, [defaultPage, navigate])
 
   useEffect(() => {
     if (expandedBtn === null) return

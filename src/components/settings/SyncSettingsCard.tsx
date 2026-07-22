@@ -33,6 +33,7 @@ const KEY_LABELS: Record<SyncedKey, string> = {
   bottom_nav_tabs: '底部导航栏',
   sidebar_collapsed: '侧边栏折叠',
   practice_shortcuts: '刷题快捷键',
+  default_page: '默认进入页面',
 }
 
 function collectLocalSettings(keys: SyncedKey[]): Record<string, unknown> {

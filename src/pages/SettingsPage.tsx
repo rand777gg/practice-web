@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useAiStore } from '@/stores/ai-store'
-import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
- DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
+ DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
@@ -63,7 +63,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, practiceShortcuts, setPracticeShortcut } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -724,6 +724,37 @@ export function Component() {
           English
          </Button>
         </div>
+       </div>
+       <div>
+        <p className="text-xs text-muted-foreground mb-2">默认进入页面</p>
+        <DropdownMenu>
+         <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs justify-between w-full">
+           {[...USER_PAGE_OPTIONS, ...(profile?.role === 'admin' ? ADMIN_PAGE_OPTIONS : [])].find(o => o.value === defaultPage)?.label || '仪表盘'}
+           <ChevronDown className="h-3 w-3 opacity-50" />
+          </Button>
+         </DropdownMenuTrigger>
+         <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+          {USER_PAGE_OPTIONS.map(o => (
+           <DropdownMenuItem key={o.value} onClick={() => setDefaultPage(o.value)}>
+            {o.label}
+            {defaultPage === o.value && <Check className="h-4 w-4 ml-auto" />}
+           </DropdownMenuItem>
+          ))}
+          {profile?.role === 'admin' && (
+           <>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1.5 text-[10px] text-muted-foreground">管理页面</div>
+            {ADMIN_PAGE_OPTIONS.map(o => (
+             <DropdownMenuItem key={o.value} onClick={() => setDefaultPage(o.value)}>
+              {o.label}
+              {defaultPage === o.value && <Check className="h-4 w-4 ml-auto" />}
+             </DropdownMenuItem>
+            ))}
+           </>
+          )}
+         </DropdownMenuContent>
+        </DropdownMenu>
        </div>
        <div>
         <p className="text-xs text-muted-foreground mb-2">笔记图片识别方式</p>
