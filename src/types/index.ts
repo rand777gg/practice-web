@@ -110,6 +110,7 @@ export interface Question {
   verified: boolean
   import_mode: string | null
   allow_unordered: boolean
+  unordered_blanks: number[] | null
   source_page: string | null
 }
 
@@ -170,6 +171,7 @@ export interface ImportedQuestion {
   key_points?: string
   answer_explanation?: string
   allow_unordered?: boolean
+  unordered_blanks?: number[] | null
 }
 
 /** Parse correct_answer from DB JSONB to typed CorrectAnswer */

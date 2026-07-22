@@ -28,6 +28,7 @@ import {
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
 import { DeviceLabel } from '@/components/ui/device-label'
@@ -69,6 +70,7 @@ export function Component() {
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
  const siteTheme = useThemeStore((s) => s.theme)
  const codeTheme = siteTheme === 'dark' ? darkCodeTheme : lightCodeTheme
+ const isMobile = useIsMobile()
  const navigate = useNavigate()
  const [previewLang, setPreviewLang] = useState('javascript')
  const [aiGlow, setAiGlow] = useState(false)
@@ -586,12 +588,15 @@ export function Component() {
        <div className="border-t pt-4" />
 
        {/* Practice shortcuts */}
-       <div>
-        <p className="text-sm mb-3">刷题快捷键</p>
-        <ShortcutSettings shortcuts={practiceShortcuts} onChange={setPracticeShortcut} />
-       </div>
-
-       <div className="border-t pt-4" />
+       {!isMobile && (
+        <>
+         <div>
+          <p className="text-sm mb-3">刷题快捷键</p>
+          <ShortcutSettings shortcuts={practiceShortcuts} onChange={setPracticeShortcut} />
+         </div>
+         <div className="border-t pt-4" />
+        </>
+       )}
 
        {/* Code theme */}
        <div>

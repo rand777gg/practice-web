@@ -12,7 +12,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import type { ShortcutAction, ShortcutConfig } from '@/stores/settings-store'
 import { KeyboardDialog } from '@/components/settings/KeyboardDialog'
 
-const LABELS: Record<ShortcutAction, string> = { prev: '上一题', next: '下一题', submit: '提交答案' }
+const LABELS: Record<ShortcutAction, string> = { prev: '上一题', next: '下一题', submit: '提交答案', markUnsure: '不确定', markWrong: '纠错', favorite: '收藏', tooEasy: '太简单' }
 
 const KEY_DISPLAY: Record<string, string> = {
   ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',

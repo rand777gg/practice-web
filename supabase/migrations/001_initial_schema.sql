@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.questions (
   verified          BOOLEAN NOT NULL DEFAULT false,
   import_mode       TEXT,
   allow_unordered   BOOLEAN NOT NULL DEFAULT false,
+  unordered_blanks  INTEGER[] DEFAULT NULL,
   source_page       TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -73,15 +73,18 @@ function loadFlags(): AiFeatureFlags {
   return { exam: true, summary: false, suggestions: false, analysis: false, mineru: true, keypoints: true }
 }
 
-export type ShortcutAction = 'prev' | 'next' | 'submit'
+export type ShortcutAction = 'prev' | 'next' | 'submit' | 'markUnsure' | 'markWrong' | 'favorite' | 'tooEasy'
 export type ShortcutConfig = Record<ShortcutAction, string>
 
-export const DEFAULT_SHORTCUTS: ShortcutConfig = { prev: 'ArrowLeft', next: 'ArrowRight', submit: 'Enter' }
+export const DEFAULT_SHORTCUTS: ShortcutConfig = { prev: 'ArrowLeft', next: 'ArrowRight', submit: 'Enter', markUnsure: 'e', markWrong: 'r', favorite: 'q', tooEasy: 'w' }
 
 function loadPracticeShortcuts(): ShortcutConfig {
   try {
     const raw = localStorage.getItem(PRACTICE_SHORTCUTS_KEY)
-    if (raw) return JSON.parse(raw) as ShortcutConfig
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<ShortcutConfig>
+      return { ...DEFAULT_SHORTCUTS, ...parsed }
+    }
   } catch { /* ignore */ }
   return { ...DEFAULT_SHORTCUTS }
 }

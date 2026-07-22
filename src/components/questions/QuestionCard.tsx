@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { Kbd } from '@/components/ui/kbd'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS, TYPE_COLORS } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Button } from '@/components/ui/button'
@@ -67,9 +68,12 @@ interface Props {
   onMarkTooEasy?: () => void
   onMarkUnsure?: () => void
   onVerify?: () => void
+  unsureKbd?: string
+  favoriteKbd?: string
+  tooEasyKbd?: string
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, unsureKbd, favoriteKbd, tooEasyKbd }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
   useEffect(() => {
@@ -86,7 +90,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isAnalysis = type === 'analysis'
   const isJudgeCorrect = type === 'judge_correct'
   const isTextInput = isFillBlank || isShort || isAnalysis
-  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered)
+  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered, question.unordered_blanks)
   const typeLabel = QUESTION_TYPE_LABELS[type]
   const row = (delay: number) => ({ className: cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'), style: { transitionDelay: `${delay}ms` } })
 
@@ -390,17 +394,17 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           {onToggleFavorite && (
             <Button variant="outline" size="sm" onClick={onToggleFavorite} className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}>
               {isFavorited ? <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" /> : <Star className="h-3 w-3" />}
-              {isFavorited ? t('favorites.remove') : t('favorites.add')}
+              {isFavorited ? t('favorites.remove') : t('favorites.add')}{favoriteKbd && <Kbd className="ml-1">{favoriteKbd}</Kbd>}
             </Button>
           )}
           {onMarkTooEasy && (
             <Button variant="outline" size="sm" onClick={onMarkTooEasy} className="text-muted-foreground hover:text-green-600 hover:border-green-400">
-              <ThumbsDown className="h-3 w-3 mr-1" />太简单
+              <ThumbsDown className="h-3 w-3 mr-1" />太简单{tooEasyKbd && <Kbd className="ml-1">{tooEasyKbd}</Kbd>}
             </Button>
           )}
           {onMarkUnsure && (
             <Button variant="outline" size="sm" onClick={onMarkUnsure} className="text-muted-foreground hover:text-orange-600 hover:border-orange-400">
-              <HelpCircle className="h-3 w-3 mr-1" />不确定
+              <HelpCircle className="h-3 w-3 mr-1" />不确定{unsureKbd && <Kbd className="ml-1">{unsureKbd}</Kbd>}
             </Button>
           )}
           </div>

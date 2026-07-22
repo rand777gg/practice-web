@@ -42,7 +42,6 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
     if (!open) return
     e.preventDefault(); e.stopPropagation()
     if (e.key === 'Escape') { recorded.length === 0 ? onOpenChange(false) : setRecorded([]); return }
-    if (e.key === 'Enter') { onConfirm(recorded.join('+')); onOpenChange(false); return }
     if (e.key === 'Backspace' || e.key === 'Delete') { onConfirm(''); onOpenChange(false); return }
     if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
     const parts: string[] = []
@@ -132,7 +131,7 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="text-sm flex items-center gap-2">
             {action && LABELS[action]}
-            {recorded.length > 0 && <span className="text-xs text-muted-foreground font-normal">— Enter 确认 · Esc 清除 · ← 删除</span>}
+            {recorded.length > 0 && <span className="text-xs text-muted-foreground font-normal">— Esc 清除 · ← 删除，确认请点按钮</span>}
           </DialogTitle>
           <DialogDescription className="sr-only">录制快捷键</DialogDescription>
         </DialogHeader>

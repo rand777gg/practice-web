@@ -5,6 +5,7 @@ export function isAnswerCorrect(
   correct: CorrectAnswer | null | undefined,
   questionType: QuestionType,
   allowUnordered?: boolean,
+  unorderedBlanks?: number[] | null,
 ): boolean {
   if (selected == null || correct == null) return false
   switch (questionType) {
@@ -27,6 +28,26 @@ export function isAnswerCorrect(
       if (allowUnordered) {
         selArr.sort()
         corArr.sort()
+        return selArr.every((s, i) => {
+          const alternatives = corArr[i].split(/[;；]/).map(a => a.trim()).filter(Boolean)
+          return alternatives.some(a => s === a)
+        })
+      }
+      if (unorderedBlanks && unorderedBlanks.length > 0) {
+        const uSet = new Set(unorderedBlanks)
+        // Check ordered positions
+        for (let i = 0; i < corArr.length; i++) {
+          if (uSet.has(i)) continue
+          const alternatives = corArr[i].split(/[;；]/).map(a => a.trim()).filter(Boolean)
+          if (!alternatives.some(a => selArr[i] === a)) return false
+        }
+        // Check unordered positions as sets
+        const uSel = unorderedBlanks.map(i => selArr[i]).sort()
+        const uCor = unorderedBlanks.map(i => corArr[i]).sort()
+        return uSel.every((s, i) => {
+          const alternatives = uCor[i].split(/[;；]/).map(a => a.trim()).filter(Boolean)
+          return alternatives.some(a => s === a)
+        })
       }
       return selArr.every((s, i) => {
         const alternatives = corArr[i].split(/[;；]/).map(a => a.trim()).filter(Boolean)

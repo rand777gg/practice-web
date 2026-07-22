@@ -236,6 +236,7 @@ export function PracticeSession() {
   const snapRef = useRef<{ question: Question | null; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }>({ question: null, answer: null, submitted: false, note: '', isPublic: false, answerId: null, attempts: 0, wrongs: 0 })
   useEffect(() => { snapRef.current = { question, answer: selectedAnswer, submitted: isSubmitted, note, isPublic, answerId, attempts: attemptCount, wrongs: wrongCount } })
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
+  const [tooEasyOpen, setTooEasyOpen] = useState(false)
   const isMobile = useIsMobile()
   const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
 
@@ -783,7 +784,7 @@ export function PracticeSession() {
 
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
-    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered)
+    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks)
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
@@ -868,6 +869,10 @@ export function PracticeSession() {
   const prevRef = useRef(handlePrev)
   const nextRef = useRef(handleNext)
   const submitRef = useRef(handleSubmit)
+  const markUnsureRef = useRef<() => void>(() => {})
+  const markWrongRef = useRef<() => void>(() => {})
+  const favoriteRef = useRef<() => void>(() => {})
+  const tooEasyRef = useRef<() => void>(() => {})
   const shortcutsRef = useRef(practiceShortcuts)
   useEffect(() => { prevRef.current = handlePrev; nextRef.current = handleNext; submitRef.current = handleSubmit; shortcutsRef.current = practiceShortcuts })
 
@@ -879,6 +884,10 @@ export function PracticeSession() {
       if (matchShortcut(e, sc.prev)) { e.preventDefault(); prevRef.current() }
       if (matchShortcut(e, sc.next)) { e.preventDefault(); nextRef.current() }
       if (!isSubmitted && selectedAnswer !== null && matchShortcut(e, sc.submit)) { e.preventDefault(); submitRef.current() }
+      if (!isSubmitted && matchShortcut(e, sc.markUnsure)) { e.preventDefault(); markUnsureRef.current() }
+      if (matchShortcut(e, sc.markWrong)) { e.preventDefault(); markWrongRef.current() }
+      if (!isSubmitted && matchShortcut(e, sc.tooEasy)) { e.preventDefault(); tooEasyRef.current() }
+      if (matchShortcut(e, sc.favorite)) { e.preventDefault(); favoriteRef.current() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -911,6 +920,7 @@ export function PracticeSession() {
 
   const handleMarkUnsure = useCallback(async () => {
     if (!question) return
+    setSelectedAnswer([])
     const id = await saveAnswer(question.id, [], false, 'practice')
     setAnswerId(id)
     answeredThisSession.current.add(question.id)
@@ -919,6 +929,19 @@ export function PracticeSession() {
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
   }, [question, saveAnswer, bumpRefresh])
+
+  useEffect(() => { markUnsureRef.current = handleMarkUnsure; markWrongRef.current = handleMarkUnsure; favoriteRef.current = () => { if (question) toggleFavorite(question.id) }; tooEasyRef.current = () => setTooEasyOpen(true) })
+
+  useEffect(() => {
+    if (!tooEasyOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'w' || e.key === 'W') { e.preventDefault(); setTooEasyOpen(false); handleMarkTooEasy() }
+      if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setTooEasyOpen(false) }
+      if (e.key === 'Escape') { e.preventDefault(); setTooEasyOpen(false) }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [tooEasyOpen])
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,
@@ -1042,8 +1065,21 @@ export function PracticeSession() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setBlockSkipOpen(false)}>继续作答</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setBlockSkipOpen(false); handleMarkTooEasy() }} className="bg-muted text-foreground hover:bg-muted/80">太简单</AlertDialogAction>
+            <AlertDialogAction onClick={() => { setBlockSkipOpen(false); setTooEasyOpen(true) }} className="bg-muted text-foreground hover:bg-muted/80">太简单</AlertDialogAction>
             <AlertDialogAction onClick={() => { setBlockSkipOpen(false); handleMarkUnsure() }}>不确定</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={tooEasyOpen} onOpenChange={setTooEasyOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确定跳过此题？</AlertDialogTitle>
+            <AlertDialogDescription>标记为太简单后将不再出现此题。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消 (D)</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setTooEasyOpen(false); handleMarkTooEasy() }}>确定 (W)</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1219,7 +1255,7 @@ export function PracticeSession() {
           ) : question ? (
             <>
               <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+                <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
               </div>
               {isSubmitted && (
                 <div className="space-y-1.5">
@@ -1230,19 +1266,18 @@ export function PracticeSession() {
               )}
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={handlePrev} disabled={!hasPrev}>
-                  <ArrowLeft className="h-4 w-4" />
                   {t('practice.previousQuestion')}{" "}
-                  <ShortcutKbd shortcut={practiceShortcuts.prev} />
+                  {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.prev} />}
                 </Button>
                 {!isSubmitted ? (
                   <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
                     {t('practice.submitAnswer')}{" "}
-                    <ShortcutKbd shortcut={practiceShortcuts.submit} />
+                    {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.submit} />}
                   </Button>
                 ) : (
                   <Button onClick={handleNext}>
                     {t('practice.nextQuestion')}{" "}
-                    <ShortcutKbd shortcut={practiceShortcuts.next} />
+                    {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.next} />}
                   </Button>
                 )}
               </div>

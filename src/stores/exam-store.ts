@@ -187,7 +187,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     // Auto-save to DB so answers survive refresh
     if (session) {
       const q = questions.find(x => x.id === questionId)
-      const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered) : false
+      const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks) : false
       supabase.from('user_answers').upsert({
         user_id: session.user_id,
         question_id: questionId,
@@ -251,7 +251,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     for (const q of questions) {
       const selected = answers.get(q.id)
       if (selected == null) continue
-      const isCorrect = isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered)
+      const isCorrect = isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks)
       if (isCorrect) correctCount++
       answerRecords.push({
         user_id: session.user_id,

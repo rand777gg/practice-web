@@ -49,6 +49,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [verified, setVerified] = useState(initialData?.verified ?? false)
   const [allowUnordered, setAllowUnordered] = useState(initialData?.allow_unordered ?? false)
+  const [unorderedBlanks, setUnorderedBlanks] = useState<number[]>(initialData?.unordered_blanks ?? [])
   const [analysisOpen, setAnalysisOpen] = useState(true)
   const analysisRef = useRef<HTMLTextAreaElement>(null)
   const questionTextRef = useRef<HTMLTextAreaElement>(null)
@@ -224,6 +225,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         seq_number: seqNumber ? Number(seqNumber) : null,
         verified,
         allow_unordered: allowUnordered,
+        unordered_blanks: unorderedBlanks.length > 0 && unorderedBlanks[0] !== -1 ? unorderedBlanks : null,
         import_mode: initialData?.import_mode ?? 'manual',
         source_page: initialData?.source_page ?? null,
       })
@@ -454,24 +456,63 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                         ))}
                         <p className="text-[11px] text-muted-foreground">多个近似答案用分号（；）分隔，如：React；React.js；ReactJS</p>
                       </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <div>
-                          <Label className="text-sm">允许无序答案</Label>
-                          <p className="text-xs text-muted-foreground">启用后，多个空的答案顺序不影响判分</p>
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="text-sm">允许无序答案</Label>
+                            <p className="text-xs text-muted-foreground">启用后，所选空的答案顺序不影响判分</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button type="button" variant="ghost" size="sm"
+                              className="h-7 text-xs"
+                              disabled={answers.every(a => !a)}
+                              onClick={() => {
+                                const normalized = answers.map(normalizeChineseText)
+                                setCorrectAnswer(blankCount > 1 ? normalized : normalized[0] || '')
+                              }}
+                            >
+                              <Wand2 className="h-3 w-3 mr-1" />标准化
+                            </Button>
+                            <Switch checked={allowUnordered} onCheckedChange={(v) => { setAllowUnordered(v); if (!v) setUnorderedBlanks([]) }} />
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button type="button" variant="ghost" size="sm"
-                            className="h-7 text-xs"
-                            disabled={answers.every(a => !a)}
-                            onClick={() => {
-                              const normalized = answers.map(normalizeChineseText)
-                              setCorrectAnswer(blankCount > 1 ? normalized : normalized[0] || '')
-                            }}
-                          >
-                            <Wand2 className="h-3 w-3 mr-1" />标准化
-                          </Button>
-                          <Switch checked={allowUnordered} onCheckedChange={setAllowUnordered} />
-                        </div>
+                        {allowUnordered && blankCount > 1 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-muted-foreground">无序空位：</span>
+                            <button
+                              type="button"
+                              className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${unorderedBlanks.length === 0 && unorderedBlanks[0] !== -1 ? 'bg-primary/10 border-primary text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
+                              onClick={() => setUnorderedBlanks(unorderedBlanks[0] === -1 ? [] : [-1])}
+                            >全选</button>
+                            {Array.from({ length: blankCount }).map((_, i) => {
+                              const label = (answers[i] || '').split(/[;；]/)[0]?.trim() || `空${i + 1}`
+                              const isAll = unorderedBlanks.length === 0
+                              const isNone = unorderedBlanks[0] === -1
+                              const on = isAll || unorderedBlanks.includes(i)
+                              return (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  className={`text-[10px] px-2 h-5 rounded border transition-colors truncate max-w-[80px] ${on ? 'bg-primary/10 border-primary text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
+                                  title={answers[i] || `空${i + 1}`}
+                                  onClick={() => {
+                                    if (isAll) {
+                                      setUnorderedBlanks(Array.from({ length: blankCount }, (_, j) => j).filter(j => j !== i))
+                                    } else if (isNone) {
+                                      setUnorderedBlanks([i])
+                                    } else if (unorderedBlanks.includes(i)) {
+                                      const next = unorderedBlanks.filter(j => j !== i)
+                                      setUnorderedBlanks(next.length === 0 ? [-1] : next.length === blankCount ? [] : next)
+                                    } else {
+                                      const next = [...unorderedBlanks, i].sort((a, b) => a - b)
+                                      setUnorderedBlanks(next.length === blankCount ? [] : next)
+                                    }
+                                  }}
+                                >{label}</button>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     </>
                   )
