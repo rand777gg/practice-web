@@ -84,7 +84,7 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
               <CardDescription className="text-gray-600 dark:text-white/60">{t('auth.signInDesc')}</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 sm:px-6">
             <form onSubmit={handleSubmit}>
               <div className="grid gap-6">
                 <div className={cn(rowBase, v)} style={{ transitionDelay: '400ms' }}>

@@ -354,8 +354,8 @@ export class MinerUClient {
     const ext = file.name.split('.').pop() || 'bin'
     const key = `${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`
 
-    const { data, error } = await supabase.functions.invoke('r2-upload-url', {
-      body: { key, contentType: file.type },
+    const { data, error } = await supabase.functions.invoke('r2', {
+      body: { action: 'upload-url', key, contentType: file.type },
     })
     if (error) throw new Error(`Failed to get upload URL: ${error.message}`)
     const { url: presignedUrl, publicUrl } = data as { url: string; publicUrl: string }

@@ -116,7 +116,7 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
       const formData = new FormData()
       formData.append('file', compressed, compressed.name)
       formData.append('folder', `notes/${user.id}`)
-      const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+      const { data, error } = await supabase.functions.invoke('r2', { body: formData })
       if (error) throw new Error(error.message || '上传失败')
       const url = (data as { url: string }).url
       if (!url) throw new Error('未返回图片地址')

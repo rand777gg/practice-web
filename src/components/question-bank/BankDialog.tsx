@@ -59,7 +59,7 @@ export function BankDialog({ open, onOpenChange, onSave, initialData }: Props) {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('folder', 'bank-logos')
-      const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+      const { data, error } = await supabase.functions.invoke('r2', { body: formData })
       if (error) {
         console.error('Logo upload failed:', error)
         alert('Logo 上传失败: ' + (error.message || '未知错误'))

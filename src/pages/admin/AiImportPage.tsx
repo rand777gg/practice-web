@@ -142,7 +142,7 @@ export function Component() {
   // Load existing PDFs from R2
   useEffect(() => {
     setR2Loading(true)
-    supabase.functions.invoke('r2-list', { body: { prefix: 'pdf/' } })
+    supabase.functions.invoke('r2', { body: { action: 'list', prefix: 'pdf/' } })
       .then(({ data }) => {
         if (data?.files) setR2Pdfs((data.files as { key: string; url: string; size: number }[]).filter(f => f.key !== 'pdf/' && !f.key.endsWith('/')))
       })
@@ -327,7 +327,7 @@ export function Component() {
     try {
       if (deleteCache) {
         for (const id of ids) {
-          await supabase.functions.invoke('r2-delete', { body: { prefix: `pdf-cache/${id}/` } }).catch(() => {})
+          await supabase.functions.invoke('r2', { body: { action: 'delete', prefix: `pdf-cache/${id}/` } }).catch(() => {})
         }
       }
       await supabase.from('parse_history').delete().in('id', ids)
@@ -506,8 +506,8 @@ export function Component() {
         if (!pdfRes.ok) return
         const pdfBlob = await pdfRes.blob()
         const pdfFile = new File([pdfBlob], fileName, { type: pdfBlob.type || 'application/pdf' })
-        const { data: presignData, error: presignErr } = await supabase.functions.invoke('r2-upload-url', {
-          body: { key: dedupKey, contentType: pdfFile.type },
+        const { data: presignData, error: presignErr } = await supabase.functions.invoke('r2', {
+          body: { action: 'upload-url', key: dedupKey, contentType: pdfFile.type },
         })
         if (presignErr || !(presignData as any)?.url) return
         await fetch((presignData as any).url, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
@@ -1486,7 +1486,7 @@ export function Component() {
                   }}
                   onRefresh={() => {
                     setR2Loading(true)
-                    supabase.functions.invoke('r2-list', { body: { prefix: 'pdf/' } })
+                    supabase.functions.invoke('r2', { body: { action: 'list', prefix: 'pdf/' } })
                       .then(({ data }) => {
                         if (data?.files) setR2Pdfs((data.files as { key: string; url: string; size: number }[]).filter(f => f.key !== 'pdf/' && !f.key.endsWith('/')))
                       })

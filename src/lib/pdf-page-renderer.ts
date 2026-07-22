@@ -48,10 +48,10 @@ async function renderPageToBlob(page: pdfjsLib.PDFPageProxy): Promise<Blob> {
 
 // Upload a blob to R2, return the public URL
 async function uploadBlobToR2(blob: Blob, key: string): Promise<string> {
-  const { data, error } = await supabase.functions.invoke('r2-upload-url', {
-    body: { key, contentType: 'image/webp' },
+  const { data, error } = await supabase.functions.invoke('r2', {
+    body: { action: 'upload-url', key, contentType: 'image/webp' },
   })
-  if (error || !(data as any)?.url) throw new Error(`r2-upload-url failed: ${error}`)
+  if (error || !(data as any)?.url) throw new Error(`r2 upload-url failed: ${error}`)
   const { url: presignedUrl, publicUrl } = data as { url: string; publicUrl: string }
 
   const uploadRes = await fetch(presignedUrl, {
@@ -117,7 +117,7 @@ export async function renderPdfThumbnail(pdfUrl: string, thumbKey: string): Prom
       cvs.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/webp', 0.8)
     })
 
-    const { data, error } = await supabase.functions.invoke('r2-upload-url', {
+    const { data, error } = await supabase.functions.invoke('r2', {
       body: { key: thumbKey, contentType: 'image/webp' },
     })
     if (error || !(data as any)?.url) return null

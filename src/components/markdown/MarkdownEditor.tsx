@@ -55,7 +55,7 @@ export function MarkdownEditor({
       const formData = new FormData()
       formData.append('file', compressed, compressed.name)
       formData.append('folder', 'images')
-      const { data, error } = await supabase.functions.invoke('r2-upload', { body: formData })
+      const { data, error } = await supabase.functions.invoke('r2', { body: formData })
       if (error) throw new Error(error.message || '上传失败')
       const url = (data as { url: string }).url
       if (url) {

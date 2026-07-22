@@ -22,7 +22,7 @@ export function Component() {
   const isDark = theme === 'dark'
 
   return (
-    <StarsBackground className="min-h-svh w-full flex flex-col items-center justify-center gap-6 p-6 md:p-10">
+    <StarsBackground className="min-h-svh w-full flex flex-col items-center justify-center gap-6 px-4 py-6 md:p-10">
       <Button
         variant="ghost"
         size="icon"
