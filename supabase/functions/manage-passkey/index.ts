@@ -155,7 +155,14 @@ serve(async (req: Request) => {
       }
 
       const { credentialPublicKey, credentialID, counter } = verification.registrationInfo
-      const credIdB64 = b64url(new Uint8Array(credentialID))
+      const credIdBuf = credentialID instanceof Uint8Array ? credentialID : new Uint8Array(credentialID)
+      if (credIdBuf.length === 0) {
+        return new Response(JSON.stringify({ error: "credentialID is empty, registration data corrupted" }), {
+          status: 500,
+          headers: corsHeaders,
+        })
+      }
+      const credIdB64 = b64url(credIdBuf)
       const pubKeyB64 = b64url(new Uint8Array(credentialPublicKey))
 
       // Determine device name from transports
