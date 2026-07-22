@@ -2,17 +2,21 @@ import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import type { PasskeyCredential } from '@/types'
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-passkey`
+const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
 async function callFn(action: string, payload: Record<string, unknown>) {
-  const { data: { session } } = await import('@/lib/supabase').then((m) => m.supabase.auth.getSession())
   const res = await fetch(FN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${session?.access_token}`,
+      Authorization: `Bearer ${ANON_KEY}`,
     },
     body: JSON.stringify({ action, ...payload }),
   })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 100)}`)
+  }
   return res.json()
 }
 
