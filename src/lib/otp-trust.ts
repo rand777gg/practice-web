@@ -58,15 +58,17 @@ export async function trustDeviceRemote(userId: string, deviceId: string): Promi
   const detail = await getDeviceDetail()
   const components = getFpComponents() || {}
   const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`
+  const { supabase } = await import('@/lib/supabase')
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token || ''
   await fetch(fnUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       action: 'trust',
-      userId,
       deviceId,
       deviceName: detail.displayName,
       deviceInfo: { ...components, os: detail.os, browser: detail.browser },

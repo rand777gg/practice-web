@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
+import { supabase } from '@/lib/supabase'
 import { useT } from '@/i18n/use-t'
 import { Button } from '@/components/ui/button'
 import { InputOtp } from '@/components/ui/input-otp'
@@ -13,15 +14,17 @@ import {
 } from '@/components/ui/dialog'
 import { getDeviceId, setTrustInfo, trustDeviceRemote } from '@/lib/otp-trust'
 
-async function verifyOtp(userId: string, code: string): Promise<boolean> {
+async function verifyOtp(code: string): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token || ''
   const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`
   const res = await fetch(fnUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ action: 'verify', userId, code }),
+    body: JSON.stringify({ action: 'verify', code }),
   })
   const data = await res.json()
   return data.valid === true
@@ -46,7 +49,7 @@ export function OtpVerifyDialog({ open, onVerified }: Props) {
     setIsSubmitting(true)
 
     try {
-      const valid = await verifyOtp(user.id, code)
+      const valid = await verifyOtp(code)
       if (valid) {
         if (trustThisDevice) {
           const deviceId = await getDeviceId()

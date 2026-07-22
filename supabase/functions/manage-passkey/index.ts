@@ -49,20 +49,32 @@ serve(async (req: Request) => {
   }
 
   try {
-    const body = await req.json()
-    const { action, userId } = body
-
-    if (!action || !userId) {
-      return new Response(JSON.stringify({ error: "missing params" }), {
-        status: 400,
-        headers: corsHeaders,
-      })
+    const authHeader = req.headers.get("Authorization")
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders })
     }
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     )
+
+    const token = authHeader.replace("Bearer ", "")
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders })
+    }
+
+    const userId = user.id
+    const body = await req.json()
+    const { action } = body
+
+    if (!action) {
+      return new Response(JSON.stringify({ error: "missing action" }), {
+        status: 400,
+        headers: corsHeaders,
+      })
+    }
 
     const origin = req.headers.get("origin") || `https://${Deno.env.get("SUPABASE_URL")!.split("://")[1]}`
     const rpId = new URL(origin).hostname

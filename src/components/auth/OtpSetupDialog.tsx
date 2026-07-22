@@ -13,6 +13,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { generateSecret, generateURI, verify } from 'otplib'
 import { toDataURL } from 'qrcode'
+import { supabase } from '@/lib/supabase'
 
 const APP_NAME = 'PracticeWeb'
 
@@ -60,14 +61,16 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
       }
 
       // Store secret via Edge Function
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token || ''
       const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`
       const res = await fetch(fnUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ action: 'setup', userId: user.id, secret, code }),
+        body: JSON.stringify({ action: 'setup', secret, code }),
       })
       const data = await res.json()
       if (data.valid) {
