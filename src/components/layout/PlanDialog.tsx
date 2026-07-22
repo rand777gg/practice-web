@@ -400,7 +400,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                       <div key={s} className="space-y-0.5">
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="text-muted-foreground truncate max-w-[60%]">{s}</span>
-                          <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(s)}&kp_missing=1`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
+                          <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(s)}&kp=__none__`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
                         </div>
                         <Progress value={pct} className="h-1.5 [&>div]:bg-blue-500" />
                       </div>
@@ -529,7 +529,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
                         <div key={subj.subject} className="space-y-0.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="text-muted-foreground truncate max-w-[60%]">{subj.subject}</span>
-                            <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp_missing=1`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
+                            <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp=__none__`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
                           </div>
                           <Progress value={pct} className="h-1.5 [&>div]:bg-pink-500" />
                         </div>

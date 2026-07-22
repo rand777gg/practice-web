@@ -52,6 +52,12 @@ export async function listPasskeys(userId: string): Promise<PasskeyCredential[]>
   return data as PasskeyCredential[]
 }
 
+/** Check if user is within re-verification grace period (server-side last_used_at) */
+export async function checkPasskeyGrace(userId: string, timeoutMinutes: number): Promise<boolean> {
+  const data = await callFn('check-grace', { userId, timeoutMinutes })
+  return (data as { valid: boolean }).valid === true
+}
+
 /** Delete a passkey credential */
 export async function deletePasskey(userId: string, credentialId: string): Promise<void> {
   await callFn('delete', { userId, credentialId })

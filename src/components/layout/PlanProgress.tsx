@@ -11,8 +11,9 @@ import { useT } from '@/i18n/use-t'
 import { Check } from 'lucide-react'
 
 function todayStart(): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
+  const now = new Date()
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16, 0, 0, 0))
+  if (now < d) d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString()
 }
 

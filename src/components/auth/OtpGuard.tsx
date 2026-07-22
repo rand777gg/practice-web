@@ -4,6 +4,7 @@ import { OtpSetupDialog } from '@/components/auth/OtpSetupDialog'
 import { OtpVerifyDialog } from '@/components/auth/OtpVerifyDialog'
 import { PasskeyVerifyDialog } from '@/components/auth/PasskeyVerifyDialog'
 import { isDeviceTrusted, getTrustInfo } from '@/lib/otp-trust'
+import { checkPasskeyGrace } from '@/lib/passkey'
 import { DeviceLabel } from '@/components/ui/device-label'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
@@ -61,16 +62,12 @@ export function OtpGuard({ children }: Props) {
 
     // Check preferred 2FA method
     if (p.preferred_2fa === 'passkey') {
-      // Check if within re-verification timeout window
       const timeout = p.passkey_timeout_minutes || 0
       if (timeout > 0) {
-        const lastVerified = localStorage.getItem('passkey_last_verified_at')
-        if (lastVerified) {
-          const elapsed = (Date.now() - Number(lastVerified)) / 60000
-          if (elapsed < timeout) {
-            setOtpCleared(true)
-            return
-          }
+        const inGrace = await checkPasskeyGrace(user.id, timeout)
+        if (inGrace) {
+          setOtpCleared(true)
+          return
         }
       }
       setShowPasskeyVerify(true)
@@ -104,7 +101,6 @@ export function OtpGuard({ children }: Props) {
   }, [])
 
   const handlePasskeyVerified = useCallback(() => {
-    localStorage.setItem('passkey_last_verified_at', String(Date.now()))
     setShowPasskeyVerify(false)
     setOtpCleared(true)
   }, [])

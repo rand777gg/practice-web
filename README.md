@@ -19,14 +19,17 @@
 
 # Practice Web
 
-A modern, AI-powered question practice platform. Supports six question types across practice and exam modes, with rich dashboard analytics, dual study plan system, and full PWA offline support.
+A modern, AI-powered question practice platform. Supports six question types across practice and exam modes, with rich dashboard analytics, dual study plan system, question banks, and full PWA offline support.
 
 ## Highlights
 
-- **Dashboard** — ECharts-powered analytics: calendar heatmap, time distribution, stacked bar charts, scatter plots, accuracy bars, heatmaps, treemaps, Sankey diagrams, nested donuts
-- **AI-Powered** — smart question parsing, knowledge point generation, personalized study summaries, Ebbinghaus learning plan, intelligent exam configuration
+- **Dashboard** — ECharts-powered analytics: calendar heatmap, time distribution, stacked bar charts, scatter plots, accuracy bars, heatmaps, treemaps, sunburst, Sankey diagrams, nested donuts, Ebbinghaus curve, urgency chart
+- **AI-Powered** — smart question parsing, knowledge point generation, personalized study summaries, Ebbinghaus learning plan, intelligent exam configuration, AI chart insights
 - **Dual Study Plan** — long-term plan with deadline-based daily goals, custom daily targets with per-subject progress tracking
+- **Question Banks** — curated question collections with detail view and session picker, reusable across practice and exam
 - **Sequential Practice** — subject-aware ordered question flow with cross-device progress sync and knowledge-point batched sessions
+- **2FA Security** — TOTP authenticator + Passkey (WebAuthn) with trusted device management and login notifications via Feishu
+- **Cross-Device Sync** — bidirectional settings sync with conflict detection (sidebar collapsed, theme, language, sequential progress)
 - **QR Code Login** — desktop QR → mobile scan → instant login, no password needed
 - **Mobile First** — iOS-style bottom tab bar, swipe navigation, collapsible sidebar, responsive charts
 - **PWA** — offline caching, installable on mobile and desktop
@@ -37,12 +40,14 @@ A modern, AI-powered question practice platform. Supports six question types acr
 | Layer | Technology |
 |---|---|
 | Framework | React 19, TypeScript, Vite 8 |
-| UI | Tailwind CSS 4, shadcn/ui, Radix UI, Lucide |
-| Charts | ECharts 6, Recharts |
+| UI | Tailwind CSS 4, shadcn/ui, Radix UI, Lucide, Motion |
+| Charts | ECharts 6, Recharts, Mermaid |
 | State | Zustand |
 | Routing | React Router v7 (lazy loading) |
 | Backend | Supabase (PostgreSQL, Auth, RLS, Edge Functions) |
 | AI | Vercel AI SDK + DeepSeek / OpenAI |
+| Markdown | react-markdown, Shiki, remark-math, rehype-raw |
+| Auth | @simplewebauthn/browser, otplib, qrcode, FingerprintJS |
 | I18n | Built-in zh / en |
 | PWA | vite-plugin-pwa + Workbox |
 
@@ -89,6 +94,7 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | Sequential Mode | KP-batched subject blocks, auto-saved progress, cross-device sync |
 | Swipe Navigation | Touch swipe to move between questions |
 | Notes | Rich-text notes with public/private toggle |
+| Question Banks | Curated collections, detail view, picker for practice/exam sessions |
 
 ### Exam
 
@@ -99,6 +105,7 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | Resume | Auto-detects interrupted sessions |
 | Auto-Submit | Submits on timeout |
 | Score Report | ECharts gauge + donut + bar chart with breakdown |
+| History | Past exam sessions list with result review |
 
 ### AI
 
@@ -109,6 +116,7 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | Study Summary | Friend-style daily recap with typewriter animation |
 | Smart Exam | Analyzes practice history, recommends exam config |
 | Learning Plan | Ebbinghaus forgetting curve + subject urgency scoring |
+| Chart Insights | AI-generated natural-language takeaways from dashboard data |
 
 ### Dashboard
 
@@ -117,8 +125,11 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 - **Daily Stacked Bar** — per-subject breakdown with correct/wrong split
 - **Time Scatter** — today's answers as hourly bubbles
 - **Accuracy Bar + Heatmap** — horizontal bars by subject + subject×type matrix
+- **Sunburst** — subject → category → knowledge point hierarchy
 - **Donut + Treemap** — nested hierarchy with traditional Chinese color palette
 - **Sankey Diagram** — subject ↔ category flow
+- **Ebbinghaus Curve** — forgetting curve with review schedule
+- **Urgency Chart** — subject urgency scoring for study prioritization
 
 ### Question Management (Admin)
 
@@ -131,6 +142,11 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 
 - Email + OAuth (GitHub) login
 - QR code login with session-based polling
+- TOTP 2FA with authenticator app setup and device trust
+- Passkey (WebAuthn) as alternative 2FA with platform-native biometrics
+- Trusted device management — name devices, set trust expiration, revoke remotely
+- Login notifications via Feishu bot
+- Account deletion with identity unlink support
 - Row-Level Security on all tables
 - Admin / User role separation
 - First registered user auto-admin via DB trigger
@@ -141,6 +157,11 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 |---|---|---|
 | `/login` | Login | Public |
 | `/register` | Register | Public |
+| `/welcome` | Welcome | Public |
+| `/farewell` | Farewell (account deleted) | Public |
+| `/terms` | Terms of Service | Public |
+| `/privacy` | Privacy Policy | Public |
+| `/qr-confirm` | QR Login Confirm | Public |
 | `/` | Dashboard | Authenticated |
 | `/practice` | Practice | Authenticated |
 | `/exam` | Exam | Authenticated |
@@ -148,10 +169,11 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | `/favorites` | Favorites | Authenticated |
 | `/notes` | Public Notes | Authenticated |
 | `/review` | Wrong Answer Review | Authenticated |
+| `/question-bank` | Question Banks | Authenticated |
 | `/settings` | Settings | Authenticated |
 | `/admin/questions` | Question List | Admin |
 | `/admin/questions/new` | New Question | Admin |
-| `/admin/questions/:id/edit` | Edit Question | Admin |
+| `/admin/questions/:questionId/edit` | Edit Question | Admin |
 | `/admin/users` | User Management | Admin |
 | `/admin/ai` | AI Config | Admin |
 | `/admin/ai-import` | AI Import | Admin |
@@ -161,21 +183,28 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 ```
 src/
 ├── components/
-│   ├── ui/          shadcn primitives
-│   ├── auth/        login/register forms, QR scanner, route guard
-│   ├── layout/      app shell, sidebar, header, plan progress & dialog
-│   ├── ai/          AI summary dialog, import wizard
-│   ├── charts/      ECharts & Recharts components
-│   ├── practice/    practice session & KP selector
-│   ├── exam/        exam session, timer, navigator, result card
-│   └── questions/   question card, form, list, import dialog
-├── hooks/           custom hooks (answers, favorites, filters, swipe)
-├── i18n/            zh/en translations
-├── lib/             supabase client, AI SDK, constants, utilities
-├── pages/           route-level page components
-├── router/          lazy-loaded route definitions
-├── stores/          Zustand state (auth, exam, settings, sequential, dashboard)
-└── types/           TypeScript type definitions
+│   ├── ui/           shadcn primitives
+│   ├── auth/         login/register forms, QR scanner, 2FA dialogs, route guard
+│   ├── layout/       app shell, sidebar, header, plan progress & dialog
+│   ├── ai/           AI summary dialog
+│   ├── ai-import/    AI import wizard, PDF viewer, parse history
+│   ├── charts/       ECharts & Recharts components
+│   ├── markdown/     Markdown editor & renderer (Shiki highlighting)
+│   ├── notes/        note editor, emoji picker, formatting toolbar
+│   ├── practice/     practice session & KP selector
+│   ├── exam/         exam session, timer, navigator, result card, history
+│   ├── question-bank/ bank card, detail, dialog, question picker
+│   └── questions/    question card, form, list, import dialog
+├── hooks/            custom hooks (answers, favorites, filters, swipe, timer, mobile)
+├── i18n/             zh/en translations
+├── lib/              supabase client, AI SDK, constants, utilities
+├── pages/            route-level page components
+├── router/           lazy-loaded route definitions
+├── stores/           Zustand state (auth, exam, settings, sync, sequential, dashboard, AI)
+└── types/            TypeScript type definitions
+supabase/
+├── migrations/       single-file DB schema
+└── functions/        Edge Functions (qr-login, verify-totp, manage-passkey, login-notify, delete-account, unlink-identity, r2-*, mineru-proxy)
 ```
 
 ## Scripts
@@ -200,12 +229,8 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment varia
 
 | Workflow | Description |
 |---|---|
-| `lint.yml` | ESLint |
-| `typecheck.yml` | TypeScript type check |
-| `tests.yml` | Test suite |
-| `ci.yml` | Build + dependency caching |
-| `deploy-site.yml` | Static hosting deploy |
 | `pr-review.yml` | Automated PR review (DeepSeek + Feishu notify) |
+| `perf-monitor.yml` | Performance monitoring |
 
 ### PR Review Setup
 

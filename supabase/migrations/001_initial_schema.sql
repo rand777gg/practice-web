@@ -373,7 +373,7 @@ ON CONFLICT (kp, question_id) DO NOTHING;
 CREATE OR REPLACE FUNCTION public.refresh_kp_question_map()
 RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$
-  DELETE FROM public.kp_question_map;
+  DELETE FROM public.kp_question_map WHERE true;
   INSERT INTO public.kp_question_map (kp, question_id, subject, seq_number)
   SELECT DISTINCT trim(kpx) AS kp, q.id, q.subject, q.seq_number
   FROM public.questions q,
@@ -1201,3 +1201,22 @@ ALTER TABLE public.passkey_credentials
 
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS passkey_timeout_minutes INTEGER NOT NULL DEFAULT 0;
+
+-- ============================================================================
+-- Section 11: TOTP secret isolation — move to service_role-only table
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.user_totp (
+  user_id     UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+  totp_secret TEXT NOT NULL
+);
+
+ALTER TABLE public.user_totp ENABLE ROW LEVEL SECURITY;
+
+-- Migrate existing secrets
+INSERT INTO public.user_totp (user_id, totp_secret)
+  SELECT id, totp_secret FROM public.profiles
+  WHERE totp_secret IS NOT NULL
+ON CONFLICT (user_id) DO NOTHING;
+
+ALTER TABLE public.profiles DROP COLUMN IF EXISTS totp_secret;

@@ -37,7 +37,7 @@ import { useT } from '@/i18n/use-t'
 export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
   const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
@@ -45,16 +45,17 @@ export function Component() {
   const [showImport, setShowImport] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [selectedSubject, setSelectedSubject] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('')
-  const [selectedType, setSelectedType] = useState<QuestionType | ''>('')
-  const [selectedImportMode, setSelectedImportMode] = useState('')
-  const [selectedVerified, setSelectedVerified] = useState<'' | 'true' | 'false'>('')
-  const [selectedKeyPoints, setSelectedKeyPoints] = useState('')
+  const [selectedSubject, setSelectedSubject] = useState(() => new URLSearchParams(window.location.search).get('subject') || '')
+  const [selectedCategory, setSelectedCategory] = useState(() => new URLSearchParams(window.location.search).get('category') || '')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>(() => (new URLSearchParams(window.location.search).get('type') || '') as QuestionType | '')
+  const [selectedImportMode, setSelectedImportMode] = useState(() => new URLSearchParams(window.location.search).get('import') || '')
+  const [selectedVerified, setSelectedVerified] = useState<'' | 'true' | 'false'>(() => (new URLSearchParams(window.location.search).get('verified') || '') as '' | 'true' | 'false')
+  const [selectedKeyPoints, setSelectedKeyPoints] = useState(() => new URLSearchParams(window.location.search).get('kp') || '')
 
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const btnRowRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const initRef = useRef(true)
 
   useEffect(() => {
     if (expandedBtn === null) return
@@ -66,15 +67,6 @@ export function Component() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [expandedBtn])
-
-  // Handle kp_missing URL param (from PlanDialog / DashboardPlanCards)
-  useEffect(() => {
-    if (searchParams.get('kp_missing') === '1') {
-      const subject = searchParams.get('subject')
-      if (subject) setSelectedSubject(subject)
-      setSelectedKeyPoints('__none__')
-    }
-  }, [searchParams])
 
   const sortedSubjects = useMemo(
     () => [...subjects].sort((a, b) => a.localeCompare(b, 'zh-CN')),
@@ -147,12 +139,25 @@ export function Component() {
     return () => { if (debounceRef.current !== null) clearTimeout(debounceRef.current) }
   }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, fetchQuestions])
 
-  // Update filtered categories and reset category/key_points when subject changes
+  // Update filtered categories and reset category when subject changes
+  // Update filtered categories and reset category when subject changes
   useEffect(() => {
     updateFilteredCategories(selectedSubject)
+    if (initRef.current) { initRef.current = false; return }
     setSelectedCategory('')
-    setSelectedKeyPoints('')
   }, [selectedSubject, updateFilteredCategories])
+
+  // Sync filters to URL params
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (selectedSubject) params.set('subject', selectedSubject)
+    if (selectedCategory) params.set('category', selectedCategory)
+    if (selectedType) params.set('type', selectedType)
+    if (selectedImportMode) params.set('import', selectedImportMode)
+    if (selectedVerified) params.set('verified', selectedVerified)
+    if (selectedKeyPoints) params.set('kp', selectedKeyPoints)
+    setSearchParams(params, { replace: true })
+  }, [selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, setSearchParams])
 
   // Pre-fill bulk key points from filter
   useEffect(() => {
@@ -344,6 +349,11 @@ export function Component() {
             <DropdownMenuItem onClick={() => setSelectedCategory('')}>
               <span className="text-muted-foreground">{t('questions.category')}</span>
               {!selectedCategory && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setSelectedCategory('__unset__')}>
+              未分类
+              {selectedCategory === '__unset__' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             {yearCategories.length > 0 && (
               <>

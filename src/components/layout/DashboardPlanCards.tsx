@@ -249,7 +249,7 @@ export function DashboardPlanCards() {
                               {subjDone ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border" />}
                             </span>
                             <span className={subjDone ? 'line-through text-muted-foreground' : ''}>{subj.subject}</span>
-                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}{subj.missingKp > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp_missing=1`} className="ml-1 text-amber-500 hover:text-amber-600 underline text-[10px]">{subj.missingKp}题缺知识点</Link>}</span>
+                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}{subj.missingKp > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp=__none__`} className="ml-1 text-amber-500 hover:text-amber-600 underline text-[10px]">{subj.missingKp}题缺知识点</Link>}</span>
                           </div>
                         )
                       })}

@@ -35,9 +35,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { Kbd } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { cn, naturalSort } from '@/lib/utils'
@@ -203,6 +204,10 @@ export function PracticeSession() {
   const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const answeredThisSession = useRef<Set<string>>(new Set())
+  const sessionStateRef = useRef<Map<string, { answer: CorrectAnswer | null; answerId: string | null; note: string; isPublic: boolean; attempts: number; wrongs: number }>>(new Map())
+  const historyRef = useRef<{ question: Question; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }[]>([])
+  const snapRef = useRef<{ question: Question | null; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }>({ question: null, answer: null, submitted: false, note: '', isPublic: false, answerId: null, attempts: 0, wrongs: 0 })
+  useEffect(() => { snapRef.current = { question, answer: selectedAnswer, submitted: isSubmitted, note, isPublic, answerId, attempts: attemptCount, wrongs: wrongCount } })
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
   const isMobile = useIsMobile()
 
@@ -386,6 +391,10 @@ export function PracticeSession() {
   const kpRetryRef = useRef(0)
 
   const fetchRandomQuestion = useCallback(async () => {
+    const snap = snapRef.current
+    if (snap.question && questionMode !== 'sequential') {
+      historyRef.current.push({ question: snap.question, answer: snap.answer, submitted: snap.submitted, note: snap.note, isPublic: snap.isPublic, answerId: snap.answerId, attempts: snap.attempts, wrongs: snap.wrongs })
+    }
     fetchGenRef.current++
     const myGen = fetchGenRef.current
 
@@ -552,6 +561,13 @@ export function PracticeSession() {
 
   const loadSequentialQuestion = useCallback(async (index: number) => {
     const s = useSequentialStore.getState()
+    // Save current question state to session cache before navigating away
+    if (s.currentIndex !== index) {
+      const snap = snapRef.current
+      if (snap.question && snap.submitted) {
+        sessionStateRef.current.set(snap.question.id, { answer: snap.answer, answerId: snap.answerId, note: snap.note, isPublic: snap.isPublic, attempts: snap.attempts, wrongs: snap.wrongs })
+      }
+    }
     // Save position for current subject before navigating away
     const curKp = s.questionKps[s.currentIndex]
     if (curKp && index !== s.currentIndex) {
@@ -603,6 +619,33 @@ export function PracticeSession() {
     }
 
     setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
+
+    const cached = sessionStateRef.current.get(ids[index])
+    if (cached) {
+      const currentUser = useAuthStore.getState().user
+      const [qRes] = await Promise.all([
+        supabase.from('questions').select('*').eq('id', ids[index]).single(),
+      ])
+      if (seqFetchGenRef.current !== myGen) return
+      if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
+      if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
+      if (seqFetchGenRef.current !== myGen) return
+      setQuestion(qRes.data as unknown as Question)
+      setSelectedAnswer(cached.answer)
+      setIsSubmitted(true)
+      setAnswerId(cached.answerId)
+      setNote(cached.note)
+      setIsPublic(cached.isPublic)
+      setAttemptCount(cached.attempts)
+      setWrongCount(cached.wrongs)
+      setIsLoading(false)
+      if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
+      if (seqFetchGenRef.current !== myGen) return
+      setQuestionReady(true)
+      preloadNext(index + 1, ids, myGen)
+      return
+    }
+
     const currentUser = useAuthStore.getState().user
     const [qRes, statsRes] = await Promise.all([
       supabase.from('questions').select('*').eq('id', ids[index]).single(),
@@ -721,6 +764,7 @@ export function PracticeSession() {
 
     if (questionMode === 'sequential') { markPracticeSync(); const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
     answeredThisSession.current.add(question.id)
+    sessionStateRef.current.set(question.id, { answer: selectedAnswer, answerId: id, note, isPublic, attempts: attemptCount, wrongs: wrongCount })
     setIsSubmitted(true)
   }
 
@@ -744,6 +788,37 @@ export function PracticeSession() {
     }
   }, [answerId, note, updateNote])
 
+  const handlePrev = useCallback(async () => {
+    if (questionMode === 'sequential') {
+      const s = useSequentialStore.getState()
+      if (s.currentIndex <= 0) return
+      await loadSequentialQuestion(s.currentIndex - 1)
+      const s2 = useSequentialStore.getState()
+      const u = useAuthStore.getState().user
+      if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+    } else {
+      const hist = historyRef.current
+      if (hist.length === 0) return
+      const prev = hist.pop()!
+      setQuestion(prev.question)
+      setSelectedAnswer(prev.answer)
+      setIsSubmitted(prev.submitted)
+      setNote(prev.note)
+      setIsPublic(prev.isPublic)
+      setAnswerId(prev.answerId)
+      setAttemptCount(prev.attempts)
+      setWrongCount(prev.wrongs)
+      setNoQuestions(false)
+      setIsLoading(false)
+      setQuestionReady(true)
+    }
+  }, [questionMode, loadSequentialQuestion, setQuestion])
+
+  const hasPrev = useMemo(() => {
+    if (questionMode === 'sequential') return seqIndex > 0
+    return historyRef.current.length > 0
+  }, [questionMode, seqIndex, question])
+
   const handleNext = useCallback(async () => {
     if (questionMode === 'sequential') {
       // Block skip if current question not answered in this session
@@ -762,6 +837,23 @@ export function PracticeSession() {
     }
     else fetchRandomQuestion()
   }, [questionMode, isSubmitted, question, fetchRandomQuestion, loadSequentialQuestion])
+
+  const prevRef = useRef(handlePrev)
+  const nextRef = useRef(handleNext)
+  const submitRef = useRef(handleSubmit)
+  useEffect(() => { prevRef.current = handlePrev; nextRef.current = handleNext; submitRef.current = handleSubmit })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (isLoading || showSkeleton) return
+      if (e.key === 'ArrowLeft') { e.preventDefault(); prevRef.current() }
+      if (e.key === 'ArrowRight') { e.preventDefault(); nextRef.current() }
+      if (e.key === 'Enter' && !isSubmitted && selectedAnswer !== null) { e.preventDefault(); submitRef.current() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isSubmitted, selectedAnswer, isLoading, showSkeleton])
 
   const handleMarkTooEasy = useCallback(async () => {
     if (!question) return
@@ -793,6 +885,7 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, [], false, 'practice')
     setAnswerId(id)
     answeredThisSession.current.add(question.id)
+    sessionStateRef.current.set(question.id, { answer: [], answerId: id, note, isPublic, attempts: attemptCount, wrongs: wrongCount })
     setIsSubmitted(true)
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
@@ -800,6 +893,7 @@ export function PracticeSession() {
 
   const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipe({
     onSwipeLeft: handleNext,
+    onSwipeRight: handlePrev,
   })
 
   return (
@@ -1106,7 +1200,22 @@ export function PracticeSession() {
                 </div>
               )}
               <div className="flex gap-2 justify-end">
-                {!isSubmitted ? (<Button onClick={handleSubmit} disabled={selectedAnswer === null}>{t('practice.submitAnswer')}</Button>) : (<Button onClick={handleNext}><Shuffle className="h-4 w-4" />{t('practice.nextQuestion')}</Button>)}
+                <Button variant="outline" onClick={handlePrev} disabled={!hasPrev}>
+                  <ArrowLeft className="h-4 w-4" />
+                  {t('practice.previousQuestion')}{" "}
+                  <Kbd data-icon="inline-end" className="translate-x-0.5">⇦</Kbd>
+                </Button>
+                {!isSubmitted ? (
+                  <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
+                    {t('practice.submitAnswer')}{" "}
+                    <Kbd data-icon="inline-end" className="translate-x-0.5">⏎</Kbd>
+                  </Button>
+                ) : (
+                  <Button onClick={handleNext}>
+                    {t('practice.nextQuestion')}{" "}
+                    <Kbd data-icon="inline-end" className="translate-x-0.5">⇨</Kbd>
+                  </Button>
+                )}
               </div>
             </>
           ) : null}

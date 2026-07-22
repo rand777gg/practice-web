@@ -227,8 +227,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         import_mode: initialData?.import_mode ?? 'manual',
         source_page: initialData?.source_page ?? null,
       })
-    } catch {
-      setError(t('questions.saveFailed'))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Save question failed:', err)
+      setError(`${t('questions.saveFailed')}: ${msg}`)
       setIsSubmitting(false)
     }
   }

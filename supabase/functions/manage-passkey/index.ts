@@ -326,6 +326,32 @@ serve(async (req: Request) => {
     }
 
     // ============================================================
+    // CHECK-GRACE: whether user is within re-verification timeout
+    // ============================================================
+    if (action === "check-grace") {
+      const timeoutMinutes = Math.min(Math.max(Number(body.timeoutMinutes) || 5, 5), 30)
+      const { data } = await supabaseAdmin
+        .from("passkey_credentials")
+        .select("last_used_at")
+        .eq("user_id", userId)
+        .order("last_used_at", { ascending: false })
+        .limit(1)
+
+      const lastUsed = data?.[0]?.last_used_at
+      if (!lastUsed) {
+        return new Response(JSON.stringify({ valid: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+
+      const elapsed = Date.now() - new Date(lastUsed).getTime()
+      const valid = elapsed < timeoutMinutes * 60 * 1000
+      return new Response(JSON.stringify({ valid, elapsed, timeoutMinutes }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
+
+    // ============================================================
     // LIST user's passkeys
     // ============================================================
     if (action === "list") {

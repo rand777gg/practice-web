@@ -363,12 +363,14 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
           {question.answer_explanation && (
             <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-              <span className="font-medium">解析: </span>{question.answer_explanation}
+              <span className="font-medium">解析: </span>
+              <MarkdownRenderer content={question.answer_explanation} />
             </div>
           )}
           {question.analysis && (
             <div className="rounded-lg bg-muted/50 p-3 text-sm leading-relaxed">
-              <span className="font-medium">{t('questions.analysis')}: </span>{question.analysis}
+              <span className="font-medium">{t('questions.analysis')}: </span>
+              <MarkdownRenderer content={question.analysis} />
             </div>
           )}
           {note ? (

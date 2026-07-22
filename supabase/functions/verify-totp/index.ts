@@ -44,9 +44,20 @@ serve(async (req: Request) => {
         })
       }
 
+      const { error: upsertErr } = await supabaseAdmin
+        .from("user_totp")
+        .upsert({ user_id: userId, totp_secret: secret })
+
+      if (upsertErr) {
+        return new Response(JSON.stringify({ error: upsertErr.message }), {
+          status: 500,
+          headers: corsHeaders,
+        })
+      }
+
       const { error: updateErr } = await supabaseAdmin
         .from("profiles")
-        .update({ totp_secret: secret, totp_enabled: true })
+        .update({ totp_enabled: true })
         .eq("id", userId)
 
       if (updateErr) {
@@ -70,20 +81,20 @@ serve(async (req: Request) => {
         })
       }
 
-      const { data: profile, error: profileErr } = await supabaseAdmin
-        .from("profiles")
-        .select("totp_secret, totp_enabled")
-        .eq("id", userId)
+      const { data: totp, error: totpErr } = await supabaseAdmin
+        .from("user_totp")
+        .select("totp_secret")
+        .eq("user_id", userId)
         .single()
 
-      if (profileErr || !profile?.totp_secret) {
+      if (totpErr || !totp?.totp_secret) {
         return new Response(JSON.stringify({ valid: false, error: "no totp secret" }), {
           status: 200,
           headers: corsHeaders,
         })
       }
 
-      const result = await verify({ token: code, secret: profile.totp_secret })
+      const result = await verify({ token: code, secret: totp.totp_secret })
       return new Response(JSON.stringify({ valid: result.valid }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
