@@ -14,6 +14,7 @@ export const QUESTION_TYPE_OPTIONS = [
   { value: 'fill_blank' as const, label: '填空题' },
   { value: 'short_answer' as const, label: '简答题' },
   { value: 'analysis' as const, label: '分析题' },
+  { value: 'coding' as const, label: '编程题' },
 ]
 
 export const QUESTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
@@ -41,4 +42,5 @@ export const TYPE_COLORS: Record<string, string> = {
   fill_blank:    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   short_answer:  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   analysis:      'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
+  coding:        'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
 }

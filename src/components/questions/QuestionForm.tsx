@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
-import type { Question, QuestionType, CorrectAnswer } from '@/types'
+import type { Question, QuestionType, CorrectAnswer, TestCase, RuntimeConfig, ExampleCase } from '@/types'
 import { generateKeyPoints, hasAiConfig, DeepSeekParser } from '@/lib/ai'
 import { getAiConfig } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -101,13 +101,27 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const isFillBlank = questionType === 'fill_blank'
   const isShortAnswer = questionType === 'short_answer'
   const isAnalysis = questionType === 'analysis'
+  const isCoding = questionType === 'coding'
+
+  const [testCases, setTestCases] = useState<TestCase[]>(
+    initialData?.test_cases?.length ? initialData.test_cases : [{ input: '', expected: '' }],
+  )
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(
+    initialData?.runtime_config ?? { timeout_ms: 2000, memory_mb: 256 },
+  )
+  const [executionMode, setExecutionMode] = useState<'stdio' | 'function'>(
+    initialData?.execution_mode ?? 'stdio',
+  )
+  const [examples, setExamples] = useState<ExampleCase[]>(
+    initialData?.examples?.length ? initialData.examples : [],
+  )
 
   const handleTypeChange = (t: QuestionType) => {
     setQuestionType(t)
     setCorrectAnswer(getDefaultAnswer(t))
     setAllowUnordered(false)
     if (t === 'true_false') setOptions(['正确', '错误'])
-    else if (t === 'judge_correct' || t === 'fill_blank' || t === 'short_answer' || t === 'analysis') setOptions([])
+    else if (t === 'judge_correct' || t === 'fill_blank' || t === 'short_answer' || t === 'analysis' || t === 'coding') setOptions([])
     else if (options.length < 2) setOptions(['', ''])
   }
 
@@ -228,6 +242,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         unordered_blanks: unorderedBlanks.length > 0 && unorderedBlanks[0] !== -1 ? unorderedBlanks : null,
         import_mode: initialData?.import_mode ?? 'manual',
         source_page: initialData?.source_page ?? null,
+        test_cases: isCoding ? testCases : undefined,
+        runtime_config: isCoding ? runtimeConfig : undefined,
+        execution_mode: isCoding ? executionMode : undefined,
+        examples: isCoding ? examples : undefined,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -539,6 +557,172 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   placeholder="输入参考答案或解析思路..."
                   rows={5}
                 />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Coding — test cases */}
+          {isCoding && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">评测配置</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={executionMode === 'stdio' ? 'default' : 'outline'}
+                    size="sm"
+                    className="flex-1 h-8 text-xs"
+                    onClick={() => setExecutionMode('stdio')}
+                  >
+                    stdin/stdout 模式
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={executionMode === 'function' ? 'default' : 'outline'}
+                    size="sm"
+                    className="flex-1 h-8 text-xs"
+                    onClick={() => setExecutionMode('function')}
+                  >
+                    函数调用模式
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {executionMode === 'function'
+                    ? '用户定义 function solution(...)，测试用例 input 为 JSON 参数数组，框架自动调用并比对返回值。'
+                    : '用户使用 input()/console.log 读写标准输入输出，测试用例比对 stdout。'}
+                </p>
+                <div className="flex gap-4 items-end">
+                  <div className="space-y-1.5 flex-1">
+                    <Label className="text-xs">超时 (ms)</Label>
+                    <Input
+                      type="number"
+                      value={runtimeConfig.timeout_ms ?? 2000}
+                      onChange={(e) => setRuntimeConfig({ ...runtimeConfig, timeout_ms: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="space-y-1.5 flex-1">
+                    <Label className="text-xs">内存限制 (MB)</Label>
+                    <Input
+                      type="number"
+                      value={runtimeConfig.memory_mb ?? 256}
+                      onChange={(e) => setRuntimeConfig({ ...runtimeConfig, memory_mb: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                {testCases.map((tc, i) => (
+                  <div key={i} className="flex gap-2 items-start">
+                    <span className="text-xs text-muted-foreground w-5 pt-2.5">#{i + 1}</span>
+                    <div className="flex-1 space-y-1.5">
+                      <Input
+                        value={tc.input}
+                        onChange={(e) => {
+                          const next = [...testCases]
+                          next[i] = { ...next[i], input: e.target.value }
+                          setTestCases(next)
+                        }}
+                        placeholder="输入 (stdin)"
+                        className="text-xs font-mono"
+                      />
+                      <Input
+                        value={tc.expected}
+                        onChange={(e) => {
+                          const next = [...testCases]
+                          next[i] = { ...next[i], expected: e.target.value }
+                          setTestCases(next)
+                        }}
+                        placeholder="期望输出 (stdout)"
+                        className="text-xs font-mono"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 mt-1"
+                      onClick={() => setTestCases(testCases.filter((_, j) => j !== i))}
+                      disabled={testCases.length <= 1}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTestCases([...testCases, { input: '', expected: '' }])}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  添加测试用例
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Coding — visible examples (LeetCode-style Example 1/2/3) */}
+          {isCoding && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">题目示例（对用户可见）</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {examples.map((ex, i) => (
+                  <div key={i} className="flex gap-2 items-start">
+                    <span className="text-xs text-muted-foreground w-5 pt-2.5">#{i + 1}</span>
+                    <div className="flex-1 space-y-1.5">
+                      <Input
+                        value={ex.input}
+                        onChange={(e) => {
+                          const next = [...examples]
+                          next[i] = { ...next[i], input: e.target.value }
+                          setExamples(next)
+                        }}
+                        placeholder="JSON 参数，如 [[2,7,11,15],9]"
+                        className="text-xs font-mono"
+                      />
+                      <Input
+                        value={ex.expected}
+                        onChange={(e) => {
+                          const next = [...examples]
+                          next[i] = { ...next[i], expected: e.target.value }
+                          setExamples(next)
+                        }}
+                        placeholder="期望输出，如 [0,1]"
+                        className="text-xs font-mono"
+                      />
+                      <Input
+                        value={ex.explanation || ''}
+                        onChange={(e) => {
+                          const next = [...examples]
+                          next[i] = { ...next[i], explanation: e.target.value || undefined }
+                          setExamples(next)
+                        }}
+                        placeholder="解释（可选），如 因为 nums[0] + nums[1] == 9"
+                        className="text-xs"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 mt-1"
+                      onClick={() => setExamples(examples.filter((_, j) => j !== i))}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setExamples([...examples, { input: '', expected: '' }])}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  添加示例
+                </Button>
               </CardContent>
             </Card>
           )}

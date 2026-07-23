@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useQuestions } from '@/hooks/use-questions'
 import { QuestionForm } from '@/components/questions/QuestionForm'
 import { Button } from '@/components/ui/button'
 import { LoadingTips } from '@/components/layout/LoadingTips'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, FlaskConical } from 'lucide-react'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
 
@@ -51,7 +51,13 @@ export function Component() {
     <Button variant="ghost" size="icon" onClick={() => navigate(returnTo)}>
      <ArrowLeft className="h-4 w-4" />
     </Button>
-    <h1 className="text-xl font-bold">{t('questions.editTitle')}</h1>
+    <h1 className="text-xl font-bold flex-1">{t('questions.editTitle')}</h1>
+    <Button variant="outline" size="sm" asChild>
+      <Link to={`/admin/questions/test?id=${questionId}`} target="_blank">
+        <FlaskConical className="size-3.5 mr-1" />
+        测试题目
+      </Link>
+    </Button>
    </div>
    <QuestionForm
     initialData={question}

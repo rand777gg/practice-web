@@ -99,6 +99,10 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/pages/admin/QuestionEditPage'),
                   },
                   {
+                    path: 'questions/test',
+                    lazy: () => import('@/pages/admin/TestQuestionPage'),
+                  },
+                  {
                     path: 'ai-import',
                     lazy: () => import('@/pages/admin/AiImportPage'),
                   },

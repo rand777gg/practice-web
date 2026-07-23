@@ -11,6 +11,51 @@ export type QuestionType =
   | 'short_answer'
   | 'analysis'
   | 'judge_correct'
+  | 'coding'
+
+export interface TestCase {
+  input: string
+  expected: string
+}
+
+export interface ExampleCase {
+  input: string
+  expected: string
+  explanation?: string
+}
+
+export interface RuntimeConfig {
+  timeout_ms?: number
+  memory_mb?: number
+}
+
+export interface SubmissionResult {
+  testCaseIndex: number
+  passed: boolean
+  input: string
+  expected: string
+  actual: string
+  error?: string
+}
+
+export interface Submission {
+  id: string
+  user_id: string
+  question_id: string
+  code: string
+  language: string
+  status: 'pending' | 'running' | 'accepted' | 'wrong_answer' | 'runtime_error' | 'timeout' | 'compile_error'
+  results: SubmissionResult[] | null
+  error: string | null
+  execution_time_ms: number | null
+  created_at: string
+}
+
+export interface CodingAnswer {
+  code: string
+  language: string
+  allPassed: boolean
+}
 
 export type CorrectAnswer =
   | number      // single_choice: index into options
@@ -19,6 +64,7 @@ export type CorrectAnswer =
   | string      // fill_blank: expected text
   | string[]    // short_answer: acceptable answers
   | null        // analysis: manual grading
+  | CodingAnswer // coding: submission result
 
 export interface DailyTarget {
   subjects: { subject: string; count: number }[]
@@ -112,6 +158,10 @@ export interface Question {
   allow_unordered: boolean
   unordered_blanks: number[] | null
   source_page: string | null
+  test_cases?: TestCase[]
+  runtime_config?: RuntimeConfig
+  execution_mode?: 'stdio' | 'function'
+  examples?: ExampleCase[]
 }
 
 export interface ExamSession {
@@ -197,5 +247,10 @@ export function parseCorrectAnswer(raw: unknown, type: QuestionType): CorrectAns
       return Array.isArray(raw) ? raw.map(String) : [String(raw)]
     case 'analysis':
       return null
+    case 'coding':
+      if (raw && typeof raw === 'object' && 'code' in (raw as Record<string, unknown>)) {
+        return raw as CodingAnswer
+      }
+      return { code: '', language: 'javascript', allPassed: false }
   }
 }

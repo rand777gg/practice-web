@@ -1221,3 +1221,57 @@ INSERT INTO public.user_totp (user_id, totp_secret)
 ON CONFLICT (user_id) DO NOTHING;
 
 ALTER TABLE public.profiles DROP COLUMN IF EXISTS totp_secret;
+
+-- ============================================================================
+-- Section 12: Coding question type & code submission judge
+-- ============================================================================
+
+-- Extend question_type to support coding
+ALTER TABLE public.questions
+  DROP CONSTRAINT IF EXISTS questions_question_type_check;
+
+ALTER TABLE public.questions
+  ADD CONSTRAINT questions_question_type_check
+  CHECK (question_type IN ('single_choice','multi_select','true_false','fill_blank','short_answer','analysis','judge_correct','coding'));
+
+-- Test cases for coding questions
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS test_cases JSONB DEFAULT '[]'::jsonb;
+
+-- Runtime config: timeout_ms, memory_mb per question
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS runtime_config JSONB DEFAULT '{"timeout_ms":2000,"memory_mb":256}'::jsonb;
+
+-- Code submissions table
+CREATE TABLE IF NOT EXISTS public.submissions (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  question_id       UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  code              TEXT NOT NULL,
+  language          TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','running','accepted','wrong_answer','runtime_error','timeout','compile_error')),
+  results           JSONB,
+  error             TEXT,
+  execution_time_ms INTEGER,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_submissions_user ON public.submissions(user_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_question ON public.submissions(question_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_user_question ON public.submissions(user_id, question_id, created_at DESC);
+
+ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS submissions_own ON public.submissions;
+CREATE POLICY submissions_own ON public.submissions FOR ALL
+  USING (user_id = auth.uid() OR public.is_admin());
+
+-- Execution mode for coding questions: stdio (default) or function (LeetCode-style)
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'stdio'
+  CHECK (execution_mode IN ('stdio', 'function'));
+
+-- Visible example cases shown in question description (LeetCode-style Example 1/2/3)
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS examples JSONB DEFAULT '[]'::jsonb;

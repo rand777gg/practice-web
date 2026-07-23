@@ -63,6 +63,10 @@ export function isAnswerCorrect(
       return selected === true ? correct === true : String(selected).trim().toLowerCase() === String(correct).trim().toLowerCase()
     case 'analysis':
       return false
+    case 'coding': {
+      const ca = selected as { allPassed?: boolean }
+      return ca?.allPassed === true
+    }
   }
 }
 
@@ -75,5 +79,6 @@ export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
     case 'fill_blank': return [] as string[]
     case 'short_answer': return ''
     case 'analysis': return null
+    case 'coding': return { code: '', language: 'javascript', allPassed: false }
   }
 }

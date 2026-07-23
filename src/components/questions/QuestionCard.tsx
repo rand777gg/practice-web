@@ -8,10 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { Question, CorrectAnswer } from '@/types'
+import type { Question, CorrectAnswer, CodingAnswer, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
 import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, Bot } from 'lucide-react'
+import { CodeEditor } from '@/components/practice/CodeEditor'
+import { CodeResult } from '@/components/practice/CodeResult'
+import { useCodeSubmission } from '@/hooks/use-code-submission'
 import { motion, AnimatePresence } from 'motion/react'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
@@ -84,6 +87,9 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
     const id = requestAnimationFrame(() => setVisible(true))
     return () => cancelAnimationFrame(id)
   }, [question.id])
+  const { submit, loading: codingLoading, results: codingResults, judgeStatus } = useCodeSubmission(question.id)
+  const [editableTestCases, setEditableTestCases] = useState<TestCase[]>([])
+  const codingAnswer = selectedAnswer && typeof selectedAnswer === 'object' && 'code' in (selectedAnswer as unknown as Record<string, unknown>) ? selectedAnswer as CodingAnswer : null
   const type = question.question_type
   const isSingle = type === 'single_choice'
   const isMulti = type === 'multi_select'
@@ -92,6 +98,13 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isShort = type === 'short_answer'
   const isAnalysis = type === 'analysis'
   const isJudgeCorrect = type === 'judge_correct'
+  const isCoding = type === 'coding'
+
+  useEffect(() => {
+    if (isCoding && question.test_cases?.length) {
+      setEditableTestCases([...question.test_cases])
+    }
+  }, [question.id, isCoding, question.test_cases])
   const isTextInput = isFillBlank || isShort || isAnalysis
   const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered, question.unordered_blanks)
   const typeLabel = QUESTION_TYPE_LABELS[type]
@@ -352,6 +365,48 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
         </div>
       )}
+
+      {/* Coding — LeetCode-style examples */}
+      {isCoding && question.examples?.length! > 0 && (
+        <div className="space-y-2">
+          {((question.examples ?? []) as ExampleCase[]).map((ex, i) => (
+            <div key={i} className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
+              <p className="font-medium text-xs text-muted-foreground">示例 {i + 1}</p>
+              <p><span className="font-medium">输入：</span><code className="text-xs bg-muted px-1 rounded">{ex.input}</code></p>
+              <p><span className="font-medium">输出：</span><code className="text-xs bg-muted px-1 rounded">{ex.expected}</code></p>
+              {ex.explanation && <p><span className="font-medium">解释：</span>{ex.explanation}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Coding editor */}
+      {isCoding && (
+        <div className="space-y-3">
+          <CodeEditor
+            initialCode={codingAnswer?.code ?? ''}
+            initialLanguage={codingAnswer?.language ?? 'javascript'}
+            executionMode={question.execution_mode ?? 'stdio'}
+            loading={codingLoading}
+            disabled={showResult}
+            testCases={editableTestCases.length > 0 ? editableTestCases : (question.test_cases ?? []) as TestCase[]}
+            onTestCasesChange={showResult ? undefined : setEditableTestCases}
+            onSubmit={async (code, language) => {
+              const testCases = editableTestCases.length > 0 ? editableTestCases : (question.test_cases ?? []) as TestCase[]
+              const result = await submit(
+                code, language,
+                testCases,
+                question.runtime_config,
+                (question.execution_mode as 'stdio' | 'function') ?? 'stdio',
+              )
+              if (result) {
+                onSelect?.({ code, language, allPassed: result.allPassed } as CodingAnswer)
+              }
+            }}
+          />
+          <CodeResult results={codingResults} status={judgeStatus} />
+        </div>
+      )}
       </div>
 
       {/* Result display */}
@@ -382,6 +437,15 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
                 </p>
               )}
               {isAnalysis && <p className="text-xs text-muted-foreground mt-1">分析题需人工批改</p>}
+            </div>
+          )}
+          {isCoding && codingAnswer != null && (
+            <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
+              <p className="font-medium">{correct ? (t('practice.codeEditor.passed') ?? '全部通过') : (t('practice.codeEditor.failed') ?? '未通过')}</p>
+              {codingAnswer.code && (
+                <pre className="mt-2 p-2 rounded bg-black/10 dark:bg-white/10 text-xs font-mono overflow-x-auto max-h-32">{codingAnswer.code}</pre>
+              )}
+              {codingResults && <div className="mt-2"><CodeResult results={codingResults} status={judgeStatus} /></div>}
             </div>
           )}
           {question.answer_explanation && (

@@ -667,7 +667,7 @@ export function ExamSession() {
             return (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground mb-2">
-                  {{ fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', judge_correct: '判断改错题，输入修正后的正确表述', analysis: '分析题，输入分析内容' }[type] || '请输入答案'}
+                  {{ fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', judge_correct: '判断改错题，输入修正后的正确表述', analysis: '分析题，输入分析内容', coding: '编程题，编写代码并运行测试' }[type] || '请输入答案'}
                 </p>
                 <textarea
                   className="w-full min-h-[200px] p-3 rounded-lg border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
