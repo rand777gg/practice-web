@@ -65,12 +65,10 @@ export function PlanProgress() {
       if (deadline) {
         const deadlineDate = new Date(deadline + 'T23:59:59')
         const daysLeft = Math.max(daysBetween(new Date(), deadlineDate), 1)
-        const longTodaySince = planResetAt || today
-
         const { data: lt, error: ltErr } = await supabase.rpc('get_subject_progress', {
           p_user_id: uid,
           p_plan_reset_at: planResetAt || null,
-          p_today_since: longTodaySince,
+          p_today_since: today,
           p_subjects: planSubjects.length > 0 ? planSubjects : null,
           p_subject_resets: subjectResetAt,
         })
@@ -94,13 +92,12 @@ export function PlanProgress() {
 
       // Daily targets progress
       if (dailyTargets.length > 0) {
-        const dailyTodaySince = dailyResetAt || today
         const targetSubjects = [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))]
 
         const { data: dt, error: dtErr } = await supabase.rpc('get_subject_progress', {
           p_user_id: uid,
           p_plan_reset_at: dailyResetAt || null,
-          p_today_since: dailyTodaySince,
+          p_today_since: today,
           p_subjects: targetSubjects,
           p_subject_resets: subjectResetAt,
         })
@@ -163,6 +160,23 @@ export function PlanProgress() {
       window.removeEventListener('plan-progress-refresh', handler)
       document.removeEventListener('visibilitychange', onVisible)
     }
+  }, [])
+
+  // Refresh at Beijing midnight (UTC 16:00)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    function schedule() {
+      const now = new Date()
+      const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16, 0, 0, 0))
+      if (now >= next) next.setUTCDate(next.getUTCDate() + 1)
+      const ms = next.getTime() - now.getTime()
+      timer = setTimeout(() => {
+        useRefreshStore.getState().bump()
+        schedule()
+      }, ms)
+    }
+    schedule()
+    return () => clearTimeout(timer)
   }, [])
 
   if (!user) return null

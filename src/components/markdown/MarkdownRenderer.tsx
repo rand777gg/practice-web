@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
 import { visit } from 'unist-util-visit'
+import { X, ZoomIn } from 'lucide-react'
 
 // rehype plugin: remark-math nodes → MathJax \(...\) / \[...\] delimiters
 // In remark-math v6 + mdast-util-to-hast v13, inlineMath produces
@@ -168,6 +169,19 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mathJaxLoaded = useRef(false)
 
+  const [zoomedSrc, setZoomedSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!zoomedSrc) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoomedSrc(null) }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+    }
+  }, [zoomedSrc])
+
   // Load MathJax from CDN + typeset after content changes
   useEffect(() => {
     if (!content) return
@@ -223,15 +237,30 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
       if (lang === 'plantuml') return <PlantUMLBlock code={text} />
       return <CodeBlock lang={lang || 'text'} code={text} theme={codeTheme} />
     },
-    // Images — resizable + alignment tools when onImageAction is provided
+    // Images — click to zoom, with alignment tools when onImageAction is provided
     img({ src, alt, title, ...props }: any) {
       if (!src) return null
       if (onImageActionRef.current) {
-        return <ResizableImage src={src} alt={alt || ''} title={title} onAction={onImageActionRef.current} />
+        return (
+          <div className="relative group/image">
+            <ResizableImage src={src} alt={alt || ''} title={title} onAction={onImageActionRef.current} />
+            <button
+              type="button"
+              onClick={() => setZoomedSrc(src)}
+              className="absolute top-1.5 right-1.5 p-1 rounded bg-black/50 text-white opacity-0 group-hover/image:opacity-100 transition-opacity"
+              title="放大查看"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )
       }
       return (
-        <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block">
+        <span className="markdown-preview-img-wrap rounded-lg border-2 border-transparent hover:border-primary/30 transition-colors block relative group/image cursor-pointer" onClick={() => setZoomedSrc(src)}>
           <img src={src} alt={alt || ''} className="rounded-lg" loading="lazy" {...props} />
+          <span className="absolute top-1.5 right-1.5 p-1 rounded bg-black/50 text-white opacity-0 group-hover/image:opacity-100 transition-opacity">
+            <ZoomIn className="h-3.5 w-3.5" />
+          </span>
         </span>
       )
     },
@@ -268,11 +297,34 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   if (!content) return null
 
   return (
-    <div ref={containerRef} className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
-      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeMathJax]} components={components}>
-        {content}
-      </ReactMarkdown>
-    </div>
+    <>
+      <div ref={containerRef} className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
+        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeMathJax]} components={components}>
+          {content}
+        </ReactMarkdown>
+      </div>
+
+      {zoomedSrc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in-0"
+          onClick={() => setZoomedSrc(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setZoomedSrc(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={zoomedSrc}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
   )
 }
 

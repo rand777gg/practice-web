@@ -13,8 +13,9 @@ import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
 
 function todayStart(): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
+  const now = new Date()
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16, 0, 0, 0))
+  if (now < d) d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString()
 }
 
@@ -60,9 +61,8 @@ export function DashboardPlanCards() {
       const today = todayStart()
 
       if (deadline) {
-        const longTodaySince = planResetAt || today
         const { data: lt } = await supabase.rpc('get_subject_progress', {
-          p_user_id: uid, p_plan_reset_at: planResetAt || null, p_today_since: longTodaySince,
+          p_user_id: uid, p_plan_reset_at: planResetAt || null, p_today_since: today,
           p_subjects: planSubjects.length > 0 ? planSubjects : null,
           p_subject_resets: subjectResetAt,
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
@@ -79,13 +79,12 @@ export function DashboardPlanCards() {
       }
 
       if (dailyTargets.length > 0) {
-        const dailyTodaySince = dailyResetAt || today
         const targetSubjects = [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))]
 
         const { data: dt } = await supabase.rpc('get_subject_progress', {
           p_user_id: uid,
           p_plan_reset_at: dailyResetAt || null,
-          p_today_since: dailyTodaySince,
+          p_today_since: today,
           p_subjects: targetSubjects,
           p_subject_resets: subjectResetAt,
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
