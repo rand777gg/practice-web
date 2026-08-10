@@ -14,7 +14,8 @@ import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
 import { PlanDialog } from '@/components/layout/PlanDialog'
-import { AiExplanation } from '@/components/practice/AiExplanation'
+
+
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -38,10 +39,10 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
-import { motion, AnimatePresence as MotionAnimatePresence } from 'motion/react'
+
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { hasAiConfig } from '@/lib/ai/config'
+
+
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -241,11 +242,10 @@ export function PracticeSession() {
   useEffect(() => { snapRef.current = { question, answer: selectedAnswer, submitted: isSubmitted, note, isPublic, answerId, attempts: attemptCount, wrongs: wrongCount } })
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
   const [tooEasyOpen, setTooEasyOpen] = useState(false)
-  const [aiPanelOpen, setAiPanelOpen] = useState(false)
-  const aiPanelQuestionRef = useRef<string | null>(null)
+
   const isMobile = useIsMobile()
   const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
-  const isExplanationEnabled = useSettingsStore((s) => s.isEnabled('explanation')) && hasAiConfig()
+
 
   // Persist per-subject positions to localStorage keyed by sessionKey
   useEffect(() => {
@@ -939,12 +939,6 @@ export function PracticeSession() {
 
   useEffect(() => { markUnsureRef.current = handleMarkUnsure; markWrongRef.current = handleMarkUnsure; favoriteRef.current = () => { if (question) toggleFavorite(question.id) }; tooEasyRef.current = () => setTooEasyOpen(true) })
 
-  // Close AI panel when question changes
-  useEffect(() => {
-    if (question && question.id !== aiPanelQuestionRef.current) {
-      setAiPanelOpen(false)
-    }
-  }, [question?.id])
 
   useEffect(() => {
     if (!tooEasyOpen) return
@@ -1268,14 +1262,9 @@ export function PracticeSession() {
             </div>
           ) : question ? (
             <>
-              <div className={cn('flex gap-4', !isMobile && aiPanelOpen && 'items-start')}>
-                <motion.div
-                  className="space-y-4 min-w-0"
-                  animate={!isMobile ? { width: aiPanelOpen ? '60%' : '100%' } : { width: '100%' }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                >
+              <div className="space-y-4">
                   <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} showAiIcon={isSubmitted && isExplanationEnabled} onAskAi={isExplanationEnabled ? () => { setAiPanelOpen(true); aiPanelQuestionRef.current = question.id } : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
                   </div>
                   {isSubmitted && (
                     <div className="space-y-1.5">
@@ -1301,31 +1290,7 @@ export function PracticeSession() {
                       </Button>
                     )}
                   </div>
-                </motion.div>
-                {!isMobile && (
-                  <MotionAnimatePresence>
-                    {aiPanelOpen && (
-                      <motion.div
-                        className="w-[40%] shrink-0 rounded-xl border bg-card overflow-hidden"
-                        initial={{ opacity: 0, x: 60 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 60 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        style={{ height: 'calc(100vh - 200px)', minHeight: '400px', position: 'sticky', top: '1rem' }}
-                      >
-                        <AiExplanation question={question} open={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
-                      </motion.div>
-                    )}
-                  </MotionAnimatePresence>
-                )}
-              </div>
-              {isMobile && (
-                <Sheet open={aiPanelOpen} onOpenChange={setAiPanelOpen}>
-                  <SheetContent side="right" className="w-full sm:max-w-md p-0">
-                    <AiExplanation question={question} open={aiPanelOpen} onClose={() => setAiPanelOpen(false)} isMobile />
-                  </SheetContent>
-                </Sheet>
-              )}
+                </div>
             </>
           ) : null}
         </div>

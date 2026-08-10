@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from 'react'
+import { useState, useRef, useEffect, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
@@ -23,8 +23,19 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [githubLoggingIn, setGithubLoggingIn] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
+  const [showTurnstile, setShowTurnstile] = useState(false)
+  const [turnstileVerifying, setTurnstileVerifying] = useState(false)
   const navigate = useNavigate()
   const turnstileRef = useRef<TurnstileHandle>(null)
+  const pendingAction = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (showTurnstile && pendingAction.current) {
+      const action = pendingAction.current
+      pendingAction.current = null
+      setTimeout(action, 0)
+    }
+  }, [showTurnstile])
 
   async function validateTurnstile() {
     const token = await turnstileRef.current?.getFreshToken()
@@ -33,41 +44,81 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
     if (!(data as { success: boolean })?.success) throw new Error('安全验证失败，请重试')
   }
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setError('')
+  async function performLogin() {
     setIsSubmitting(true)
+    setTurnstileVerifying(true)
+    setError('')
     try {
       await validateTurnstile()
+      setTurnstileVerifying(false)
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
       if (authError) { setError(authError.message); setIsSubmitting(false) }
       else navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : '验证失败')
       setIsSubmitting(false)
+      setTurnstileVerifying(false)
     }
   }
 
-  const handleGitHubLogin = async () => {
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!showTurnstile) {
+      setShowTurnstile(true)
+      setIsSubmitting(true)
+      setTurnstileVerifying(true)
+      pendingAction.current = performLogin
+      return
+    }
+    performLogin()
+  }
+
+  async function performGitHubLogin() {
     setGithubLoggingIn(true)
+    setTurnstileVerifying(true)
     setError('')
     try {
       await validateTurnstile()
+      setTurnstileVerifying(false)
       supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin } })
     } catch (err) {
       setError(err instanceof Error ? err.message : '验证失败')
       setGithubLoggingIn(false)
+      setTurnstileVerifying(false)
+    }
+  }
+
+  const handleGitHubLogin = async () => {
+    if (!showTurnstile) {
+      setShowTurnstile(true)
+      setGithubLoggingIn(true)
+      setTurnstileVerifying(true)
+      pendingAction.current = performGitHubLogin
+      return
+    }
+    performGitHubLogin()
+  }
+
+  async function performQrLogin() {
+    setTurnstileVerifying(true)
+    setError('')
+    try {
+      await validateTurnstile()
+      setTurnstileVerifying(false)
+      setQrOpen(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证失败')
+      setTurnstileVerifying(false)
     }
   }
 
   const handleQrLogin = async () => {
-    setError('')
-    try {
-      await validateTurnstile()
-      setQrOpen(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '验证失败')
+    if (!showTurnstile) {
+      setShowTurnstile(true)
+      pendingAction.current = performQrLogin
+      return
     }
+    performQrLogin()
   }
 
   const v = visible ? rowIn : rowOut
@@ -118,9 +169,9 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
                         </div>
                         <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="text-gray-900 placeholder:text-gray-400 border-gray-300 bg-white dark:text-white dark:placeholder:text-white/30 dark:border-white/20 dark:bg-white/5 backdrop-blur-md focus:border-gray-400 dark:focus:border-white/50" />
                       </div>
-                      <TurnstileWidget ref={turnstileRef} />
+                      {showTurnstile && <TurnstileWidget ref={turnstileRef} />}
                       <Button type="submit" className="w-full" disabled={isSubmitting}>
-                        {isSubmitting ? t('auth.signingIn') : t('auth.signIn')}
+                        {isSubmitting ? (turnstileVerifying ? t('auth.turnstileVerifying') : t('auth.signingIn')) : t('auth.signIn')}
                       </Button>
                     </div>
                   </div>
@@ -133,7 +184,7 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
                   {githubLoggingIn && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-black/50 transition-opacity duration-300 animate-[passkey-success-pop_0.3s_ease-out]">
                       <span className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
-                      <p className="text-sm text-muted-foreground">{t('auth.signingInWithGitHub')}</p>
+                      <p className="text-sm text-muted-foreground">{turnstileVerifying ? t('auth.turnstileVerifying') : t('auth.signingInWithGitHub')}</p>
                     </div>
                   )}
                 </div>

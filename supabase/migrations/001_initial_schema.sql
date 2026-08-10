@@ -1275,3 +1275,16 @@ ALTER TABLE public.questions
 -- Visible example cases shown in question description (LeetCode-style Example 1/2/3)
 ALTER TABLE public.questions
   ADD COLUMN IF NOT EXISTS examples JSONB DEFAULT '[]'::jsonb;
+
+-- ============================================================================
+-- Section 13: TOTP Recovery Codes
+-- ============================================================================
+
+-- Hashed recovery codes (SHA-256), service_role access only
+CREATE TABLE IF NOT EXISTS public.user_recovery_codes (
+  user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+  codes   TEXT[] NOT NULL DEFAULT '{}'
+);
+
+ALTER TABLE public.user_recovery_codes ENABLE ROW LEVEL SECURITY;
+-- No user-facing RLS policy — only service_role (Edge Function) accesses this table

@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback, type ReactNode } from 'react'
+import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { OtpSetupDialog } from '@/components/auth/OtpSetupDialog'
 import { OtpVerifyDialog } from '@/components/auth/OtpVerifyDialog'
+import { RecoveryCodeDialog } from '@/components/auth/RecoveryCodeDialog'
 import { PasskeyVerifyDialog } from '@/components/auth/PasskeyVerifyDialog'
 import { isDeviceTrusted, getTrustInfo } from '@/lib/otp-trust'
 import { checkPasskeyGrace } from '@/lib/passkey'
@@ -44,49 +45,53 @@ export function OtpGuard({ children }: Props) {
   const [showSetup, setShowSetup] = useState(false)
   const [showVerify, setShowVerify] = useState(false)
   const [showPasskeyVerify, setShowPasskeyVerify] = useState(false)
+  const [showRecovery, setShowRecovery] = useState(false)
   const [otpCleared, setOtpCleared] = useState(false)
   const [showTrustedToast, setShowTrustedToast] = useState(false)
-
-  const checkOtp = useCallback(async () => {
-    if (!user || !isInitialized) return
-
-    await refreshProfile()
-    const p = useAuthStore.getState().profile
-
-    if (!p) return
-
-    if (!p.totp_enabled) {
-      setShowSetup(true)
-      return
-    }
-
-    // Check preferred 2FA method
-    if (p.preferred_2fa === 'passkey') {
-      const timeout = p.passkey_timeout_minutes || 0
-      if (timeout > 0) {
-        const inGrace = await checkPasskeyGrace(user.id, timeout)
-        if (inGrace) {
-          setOtpCleared(true)
-          return
-        }
-      }
-      setShowPasskeyVerify(true)
-      return
-    }
-
-    // Default TOTP flow
-    if (isDeviceTrusted()) {
-      setShowTrustedToast(true)
-      setOtpCleared(true)
-      return
-    }
-
-    setShowVerify(true)
-  }, [user, isInitialized, refreshProfile])
+  const checkedRef = useRef(false)
 
   useEffect(() => {
-    checkOtp()
-  }, [checkOtp])
+    if (!user || !isInitialized || checkedRef.current) return
+    checkedRef.current = true
+
+    let cancelled = false
+
+    async function run() {
+      await refreshProfile()
+      if (cancelled) return
+      const p = useAuthStore.getState().profile
+      if (!p) return
+
+      if (!p.totp_enabled) {
+        setShowSetup(true)
+        return
+      }
+
+      if (p.preferred_2fa === 'passkey') {
+        const timeout = p.passkey_timeout_minutes || 0
+        if (timeout > 0) {
+          const inGrace = await checkPasskeyGrace(user!.id, timeout)
+          if (inGrace) {
+            setOtpCleared(true)
+            return
+          }
+        }
+        setShowPasskeyVerify(true)
+        return
+      }
+
+      if (isDeviceTrusted()) {
+        setShowTrustedToast(true)
+        setOtpCleared(true)
+        return
+      }
+
+      setShowVerify(true)
+    }
+
+    run()
+    return () => { cancelled = true }
+  }, [user, isInitialized, refreshProfile])
 
   const handleSetupComplete = useCallback(() => {
     setShowSetup(false)
@@ -103,6 +108,23 @@ export function OtpGuard({ children }: Props) {
   const handlePasskeyVerified = useCallback(() => {
     setShowPasskeyVerify(false)
     setOtpCleared(true)
+  }, [])
+
+  const handleRecover = useCallback(() => {
+    setShowVerify(false)
+    setShowRecovery(true)
+  }, [])
+
+  const handleRecoveryComplete = useCallback(() => {
+    setShowRecovery(false)
+    refreshProfile().then(() => {
+      setOtpCleared(true)
+    })
+  }, [refreshProfile])
+
+  const handleRecoveryBack = useCallback(() => {
+    setShowRecovery(false)
+    setShowVerify(true)
   }, [])
 
   const handlePasskeyFallback = useCallback(() => {
@@ -122,7 +144,8 @@ export function OtpGuard({ children }: Props) {
       <>
         {children}
         <OtpSetupDialog open={showSetup} onSetupComplete={handleSetupComplete} />
-        <OtpVerifyDialog open={showVerify} onVerified={handleVerifyComplete} />
+        <OtpVerifyDialog open={showVerify} onVerified={handleVerifyComplete} onRecover={handleRecover} />
+        <RecoveryCodeDialog open={showRecovery} onVerified={handleRecoveryComplete} onBack={handleRecoveryBack} />
         <PasskeyVerifyDialog
           open={showPasskeyVerify}
           onVerified={handlePasskeyVerified}

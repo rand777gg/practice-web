@@ -171,7 +171,7 @@ export function Component() {
   { key: 'suggestions' as const, label: t('settings.aiSuggestions'), desc: t('settings.aiSuggestionsDesc'), available: aiConfigured },
   { key: 'analysis' as const, label: t('settings.aiAnalysis'), desc: t('settings.aiAnalysisDesc'), available: aiConfigured },
   { key: 'keypoints' as const, label: t('settings.aiKeypoints'), desc: t('settings.aiKeypointsDesc'), available: aiConfigured },
-  { key: 'explanation' as const, label: 'AI 题目解读', desc: '练习答题后在题目旁显示 AI 解读入口，可对题目进行详细讲解', available: aiConfigured },
+
   { key: 'mineru' as const, label: t('settings.aiMineru'), desc: t('settings.aiMineruDesc').replace('{model}', mineruModel), available: mineruConfigured },
  ]
 

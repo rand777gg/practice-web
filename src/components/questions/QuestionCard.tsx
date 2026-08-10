@@ -11,11 +11,11 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer, CodingAnswer, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, Bot } from 'lucide-react'
+import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle } from 'lucide-react'
 import { CodeEditor } from '@/components/practice/CodeEditor'
 import { CodeResult } from '@/components/practice/CodeResult'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
-import { motion, AnimatePresence } from 'motion/react'
+
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
@@ -75,11 +75,10 @@ interface Props {
   unsureKbd?: string
   favoriteKbd?: string
   tooEasyKbd?: string
-  showAiIcon?: boolean
-  onAskAi?: () => void
+
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, unsureKbd, favoriteKbd, tooEasyKbd, showAiIcon, onAskAi }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, unsureKbd, favoriteKbd, tooEasyKbd }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
   useEffect(() => {
@@ -112,22 +111,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
 
   return (
     <div className="relative rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
-      <AnimatePresence>
-        {showAiIcon && onAskAi && (
-          <motion.button
-            type="button"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-pink-500/10 border border-amber-500/30 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:from-amber-500/20 hover:to-pink-500/20 hover:border-amber-500/50 transition-all shadow-sm"
-            onClick={onAskAi}
-          >
-            <Bot className="h-3.5 w-3.5" />
-            <span>AI 解读</span>
-          </motion.button>
-        )}
-      </AnimatePresence>
+
       <div {...row(100)}>
         <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
       </div>

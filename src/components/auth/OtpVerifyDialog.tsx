@@ -33,9 +33,10 @@ async function verifyOtp(code: string): Promise<boolean> {
 interface Props {
   open: boolean
   onVerified: () => void
+  onRecover: () => void
 }
 
-export function OtpVerifyDialog({ open, onVerified }: Props) {
+export function OtpVerifyDialog({ open, onVerified, onRecover }: Props) {
   const { t } = useT()
   const { user, signOut } = useAuthStore()
   const [code, setCode] = useState('')
@@ -109,6 +110,12 @@ export function OtpVerifyDialog({ open, onVerified }: Props) {
             className="w-full"
           >
             {isSubmitting ? t('auth.otpVerifying') : t('auth.otpVerify')}
+          </Button>
+        </div>
+
+        <div className="flex justify-center">
+          <Button variant="link" size="sm" className="text-xs text-muted-foreground" onClick={onRecover}>
+            {t('auth.otpLostAccess')}
           </Button>
         </div>
 
