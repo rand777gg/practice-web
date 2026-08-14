@@ -67,7 +67,7 @@ export const LANG_ICONS: Record<string, string> = {
   rust: 'vscode-icons:file-type-rust',
   swift: 'vscode-icons:file-type-swift',
   kotlin: 'vscode-icons:file-type-kotlin',
-  dart: 'vscode-icons:file-type-dart',
+  dart: 'vscode-icons:file-type-dartlang',
   ruby: 'devicon:ruby',
   php: 'devicon:php',
   scala: 'devicon:scala',
@@ -97,5 +97,5 @@ export const LANG_ICONS: Record<string, string> = {
   groovy: 'devicon:groovy',
   perl: 'devicon:perl',
   erlang: 'devicon:erlang',
-  objectivec: 'vscode-icons:file-type-objc',
+  objectivec: 'vscode-icons:file-type-objectivec',
 }

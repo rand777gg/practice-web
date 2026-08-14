@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   LayoutDashboard, Pencil, Clock, RotateCcw, FileQuestion, Users,
-  GraduationCap, Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose,
+  GraduationCap, Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose, X,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -11,10 +11,10 @@ import { useT } from '@/i18n/use-t'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ease-out active:scale-[0.98]',
     isActive
-      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-      : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+      ? 'bg-sidebar-accent/70 text-sidebar-accent-foreground'
+      : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground',
   )
 
 interface Props {
@@ -33,9 +33,18 @@ function NavItem({ to, icon, label, collapsed, end, onClick, badge }: {
   return (
     <NavLink to={to} end={end} className={linkClass} onClick={onClick}
       title={collapsed ? label : undefined}>
-      <span className="shrink-0">{icon}</span>
-      {!collapsed && <span className="truncate">{label}</span>}
-      {!collapsed && badge}
+      {({ isActive }) => (
+        <>
+          <span aria-hidden className={cn(
+            'absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-sidebar-primary transition-all duration-300 ease-out',
+            collapsed ? '-left-2' : '-left-3',
+            isActive ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0',
+          )} />
+          <span className={cn('shrink-0 transition-colors duration-200', isActive && 'text-sidebar-primary')}>{icon}</span>
+          {!collapsed && <span className="truncate">{label}</span>}
+          {!collapsed && badge}
+        </>
+      )}
     </NavLink>
   )
 }
@@ -94,7 +103,7 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
 
   const sidebarContent = (
     <aside className={cn(
-      'shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col h-screen sticky top-0 transition-all duration-300',
+      'fixed inset-y-0 left-0 z-30 border-r border-sidebar-border bg-sidebar flex flex-col transition-all duration-300',
       collapsed ? 'w-14' : 'w-64',
       className,
     )}>
@@ -111,7 +120,11 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
               <GraduationCap className="h-6 w-6 text-sidebar-primary shrink-0" />
               <span className="font-semibold text-sidebar-foreground truncate">{t('app.shortTitle')}</span>
             </div>
-            {!overlay && (
+            {overlay ? (
+              <button type="button" onClick={onClose} title="关闭菜单" className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors shrink-0">
+                <X className="h-5 w-5" />
+              </button>
+            ) : (
               <button type="button" onClick={onToggleCollapse} className="p-1 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors shrink-0">
                 <PanelLeftClose className="h-5 w-5" />
               </button>
@@ -131,7 +144,7 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
   return (
     <>
       {isOpen && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={onClose} />}
-      <div className={cn('fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:hidden', isOpen ? 'translate-x-0' : '-translate-x-full')}>
+      <div className={cn('fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-200 lg:hidden', isOpen ? 'translate-x-0' : '-translate-x-full')}>
         {sidebarContent}
       </div>
     </>

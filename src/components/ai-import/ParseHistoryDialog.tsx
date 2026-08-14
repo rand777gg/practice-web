@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Trash2, Clock, Link, ChevronDown } from 'lucide-react'
+import { Trash2, Clock, Link, ChevronDown, Pencil } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 
@@ -39,6 +39,10 @@ interface Props {
   onBatchReplaceUrl: (ids: number[], newUrl: string) => void
   onRename: (id: number, displayName: string) => void
   onShowQuestions: (questionsJson: string) => void
+  onEdit: (entry: HistoryEntry) => void
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
   r2DisplayNames?: Map<string, string>
   r2Pdfs?: { key: string; url: string }[]
 }
@@ -111,7 +115,7 @@ function displayFileName(h: HistoryEntry, r2Names?: Map<string, string>): string
   return h.file_name.startsWith('http') ? fileNameFromUrl(h.file_name) : h.file_name
 }
 
-export function ParseHistoryDialog({ open, onOpenChange, history, loading, error, onLoad, onDelete, onBatchDelete, onBatchCache, onBatchReplaceUrl, onRename, onShowQuestions, r2DisplayNames, r2Pdfs }: Props) {
+export function ParseHistoryDialog({ open, onOpenChange, history, loading, error, onLoad, onDelete, onBatchDelete, onBatchCache, onBatchReplaceUrl, onRename, onShowQuestions, onEdit, hasMore, loadingMore, onLoadMore, r2DisplayNames, r2Pdfs }: Props) {
   const [mode, setMode] = useState('all')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [replaceUrl, setReplaceUrl] = useState('')
@@ -254,7 +258,7 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                     <TableHead className="text-xs w-[68px]">状态</TableHead>
                     <TableHead className="text-xs w-[44px]">缓存</TableHead>
                     <TableHead className="text-xs w-[120px]">时间</TableHead>
-                    <TableHead className="text-xs w-[36px]" />
+                    <TableHead className="text-xs w-[72px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -354,10 +358,17 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                           {new Date(h.created_at).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-xs py-1.5">
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => onDelete(h.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              title="编辑"
+                              onClick={() => onEdit(h)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => onDelete(h.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -365,6 +376,13 @@ export function ParseHistoryDialog({ open, onOpenChange, history, loading, error
                 </TableBody>
               </Table>
               </div>
+              {hasMore && (
+                <div className="flex justify-center py-3">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onLoadMore} disabled={loadingMore}>
+                    {loadingMore ? '加载中...' : '加载更多'}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </div>

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Outlet } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { MobileBottomNav } from './MobileBottomNav'
@@ -27,9 +28,15 @@ export function AppLayout() {
         onClose={() => setSidebarOpen(false)}
         onToggleCollapse={handleToggle}
       />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className={`flex-1 p-4 xl:p-6 ${examActive ? 'pb-4' : 'pb-20 xl:pb-6'}`}>
+      <div className={cn(
+        'flex-1 flex flex-col min-w-0 transition-[padding-left] duration-300',
+        sidebarCollapsed ? 'lg:pl-14' : 'lg:pl-64',
+      )}>
+        <Header
+          className={sidebarCollapsed ? 'lg:left-14' : 'lg:left-64'}
+          onMenuClick={() => setSidebarOpen(true)}
+        />
+        <main className={cn('flex-1 px-4 xl:px-6 pt-18 xl:pt-20', examActive ? 'pb-4' : 'pb-24 xl:pb-6')}>
           <Outlet />
         </main>
         {!examActive && <MobileBottomNav />}

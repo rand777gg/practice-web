@@ -538,11 +538,6 @@ DECLARE
   v_kp_arr TEXT[];
   v_subj_arr TEXT[];
   v_restored_index INT;
-  v_plan_reset TIMESTAMPTZ;
-  v_subject_resets JSONB;
-  v_answered_set UUID[];
-  v_q_subj TEXT;
-  v_i INT;
   v_saved_kps TEXT[];
   v_sps JSONB;
   v_new_data JSONB;
@@ -650,36 +645,6 @@ BEGIN
     v_restored_index := LEAST(v_restored_index, array_length(v_all_ids, 1) - 1);
   ELSE
     v_restored_index := 0;
-  END IF;
-
-  -- Recalculate resume index based on answered questions (same logic as start_sequential_session)
-  v_answered_set := '{}'::UUID[];
-  SELECT pd.plan_reset_at, COALESCE(pd.subject_reset_at, '{}'::jsonb)
-  INTO v_plan_reset, v_subject_resets FROM public.profiles pd WHERE pd.id = p_user_id;
-  IF array_length(v_all_ids, 1) > 0 THEN
-    SELECT array_agg(ua.question_id) INTO v_answered_set
-    FROM public.user_answers ua
-    WHERE ua.user_id = p_user_id AND ua.question_id = ANY(v_all_ids)
-      AND (v_plan_reset IS NULL OR ua.answered_at >= v_plan_reset);
-    IF v_answered_set IS NULL THEN v_answered_set := '{}'::UUID[]; END IF;
-    FOR v_i IN 1..array_length(v_all_ids, 1) LOOP
-      v_q_subj := v_all_subjs[v_i];
-      IF v_subject_resets ? v_q_subj THEN
-        PERFORM 1 FROM public.user_answers ua
-        WHERE ua.user_id = p_user_id AND ua.question_id = v_all_ids[v_i]
-          AND ua.answered_at >= (v_subject_resets->>v_q_subj)::TIMESTAMPTZ;
-        IF NOT FOUND THEN v_answered_set := array_remove(v_answered_set, v_all_ids[v_i]); END IF;
-      END IF;
-    END LOOP;
-    -- Find first unanswered question
-    v_restored_index := 0;
-    FOR v_i IN 1..array_length(v_all_ids, 1) LOOP
-      IF NOT (v_all_ids[v_i] = ANY(v_answered_set)) THEN v_restored_index := v_i - 1; EXIT; END IF;
-      v_restored_index := v_i;
-    END LOOP;
-    IF v_restored_index >= array_length(v_all_ids, 1) THEN
-      v_restored_index := GREATEST(0, array_length(v_all_ids, 1) - 1);
-    END IF;
   END IF;
 
   -- P1: Preload first question + stats into response (skip loadSequentialQuestion round-trip)

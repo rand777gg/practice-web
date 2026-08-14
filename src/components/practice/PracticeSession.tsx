@@ -243,6 +243,7 @@ export function PracticeSession() {
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
   const [tooEasyOpen, setTooEasyOpen] = useState(false)
   const [resumePrompt, setResumePrompt] = useState<{ kps: string[]; subs: string[] } | null>(null)
+  const [excludedPrompt, setExcludedPrompt] = useState<{ kps: string[]; subs: string[]; qids: string[]; count: number } | null>(null)
 
   const isMobile = useIsMobile()
   const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
@@ -729,6 +730,12 @@ export function PracticeSession() {
     loadSequentialQuestion(useSequentialStore.getState().currentIndex)
   }, [seqStart, seqLoadSessions, loadSequentialQuestion])
 
+  const proceedAfterExcluded = useCallback(async (kps: string[], subs: string[]) => {
+    const recent = (useSequentialStore.getState().sessions ?? []).find(x => (x.questionIds?.length ?? 0) > 0 && x.currentIndex > 0)
+    if (recent) setResumePrompt({ kps, subs })
+    else await startNewSession(kps, subs, true)
+  }, [startNewSession])
+
   const handleKpConfirm = useCallback(async (kps: string[]) => {
     const user = useAuthStore.getState().user; if (!user || kps.length === 0) return
     triggerKpRefresh()
@@ -744,11 +751,17 @@ export function PracticeSession() {
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
     } else {
       saveCurrentSession()
-      const recent = (useSequentialStore.getState().sessions ?? []).find(x => (x.questionIds?.length ?? 0) > 0 && x.currentIndex > 0)
-      if (recent) setResumePrompt({ kps, subs })
-      else await startNewSession(kps, subs, true)
+      const { data: kpRows } = await supabase.from('kp_question_map').select('question_id').in('kp', kps)
+      const qids = (kpRows ?? []).map(r => r.question_id)
+      let excludedCount = 0
+      if (qids.length > 0) {
+        const { count } = await supabase.from('user_excluded_questions').select('question_id', { count: 'exact', head: true }).eq('user_id', user.id).in('question_id', qids)
+        excludedCount = count ?? 0
+      }
+      if (excludedCount > 0) setExcludedPrompt({ kps, subs, qids, count: excludedCount })
+      else await proceedAfterExcluded(kps, subs)
     }
-  }, [subjectsForKps, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh, startNewSession])
+  }, [subjectsForKps, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh, proceedAfterExcluded])
 
   const modeInitRef = useRef(false)
   useEffect(() => {
@@ -871,7 +884,17 @@ export function PracticeSession() {
       }
       const s = useSequentialStore.getState()
       const nextIdx = s.currentIndex + 1
-      if (nextIdx >= s.questionIds.length) { setNoQuestions(true); setIsLoading(false); return }
+      if (nextIdx >= s.questionIds.length) {
+        const firstUnanswered = s.questionIds.findIndex(id => !answeredThisSession.current.has(id))
+        if (firstUnanswered >= 0) {
+          await loadSequentialQuestion(firstUnanswered)
+          const s2 = useSequentialStore.getState()
+          const u = useAuthStore.getState().user
+          if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+          return
+        }
+        setNoQuestions(true); setIsLoading(false); return
+      }
       await loadSequentialQuestion(nextIdx)
       // Save to DB after successful load
       const s2 = useSequentialStore.getState()
@@ -1085,6 +1108,7 @@ export function PracticeSession() {
             <AlertDialogAction onClick={() => { setBlockSkipOpen(false); handleMarkUnsure() }}>不确定</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
+
       </AlertDialog>
 
       <AlertDialog open={tooEasyOpen} onOpenChange={setTooEasyOpen}>
@@ -1135,6 +1159,19 @@ export function PracticeSession() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => { const rp = resumePrompt; setResumePrompt(null); if (rp) startNewSession(rp.kps, rp.subs, true) }}>重新开始</AlertDialogCancel>
             <AlertDialogAction onClick={() => { const rp = resumePrompt; setResumePrompt(null); if (rp) startNewSession(rp.kps, rp.subs, false) }}>保留进度</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={excludedPrompt !== null} onOpenChange={(o) => { if (!o) setExcludedPrompt(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>部分题目已被排除</AlertDialogTitle>
+            <AlertDialogDescription>所选知识点中有 {excludedPrompt?.count ?? 0} 道题目已被你排除，是否继续开始刷题？</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setExcludedPrompt(null)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { const ep = excludedPrompt; setExcludedPrompt(null); if (ep) proceedAfterExcluded(ep.kps, ep.subs) }}>继续</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1250,7 +1287,7 @@ export function PracticeSession() {
                 const ki = seqGetCurrentKpInfo()
                 const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim()
                 const ua = navigator.userAgent
-                const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:macos-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
+                const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:apple-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
                 let devName = ''
                 try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
                 const lastSync = seqLastSyncAt || [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
@@ -1319,3 +1356,4 @@ export function PracticeSession() {
     </div>
   )
 }
+

@@ -47,7 +47,7 @@ const BROWSER_ICONS: Record<string, { icon: string; label: string }> = {
   chrome:  { icon: 'logos:chrome', label: 'Chrome' },
   edge:    { icon: 'mdi:microsoft-edge', label: 'Edge' },
   firefox: { icon: 'mdi:firefox', label: 'Firefox' },
-  safari:  { icon: 'mdi:safari', label: 'Safari' },
+  safari:  { icon: 'mdi:apple-safari', label: 'Safari' },
   wechat:  { icon: 'mdi:wechat', label: 'WeChat' },
   samsung: { icon: 'mdi:android', label: 'Samsung' },
   unknown: { icon: 'mdi:web', label: 'Unknown' },

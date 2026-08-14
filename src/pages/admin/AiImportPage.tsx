@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { PdfMarkdownViewer, parseLayoutTree } from '@/components/ai-import/PdfMarkdownViewer'
 import { ParseHistoryDialog, type HistoryEntry } from '@/components/ai-import/ParseHistoryDialog'
+import { EditHistoryDialog, type HistoryEdits } from '@/components/ai-import/EditHistoryDialog'
 import { R2PdfGallery } from '@/components/ai-import/R2PdfGallery'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
@@ -183,6 +184,9 @@ export function Component() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false)
+  const [editEntry, setEditEntry] = useState<HistoryEntry | null>(null)
   const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(urlHistoryId)
 
   // Sync historyId to URL
@@ -213,21 +217,43 @@ export function Component() {
 
   const user = useAuthStore((s) => s.user)
 
+  const HISTORY_PAGE_SIZE = 50
+  const historySelect = 'id, file_name, display_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls, subject, category, key_points'
+
   const loadHistoryList = async () => {
     if (!user) return
     setHistoryLoading(true)
     const { data, error } = await supabase
       .from('parse_history')
-      .select('id, file_name, display_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls, subject, category, key_points')
+      .select(historySelect)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(50)
+      .limit(HISTORY_PAGE_SIZE)
     if (error) {
       console.error('loadHistoryList error:', error)
       setHistoryError(error.message || '加载失败')
     }
     setHistory(data ?? [])
+    setHistoryHasMore((data?.length ?? 0) >= HISTORY_PAGE_SIZE)
     setHistoryLoading(false)
+  }
+
+  const loadMoreHistory = async () => {
+    if (!user || historyLoadingMore) return
+    setHistoryLoadingMore(true)
+    const { data, error } = await supabase
+      .from('parse_history')
+      .select(historySelect)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(history.length, history.length + HISTORY_PAGE_SIZE - 1)
+    if (error) {
+      console.error('loadMoreHistory error:', error)
+    } else {
+      setHistory(prev => [...prev, ...(data ?? [])])
+      setHistoryHasMore((data?.length ?? 0) >= HISTORY_PAGE_SIZE)
+    }
+    setHistoryLoadingMore(false)
   }
 
   const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string; extraFormats?: string[]; pdfTotalPages?: number }) => {
@@ -340,6 +366,24 @@ export function Component() {
   const deleteHistory = (id: number) => setDeleteConfirm({ ids: [id] })
 
   const batchDeleteHistory = (ids: number[]) => setDeleteConfirm({ ids })
+
+  const saveHistoryEdit = async (id: number, edits: HistoryEdits) => {
+    const payload: Record<string, unknown> = {}
+    if (edits.display_name !== undefined) payload.display_name = edits.display_name
+    if (edits.subject !== undefined) payload.subject = edits.subject
+    if (edits.category !== undefined) payload.category = edits.category
+    if (edits.key_points !== undefined) payload.key_points = edits.key_points
+    if (edits.page_ranges !== undefined) payload.page_ranges = edits.page_ranges
+    await supabase.from('parse_history').update(payload).eq('id', id)
+    setHistory(prev => prev.map(h => h.id === id ? { ...h, ...payload } : h))
+    if (id === currentHistoryId) {
+      if (payload.display_name !== undefined) setCurrentDisplayName(payload.display_name as string | null)
+      if (payload.subject !== undefined) setSubject((payload.subject as string) || '')
+      if (payload.category !== undefined) setCategory((payload.category as string) || '')
+      if (payload.key_points !== undefined) setKeyPoints((payload.key_points as string) || '')
+      if (payload.page_ranges !== undefined) setPageRanges((payload.page_ranges as string) || '')
+    }
+  }
 
   const [editPdfId, setEditPdfId] = useState<number | null>(null)
   const [editPdfUrl, setEditPdfUrl] = useState('')
@@ -864,6 +908,10 @@ export function Component() {
           setHistory(prev => prev.map(h => h.id === id ? { ...h, display_name: displayName } : h))
           if (id === currentHistoryId) setCurrentDisplayName(displayName)
         }}
+        onEdit={(entry) => setEditEntry(entry)}
+        hasMore={historyHasMore}
+        loadingMore={historyLoadingMore}
+        onLoadMore={loadMoreHistory}
         onBatchReplaceUrl={async (ids, newUrl) => {
           // Optimistic update: reflect new URL and clear cache immediately
           setHistory(prev => prev.map(h =>
@@ -884,6 +932,16 @@ export function Component() {
           setSelectedIds(new Set())
           setStepPersisted('preview')
         }}
+      />
+
+      <EditHistoryDialog
+        entry={editEntry}
+        open={!!editEntry}
+        onOpenChange={(open) => { if (!open) setEditEntry(null) }}
+        subjects={allSubjects}
+        categories={allCategories}
+        keyPoints={allKeyPoints}
+        onSave={saveHistoryEdit}
       />
 
       {!aiConfigured && (
