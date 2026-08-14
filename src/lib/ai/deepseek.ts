@@ -80,37 +80,30 @@ export class DeepSeekParser {
   }
 
   async parseDocument(markdown: string, systemPrompt?: string): Promise<AiParseResult> {
-    // Split long documents into chunks to avoid AI response truncation.
-    // DeepSeek max output is ~8K tokens (~24K chars). Each question with analysis
-    // can be 1-2K chars, so we limit input to ~10K chars per chunk.
-    const MAX_CHUNK = 12000
-    if (markdown.length <= MAX_CHUNK) {
-      const { object } = await generateObject({
-        model: this.model,
-        schema: resultSchema,
-        system: systemPrompt || SYSTEM_PROMPT,
-        prompt: `Extract all questions from this document:\n\n${markdown}`,
-        temperature: 0.1,
-        maxOutputTokens: 8000,
-      })
-      return { questions: this.normalize(object.questions) }
-    }
+    const paragraphs = markdown.split(/\n\n+/).map(p => p.trim()).filter(p => p.length > 0)
 
-    // Split by paragraph boundaries, group into chunks
-    const paragraphs = markdown.split(/\n\n+/)
+    // DeepSeek 单次输出上限约 8K token，输出 JSON 通常比输入长 1.3~1.5 倍。
+    // 按段落数 + 字符数双重约束切块，保证每块题目数不会撑爆输出上限。
+    const MAX_PARAGRAPHS = 20
+    const MAX_CHARS = 6000
     const chunks: string[] = []
-    let current = ''
-    for (const p of paragraphs) {
-      if (current && current.length + p.length > MAX_CHUNK) {
-        chunks.push(current)
-        current = p
-      } else {
-        current = current ? current + '\n\n' + p : p
-      }
-    }
-    if (current) chunks.push(current)
+    let current: string[] = []
+    let currentChars = 0
 
-    // Process each chunk
+    for (const p of paragraphs) {
+      const overflow =
+        current.length > 0 &&
+        (current.length + 1 > MAX_PARAGRAPHS || currentChars + p.length > MAX_CHARS)
+      if (overflow) {
+        chunks.push(current.join('\n\n'))
+        current = []
+        currentChars = 0
+      }
+      current.push(p)
+      currentChars += p.length
+    }
+    if (current.length) chunks.push(current.join('\n\n'))
+
     const allQuestions: ParsedQuestion[] = []
     const totalChunks = chunks.length
     for (let i = 0; i < totalChunks; i++) {
@@ -356,6 +349,9 @@ export class DeepSeekParser {
         if (options.length < 2 && ['single_choice','multi_select'].includes(question_type)) {
           question_type = 'short_answer'
           options = []
+        }
+        if (correct_answer === null || correct_answer === undefined) {
+          correct_answer = ''
         }
 
         const strOrUndefined = (v: unknown): string | undefined => {

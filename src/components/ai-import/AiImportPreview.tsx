@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,7 +19,7 @@ import { generateKeyPoints, hasAiConfig, getAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 import { useSettingsStore } from '@/stores/settings-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
-import { normalizeChineseText, cleanOptionText } from '@/lib/utils'
+import { normalizeChineseText, cleanOptionText, naturalSort } from '@/lib/utils'
 
 interface Props {
   questions: ParsedQuestion[]
@@ -47,6 +47,7 @@ export function AiImportPreview({
   const { t } = useT()
   const { isEnabled } = useSettingsStore()
   const allSelected = questions.length > 0 && selectedIds.size === questions.length
+  const sortedExistingKeyPoints = useMemo(() => [...existingKeyPoints].sort(naturalSort), [existingKeyPoints])
   const [batchKpLoading, setBatchKpLoading] = useState(false)
   const [batchManualKp, setBatchManualKp] = useState('')
   const [batchLineBreakLoading, setBatchLineBreakLoading] = useState(false)
@@ -242,7 +243,7 @@ export function AiImportPreview({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto max-w-xs">
-                {existingKeyPoints.map((kp) => (
+                {sortedExistingKeyPoints.map((kp) => (
                   <DropdownMenuItem key={kp} className="text-xs"
                     onClick={() => {
                       const idxs = questions.reduce<number[]>((acc, _, i) => selectedIds.has(i) ? [...acc, i] : acc, [])

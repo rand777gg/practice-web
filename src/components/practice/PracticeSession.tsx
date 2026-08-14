@@ -242,6 +242,7 @@ export function PracticeSession() {
   useEffect(() => { snapRef.current = { question, answer: selectedAnswer, submitted: isSubmitted, note, isPublic, answerId, attempts: attemptCount, wrongs: wrongCount } })
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
   const [tooEasyOpen, setTooEasyOpen] = useState(false)
+  const [resumePrompt, setResumePrompt] = useState<{ kps: string[]; subs: string[] } | null>(null)
 
   const isMobile = useIsMobile()
   const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
@@ -721,6 +722,13 @@ export function PracticeSession() {
     }).then(() => {})
   }, [])
 
+  const startNewSession = useCallback(async (kps: string[], subs: string[], ignoreAnswered: boolean) => {
+    const user = useAuthStore.getState().user; if (!user) return
+    await seqStart(user.id, kps, subs, '', ignoreAnswered)
+    seqLoadSessions(user.id)
+    loadSequentialQuestion(useSequentialStore.getState().currentIndex)
+  }, [seqStart, seqLoadSessions, loadSequentialQuestion])
+
   const handleKpConfirm = useCallback(async (kps: string[]) => {
     const user = useAuthStore.getState().user; if (!user || kps.length === 0) return
     triggerKpRefresh()
@@ -736,11 +744,11 @@ export function PracticeSession() {
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
     } else {
       saveCurrentSession()
-      await seqStart(user.id, kps, subs, '')
-      seqLoadSessions(user.id)
-      loadSequentialQuestion(useSequentialStore.getState().currentIndex)
+      const recent = (useSequentialStore.getState().sessions ?? []).find(x => (x.questionIds?.length ?? 0) > 0 && x.currentIndex > 0)
+      if (recent) setResumePrompt({ kps, subs })
+      else await startNewSession(kps, subs, true)
     }
-  }, [subjectsForKps, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh])
+  }, [subjectsForKps, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh, startNewSession])
 
   const modeInitRef = useRef(false)
   useEffect(() => {
@@ -1114,6 +1122,19 @@ export function PracticeSession() {
             >
               确认删除
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resumePrompt !== null} onOpenChange={(o) => { if (!o) setResumePrompt(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>发现之前的刷题进度</AlertDialogTitle>
+            <AlertDialogDescription>是否保留之前的会话答题记录？保留则从上次进度继续，重新开始则从第一题开始。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { const rp = resumePrompt; setResumePrompt(null); if (rp) startNewSession(rp.kps, rp.subs, true) }}>重新开始</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { const rp = resumePrompt; setResumePrompt(null); if (rp) startNewSession(rp.kps, rp.subs, false) }}>保留进度</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

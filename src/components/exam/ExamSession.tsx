@@ -664,10 +664,37 @@ export function ExamSession() {
               )
             }
 
+            if (type === 'judge_correct') {
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground mb-2">判断改错题，先判断对错，若错误请输入修正后的正确表述</p>
+                  <div className="flex gap-3">
+                    <button onClick={() => answerQuestion(q.id, true)}
+                      className={cn('flex-1 py-4 rounded-lg border text-base font-medium transition-all',
+                        currentAnswer === true ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30')}
+                    >✓ 正确</button>
+                    <button onClick={() => answerQuestion(q.id, '')}
+                      className={cn('flex-1 py-4 rounded-lg border text-base font-medium transition-all',
+                        currentAnswer !== null && currentAnswer !== true ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30')}
+                    >✗ 错误</button>
+                  </div>
+                  {currentAnswer !== null && currentAnswer !== true && (
+                    <input
+                      type="text"
+                      className="w-full h-9 px-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="输入修正后的正确表述"
+                      value={typeof currentAnswer === 'string' ? currentAnswer : ''}
+                      onChange={(e) => answerQuestion(q.id, e.target.value)}
+                    />
+                  )}
+                </div>
+              )
+            }
+
             return (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground mb-2">
-                  {{ fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', judge_correct: '判断改错题，输入修正后的正确表述', analysis: '分析题，输入分析内容', coding: '编程题，编写代码并运行测试' }[type] || '请输入答案'}
+                  {{ fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', analysis: '分析题，输入分析内容', coding: '编程题，编写代码并运行测试' }[type] || '请输入答案'}
                 </p>
                 <textarea
                   className="w-full min-h-[200px] p-3 rounded-lg border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"

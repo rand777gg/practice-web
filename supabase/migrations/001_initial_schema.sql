@@ -632,7 +632,7 @@ BEGIN
   ),
   sorted AS (
     SELECT id, kp, subj,
-           row_number() OVER (ORDER BY kp, seq, id) - 1 AS rn
+           row_number() OVER (ORDER BY COALESCE(subj, ''), kp, seq, id) - 1 AS rn
     FROM (SELECT * FROM existing UNION ALL SELECT * FROM new_items) u
   )
   SELECT
@@ -721,7 +721,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.load_practice_session(UUID, TEXT) TO authenticated;
 
 -- 开始顺序刷体会话（合并ILIK+excluded+profiles+answers查询为1次RPC）
-CREATE OR REPLACE FUNCTION public.start_sequential_session(p_user_id UUID, p_kps TEXT[], p_subjects TEXT[] DEFAULT NULL, p_question_type TEXT DEFAULT NULL, p_session_key TEXT DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.start_sequential_session(p_user_id UUID, p_kps TEXT[], p_subjects TEXT[] DEFAULT NULL, p_question_type TEXT DEFAULT NULL, p_session_key TEXT DEFAULT NULL, p_ignore_answered BOOLEAN DEFAULT false)
 RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE
@@ -759,7 +759,7 @@ BEGIN
     SELECT DISTINCT ON (m.id) m.id, m.subject, m.seq_number, m.kp FROM matched m
   ),
   sorted AS (
-    SELECT d.id, d.subject, d.kp, d.seq_number FROM deduped d ORDER BY d.kp, d.seq_number
+    SELECT d.id, d.subject, d.kp, d.seq_number FROM deduped d ORDER BY COALESCE(d.subject, ''), d.kp, d.seq_number
   )
   SELECT array_agg(s.id), array_agg(s.kp), array_agg(COALESCE(s.subject, ''))
   INTO v_ids, v_kps_arr, v_subj_arr FROM sorted s;
@@ -768,37 +768,39 @@ BEGIN
     v_ids := '{}'::UUID[]; v_kps_arr := '{}'::TEXT[]; v_subj_arr := '{}'::TEXT[];
   END IF;
 
-  -- 2. Get profile reset timestamps
-  SELECT pd.plan_reset_at, COALESCE(pd.subject_reset_at, '{}'::jsonb)
-  INTO v_plan_reset, v_subject_resets FROM public.profiles pd WHERE pd.id = p_user_id;
+  IF NOT p_ignore_answered THEN
+    -- 2. Get profile reset timestamps
+    SELECT pd.plan_reset_at, COALESCE(pd.subject_reset_at, '{}'::jsonb)
+    INTO v_plan_reset, v_subject_resets FROM public.profiles pd WHERE pd.id = p_user_id;
 
-  -- 3. Get answered question set (respecting per-subject resets)
-  IF array_length(v_ids, 1) > 0 THEN
-    SELECT array_agg(ua.question_id) INTO v_answered_set
-    FROM public.user_answers ua
-    WHERE ua.user_id = p_user_id AND ua.question_id = ANY(v_ids)
-      AND (v_plan_reset IS NULL OR ua.answered_at >= v_plan_reset);
+    -- 3. Get answered question set (respecting per-subject resets)
+    IF array_length(v_ids, 1) > 0 THEN
+      SELECT array_agg(ua.question_id) INTO v_answered_set
+      FROM public.user_answers ua
+      WHERE ua.user_id = p_user_id AND ua.question_id = ANY(v_ids)
+        AND (v_plan_reset IS NULL OR ua.answered_at >= v_plan_reset);
 
-    IF v_answered_set IS NULL THEN v_answered_set := '{}'::UUID[]; END IF;
+      IF v_answered_set IS NULL THEN v_answered_set := '{}'::UUID[]; END IF;
 
-    FOR v_i IN 1..array_length(v_ids, 1) LOOP
-      v_q_subj := v_subj_arr[v_i];
-      IF v_subject_resets ? v_q_subj THEN
-        PERFORM 1 FROM public.user_answers ua
-        WHERE ua.user_id = p_user_id AND ua.question_id = v_ids[v_i]
-          AND ua.answered_at >= (v_subject_resets->>v_q_subj)::TIMESTAMPTZ;
-        IF NOT FOUND THEN v_answered_set := array_remove(v_answered_set, v_ids[v_i]); END IF;
+      FOR v_i IN 1..array_length(v_ids, 1) LOOP
+        v_q_subj := v_subj_arr[v_i];
+        IF v_subject_resets ? v_q_subj THEN
+          PERFORM 1 FROM public.user_answers ua
+          WHERE ua.user_id = p_user_id AND ua.question_id = v_ids[v_i]
+            AND ua.answered_at >= (v_subject_resets->>v_q_subj)::TIMESTAMPTZ;
+          IF NOT FOUND THEN v_answered_set := array_remove(v_answered_set, v_ids[v_i]); END IF;
+        END IF;
+      END LOOP;
+
+      -- 4. Find first unanswered question
+      v_resume_idx := 0;
+      FOR v_i IN 1..array_length(v_ids, 1) LOOP
+        IF NOT (v_ids[v_i] = ANY(v_answered_set)) THEN v_resume_idx := v_i - 1; EXIT; END IF;
+        v_resume_idx := v_i;
+      END LOOP;
+      IF v_resume_idx >= array_length(v_ids, 1) THEN
+        v_resume_idx := GREATEST(0, array_length(v_ids, 1) - 1);
       END IF;
-    END LOOP;
-
-    -- 4. Find first unanswered question
-    v_resume_idx := 0;
-    FOR v_i IN 1..array_length(v_ids, 1) LOOP
-      IF NOT (v_ids[v_i] = ANY(v_answered_set)) THEN v_resume_idx := v_i - 1; EXIT; END IF;
-      v_resume_idx := v_i;
-    END LOOP;
-    IF v_resume_idx >= array_length(v_ids, 1) THEN
-      v_resume_idx := GREATEST(0, array_length(v_ids, 1) - 1);
     END IF;
   END IF;
 
@@ -812,7 +814,7 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT, TEXT, BOOLEAN) TO authenticated;
 
 -- 获取学科/分类元数据
 CREATE OR REPLACE FUNCTION public.get_question_meta(p_subject TEXT DEFAULT NULL)

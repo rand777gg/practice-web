@@ -30,7 +30,7 @@ interface SequentialStore {
   preloadedIndex: number
   syncStatus: 'idle' | 'syncing' | 'synced'
   lastSyncAt: string | null
-  startSequential: (userId: string, kps: string[], subjects: string[], type: string) => Promise<void>
+  startSequential: (userId: string, kps: string[], subjects: string[], type: string, ignoreAnswered?: boolean) => Promise<void>
   nextQuestion: () => void
   reset: () => void
   saveToDb: (userId: string) => Promise<void>
@@ -64,7 +64,7 @@ export function markPracticeSync() { gLastLocalSave = Date.now() }
 export const useSequentialStore = create<SequentialStore>((set, get) => ({
   isActive: false, sessionKey: '', selectedKps: [], planSubjects: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1, syncStatus: 'idle', lastSyncAt: null,
 
-  startSequential: async (userId, kps, subjects, type) => {
+  startSequential: async (userId, kps, subjects, type, ignoreAnswered = false) => {
     set({ isLoading: true, selectedKps: kps })
     try {
       const sessionKey = makeSessionKey(kps, subjects, type)
@@ -73,6 +73,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         p_subjects: subjects.length > 0 ? subjects : null,
         p_question_type: type || null,
         p_session_key: sessionKey,
+        p_ignore_answered: ignoreAnswered,
       })
       if (error || !data) { set({ isLoading: false }); return }
 
@@ -235,8 +236,10 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
         subj: q.subject || null,
       })),
     ].sort((a, b) => {
-      const cmp = (a.kp ?? '').localeCompare(b.kp ?? '', 'zh-CN', { numeric: true })
-      if (cmp !== 0) return cmp
+      const subjCmp = (a.subj ?? '').localeCompare(b.subj ?? '', 'zh-CN', { numeric: true })
+      if (subjCmp !== 0) return subjCmp
+      const kpCmp = (a.kp ?? '').localeCompare(b.kp ?? '', 'zh-CN', { numeric: true })
+      if (kpCmp !== 0) return kpCmp
       return (a.seq ?? 999999) - (b.seq ?? 999999)
     })
 

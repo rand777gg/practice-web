@@ -37,7 +37,7 @@ import {
 import { extractFileText } from '@/lib/file-text'
 import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
-import { cn } from '@/lib/utils'
+import { cn, naturalSort } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Icon } from '@/lib/icons'
@@ -106,7 +106,7 @@ export function Component() {
   const [localKeyPoints, setLocalKeyPoints] = useState<string[]>([])
   const allSubjects = [...new Set([...existingSubjects, ...localSubjects])].sort((a, b) => a.localeCompare(b, 'zh-CN'))
   const allCategories = [...new Set([...existingCategories, ...localCategories])].sort((a, b) => a.localeCompare(b, 'zh-CN'))
-  const allKeyPoints = [...new Set([...existingKeyPoints, ...localKeyPoints])].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  const allKeyPoints = [...new Set([...existingKeyPoints, ...localKeyPoints])].sort(naturalSort)
 
   // MinerU precision parsing settings
   const [parseMode, setParseMode] = useState<ParseMode>('precision')
@@ -747,7 +747,7 @@ export function Component() {
           question_type: q.question_type,
           question_text: q.question_text,
           options: q.options,
-          correct_answer: q.correct_answer as any,
+          correct_answer: (q.correct_answer ?? '') as any,
           category: category ? (Array.isArray(category) ? category[0] : category) : null,
           categories: category ? (Array.isArray(category) ? category : [category]) : [],
           subject: subject || null,
