@@ -24,7 +24,12 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -y
-          sudo apt-get install -y postgresql-client rclone
+          sudo apt-get install -y postgresql-client unzip
+          # latest rclone (Ubuntu package 1.60 is too old for clean R2 support)
+          curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o /tmp/rclone.zip
+          unzip -o /tmp/rclone.zip -d /tmp/rclone-extract
+          sudo cp /tmp/rclone-extract/rclone-*-linux-amd64/rclone /usr/local/bin/
+          rclone version | head -n1
           MAJOR="$(psql "$SUPABASE_DB_URL" -tAc 'show server_version' | cut -d. -f1 | tr -d ' ')"
           echo "server major=$MAJOR"
           if [[ ! -x "/usr/lib/postgresql/${MAJOR}/bin/pg_dump" ]]; then
