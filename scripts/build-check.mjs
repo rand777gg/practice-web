@@ -12,7 +12,7 @@ const SHA = (process.env.GITHUB_SHA || '').slice(0, 7)
 const RUN_URL = `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${REPO}/actions/runs/${process.env.GITHUB_RUN_ID || ''}`
 
 const text = STATUS === 'success'
-  ? `✅ 构建成功\n${REPO} @${SHA}`
+  ? `✅ 构建成功\n${REPO} @${SHA}\n${RUN_URL}`
   : `❌ 构建失败\n${REPO} @${SHA}\n${RUN_URL}`
 
 async function sendFeishu() {
