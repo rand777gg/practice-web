@@ -226,7 +226,7 @@ export const zh = {
     noKeyPoint: '不限知识点',
     sequentialDone: '已完成！',
     sequentialDoneDesc: '你已完成了所选知识点的全部题目',
-    backToNormalMode: '返回普通模式',
+    backToNormalMode: '去复习',
   },
   exam: {
     title: '考试模式',
@@ -803,7 +803,7 @@ export const en = {
     noKeyPoint: 'All Key Points',
     sequentialDone: 'All Done!',
     sequentialDoneDesc: 'You have completed all questions in the selected knowledge points.',
-    backToNormalMode: 'Back to normal mode',
+    backToNormalMode: 'Go to review',
   },
   exam: {
     title: 'Exam Mode',

@@ -38,6 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DateTimePicker } from '@/components/ui/date-time-picker'
@@ -49,9 +50,11 @@ import { useT } from '@/i18n/use-t'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  mode?: 'sequential' | 'random'
+  onModeChange?: (mode: 'sequential' | 'random') => void
 }
 
-export function PlanDialog({ open, onOpenChange }: Props) {
+export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChange }: Props) {
   const { t } = useT()
   const { user, profile, refreshProfile } = useAuthStore()
 
@@ -70,6 +73,7 @@ export function PlanDialog({ open, onOpenChange }: Props) {
   const [planLoading, setPlanLoading] = useState(false)
   const [confirmReset, setConfirmReset] = useState<'long' | number | null>(null)
   const [resetTooEasy, setResetTooEasy] = useState(false)
+  const [askLoadNewSession, setAskLoadNewSession] = useState(false)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
   // Mutual exclusion: subjects in long-term plan can't be in daily targets and vice versa
@@ -165,19 +169,32 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         await supabase.from('user_excluded_questions').delete().eq('user_id', user.id).in('question_id', qids.map(q => q.id))
       }
     }
-    // Rebuild active session so position recovery re-scans answers with new reset timestamps
-    const s = useSequentialStore.getState()
-    if (s.isActive && s.sessionKey) {
-      const savedSps = { ...s.subjectPositions }
-      await s.startSequential(user.id, s.selectedKps, [], '')
-      useSequentialStore.getState()
-      useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
-    }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
     setSaving(false)
+    setAskLoadNewSession(true)
+  }
+
+  const loadNewSessionNow = async () => {
+    setAskLoadNewSession(false)
+    if (!user) return
+    const s = useSequentialStore.getState()
+    if (!s.isActive || !s.sessionKey) return
+    const savedSps = { ...s.subjectPositions }
+    await s.startSequential(user.id, s.selectedKps, [], '')
+    useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
+  }
+
+  const reloadSessionNow = async () => {
+    setAskLoadNewSession(false)
+    if (!user) return
+    const s = useSequentialStore.getState()
+    if (!s.isActive || !s.sessionKey) return
+    const savedSps = { ...s.subjectPositions }
+    await s.startSequential(user.id, s.selectedKps, [], '')
+    useSequentialStore.setState({ subjectPositions: savedSps })
   }
 
   const handleResetDaily = async (groupIdx: number) => {
@@ -199,19 +216,13 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         await supabase.from('user_excluded_questions').delete().eq('user_id', user.id).in('question_id', qids.map(q => q.id))
       }
     }
-    const s = useSequentialStore.getState()
-    if (s.isActive && s.sessionKey) {
-      const savedSps = { ...s.subjectPositions }
-      await s.startSequential(user.id, s.selectedKps, [], '')
-      useSequentialStore.getState()
-      useSequentialStore.setState({ currentIndex: 0, subjectPositions: savedSps })
-    }
     await refreshProfile()
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
     window.dispatchEvent(new Event('plan-progress-refresh'))
     setSaving(false)
+    setAskLoadNewSession(true)
   }
 
   const handleDeleteLong = async () => {
@@ -590,28 +601,28 @@ export function PlanDialog({ open, onOpenChange }: Props) {
         </div>
 
         <DialogFooter className="flex-row flex-wrap gap-2">
+          {onModeChange && (
+            <div className="flex items-center gap-1">
+              <div className="inline-flex rounded-md border p-0.5">
+                <Button variant={mode === 'sequential' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-3" onClick={() => onModeChange('sequential')}>学习</Button>
+                <Button variant={mode !== 'sequential' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-3" onClick={() => onModeChange('random')}>复习</Button>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-muted-foreground hover:text-foreground"><HelpCircle className="h-3.5 w-3.5" /></button>
+                  </TooltipTrigger>
+                  <TooltipContent>学习 = 按知识点顺序刷题；复习 = 自由随机刷（可筛错题/收藏）</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
           <DialogClose asChild>
             <Button variant="outline" size="sm" className="text-xs">{t('plan.cancel')}</Button>
           </DialogClose>
           <Button variant="outline" size="sm" className="text-xs" onClick={handleSave} disabled={saving}>
             {saving ? t('questions.saving') : t('plan.save')}
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="text-xs">
-                顺序刷题
-                <ChevronDown className="h-3 w-3 ml-0.5 opacity-50" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem asChild>
-                <Link to="/practice?mode=seq">顺序刷题</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/practice?mode=random">随机刷题</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </DialogFooter>
       </DialogContent>
 
@@ -642,6 +653,22 @@ export function PlanDialog({ open, onOpenChange }: Props) {
             >
               确认重置
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={askLoadNewSession} onOpenChange={setAskLoadNewSession}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>是否加载新会话？</AlertDialogTitle>
+            <AlertDialogDescription>
+              进度已重置。可重新拉取题目列表（保留答题记录，适用于题库新增/删除题目或知识点变动后刷新会话），或从所选学科的第一题重新开始。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setAskLoadNewSession(false)}>暂不</AlertDialogCancel>
+            <AlertDialogAction className="bg-muted text-foreground hover:bg-muted/80" onClick={reloadSessionNow}>重新拉取题目（保留记录）</AlertDialogAction>
+            <AlertDialogAction onClick={loadNewSessionNow}>从第一题开始</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

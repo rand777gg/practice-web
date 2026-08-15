@@ -454,7 +454,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               </CardHeader>
               <CardContent className="space-y-4">
                 {isFillBlank && (() => {
-                  const blankCount = (questionText.match(/_{2,}/g) || ['____']).length
+                  const blankCount = (questionText.match(/_{2,}/g) || ['___']).length
                   const answers = Array.isArray(correctAnswer) ? correctAnswer as string[] : blankCount > 1 ? [] : [String(correctAnswer ?? '')]
                   return (
                     <>

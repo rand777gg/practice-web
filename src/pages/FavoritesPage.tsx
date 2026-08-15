@@ -5,14 +5,14 @@ import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
-import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import { OPTION_LABELS } from '@/lib/constants'
+import { QUESTION_TYPE_OPTIONS, OPTION_LABELS, POINT_COLORS } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Check, ChevronDown, Lightbulb, Pencil, Star, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -189,9 +189,13 @@ export function Component() {
           {visible.map((q) => (
             <div key={q.id} className="rounded-xl border bg-card grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-0 overflow-hidden">
               <div className="p-4 space-y-2 min-w-0">
-                {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
-                {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground ml-1.5">{cat}</span>) : null}
-                {q.key_points && <span className="inline-block rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300 ml-1.5">{String(q.key_points).split(/[,，;；]/)[0]}</span>}
+                <div className="flex flex-wrap gap-1">
+                  {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
+                  {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>) : null}
+                  {q.key_points && q.key_points.split(',').filter(Boolean).map((kp, i) => (
+                    <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
+                  ))}
+                </div>
                 <p className="text-sm font-medium leading-relaxed">{q.question_text}</p>
                 <AnswerInfo q={q} selected={q.latest_answer} />
                 {q.answered_at && <span className="text-xs text-muted-foreground">{new Date(q.answered_at).toLocaleDateString()}</span>}

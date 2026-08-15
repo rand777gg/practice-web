@@ -5,8 +5,8 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 import { FormattingToolbar } from '@/components/notes/FormattingToolbar'
 import { supabase } from '@/lib/supabase'
 import { compressImage } from '@/lib/image-compress'
-import { cn } from '@/lib/utils'
-import { ImagePlus, Loader2, WrapText } from 'lucide-react'
+import { cn, normalizeChineseText } from '@/lib/utils'
+import { ImagePlus, Loader2, Wand2, WrapText } from 'lucide-react'
 import { hasAiConfig, getAiConfig } from '@/lib/ai/config'
 
 interface Props {
@@ -140,19 +140,35 @@ export function MarkdownEditor({
     setIsFormatting(false)
   }
 
-  const toolbarButtons = !hideImageTools ? (
+  const handleStandardize = () => {
+    const blocks: string[] = []
+    const t = value
+      .replace(/```[\s\S]*?```/g, m => { blocks.push(m); return `@@CODE${blocks.length}@@` })
+      .replace(/`[^`\n]+`/g, m => { blocks.push(m); return `@@CODE${blocks.length}@@` })
+    onChange(normalizeChineseText(t).replace(/@@CODE(\d+)@@/g, (_, i) => blocks[Number(i) - 1] || ''))
+  }
+
+  const toolbarButtons = (
     <>
       <span className="text-muted-foreground/40 text-xs mx-0.5">|</span>
-      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
-        disabled={isUploadingImg} onClick={handleUploadImage}>
-        {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="文字标准化（中英文加空格、标点全角化，代码块不受影响）"
+        onClick={handleStandardize}>
+        <Wand2 className="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
-        title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
-        {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
-      </Button>
+      {!hideImageTools && (
+        <>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="插入图片"
+            disabled={isUploadingImg} onClick={handleUploadImage}>
+            {isUploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"
+            title="AI 自动换行" disabled={isFormatting || !hasAiConfig()} onClick={handleAiLineBreak}>
+            {isFormatting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WrapText className="h-3.5 w-3.5" />}
+          </Button>
+        </>
+      )}
     </>
-  ) : null
+  )
 
   return (
     <div ref={containerRef} className={cn('space-y-2', className)}>

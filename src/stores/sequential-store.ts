@@ -16,6 +16,7 @@ export interface SessionInfo {
 interface SequentialStore {
   isActive: boolean
   sessionKey: string
+  shortId: string
   selectedKps: string[]
   planSubjects: string[]
   questionIds: string[]
@@ -62,7 +63,7 @@ function makeSessionKey(kps: string[], subjects: string[], type: string): string
 export function markPracticeSync() { gLastLocalSave = Date.now() }
 
 export const useSequentialStore = create<SequentialStore>((set, get) => ({
-  isActive: false, sessionKey: '', selectedKps: [], planSubjects: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1, syncStatus: 'idle', lastSyncAt: null,
+  isActive: false, sessionKey: '', shortId: '', selectedKps: [], planSubjects: [], questionIds: [], questionKps: [], questionSubjects: [], currentIndex: 0, isLoading: false, sessions: [], subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1, syncStatus: 'idle', lastSyncAt: null,
 
   startSequential: async (userId, kps, subjects, type, ignoreAnswered = false) => {
     set({ isLoading: true, selectedKps: kps })
@@ -88,10 +89,12 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       })
       const { selectedKps: sKps, questionIds: qids, currentIndex: idx, subjectPositions: sps } = get()
       gLastLocalSave = Date.now()
-      supabase.from('practice_sequential_state').upsert({
+      await supabase.from('practice_sequential_state').upsert({
         user_id: userId, session_key: sessionKey, selected_kps: sKps, question_ids: qids,
         plan_subjects: subjects, current_index: idx, subject_positions: sps, updated_at: new Date().toISOString(),
-      }).then(() => {})
+      })
+      const { data: sidRow } = await supabase.from('practice_sequential_state').select('short_id').eq('user_id', userId).eq('session_key', sessionKey).maybeSingle()
+      if (sidRow?.short_id) set({ shortId: sidRow.short_id })
     } catch { set({ isLoading: false }) }
   },
 
@@ -100,7 +103,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (currentIndex < questionIds.length) set({ currentIndex: currentIndex + 1 })
   },
 
-  reset: () => set({ isActive: false, sessionKey: '', selectedKps: [], planSubjects: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1 }),
+  reset: () => set({ isActive: false, sessionKey: '', shortId: '', selectedKps: [], planSubjects: [], questionIds: [], questionKps: [], currentIndex: 0, isLoading: false, subjectPositions: {}, preloadedQuestion: null, preloadedStats: null, preloadedIndex: -1 }),
 
   saveToDb: async (userId) => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -124,6 +127,7 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     set({
       isActive: ids.length > 0,
       sessionKey,
+      shortId: data.shortId ?? '',
       selectedKps: data.savedKps ?? [],
       planSubjects: data.planSubjects ?? get().sessions.find((session) => session.sessionKey === sessionKey)?.planSubjects ?? [],
       questionIds: ids,

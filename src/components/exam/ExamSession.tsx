@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
 import { ExamResultDialog } from './ExamResultDialog'
+import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
@@ -562,7 +563,7 @@ export function ExamSession() {
           {currentQuestion && (
             <div className="max-w-2xl mx-auto space-y-6 lg:h-full flex flex-col">
               <div className="flex-1">
-                <p className="text-base leading-relaxed whitespace-pre-wrap">{currentQuestion.question_text}</p>
+                <MarkdownRenderer content={currentQuestion.question_text} className="text-base leading-relaxed" />
               </div>
             </div>
           )}

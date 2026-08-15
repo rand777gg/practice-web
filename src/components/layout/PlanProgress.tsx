@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -36,6 +37,8 @@ function subjectKey(s: string) { return s || 'Other' }
 export function PlanProgress() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const version = useRefreshStore((s) => s.version)
   const deadline = profile?.deadline ?? null
   const planResetAt = profile?.plan_reset_at ?? null
@@ -43,6 +46,11 @@ export function PlanProgress() {
   const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
+  const planMode = searchParams.get('mode') === 'random' ? 'random' as const : 'sequential' as const
+  const handlePlanModeChange = (m: 'sequential' | 'random') => {
+    setDialogOpen(false)
+    navigate(`/practice?mode=${m === 'sequential' ? 'seq' : 'random'}`)
+  }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [dailyGoal, setDailyGoal] = useState(0)
@@ -221,7 +229,7 @@ export function PlanProgress() {
         >
           {t('plan.setDeadline')}
         </button>
-        <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+        <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} mode={planMode} onModeChange={handlePlanModeChange} />
       </>
     )
   }

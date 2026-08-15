@@ -5,13 +5,14 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
-import { QUESTION_TYPE_OPTIONS, OPTION_LABELS } from '@/lib/constants'
+import { QUESTION_TYPE_OPTIONS, OPTION_LABELS, POINT_COLORS } from '@/lib/constants'
 
 import { Trash2, Lightbulb, Pencil, Check, X, Star, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -64,6 +65,7 @@ function SkeletonCard() {
 }
 
 type FilterMode = 'all' | 'practice' | 'exam'
+type SortMode = 'wrongCount' | 'latest'
 const BATCH = 20
 
 export function Component() {
@@ -72,6 +74,8 @@ export function Component() {
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [mode, setMode] = useState<FilterMode>('all')
+  const [sortBy, setSortBy] = useState<SortMode>('wrongCount')
+  const [wrongCounts, setWrongCounts] = useState<Record<string, number>>({})
   const [answers, setAnswers] = useState<WrongWithQuestion[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -111,6 +115,16 @@ export function Component() {
     return true
   }), [answers, selectedSubject, selectedCategory, selectedType, selectedKp])
 
+  const sorted = useMemo(() => {
+    const list = [...filtered]
+    if (sortBy === 'wrongCount') {
+      list.sort((a, b) => (wrongCounts[b.question_id] ?? 0) - (wrongCounts[a.question_id] ?? 0) || new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime())
+    } else {
+      list.sort((a, b) => new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime())
+    }
+    return list
+  }, [filtered, sortBy, wrongCounts])
+
   const fetchGenRef = useRef(0)
 
   const fetchAnswers = useCallback(async () => {
@@ -118,11 +132,22 @@ export function Component() {
     fetchGenRef.current++
     const myGen = fetchGenRef.current
     setIsLoading(true)
-    let query = supabase.from('user_answers').select('*, questions(*)').eq('user_id', user.id).eq('is_correct', false).order('answered_at', { ascending: false }).limit(200)
+    let query = supabase.from('user_answers').select('*, questions(*)').eq('user_id', user.id).eq('is_correct', false).order('answered_at', { ascending: false }).limit(1000)
     if (mode !== 'all') query = query.eq('mode', mode)
     const { data } = await query
     if (fetchGenRef.current !== myGen) return
-    setAnswers((data ?? []) as WrongWithQuestion[])
+    const rows = (data ?? []) as WrongWithQuestion[]
+    const seen = new Set<string>()
+    const counts: Record<string, number> = {}
+    const deduped: WrongWithQuestion[] = []
+    for (const row of rows) {
+      counts[row.question_id] = (counts[row.question_id] ?? 0) + 1
+      if (seen.has(row.question_id)) continue
+      seen.add(row.question_id)
+      deduped.push(row)
+    }
+    setAnswers(deduped)
+    setWrongCounts(counts)
     setIsLoading(false)
   }, [user, mode])
 
@@ -130,7 +155,7 @@ export function Component() {
 
   const handleDelete = async (id: string) => {
     await supabase.from('user_answers').delete().eq('id', id)
-    setAnswers(prev => prev.filter(a => a.id !== id))
+    fetchAnswers()
   }
 
   const handleSaveNote = async (id: string) => {
@@ -142,15 +167,15 @@ export function Component() {
   // IntersectionObserver lazy load
   useEffect(() => {
     const el = sentinelRef.current
-    if (!el || visibleCount >= filtered.length) return
-    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisibleCount(p => Math.min(p + BATCH, filtered.length)) }, { rootMargin: '300px' })
+    if (!el || visibleCount >= sorted.length) return
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisibleCount(p => Math.min(p + BATCH, sorted.length)) }, { rootMargin: '300px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [visibleCount, filtered.length])
+  }, [visibleCount, sorted.length])
 
-  useEffect(() => { setVisibleCount(BATCH) }, [selectedSubject, selectedCategory, selectedType, selectedKp, mode])
+  useEffect(() => { setVisibleCount(BATCH) }, [selectedSubject, selectedCategory, selectedType, selectedKp, mode, sortBy])
 
-  const visible = filtered.slice(0, visibleCount)
+  const visible = sorted.slice(0, visibleCount)
 
   if (isLoading) {
     return (
@@ -169,6 +194,12 @@ export function Component() {
             <DropdownMenuItem onClick={() => setMode('all')}>全部{ mode === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setMode('practice')}>练习{ mode === 'practice' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setMode('exam')}>考试{ mode === 'exam' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{sortBy === 'wrongCount' ? '错误次数最多' : '最近出错'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSortBy('wrongCount')}>错误次数最多{sortBy === 'wrongCount' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSortBy('latest')}>最近出错{sortBy === 'latest' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{selectedSubject || '学科'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
@@ -221,12 +252,15 @@ export function Component() {
                   <div className="flex flex-wrap gap-1">
                     {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
                     {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>) : null}
-                    {q.key_points && <span className="inline-block rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">{String(q.key_points).split(/[,，;；]/)[0]}</span>}
+                    {q.key_points && q.key_points.split(',').filter(Boolean).map((kp, i) => (
+                      <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
+                    ))}
                   </div>
                   <p className="text-sm font-medium leading-relaxed">{q.question_text}</p>
                   <AnswerInfo q={q} selected={a.selected_answer} />
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className={cn('rounded-full px-1.5 py-0.5 text-xs', a.mode === 'exam' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700')}>{a.mode === 'exam' ? '考试' : '练习'}</span>
+                    <span className="rounded-full bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 text-xs text-red-700">错 {wrongCounts[a.question_id] ?? 0} 次</span>
                     <span>{new Date(a.answered_at).toLocaleDateString()}</span>
                     <Link to={`/practice`} className="text-primary hover:underline ml-auto">去练习</Link>
                   </div>
@@ -273,8 +307,8 @@ export function Component() {
               </div>
             )
           })}
-          {visibleCount < filtered.length && <div ref={sentinelRef} className="h-4" />}
-          {visibleCount < filtered.length && <p className="text-center text-xs text-muted-foreground">{visibleCount}/{filtered.length} 题 — 滚动加载更多</p>}
+          {visibleCount < sorted.length && <div ref={sentinelRef} className="h-4" />}
+          {visibleCount < sorted.length && <p className="text-center text-xs text-muted-foreground">{visibleCount}/{sorted.length} 题 — 滚动加载更多</p>}
         </div>
       )}
     </div>

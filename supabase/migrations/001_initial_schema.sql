@@ -1255,3 +1255,265 @@ CREATE TABLE IF NOT EXISTS public.user_recovery_codes (
 
 ALTER TABLE public.user_recovery_codes ENABLE ROW LEVEL SECURITY;
 -- No user-facing RLS policy — only service_role (Edge Function) accesses this table
+
+-- ============================================================================
+-- Section 14: Subject arrangement explanations (practice directory)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.subject_explanations (
+  subject    TEXT PRIMARY KEY,
+  content    TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.subject_explanations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS subject_explanations_select_all ON public.subject_explanations;
+CREATE POLICY subject_explanations_select_all ON public.subject_explanations FOR SELECT
+  USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS subject_explanations_write_admin ON public.subject_explanations;
+CREATE POLICY subject_explanations_write_admin ON public.subject_explanations FOR ALL
+  USING (public.is_admin());
+
+-- ============================================================================
+-- Section 15: Excluded (too-easy) knowledge point stats & restore queries
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_kp_exclusion_stats(p_user_id UUID, p_kps TEXT[])
+RETURNS JSONB LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    'kp', s.kp, 'subject', s.subject, 'total', s.total, 'excluded', s.excluded
+  )), '[]'::jsonb)
+  FROM (
+    SELECT kqm.kp, COALESCE(q.subject, '其他') AS subject,
+           COUNT(DISTINCT kqm.question_id) AS total,
+           COUNT(DISTINCT kqm.question_id) FILTER (WHERE ueq.question_id IS NOT NULL) AS excluded
+    FROM public.kp_question_map kqm
+    JOIN public.questions q ON q.id = kqm.question_id
+    LEFT JOIN public.user_excluded_questions ueq
+      ON ueq.question_id = kqm.question_id AND ueq.user_id = p_user_id
+    WHERE kqm.kp = ANY(p_kps)
+    GROUP BY kqm.kp, q.subject
+  ) s;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_kp_exclusion_stats(UUID, TEXT[]) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_excluded_kp_questions(p_user_id UUID, p_kp TEXT)
+RETURNS JSONB LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'question', (SELECT row_to_json(q) FROM public.questions q WHERE q.id = ueq.question_id),
+      'latest_answer', (
+        SELECT jsonb_build_object(
+          'selected_answer', ua.selected_answer,
+          'is_correct', ua.is_correct,
+          'note', ua.note,
+          'answered_at', ua.answered_at
+        )
+        FROM public.user_answers ua
+        WHERE ua.user_id = p_user_id AND ua.question_id = ueq.question_id
+        ORDER BY ua.answered_at DESC LIMIT 1
+      ),
+      'attempts', (SELECT count(*) FROM public.user_answers ua2 WHERE ua2.user_id = p_user_id AND ua2.question_id = ueq.question_id),
+      'wrongs', (SELECT count(*) FROM public.user_answers ua3 WHERE ua3.user_id = p_user_id AND ua3.question_id = ueq.question_id AND NOT ua3.is_correct)
+    )
+  ), '[]'::jsonb)
+  FROM public.user_excluded_questions ueq
+  WHERE ueq.user_id = p_user_id
+    AND ueq.question_id IN (SELECT question_id FROM public.kp_question_map WHERE kp = p_kp);
+$$;
+GRANT EXECUTE ON FUNCTION public.get_excluded_kp_questions(UUID, TEXT) TO authenticated;
+
+-- ============================================================================
+-- Section 16: Short session IDs for practice_sequential_state (URL param)
+-- ============================================================================
+
+ALTER TABLE public.practice_sequential_state
+  ADD COLUMN IF NOT EXISTS short_id TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pss_short_id ON public.practice_sequential_state(short_id);
+
+-- Backfill existing rows
+UPDATE public.practice_sequential_state p
+SET short_id = t.sid
+FROM (
+  SELECT user_id, session_key, substr(md5(gen_random_uuid()::text), 1, 12) AS sid
+  FROM public.practice_sequential_state
+  WHERE short_id IS NULL
+) t
+WHERE p.user_id = t.user_id AND p.session_key = t.session_key;
+
+CREATE OR REPLACE FUNCTION public.assign_session_short_id()
+RETURNS trigger LANGUAGE plpgsql SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.short_id IS NULL THEN
+    NEW.short_id := substr(md5(gen_random_uuid()::text), 1, 12);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_pss_short_id ON public.practice_sequential_state;
+CREATE TRIGGER trg_pss_short_id
+  BEFORE INSERT ON public.practice_sequential_state
+  FOR EACH ROW EXECUTE FUNCTION public.assign_session_short_id();
+
+-- Return short_id from load_practice_session so the client can sync the URL param
+CREATE OR REPLACE FUNCTION public.load_practice_session(p_user_id UUID, p_session_key TEXT)
+RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  v_session RECORD;
+  v_existing_ids UUID[];
+  v_kp_arr TEXT[];
+  v_subj_arr TEXT[];
+  v_restored_index INT;
+  v_saved_kps TEXT[];
+  v_sps JSONB;
+  v_new_data JSONB;
+  v_all_ids UUID[];
+  v_all_kps TEXT[];
+  v_all_subjs TEXT[];
+  v_current_id UUID;
+  v_new_idx INT;
+  v_first_q_id UUID;
+  v_first_question JSONB;
+  v_first_stats JSONB;
+  v_result JSONB;
+BEGIN
+  SELECT * INTO v_session FROM public.practice_sequential_state
+  WHERE user_id = p_user_id AND session_key = p_session_key;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('found', false);
+  END IF;
+
+  v_saved_kps := COALESCE(v_session.selected_kps, '{}'::TEXT[]);
+  v_sps := COALESCE(v_session.subject_positions, '{}'::jsonb);
+  v_restored_index := COALESCE(v_session.current_index, 0);
+
+  -- Validate stored IDs, preserve order, extract first KP + subject
+  WITH ordered AS (
+    SELECT q.id, q.subject,
+           (SELECT trim(kpx) FROM unnest(regexp_split_to_array(q.key_points, '[,，;；]')) kpx WHERE trim(kpx) <> '' LIMIT 1) AS kp,
+           t.pos
+    FROM unnest(v_session.question_ids) WITH ORDINALITY AS t(qid, pos)
+    JOIN public.questions q ON q.id = t.qid
+  )
+  SELECT
+    array_agg(o.id ORDER BY o.pos),
+    array_agg(o.kp ORDER BY o.pos),
+    array_agg(COALESCE(o.subject, '') ORDER BY o.pos)
+  INTO v_existing_ids, v_kp_arr, v_subj_arr
+  FROM ordered o;
+
+  IF v_existing_ids IS NULL THEN
+    v_existing_ids := '{}'::UUID[];
+    v_kp_arr := '{}'::TEXT[];
+    v_subj_arr := '{}'::TEXT[];
+  END IF;
+
+  IF v_restored_index >= array_length(v_existing_ids, 1) THEN
+    v_restored_index := GREATEST(0, array_length(v_existing_ids, 1) - 1);
+  END IF;
+
+  -- Find new questions via kp_question_map (pre-computed, no ILIKE scan)
+  v_new_data := '[]'::jsonb;
+  IF array_length(v_saved_kps, 1) > 0 THEN
+    WITH new_qs AS (
+      SELECT DISTINCT q.id, q.subject,
+             COALESCE(q.seq_number, 999999) AS seq_number,
+             kqm.kp
+      FROM public.kp_question_map kqm
+      JOIN public.questions q ON q.id = kqm.question_id
+      WHERE kqm.kp = ANY(v_saved_kps)
+        AND NOT (q.id = ANY(v_existing_ids))
+        AND NOT EXISTS (
+          SELECT 1 FROM public.user_excluded_questions ueq
+          WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+        )
+    )
+    SELECT COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'id', nq.id,
+        'subject', nq.subject,
+        'kp', nq.kp,
+        'seq', nq.seq_number
+      )
+    ), '[]'::jsonb) INTO v_new_data
+    FROM new_qs nq;
+  END IF;
+
+  -- Merge existing + new, sort by (kp, seq)
+  v_current_id := v_existing_ids[v_restored_index + 1];
+
+  WITH existing AS (
+    SELECT e.id, e.kp, e.subj, NULL::INT AS seq
+    FROM unnest(v_existing_ids, v_kp_arr, v_subj_arr) AS e(id, kp, subj)
+  ),
+  new_items AS (
+    SELECT (n->>'id')::UUID AS id, n->>'kp' AS kp, n->>'subject' AS subj, (n->>'seq')::INT AS seq
+    FROM jsonb_array_elements(v_new_data) n
+  ),
+  sorted AS (
+    SELECT id, kp, subj,
+           row_number() OVER (ORDER BY COALESCE(subj, ''), kp, seq, id) - 1 AS rn
+    FROM (SELECT * FROM existing UNION ALL SELECT * FROM new_items) u
+  )
+  SELECT
+    array_agg(s.id ORDER BY s.rn),
+    array_agg(s.kp ORDER BY s.rn),
+    array_agg(s.subj ORDER BY s.rn)
+  INTO v_all_ids, v_all_kps, v_all_subjs
+  FROM sorted s;
+
+  -- Find new position of current question
+  v_new_idx := array_position(v_all_ids, v_current_id);
+  IF v_new_idx IS NOT NULL THEN
+    v_restored_index := v_new_idx - 1;
+  ELSIF array_length(v_all_ids, 1) > 0 THEN
+    v_restored_index := LEAST(v_restored_index, array_length(v_all_ids, 1) - 1);
+  ELSE
+    v_restored_index := 0;
+  END IF;
+
+  -- P1: Preload first question + stats into response (skip loadSequentialQuestion round-trip)
+  v_first_question := NULL;
+  v_first_stats := NULL;
+  IF array_length(v_all_ids, 1) > 0 THEN
+    v_first_q_id := v_all_ids[v_restored_index + 1];
+    SELECT row_to_json(q) INTO v_first_question FROM public.questions q WHERE q.id = v_first_q_id;
+
+    SELECT jsonb_build_object(
+      'total', COUNT(*),
+      'wrong', COUNT(*) FILTER (WHERE NOT is_correct),
+      'note', (SELECT ua2.note FROM public.user_answers ua2 WHERE ua2.user_id = p_user_id AND ua2.question_id = v_first_q_id AND ua2.note IS NOT NULL ORDER BY ua2.answered_at DESC LIMIT 1),
+      'isPublic', (SELECT ua3.is_public FROM public.user_answers ua3 WHERE ua3.user_id = p_user_id AND ua3.question_id = v_first_q_id AND ua3.note IS NOT NULL ORDER BY ua3.answered_at DESC LIMIT 1)
+    ) INTO v_first_stats
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id AND ua.question_id = v_first_q_id;
+
+    IF v_first_stats IS NULL THEN
+      v_first_stats := jsonb_build_object('total', 0, 'wrong', 0, 'note', NULL, 'isPublic', false);
+    END IF;
+  END IF;
+
+  v_result := jsonb_build_object(
+    'found', true,
+    'shortId', v_session.short_id,
+    'savedKps', to_jsonb(v_saved_kps),
+    'subjectPositions', v_sps,
+    'questionIds', to_jsonb(v_all_ids),
+    'questionKps', to_jsonb(v_all_kps),
+    'questionSubjects', to_jsonb(v_all_subjs),
+    'currentIndex', v_restored_index,
+    'firstQuestion', v_first_question,
+    'firstStats', v_first_stats
+  );
+
+  RETURN v_result;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.load_practice_session(UUID, TEXT) TO authenticated;

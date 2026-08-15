@@ -291,7 +291,7 @@ export function AiImportQuestionCard({ question, index, selected, subject, categ
         <div>
           <label className="text-[11px] text-muted-foreground mb-1 block">答案</label>
           {type === 'fill_blank' ? (() => {
-            const blankCount = (question.question_text.match(BLANK_RE) || ['____']).length
+            const blankCount = (question.question_text.match(BLANK_RE) || ['___']).length
             const answers = Array.isArray(question.correct_answer) ? question.correct_answer as string[] : blankCount > 1 ? [] : [String(question.correct_answer ?? '')]
             return (
               <div className="space-y-1.5">

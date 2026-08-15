@@ -22,6 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SequentialProgressBar } from '@/components/practice/SequentialProgressBar'
+import { SequentialKpNav } from '@/components/practice/SequentialKpNav'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -38,7 +39,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, Plus, Shuffle, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Filter, GraduationCap, List, Plus, Shuffle, Trash2 } from 'lucide-react'
 
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 
@@ -118,9 +119,9 @@ function FilterBtn({ label, children }: { label: string; children: React.ReactNo
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8 font-normal truncate">
+        <Button variant="outline" size="sm" className="gap-1 text-xs h-8 font-normal truncate max-w-40">
           <span className="truncate">{label}</span>
-          <ChevronDown className="h-3 w-3 ml-0.5 shrink-0 opacity-50" />
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
@@ -133,6 +134,8 @@ function FilterBtn({ label, children }: { label: string; children: React.ReactNo
 export function PracticeSession() {
   const saved = useRef(loadFilters())
   const [searchParams, setSearchParams] = useSearchParams()
+  const searchParamsRef = useRef(searchParams)
+  useEffect(() => { searchParamsRef.current = searchParams }, [searchParams])
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
@@ -148,16 +151,19 @@ export function PracticeSession() {
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [showSkeleton, setShowSkeleton] = useState(false)
-  const [questionReady, setQuestionReady] = useState(true)
+  const [questionReady, setQuestionReady] = useState(false)
   const skeletonTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
   const skeletonVisibleRef = useRef(false)
   useEffect(() => { skeletonVisibleRef.current = showSkeleton }, [showSkeleton])
   const isInitialMount = useRef(true)
   useEffect(() => {
-    if (isLoading && !showSkeleton && (isInitialMount.current || !question)) {
-      skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 150)
-    }
-    if (!isLoading) {
+    if (isLoading) {
+      if (isInitialMount.current) {
+        setShowSkeleton(true)
+      } else if (!showSkeleton && !question) {
+        skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 150)
+      }
+    } else {
       if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current)
       setShowSkeleton(false)
       isInitialMount.current = false
@@ -184,6 +190,7 @@ export function PracticeSession() {
   const seqLoadSessions = useSequentialStore((s) => s.loadSessions)
   const seqSwitchSession = useSequentialStore((s) => s.switchSession)
   const seqSessionKey = useSequentialStore((s) => s.sessionKey)
+  const seqShortId = useSequentialStore((s) => s.shortId)
   const seqGetCurrentKpInfo = useSequentialStore((s) => s.getCurrentKpInfo)
   const seqSyncStatus = useSequentialStore((s) => s.syncStatus)
   const seqLastSyncAt = useSequentialStore((s) => s.lastSyncAt)
@@ -235,7 +242,15 @@ export function PracticeSession() {
   const subjectPosRef = useRef<Record<string, number>>({})
   const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [tocOpen, setTocOpen] = useState(false)
+  const [tocVisible, setTocVisible] = useState(true)
   const answeredThisSession = useRef<Set<string>>(new Set())
+  const [answeredSessionSnapshot, setAnsweredSessionSnapshot] = useState<Set<string>>(new Set())
+  const [justAnsweredId, setJustAnsweredId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setJustAnsweredId(null)
+  }, [question?.id])
   const sessionStateRef = useRef<Map<string, { answer: CorrectAnswer | null; answerId: string | null; note: string; isPublic: boolean; attempts: number; wrongs: number }>>(new Map())
   const historyRef = useRef<{ question: Question; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }[]>([])
   const snapRef = useRef<{ question: Question | null; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }>({ question: null, answer: null, submitted: false, note: '', isPublic: false, answerId: null, attempts: 0, wrongs: 0 })
@@ -348,13 +363,32 @@ export function PracticeSession() {
     if (user) saveFiltersToDb(user.id, filters)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
 
-  // Sync questionMode to URL param
+  // Sync questionMode ↔ URL param (URL wins on external navigation, state wins otherwise)
   useEffect(() => {
-    const mode = questionMode === 'sequential' ? 'seq' : 'random'
-    if (searchParams.get('mode') !== mode) {
-      setSearchParams(prev => { prev.set('mode', mode); return prev }, { replace: true })
+    const urlMode = searchParams.get('mode')
+    if (urlMode === 'seq' && questionMode !== 'sequential') { switchMode('sequential'); return }
+    if (urlMode === 'random' && questionMode === 'sequential') { switchMode('new'); return }
+    const want = questionMode === 'sequential' ? 'seq' : 'random'
+    if (urlMode !== want) {
+      setSearchParams(prev => { prev.set('mode', want); return prev }, { replace: true })
     }
-  }, [questionMode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, questionMode])
+
+  // Sync active sequential session short id to URL so refresh/deep-link can restore it
+  useEffect(() => {
+    if (questionMode === 'sequential' && seqShortId && searchParams.get('session') !== seqShortId) {
+      setSearchParams(prev => { prev.set('session', seqShortId); return prev }, { replace: true })
+    }
+  }, [questionMode, seqShortId])
+
+  // Normalize legacy 'wrong' mode → review scope (scope=wrong preserves the behavior)
+  useEffect(() => {
+    if (questionMode === 'wrong') {
+      setQuestionMode('new')
+      if (questionScope === 'all') setQuestionScope('wrong')
+    }
+  }, [questionMode, questionScope])
 
   // Load filters from DB on mount, fallback to localStorage
   const dbFiltersRef = useRef(false)
@@ -763,8 +797,19 @@ export function PracticeSession() {
     }
   }, [subjectsForKps, seqStart, loadSequentialQuestion, saveCurrentSession, seqLoadSessions, currentSubject, saveSubjectPos, triggerKpRefresh, proceedAfterExcluded])
 
+  const handleKpsRestored = useCallback(async () => {
+    const u = useAuthStore.getState().user
+    if (!u) return
+    const s = useSequentialStore.getState()
+    const idx = s.currentIndex
+    await seqStart(u.id, s.selectedKps, subjectsForKps(s.selectedKps), '')
+    const s2 = useSequentialStore.getState()
+    loadSequentialQuestion(Math.min(idx, Math.max(0, s2.questionIds.length - 1)))
+  }, [seqStart, subjectsForKps, loadSequentialQuestion])
+
   const modeInitRef = useRef(false)
   useEffect(() => {
+    setShowSkeleton(true)
     if (questionMode === 'sequential') {
       const user = useAuthStore.getState().user
       if (!user) { setIsLoading(false); setSequentialDialogOpen(true); return }
@@ -775,7 +820,7 @@ export function PracticeSession() {
         loadSequentialQuestion(s.currentIndex); return
       }
       if (s.isActive) seqReset()
-      seqLoadSessions(user.id).then(() => {
+      seqLoadSessions(user.id).then(async () => {
         const sessions = useSequentialStore.getState().sessions
         const validSession = sessions.find((session) =>
           (session.questionIds?.length ?? 0) > 0 && sameSubjects(session.planSubjects, currentPlanSubjects),
@@ -787,6 +832,18 @@ export function PracticeSession() {
             else { setIsLoading(false); setSequentialDialogOpen(true) }
           })
         } else {
+          const urlSession = searchParamsRef.current.get('session')
+          if (urlSession) {
+            const { data: sidRow } = await supabase.from('practice_sequential_state').select('session_key').eq('user_id', user.id).eq('short_id', urlSession).maybeSingle()
+            if (sidRow?.session_key) {
+              seqLoadFromDb(user.id, sidRow.session_key).then(r => {
+                const s2 = useSequentialStore.getState()
+                if (r && s2.questionIds.length > 0) loadSequentialQuestion(s2.currentIndex)
+                else { setIsLoading(false); setSequentialDialogOpen(true) }
+              })
+              return
+            }
+          }
           setIsLoading(false)
           setSequentialDialogOpen(true)
         }
@@ -810,6 +867,44 @@ export function PracticeSession() {
 
   const bumpRefresh = useRefreshStore((s) => s.bump)
 
+  const switchMode = useCallback((mode: 'sequential' | 'new') => {
+    setQuestionMode(mode)
+    setIsLoading(true)
+    setShowSkeleton(true)
+  }, [])
+
+  const [completionOpen, setCompletionOpen] = useState(false)
+
+  useEffect(() => {
+    if (noQuestions && questionMode === 'sequential') setCompletionOpen(true)
+  }, [noQuestions, questionMode])
+
+  const handleCompletionNewSession = useCallback(async () => {
+    const u = useAuthStore.getState().user
+    if (!u) return
+    setCompletionOpen(false)
+    const subs = subjectsForKps(seqKps)
+    const now = new Date().toISOString()
+    const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', u.id).single()
+    const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
+    const merged = { ...existingResets }
+    for (const s of subs) merged[s] = now
+    await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', u.id)
+    await useAuthStore.getState().refreshProfile()
+    bumpRefresh()
+    useDashboardStore.getState().invalidatePlanCache()
+    await seqStart(u.id, seqKps, subs, '')
+    loadSequentialQuestion(0)
+  }, [subjectsForKps, seqKps, seqStart, loadSequentialQuestion, bumpRefresh])
+
+  const handleCompletionRepull = useCallback(async () => {
+    const u = useAuthStore.getState().user
+    if (!u) return
+    setCompletionOpen(false)
+    await seqStart(u.id, seqKps, subjectsForKps(seqKps), '')
+    loadSequentialQuestion(useSequentialStore.getState().currentIndex)
+  }, [seqKps, subjectsForKps, seqStart, loadSequentialQuestion])
+
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
     const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks)
@@ -820,6 +915,8 @@ export function PracticeSession() {
 
     if (questionMode === 'sequential') { markPracticeSync(); const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
     answeredThisSession.current.add(question.id)
+    setAnsweredSessionSnapshot(new Set(answeredThisSession.current))
+    setJustAnsweredId(question.id)
     sessionStateRef.current.set(question.id, { answer: selectedAnswer, answerId: id, note, isPublic, attempts: attemptCount, wrongs: wrongCount })
     setIsSubmitted(true)
   }
@@ -904,6 +1001,24 @@ export function PracticeSession() {
     else fetchRandomQuestion()
   }, [questionMode, isSubmitted, question, fetchRandomQuestion, loadSequentialQuestion])
 
+  const handleSkipToNextUnanswered = useCallback(async () => {
+    if (questionMode !== 'sequential') return
+    const s = useSequentialStore.getState()
+    const ids = s.questionIds
+    if (ids.length === 0) return
+    const start = Math.max(s.currentIndex + 1, 0)
+    let target = -1
+    for (let offset = 0; offset < ids.length; offset++) {
+      const j = (start + offset) % ids.length
+      if (!answeredThisSession.current.has(ids[j])) { target = j; break }
+    }
+    if (target < 0) { setNoQuestions(true); setIsLoading(false); return }
+    await loadSequentialQuestion(target)
+    const s2 = useSequentialStore.getState()
+    const u = useAuthStore.getState().user
+    if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+  }, [questionMode, loadSequentialQuestion])
+
   const prevRef = useRef(handlePrev)
   const nextRef = useRef(handleNext)
   const submitRef = useRef(handleSubmit)
@@ -962,6 +1077,8 @@ export function PracticeSession() {
     const id = await saveAnswer(question.id, [], false, 'practice')
     setAnswerId(id)
     answeredThisSession.current.add(question.id)
+    setAnsweredSessionSnapshot(new Set(answeredThisSession.current))
+    setJustAnsweredId(question.id)
     sessionStateRef.current.set(question.id, { answer: [], answerId: id, note, isPublic, attempts: attemptCount, wrongs: wrongCount })
     setIsSubmitted(true)
     bumpRefresh()
@@ -992,46 +1109,12 @@ export function PracticeSession() {
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} direction={isMobile ? 'bottom' : 'right'}>
           <DrawerContent className={isMobile ? '' : '!inset-y-0 !right-0 !left-auto !top-0 !mt-0 !h-full w-[400px] max-w-[85vw] !rounded-l-[10px] !rounded-t-none'}>
             <DrawerHeader>
-              <DrawerTitle>筛选条件</DrawerTitle>
+              <DrawerTitle>刷题会话</DrawerTitle>
             </DrawerHeader>
             <div className="flex-1 scroll-fade overflow-y-auto p-4">
-              <div className="grid grid-cols-3 gap-2">
-                <FilterBtn label={selectedSubjects.length > 0 ? `学科(${selectedSubjects.length})` : '学科'}>
-                  {planSubjects.length > 0 && <><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">{t('plan.longTerm')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{planSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
-                  {dailyTargetSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">{t('plan.dailyTarget')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{dailyTargetSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
-                  {otherSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">其他</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{otherSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
-                  {selectedSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setSelectedSubjects([])} className="text-muted-foreground text-xs">清除学科</DropdownMenuItem></>}
-                </FilterBtn>
-                <FilterBtn label={selectedCategory || '分类'}>
-                  <DropdownMenuItem onClick={() => setSelectedCategory('')}><span className="text-muted-foreground">不限</span>{!selectedCategory && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  {yearCategories.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">历年真题</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{yearCategories.map((c) => (<DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
-                  {nonYearCategories.map((c) => (<DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>))}
-                </FilterBtn>
-                <FilterBtn label={selectedType ? t(`questionTypes.${selectedType}` as any) : '题型'}>
-                  <DropdownMenuItem onClick={() => setSelectedType('')}><span className="text-muted-foreground">不限</span>{!selectedType && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  {QUESTION_TYPE_OPTIONS.map((o) => (<DropdownMenuItem key={o.value} onClick={() => setSelectedType(o.value)}>{t(`questionTypes.${o.value}` as any)}{selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>))}
-                </FilterBtn>
-                <FilterBtn label={selectedKeyPoint || '知识点'}>
-                  <DropdownMenuItem onClick={() => setSelectedKeyPoint('')}><span className="text-muted-foreground">不限</span>{!selectedKeyPoint && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  {kpBySubject.length === 0 ? <div className="px-2 py-3 space-y-1.5">{[1,2,3].map(i => <Skeleton key={i} className="h-4 w-full" />)}</div> : kpBySubject.map(({ subject, keyPoints }) => (<DropdownMenuSub key={subject}><DropdownMenuSubTrigger className="text-xs">{subject} ({keyPoints.length})</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{keyPoints.map(kp => <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoint(kp)}>{kp}{selectedKeyPoint === kp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>))}
-                </FilterBtn>
-                <FilterBtn label={questionMode === 'sequential' ? '顺序刷题' : ({ all: '全部', favorites: '收藏', wrong: '错题' } as Record<string, string>)[questionScope]}>
-                  <DropdownMenuItem onClick={() => setQuestionScope('all')}>全部{questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>仅收藏{questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>仅错题{questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                </FilterBtn>
-                <FilterBtn label={{ new: '新题优先', wrong: '错题优先', sequential: '顺序刷题' }[questionMode] || '模式'}>
-                  <DropdownMenuItem onClick={() => setQuestionMode('sequential')}>顺序刷题{questionMode === 'sequential' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setQuestionMode('new')}>新题优先{questionMode === 'new' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuestionMode('wrong')}>错题优先{questionMode === 'wrong' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
-                </FilterBtn>
-              </div>
               {questionMode === 'sequential' && (
                 <>
-                  <hr className="my-4 border-dashed border-border" />
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">刷题会话</span>
+                  <div className="flex items-center justify-end mb-2">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setSequentialDialogOpen(true); setDrawerOpen(false) }}><Plus className="h-3 w-3 mr-1" />新建</Button>
                   </div>
                   {seqSessions.length === 0 ? (
@@ -1089,10 +1172,43 @@ export function PracticeSession() {
           </DrawerContent>
         </Drawer>
 
+      <Drawer open={tocOpen} onOpenChange={setTocOpen} direction={isMobile ? 'bottom' : 'right'}>
+          <DrawerContent className={isMobile ? 'h-[50vh] max-h-[50vh]' : '!inset-y-0 !right-0 !left-auto !top-0 !mt-0 !h-full w-[360px] max-w-[85vw] !rounded-l-[10px] !rounded-t-none'}>
+            <DrawerHeader>
+              <DrawerTitle>知识点目录</DrawerTitle>
+            </DrawerHeader>
+            <div className="flex-1 min-h-0 scroll-fade overflow-y-auto p-4">
+              {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 ? (
+                <SequentialKpNav
+                  userId={profile?.id ?? ''}
+                  questionIds={seqQuestionIds}
+                  questionKps={seqQuestionKps}
+                  questionSubjects={seqQuestionSubjects}
+                  currentIndex={seqIndex}
+                  onJump={(index) => { loadSequentialQuestion(index); setTocOpen(false) }}
+                  subjectResets={profile?.subject_reset_at ?? null}
+                  planResetAt={profile?.plan_reset_at ?? null}
+                  subject={currentSubject}
+                  selectedKps={seqSelectedKps}
+                  onExcludedRestored={handleKpsRestored}
+                  answeredThisSession={answeredSessionSnapshot}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground py-2">暂无进行中的会话</p>
+              )}
+            </div>
+          </DrawerContent>
+        </Drawer>
+
       {planSubjectSet.size > 0 && (
         <KpSelectDialog open={sequentialDialogOpen} onOpenChange={setSequentialDialogOpen} kpBySubject={kpBySubject} planSubjects={[...planSubjectSet]} selectedKps={seqKps} onConfirm={handleKpConfirm} />
       )}
-      <PlanDialog open={planDialogOpen} onOpenChange={setPlanDialogOpen} />
+      <PlanDialog
+        open={planDialogOpen}
+        onOpenChange={setPlanDialogOpen}
+        mode={questionMode === 'sequential' ? 'sequential' : 'random'}
+        onModeChange={(m) => { switchMode(m === 'sequential' ? 'sequential' : 'new'); setPlanDialogOpen(false) }}
+      />
 
       <AlertDialog open={blockSkipOpen} onOpenChange={setBlockSkipOpen}>
         <AlertDialogContent>
@@ -1176,6 +1292,52 @@ export function PracticeSession() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={completionOpen} onOpenChange={setCompletionOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>本次会话已刷完</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前会话所选知识点的题目已全部作答。题库若有新增/删除题目或知识点变动，可选择重新拉取（保留答题记录）；重置进度则从第一题重新开始。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setCompletionOpen(false); switchMode('new'); seqReset(); fetchRandomQuestion() }}>去复习</AlertDialogCancel>
+            <AlertDialogAction className="bg-muted text-foreground hover:bg-muted/80" onClick={() => setCompletionOpen(false)}>暂不</AlertDialogAction>
+            <AlertDialogAction className="bg-muted text-foreground hover:bg-muted/80" onClick={handleCompletionRepull}>重新拉取题目（保留记录）</AlertDialogAction>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleCompletionNewSession}>重置进度并重新开始</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {questionMode !== 'sequential' && (
+        <div className="flex flex-wrap gap-2">
+          <FilterBtn label={({ all: '全部', favorites: '仅收藏', wrong: '仅错题' } as Record<string, string>)[questionScope]}>
+            <DropdownMenuItem onClick={() => setQuestionScope('all')}>全部{questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>仅收藏{questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>仅错题{questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+          </FilterBtn>
+          <FilterBtn label={selectedSubjects.length > 0 ? `学科(${selectedSubjects.length})` : '学科'}>
+            {planSubjects.length > 0 && <><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">{t('plan.longTerm')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{planSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
+            {dailyTargetSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">{t('plan.dailyTarget')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{dailyTargetSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
+            {otherSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">其他</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{otherSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
+            {selectedSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setSelectedSubjects([])} className="text-muted-foreground text-xs">清除学科</DropdownMenuItem></>}
+          </FilterBtn>
+          <FilterBtn label={selectedCategory || '分类'}>
+            <DropdownMenuItem onClick={() => setSelectedCategory('')}><span className="text-muted-foreground">不限</span>{!selectedCategory && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {yearCategories.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">历年真题</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{yearCategories.map((c) => (<DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
+            {nonYearCategories.map((c) => (<DropdownMenuItem key={c} onClick={() => setSelectedCategory(c)}>{c}{selectedCategory === c && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>))}
+          </FilterBtn>
+          <FilterBtn label={selectedType ? t(`questionTypes.${selectedType}` as any) : '题型'}>
+            <DropdownMenuItem onClick={() => setSelectedType('')}><span className="text-muted-foreground">不限</span>{!selectedType && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {QUESTION_TYPE_OPTIONS.map((o) => (<DropdownMenuItem key={o.value} onClick={() => setSelectedType(o.value)}>{t(`questionTypes.${o.value}` as any)}{selectedType === o.value && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>))}
+          </FilterBtn>
+          <FilterBtn label={selectedKeyPoint || '知识点'}>
+            <DropdownMenuItem onClick={() => setSelectedKeyPoint('')}><span className="text-muted-foreground">不限</span>{!selectedKeyPoint && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            {kpBySubject.length === 0 ? <div className="px-2 py-3 space-y-1.5">{[1,2,3].map(i => <Skeleton key={i} className="h-4 w-full" />)}</div> : kpBySubject.map(({ subject, keyPoints }) => (<DropdownMenuSub key={subject}><DropdownMenuSubTrigger className="text-xs">{subject} ({keyPoints.length})</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{keyPoints.map(kp => <DropdownMenuItem key={kp} onClick={() => setSelectedKeyPoint(kp)}>{kp}{selectedKeyPoint === kp && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>)}</DropdownMenuSubContent></DropdownMenuSub>))}
+          </FilterBtn>
+        </div>
+      )}
+
       {planSubjectSet.size === 0 && (questionMode === 'sequential' || selectedSubjects.length === 0) && !isLoading ? (
         <div className="text-center py-12 space-y-4">
           <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground/40" />
@@ -1185,49 +1347,95 @@ export function PracticeSession() {
           </p>
           <Button onClick={() => setPlanDialogOpen(true)}>去设置学习计划</Button>
         </div>
-      ) : questionMode === 'sequential' && !seqActive && !isLoading ? (
+      ) : questionMode === 'sequential' && !seqActive && !isLoading && !sequentialDialogOpen ? (
         <div className="text-center py-12 space-y-4">
           <p className="text-muted-foreground">尚未选择知识点</p>
           <Button onClick={() => setSequentialDialogOpen(true)}>选择知识点开始刷题</Button>
         </div>
       ) : showSkeleton ? (
         <div className="space-y-4 animate-pulse">
-          <div className="rounded-xl border bg-card p-3 space-y-2">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Skeleton className="h-6 w-14 rounded-md" />
-              <Skeleton className="h-6 w-20 rounded-md" />
-              <Skeleton className="h-6 w-16 rounded-md" />
-              <Skeleton className="h-7 w-7 rounded-md ml-auto" />
+          {questionMode === 'sequential' ? (
+            <>
+              <div className="rounded-xl border bg-card p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Skeleton className="h-6 w-14 rounded-md" />
+                  <Skeleton className="h-6 w-20 rounded-md" />
+                  <Skeleton className="h-6 w-16 rounded-md" />
+                  <Skeleton className="h-7 w-7 rounded-md ml-auto" />
+                </div>
+                <div className="grid gap-y-1.5 text-xs" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
+                  <Skeleton className="h-3 w-10" />
+                  <Skeleton className="h-2 rounded-full" />
+                  <Skeleton className="h-3 w-8" />
+                  <Skeleton className="h-3 w-8" />
+                  <Skeleton className="h-2.5 rounded-full" />
+                  <Skeleton className="h-3 w-8" />
+                </div>
+              </div>
+              <div className="lg:flex lg:gap-4 lg:items-stretch">
+                <div className="flex-1 min-w-0 space-y-4">
+                  <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Skeleton className="h-5 w-12 rounded-full" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Skeleton className="h-5 w-full" />
+                      <Skeleton className="h-5 w-5/6" />
+                      <Skeleton className="h-5 w-3/4" />
+                    </div>
+                    <div className="space-y-2">
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                    </div>
+                    <div className="flex justify-end">
+                      <Skeleton className="h-10 w-32" />
+                    </div>
+                  </div>
+                </div>
+                <aside className="hidden lg:block w-72 shrink-0">
+                  <div className="rounded-xl border bg-card p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-10" />
+                    </div>
+                    <div className="space-y-1">
+                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-4 w-16 mt-2" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-5 w-12 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <div className="space-y-1.5">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-5/6" />
+                <Skeleton className="h-5 w-3/4" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+              </div>
+              <div className="flex justify-end">
+                <Skeleton className="h-10 w-32" />
+              </div>
             </div>
-            <div className="grid gap-y-1.5 text-xs" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
-              <Skeleton className="h-3 w-10" />
-              <Skeleton className="h-2 rounded-full" />
-              <Skeleton className="h-3 w-8" />
-              <Skeleton className="h-3 w-8" />
-              <Skeleton className="h-2.5 rounded-full" />
-              <Skeleton className="h-3 w-8" />
-            </div>
-          </div>
-          <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Skeleton className="h-5 w-12 rounded-full" />
-              <Skeleton className="h-5 w-16 rounded-full" />
-            </div>
-            <div className="space-y-1.5">
-              <Skeleton className="h-5 w-full" />
-              <Skeleton className="h-5 w-5/6" />
-              <Skeleton className="h-5 w-3/4" />
-            </div>
-            <div className="space-y-2">
-              <Skeleton className="h-12 w-full rounded-lg" />
-              <Skeleton className="h-12 w-full rounded-lg" />
-              <Skeleton className="h-12 w-full rounded-lg" />
-              <Skeleton className="h-12 w-full rounded-lg" />
-            </div>
-            <div className="flex justify-end">
-              <Skeleton className="h-10 w-32" />
-            </div>
-          </div>
+          )}
         </div>
       ) : noQuestions && questionMode === 'sequential' ? (
         <div className="text-center py-12 space-y-4">
@@ -1235,8 +1443,7 @@ export function PracticeSession() {
           <p className="text-lg font-medium">{t('practice.sequentialDone')}</p>
           <p className="text-muted-foreground">{t('practice.sequentialDoneDesc')}</p>
           <div className="flex gap-2 justify-center">
-            <Button variant="outline" onClick={() => { setQuestionMode('new'); seqReset(); fetchRandomQuestion() }}>{t('practice.backToNormalMode')}</Button>
-            <Button onClick={() => { const u = useAuthStore.getState().user; if (u) { seqStart(u.id, seqKps, subjectsForKps(seqKps), '').then(() => loadSequentialQuestion(0)) } }}><Shuffle className="h-4 w-4" />{t('practice.tryAgain')}</Button>
+            <Button variant="outline" onClick={() => { switchMode('new'); seqReset(); fetchRandomQuestion() }}>{t('practice.backToNormalMode')}</Button>
           </div>
         </div>
       ) : noQuestions ? (
@@ -1248,7 +1455,8 @@ export function PracticeSession() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="lg:flex lg:gap-4 lg:items-stretch">
+          <div className="flex-1 min-w-0 space-y-4">
           {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
             <div className="rounded-xl border bg-card p-3 space-y-2">
               <div className="space-y-2">
@@ -1274,9 +1482,20 @@ export function PracticeSession() {
                       )
                     }) : null
                   })()}
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 ml-auto" onClick={() => setDrawerOpen(true)} title="筛选条件">
-                    <Filter className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn('h-7 w-7 shrink-0', !isMobile && tocVisible && 'bg-accent text-accent-foreground')}
+                      onClick={() => { if (isMobile) setTocOpen(true); else setTocVisible(v => !v) }}
+                      title={isMobile ? '知识点目录' : tocVisible ? '隐藏目录' : '显示目录'}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setDrawerOpen(true)} title="筛选条件">
+                      <Filter className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               {(() => {
                 const block = currentSubject ? subjectBlocks.find(b => b.subject === currentSubject) : null
@@ -1324,6 +1543,12 @@ export function PracticeSession() {
                   <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
                     <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
                   </div>
+                  {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && justAnsweredId !== question.id && (
+                    <div className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2">
+                      <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">本题此次会话已作答过</span>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSkipToNextUnanswered}>跳到下一未做题</Button>
+                    </div>
+                  )}
                   {isSubmitted && (
                     <div className="space-y-1.5">
                       <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
@@ -1351,6 +1576,27 @@ export function PracticeSession() {
                 </div>
             </>
           ) : null}
+          </div>
+          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && tocVisible && (
+            <aside className="hidden lg:block w-72 shrink-0">
+              <div className="lg:sticky lg:top-20 lg:h-full lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+                <SequentialKpNav
+                  userId={profile?.id ?? ''}
+                  questionIds={seqQuestionIds}
+                  questionKps={seqQuestionKps}
+                  questionSubjects={seqQuestionSubjects}
+                  currentIndex={seqIndex}
+                  onJump={loadSequentialQuestion}
+                  subjectResets={profile?.subject_reset_at ?? null}
+                  planResetAt={profile?.plan_reset_at ?? null}
+                  subject={currentSubject}
+                  selectedKps={seqSelectedKps}
+                  onExcludedRestored={handleKpsRestored}
+                  answeredThisSession={answeredSessionSnapshot}
+                />
+              </div>
+            </aside>
+          )}
         </div>
       )}
     </div>
