@@ -25,7 +25,13 @@ R2_BUCKET="${R2_BUCKET:-practice-web-backups}"
 R2_PREFIX="${R2_PREFIX:-supabase}"
 KEY="${1:-latest}"
 
-command -v pg_restore >/dev/null || { echo "error: pg_restore not found" >&2; exit 1; }
+# Use the version-matched pg binaries (PG_BIN set by the workflow install step).
+if [[ -n "${PG_BIN:-}" ]]; then
+  PG_RESTORE="$PG_BIN/pg_restore"
+else
+  PG_RESTORE="$(command -v pg_restore)"
+fi
+[[ -x "$PG_RESTORE" ]] || { echo "error: pg_restore not found" >&2; exit 1; }
 command -v rclone >/dev/null || { echo "error: rclone not found" >&2; exit 1; }
 
 export RCLONE_CONFIG_BACKUP_TYPE=s3
@@ -58,8 +64,8 @@ if [[ "$FILE" == *.enc ]]; then
 fi
 
 echo ">> verifying archive"
-pg_restore -l "$DUMP" >/dev/null
+"$PG_RESTORE" -l "$DUMP" >/dev/null
 
 echo ">> restoring into ${RESTORE_TARGET_URL}"
-pg_restore --clean --if-exists --no-owner --no-privileges -d "$RESTORE_TARGET_URL" "$DUMP"
+"$PG_RESTORE" --clean --if-exists --no-owner --no-privileges -d "$RESTORE_TARGET_URL" "$DUMP"
 echo ">> restore finished"

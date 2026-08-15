@@ -26,15 +26,15 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client rclone
           MAJOR="$(psql "$SUPABASE_DB_URL" -tAc 'show server_version' | cut -d. -f1 | tr -d ' ')"
-          HAVE="$(psql --version | sed -E 's/.* ([0-9]+)\.[0-9]+.*/\1/')"
-          echo "server major=$MAJOR client major=$HAVE"
-          if [[ "$MAJOR" != "$HAVE" ]]; then
+          echo "server major=$MAJOR"
+          if [[ ! -x "/usr/lib/postgresql/${MAJOR}/bin/pg_dump" ]]; then
             sudo install -d /usr/share/postgresql-common/pgdg
             sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
             echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
             sudo apt-get update -y
             sudo apt-get install -y "postgresql-client-${MAJOR}"
           fi
+          echo "PG_BIN=/usr/lib/postgresql/${MAJOR}/bin" >> "$GITHUB_ENV"
 
       - name: Run backup
         env:

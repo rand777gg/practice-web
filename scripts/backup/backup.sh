@@ -24,15 +24,24 @@ R2_PREFIX="${R2_PREFIX:-supabase}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
-command -v pg_dump >/dev/null || { echo "error: pg_dump not found" >&2; exit 1; }
+# Use the version-matched pg binaries (PG_BIN set by the workflow install step).
+if [[ -n "${PG_BIN:-}" ]]; then
+  PG_DUMP="$PG_BIN/pg_dump"
+  PG_RESTORE="$PG_BIN/pg_restore"
+else
+  PG_DUMP="$(command -v pg_dump)"
+  PG_RESTORE="$(command -v pg_restore)"
+fi
+[[ -x "$PG_DUMP" ]] || { echo "error: pg_dump not found" >&2; exit 1; }
+[[ -x "$PG_RESTORE" ]] || { echo "error: pg_restore not found" >&2; exit 1; }
 command -v rclone >/dev/null || { echo "error: rclone not found" >&2; exit 1; }
 
 RAW_DUMP="practice-web-${TIMESTAMP}.dump"
 echo ">> pg_dump -> ${RAW_DUMP}"
-pg_dump "$SUPABASE_DB_URL" -Fc --no-owner --no-privileges -f "$RAW_DUMP"
+"$PG_DUMP" "$SUPABASE_DB_URL" -Fc --no-owner --no-privileges -f "$RAW_DUMP"
 
 echo ">> verifying dump integrity"
-pg_restore -l "$RAW_DUMP" >/dev/null
+"$PG_RESTORE" -l "$RAW_DUMP" >/dev/null
 
 if [[ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]]; then
   ARCHIVE="${RAW_DUMP}.enc"
