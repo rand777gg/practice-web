@@ -23,6 +23,9 @@ TODO.md
 # Supabase
 supabase/.temp
 
+# DB backup artifacts (local runs of scripts/backup)
+scripts/backup/*.dump*
+
 # Bundle analysis
 stats.html
 

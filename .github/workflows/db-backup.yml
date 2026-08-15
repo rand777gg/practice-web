@@ -1,0 +1,62 @@
+name: Database Backup
+
+on:
+  schedule:
+    - cron: '20 2 * * *' # daily 02:20 UTC
+  workflow_dispatch: # manual test run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pg client matching server version + rclone
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client rclone
+          MAJOR="$(psql "$SUPABASE_DB_URL" -tAc 'show server_version' | cut -d. -f1 | tr -d ' ')"
+          HAVE="$(psql --version | sed -E 's/.* ([0-9]+)\.[0-9]+.*/\1/')"
+          echo "server major=$MAJOR client major=$HAVE"
+          if [[ "$MAJOR" != "$HAVE" ]]; then
+            sudo install -d /usr/share/postgresql-common/pgdg
+            sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+            echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+            sudo apt-get update -y
+            sudo apt-get install -y "postgresql-client-${MAJOR}"
+          fi
+
+      - name: Run backup
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_PREFIX: ${{ vars.R2_PREFIX }}
+          BACKUP_RETENTION_DAYS: ${{ vars.BACKUP_RETENTION_DAYS }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: bash scripts/backup/backup.sh
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          if [[ -n "$ALERT_WEBHOOK_URL" ]]; then
+            curl -fsS -X POST -H 'Content-Type: application/json' \
+              -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"Database backup failed: ${{ github.repository }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" \
+              "$ALERT_WEBHOOK_URL"
+          else
+            echo "no ALERT_WEBHOOK_URL configured, skipping notification"
+          fi
