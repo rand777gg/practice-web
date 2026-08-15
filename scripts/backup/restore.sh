@@ -21,7 +21,7 @@ set -euo pipefail
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 : "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
 
-R2_BUCKET="${R2_BUCKET:-practice-web-backups}"
+R2_BUCKET="${R2_BUCKET:-practice-web-backup}"
 R2_PREFIX="${R2_PREFIX:-supabase}"
 KEY="${1:-latest}"
 

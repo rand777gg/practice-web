@@ -34,7 +34,7 @@ GitHub Actions 每天 02:20 UTC 自动把托管 Supabase 的 Postgres 全库逻�
 
 | Variable | 默认 |
 |---|---|
-| `R2_BUCKET` | `practice-web-backups` |
+| `R2_BUCKET` | `practice-web-backup` |
 | `R2_PREFIX` | `supabase` |
 | `BACKUP_RETENTION_DAYS` | `30` |
 
