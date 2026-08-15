@@ -272,7 +272,7 @@ export function PlanProgress() {
           </>
         )}
       </button>
-      <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} mode={planMode} onModeChange={handlePlanModeChange} />
     </>
   )
 }

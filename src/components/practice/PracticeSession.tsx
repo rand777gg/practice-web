@@ -1173,7 +1173,7 @@ export function PracticeSession() {
         </Drawer>
 
       <Drawer open={tocOpen} onOpenChange={setTocOpen} direction={isMobile ? 'bottom' : 'right'}>
-          <DrawerContent className={isMobile ? 'h-[50vh] max-h-[50vh]' : '!inset-y-0 !right-0 !left-auto !top-0 !mt-0 !h-full w-[360px] max-w-[85vw] !rounded-l-[10px] !rounded-t-none'}>
+          <DrawerContent className={isMobile ? 'h-[66vh] max-h-[66vh]' : '!inset-y-0 !right-0 !left-auto !top-0 !mt-0 !h-full w-[360px] max-w-[85vw] !rounded-l-[10px] !rounded-t-none'}>
             <DrawerHeader>
               <DrawerTitle>知识点目录</DrawerTitle>
             </DrawerHeader>

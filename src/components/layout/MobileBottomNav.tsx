@@ -1,6 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Pencil, Clock, Star, RotateCcw } from 'lucide-react'
-import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { useSettingsStore, BOTTOM_NAV_TABS, type BottomNavTabKey } from '@/stores/settings-store'
@@ -50,14 +49,16 @@ export function MobileBottomNav() {
         {/* Liquid glass specular highlight */}
         <span aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/45 via-white/10 to-transparent dark:from-white/10 dark:via-white/5 dark:to-transparent" />
         {/* Sliding glass capsule */}
-        <motion.span
+        <span
           aria-hidden
-          className="pointer-events-none absolute top-1.5 bottom-1.5 left-1.5 z-0 rounded-full bg-gradient-to-b from-primary/25 via-primary/15 to-primary/10 shadow-inner ring-1 ring-inset ring-primary/25"
-          style={{ width: `calc((100% - 12px)/${n})` }}
-          animate={{ x: `${idx * 100}%`, opacity: activeIndex < 0 ? 0 : 1 }}
-          transition={{
-            x: { type: 'spring', stiffness: 450, damping: 32, mass: 0.9 },
-            opacity: { duration: 0.2 },
+          className={cn(
+            'pointer-events-none absolute top-1.5 bottom-1.5 left-1.5 z-0 rounded-full bg-gradient-to-b from-primary/25 via-primary/15 to-primary/10 shadow-inner ring-1 ring-inset ring-primary/25 will-change-transform',
+            activeIndex < 0 && 'opacity-0',
+          )}
+          style={{
+            width: `calc((100% - 12px)/${n})`,
+            transform: `translateX(${idx * 100}%)`,
+            transition: 'transform 500ms cubic-bezier(0.34, 1.3, 0.64, 1), opacity 200ms ease',
           }}
         />
         {visibleTabs.map(({ key }) => {
@@ -69,6 +70,7 @@ export function MobileBottomNav() {
               key={key}
               to={to}
               end={to === '/'}
+              prefetch="viewport"
               className={({ isActive }) =>
                 cn(
                   'relative z-10 flex-1 flex flex-col items-center justify-center gap-0.5 rounded-full text-[10px] font-medium transition-[color,transform] duration-300 ease-out active:scale-[0.97]',
