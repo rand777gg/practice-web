@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/rand777gg/react-practice-web/releases"><img src="https://img.shields.io/github/v/release/rand777gg/react-practice-web?color=blue" alt="Release"></a>
-  <a href="https://github.com/rand777gg/react-practice-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/rand777gg/react-practice-web/ci.yml?branch=master" alt="CI"></a>
+  <a href="https://github.com/rand777gg/practice-web/releases"><img src="https://img.shields.io/github/v/release/rand777gg/practice-web?color=blue" alt="Release"></a>
+  <a href="https://github.com/rand777gg/practice-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/rand777gg/practice-web/ci.yml?branch=master" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react" alt="React">
   <img src="https://img.shields.io/badge/typescript-~6.0-3178C6?logo=typescript" alt="TypeScript">
@@ -61,7 +61,7 @@ A modern, AI-powered question practice platform. Supports six question types acr
 ### Setup
 
 ```bash
-git clone https://github.com/rand777gg/react-practice-web.git
+git clone https://github.com/rand777gg/practice-web.git
 cd practice-web
 npm install
 cp .env.example .env
@@ -91,7 +91,8 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | Scope Filter | All / favorites-only / wrong-only |
 | Priority Modes | Mixed / new-first / wrong-first / sequential |
 | Multi-Filter | Subject, category, question type, knowledge point |
-| Sequential Mode | KP-batched subject blocks, auto-saved progress, cross-device sync |
+| Sequential Mode | KP-batched subject blocks, directory navigation, exclude & restore questions, auto-saved progress with resume prompt, cross-device sync |
+| Subject Explanations | Admin-managed per-subject Markdown explanations shown during practice |
 | Swipe Navigation | Touch swipe to move between questions |
 | Notes | Rich-text notes with public/private toggle |
 | Question Banks | Curated collections, detail view, picker for practice/exam sessions |
@@ -111,7 +112,8 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 
 | Feature | Description |
 |---|---|
-| Document Import | Upload PDF/Word/image → auto-extract questions via OCR + LLM |
+| Document Import | Upload PDF/Word/image → auto-extract questions via OCR + LLM (lightweight or MinerU precision parse) |
+| Parse History | Browse the full parse history with pagination, edit parsed questions, and re-parse |
 | Knowledge Points | One-click generate KPs with animated reveal |
 | Study Summary | Friend-style daily recap with typewriter animation |
 | Smart Exam | Analyzes practice history, recommends exam config |
@@ -229,8 +231,9 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment varia
 
 | Workflow | Description |
 |---|---|
+| `build-check.yml` | Build status notification to Feishu (success/failure) |
 | `pr-review.yml` | Automated PR review (DeepSeek + Feishu notify) |
-| `perf-monitor.yml` | Performance monitoring |
+| `db-backup.yml` | Daily Supabase DB backup to Cloudflare R2 (encrypted, 30-day retention) — see [`scripts/backup/README.md`](scripts/backup/README.md) |
 
 ### PR Review Setup
 
@@ -241,7 +244,7 @@ Add to repository **Settings → Secrets → Actions**:
 | `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com) |
 | `FEISHU_WEBHOOK_URL` | Feishu bot webhook URL |
 
-Feishu bot security: add custom keyword `PR Review` in bot settings.
+Feishu bot security: if a custom keyword is enforced, include `Build` (for `build-check.yml`) and `PR Review` (for `pr-review.yml`) — otherwise the notifications will be dropped by Feishu.
 
 ## License
 

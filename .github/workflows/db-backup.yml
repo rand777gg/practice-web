@@ -53,6 +53,21 @@ jobs:
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: bash scripts/backup/backup.sh
 
+      - name: Notify success
+        if: success()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          LAST_ARCHIVE: ${{ env.LAST_ARCHIVE }}
+          BACKUP_SIZE: ${{ env.BACKUP_SIZE }}
+        run: |
+          if [[ -n "$ALERT_WEBHOOK_URL" ]]; then
+            curl -fsS -X POST -H 'Content-Type: application/json' \
+              -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"✅ 数据库备份成功\\n${{ github.repository }} · ${LAST_ARCHIVE:-unknown}（${BACKUP_SIZE:-?}）\\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" \
+              "$ALERT_WEBHOOK_URL"
+          else
+            echo "no ALERT_WEBHOOK_URL configured, skipping notification"
+          fi
+
       - name: Notify on failure
         if: failure()
         env:

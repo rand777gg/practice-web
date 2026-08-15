@@ -68,5 +68,11 @@ rclone copy "${ARCHIVE}.sha256" "$R2_PATH"
 echo ">> removing backups older than ${BACKUP_RETENTION_DAYS} days"
 rclone delete "$R2_PATH" --min-age "${BACKUP_RETENTION_DAYS}d" --include "practice-web-*"
 
+# Expose the uploaded artifact to later workflow steps (e.g. success notification).
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  echo "LAST_ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+  echo "BACKUP_SIZE=$(stat -c%s "$ARCHIVE" 2>/dev/null || true)" >> "$GITHUB_ENV"
+fi
+
 echo ">> done, remote files:"
 rclone lsl "$R2_PATH"

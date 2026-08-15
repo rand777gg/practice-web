@@ -1,17 +1,15 @@
-name: Performance Monitor
+name: Build Check
 
 on:
   push:
     branches: [master]
-  schedule:
-    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  analyze:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +23,14 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Analyze bundle
+      - name: Notify success
+        if: success()
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-        run: node scripts/perf-check.mjs
+        run: node scripts/build-check.mjs success
+
+      - name: Notify failure
+        if: failure()
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        run: node scripts/build-check.mjs failure

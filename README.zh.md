@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/rand777gg/react-practice-web/releases"><img src="https://img.shields.io/github/v/release/rand777gg/react-practice-web?color=blue" alt="Release"></a>
-  <a href="https://github.com/rand777gg/react-practice-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/rand777gg/react-practice-web/ci.yml?branch=master" alt="CI"></a>
+  <a href="https://github.com/rand777gg/practice-web/releases"><img src="https://img.shields.io/github/v/release/rand777gg/practice-web?color=blue" alt="Release"></a>
+  <a href="https://github.com/rand777gg/practice-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/rand777gg/practice-web/ci.yml?branch=master" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react" alt="React">
   <img src="https://img.shields.io/badge/typescript-~6.0-3178C6?logo=typescript" alt="TypeScript">
@@ -61,7 +61,7 @@
 ### 初始化
 
 ```bash
-git clone https://github.com/rand777gg/react-practice-web.git
+git clone https://github.com/rand777gg/practice-web.git
 cd practice-web
 npm install
 cp .env.example .env
@@ -91,7 +91,8 @@ npm run dev
 | 题目范围 | 全部 / 仅收藏 / 仅错题 |
 | 选题模式 | 混合 / 新题优先 / 错题优先 / 顺序刷题 |
 | 多维筛选 | 学科、分类、题型、知识点 |
-| 顺序模式 | 知识点分科分组，进度自动保存，跨设备同步 |
+| 顺序模式 | 知识点分科分组、目录导航、排除/恢复题目、进度自动保存（断点续刷提示）、跨设备同步 |
+| 学科解析 | 管理员维护的学科 Markdown 解析说明，练习时随题展示 |
 | 滑动切题 | 触屏左右滑动切换题目 |
 | 笔记 | 富文本笔记，公开/私有切换 |
 | 题库 | 精选合集管理，详情查看，练习/考试选题器 |
@@ -111,7 +112,8 @@ npm run dev
 
 | 功能 | 说明 |
 |---|---|
-| 文档导入 | 上传 PDF/Word/图片 → OCR + LLM 自动提取题目 |
+| 文档导入 | 上传 PDF/Word/图片 → OCR + LLM 自动提取题目（轻量解析 / MinerU 精准解析） |
+| 解析历史 | 解析历史分页浏览，可编辑已解析题目、一键重新解析 |
 | 知识点生成 | 一键生成知识点，动画逐字展示 |
 | 学习总结 | 好友式对话总结，打字机逐行动画 |
 | 智能出题 | 分析练习历史，推荐考试配置 |
@@ -229,8 +231,9 @@ npm run build
 
 | Workflow | 说明 |
 |---|---|
+| `build-check.yml` | 构建成功/失败飞书通知 |
 | `pr-review.yml` | 自动 PR 审查（DeepSeek + 飞书通知） |
-| `perf-monitor.yml` | 性能监控 |
+| `db-backup.yml` | 每日 Supabase 数据库备份到 Cloudflare R2（加密、保留 30 天）— 配置见 [`scripts/backup/README.md`](scripts/backup/README.md) |
 
 ### PR Review 设置
 
@@ -241,7 +244,7 @@ npm run build
 | `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com) |
 | `FEISHU_WEBHOOK_URL` | 飞书机器人 Webhook 地址 |
 
-飞书机器人安全设置：添加自定义关键词 `PR Review`。
+飞书机器人安全设置：若启用了自定义关键词校验，需包含 `Build`（`build-check.yml` 用）与 `PR Review`（`pr-review.yml` 用），否则通知会被飞书拦截。
 
 ## 开源协议
 

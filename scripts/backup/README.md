@@ -1,6 +1,6 @@
 # 数据库备份（Supabase → Cloudflare R2）
 
-GitHub Actions 每天 02:20 UTC 自动把托管 Supabase 的 Postgres 全库逻辑备份上传到 Cloudflare R2 私有 bucket，保留 30 天，失败时可选飞书告警。可随时手动触发（`Actions → Database Backup → Run workflow`）。
+GitHub Actions 每天 02:20 UTC 自动把托管 Supabase 的 Postgres 全库逻辑备份上传到 Cloudflare R2 私有 bucket，保留 30 天；成功/失败都会通过飞书 webhook 推送通知（`ALERT_WEBHOOK_URL`）。可随时手动触发（`Actions → Database Backup → Run workflow`）。
 
 ## 备份内容与覆盖范围
 
