@@ -62,7 +62,8 @@ export RCLONE_CONFIG_BACKUP_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestor
 R2_PATH="backup:${R2_BUCKET}/${R2_PREFIX}"
 
 echo ">> uploading ${ARCHIVE} + checksum -> r2://${R2_BUCKET}/${R2_PREFIX}/"
-rclone copy "$ARCHIVE" "${ARCHIVE}.sha256" "$R2_PATH"
+rclone copy "$ARCHIVE" "$R2_PATH"
+rclone copy "${ARCHIVE}.sha256" "$R2_PATH"
 
 echo ">> removing backups older than ${BACKUP_RETENTION_DAYS} days"
 rclone delete "$R2_PATH" --min-age "${BACKUP_RETENTION_DAYS}d" --include "practice-web-*"
