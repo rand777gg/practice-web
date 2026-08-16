@@ -27,6 +27,7 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
   const [dragRatio, setDragRatio] = useState<number | null>(null)
 
   const kpPct = kpTotal > 0 ? Math.round((kpCurrent / kpTotal) * 100) : 0
+  const kpDone = dist ? dist.correct + dist.wrong : 0
   const doneCount = done ?? currentIndex + 1
   const doneTotalCount = doneTotal ?? total
   const overallPct = doneTotalCount > 0 ? Math.round((doneCount / doneTotalCount) * 100) : 0
@@ -53,7 +54,7 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground truncate">{kpName}</span>
-            <span className="text-muted-foreground tabular-nums shrink-0">{kpCurrent}/{kpTotal}</span>
+            <span className="text-muted-foreground tabular-nums shrink-0">{kpDone}/{kpTotal}</span>
           </div>
           <div className="relative">
               <div
@@ -65,7 +66,7 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
                 aria-label={kpName}
                 title={seekable ? '拖动切换题目' : undefined}
                 className={cn(
-                  'h-2 rounded-full bg-muted overflow-hidden',
+                  'relative h-2 rounded-full bg-muted overflow-hidden',
                   seekable && 'cursor-grab active:cursor-grabbing touch-none select-none',
                 )}
                 onPointerDown={seekable ? (e) => {
@@ -87,7 +88,7 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
                 onPointerCancel={seekable ? () => { draggingRef.current = false; setDragRatio(null) } : undefined}
               >
                 {showDistBar ? (
-                  <div className="h-full flex animate-in fade-in-0 duration-300">
+                  <div className="absolute inset-0">
                     {(() => {
                       const statuses = dist!.statuses
                       const n = statuses.length
@@ -95,23 +96,43 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
                         <div
                           key={idx}
                           className={cn(
-                            'h-full',
+                            'absolute',
                             st === 'correct' && 'bg-green-500',
                             st === 'wrong' && 'bg-red-500',
                             st === 'tooEasy' && 'bg-muted-foreground/40',
                             idx === 0 && 'rounded-l-full',
                             idx === n - 1 && 'rounded-r-full',
                           )}
-                          style={{ width: `${100 / n}%` }}
+                          style={{ top: st === 'wrong' ? 0.5 : 0, bottom: 0, left: `${(idx * 100) / n}%`, width: `${100 / n}%` }}
                         />
                       ))
                     })()}
                   </div>
                 ) : (
-                  <div
-                    className={cn('h-full rounded-full transition-all duration-300', dragRatio != null ? 'bg-primary/60' : 'bg-blue-500')}
-                    style={{ width: `${dragRatio != null ? dragRatio * 100 : kpPct}%` }}
-                  />
+                  (() => {
+                    const statuses = dist?.statuses
+                    const n = statuses ? Math.min(kpTotal, statuses.length) : 0
+                    if (!statuses || n <= 0) {
+                      return (
+                        <div className="h-full rounded-full transition-all duration-300 bg-blue-500" style={{ width: `${kpPct}%` }} />
+                      )
+                    }
+                    return (
+                      <div className="absolute inset-0">
+                        {Array.from({ length: n }, (_, idx) => {
+                          const st = statuses[idx]
+                          const done = st === 'correct' || st === 'wrong'
+                          return (
+                            <div
+                              key={idx}
+                              className={cn('absolute inset-y-0 transition-colors duration-300', done ? 'bg-blue-500' : '', idx === 0 && 'rounded-l-full', idx === n - 1 && 'rounded-r-full')}
+                              style={{ left: `${(idx * 100) / n}%`, width: `${100 / n}%` }}
+                            />
+                          )
+                        })}
+                      </div>
+                    )
+                  })()
                 )}
                 {(() => {
                   const units = showDistBar ? dist!.statuses.length : kpTotal

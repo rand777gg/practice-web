@@ -1321,10 +1321,10 @@ export function PracticeSession() {
           <AlertDialogHeader>
             <AlertDialogTitle>此题还未作答</AlertDialogTitle>
             <AlertDialogDescription>
-              请先完成当前题目，或选择"太简单"跳过、选择"不确定"标记后继续。
+              顺序作答需先完成当前题目，或选择"太简单"跳过、选择"不确定"标记后继续。想直接跳转？拖动顶部进度条或从知识点目录选择题目即可。
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex-row flex-wrap justify-end gap-2 sm:space-x-0">
             <AlertDialogCancel onClick={() => setBlockSkipOpen(false)}>继续作答</AlertDialogCancel>
             <AlertDialogAction onClick={() => { setBlockSkipOpen(false); setTooEasyOpen(true) }} className="bg-muted text-foreground hover:bg-muted/80">太简单</AlertDialogAction>
             <AlertDialogAction onClick={() => { setBlockSkipOpen(false); handleMarkUnsure() }}>不确定</AlertDialogAction>

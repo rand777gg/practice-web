@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { cn, naturalSort } from '@/lib/utils'
 import { ExcludedQuestionsDialog } from '@/components/practice/ExcludedQuestionsDialog'
@@ -101,6 +101,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
   const [excludedKp, setExcludedKp] = useState<string | null>(null)
   const [exclStats, setExclStats] = useState<Map<string, ExclStat>>(new Map())
   const [showTooEasy, setShowTooEasy] = useState(true)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const isDone = useCallback((index: number, subject: string): boolean => {
     const id = questionIds[index]
@@ -189,6 +190,17 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     return filteredGroups.find((g) => currentIndex >= g.start && currentIndex <= g.end) ?? null
   }, [filteredGroups, currentIndex])
 
+  // 自动滚动目录，让当前知识点（上次刷到/正在刷的知识点）置顶，方便查看进度
+  useEffect(() => {
+    const el = listRef.current
+    if (!el || !currentGroup) return
+    const row = el.querySelector<HTMLElement>(`[data-kp="${CSS.escape(currentGroup.kp)}"]`)
+    if (!row) return
+    const containerRect = el.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    el.scrollTo({ top: el.scrollTop + (rowRect.top - containerRect.top), behavior: 'smooth' })
+  }, [currentGroup])
+
   const subjectGroups = useMemo(() => {
     const m = new Map<string, KpGroup[]>()
     for (const g of filteredGroups) {
@@ -276,7 +288,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
             <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-border" />未答 {distTotals.unanswered}</span>
           </div>
         )}
-      <div key={subject ?? 'all'} className="space-y-3 pr-1 flex-1 min-h-0 overflow-y-auto">
+      <div ref={listRef} key={subject ?? 'all'} className="space-y-3 pr-1 flex-1 min-h-0 overflow-y-auto">
         {renderItems.map(([subj, items]) => (
           <div key={subj}>
             <div className="mb-1 flex items-center gap-1.5 animate-[page-enter_0.4s_ease-out_both]">
@@ -310,6 +322,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                     <button
                       key={`${g.kp}-${g.start}`}
                       type="button"
+                      data-kp={g.kp}
                       onClick={() => onJump(jumpIndexForGroup(g))}
                       style={{ animationDelay: `${i * 0.05}s` }}
                       className={cn(
@@ -332,7 +345,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                         <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{g.done}/{g.total}</span>
                       </div>
                       {showDist ? (
-                        <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden flex animate-dist-bar" style={{ animationDelay: `${Math.min(i, 10) * 0.04}s` }}>
+                        <div className="relative mt-1 h-1 rounded-full bg-muted overflow-hidden animate-dist-bar" style={{ animationDelay: `${Math.min(i, 10) * 0.04}s` }}>
                           {(() => {
                             const d = groupDists.get(g)
                             if (!d) return null
@@ -342,14 +355,14 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                               <div
                                 key={idx}
                                 className={cn(
-                                  'h-full transition-all duration-300',
+                                  'absolute transition-colors duration-300',
                                   st === 'correct' && 'bg-green-500',
                                   st === 'wrong' && 'bg-red-500',
                                   st === 'tooEasy' && 'bg-muted-foreground/40',
                                   idx === 0 && 'rounded-l-full',
                                   idx === n - 1 && 'rounded-r-full',
                                 )}
-                                style={{ width: `${100 / n}%` }}
+                                style={{ top: st === 'wrong' ? 0.5 : 0, bottom: 0, left: `${(idx * 100) / n}%`, width: `${100 / n}%` }}
                                 title={st === 'correct' ? '正确' : st === 'wrong' ? '错误' : st === 'tooEasy' ? '太简单' : '未答'}
                               />
                             ))
