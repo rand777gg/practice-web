@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { cn, naturalSort } from '@/lib/utils'
 import { ExcludedQuestionsDialog } from '@/components/practice/ExcludedQuestionsDialog'
+import { SubjectExplanationDialog } from '@/components/practice/SubjectExplanationDialog'
+import { useSubjectExplanations } from '@/hooks/use-subject-explanations'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Separator } from '@/components/ui/separator'
 
 interface KpGroup {
   kp: string
@@ -102,6 +105,8 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
   const [exclStats, setExclStats] = useState<Map<string, ExclStat>>(new Map())
   const [showTooEasy, setShowTooEasy] = useState(true)
   const listRef = useRef<HTMLDivElement>(null)
+  const { explanations } = useSubjectExplanations()
+  const [viewSubject, setViewSubject] = useState<string | null>(null)
 
   const isDone = useCallback((index: number, subject: string): boolean => {
     const id = questionIds[index]
@@ -271,14 +276,51 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
   const totalDone = filteredGroups.reduce((s, g) => s + g.done, 0)
   const totalCount = filteredGroups.reduce((s, g) => s + g.total, 0)
 
+  const controlsSubject = subject ?? filteredGroups[0]?.subject ?? null
+
   if (questionIds.length === 0) return null
 
   return (
     <>
       <div className="rounded-xl border bg-card p-3 flex flex-col h-full min-h-0">
         <div className="flex items-center justify-between mb-2 shrink-0">
-          <span className="text-sm font-medium truncate">{subject ? `${subject} · 知识点` : '知识点目录'}</span>
-          <span className="text-xs text-muted-foreground tabular-nums">{totalDone}/{totalCount}</span>
+          <div className="flex items-center text-sm font-medium truncate min-w-0">
+            {subject ? (
+              <>
+                <span className="truncate">{subject}</span>
+                <Separator orientation="vertical" className="mx-1.5 h-3.5 shrink-0" />
+                <span className="shrink-0">知识点</span>
+              </>
+            ) : (
+              <span>知识点目录</span>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground tabular-nums shrink-0">{totalDone}/{totalCount}</span>
+        </div>
+        <div className="mb-2 flex items-center gap-1.5 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => onShowDistChange(!showDist)}
+            title={showDist ? '返回知识点进度' : '查看全部知识点作答分布'}
+          >
+            {showDist ? '返回' : '作答情况'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            disabled={!controlsSubject || !explanations.has(controlsSubject)}
+            onClick={() => { if (controlsSubject) setViewSubject(controlsSubject) }}
+            title={!controlsSubject || !explanations.has(controlsSubject) ? '该学科未设置编排说明' : `查看${controlsSubject}编排说明`}
+          >
+            查看编排说明
+          </Button>
+          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
+            显示太简单
+            <Switch checked={showTooEasy} onCheckedChange={setShowTooEasy} />
+          </label>
         </div>
         {showDist && (
           <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] text-muted-foreground mb-2 shrink-0 animate-[page-enter_0.3s_ease-out_both]">
@@ -291,24 +333,8 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
       <div ref={listRef} key={subject ?? 'all'} className="space-y-3 pr-1 flex-1 min-h-0 overflow-y-auto">
         {renderItems.map(([subj, items]) => (
           <div key={subj}>
-            <div className="mb-1 flex items-center gap-1.5 animate-[page-enter_0.4s_ease-out_both]">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => onShowDistChange(!showDist)}
-                title={showDist ? '返回知识点进度' : '查看全部知识点作答分布'}
-              >
-                {showDist ? '返回' : '作答情况'}
-              </Button>
-              {showDist ? (
-                <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0 animate-in fade-in-0 duration-200">
-                  显示太简单
-                  <Switch checked={showTooEasy} onCheckedChange={setShowTooEasy} />
-                </label>
-              ) : (
-                <span className="text-[11px] font-medium text-muted-foreground truncate">{subj}</span>
-              )}
+            <div className="mb-1 animate-[page-enter_0.4s_ease-out_both]">
+              <span className="text-[11px] font-medium text-muted-foreground">{subj}</span>
             </div>
             <div className="space-y-1">
               {items.map((item, i) => {
@@ -400,6 +426,12 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
         ))}
       </div>
     </div>
+      <SubjectExplanationDialog
+        subject={viewSubject ?? ''}
+        content={viewSubject ? explanations.get(viewSubject)?.content ?? '' : ''}
+        open={viewSubject !== null}
+        onOpenChange={(o) => { if (!o) setViewSubject(null) }}
+      />
       <ExcludedQuestionsDialog
         userId={userId}
         kp={excludedKp ?? ''}
