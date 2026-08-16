@@ -31,7 +31,7 @@ export function Component() {
         <ul className="list-disc pl-5 space-y-1">
           <li>明文密码（由 Supabase Auth 加盐哈希存储，任何人无法还原）</li>
           <li>GitHub 私有仓库的任何信息（OAuth 仅获取公开资料）</li>
-          <li>地理位置、IP 地址长期记录（仅在 Turnstile 验证和登录审计时临时使用）</li>
+          <li>地理位置、IP 地址长期记录（仅在登录审计时临时使用）</li>
           <li>任何第三方跟踪器或广告 SDK</li>
         </ul>
 
@@ -39,7 +39,7 @@ export function Component() {
         <ul className="list-disc pl-5 space-y-1">
           <li><strong>TOTP</strong> — 设置完成后密钥写入 <code>user_totp</code> 表，该表启用 RLS 但无任何 SELECT 策略，仅 Edge Function 通过 service_role 可读取。前端应用和普通用户 API 请求完全不可访问。</li>
           <li><strong>Passkey</strong> — 私钥始终存储于您设备的 TPM/安全芯片中，服务器仅保存公钥和签名计数器。每次认证需服务端签发一次性 challenge（有效期 5 分钟），过时即失效。成功认证后更新 <code>last_used_at</code> 时间戳，用于免验周期判断。</li>
-          <li><strong>设备信任</strong> — 浏览器指纹通过 FingerprintJS 生成，仅存于浏览器 localStorage 和服务端 <code>user_trusted_devices</code> 表中，用于 7 天免 TOTP 验证。您可在设置中随时撤销。</li>
+          <li><strong>MFA 宽限期</strong> — 验证通过后账号进入 7 天免验证期（可在设置页调整），期间登录不再要求验证码。会话级验证记录存于服务端 <code>user_mfa_sessions</code> 表，您可在设置页撤销任一已验证会话。</li>
         </ul>
 
         <h2 className="text-lg font-semibold mt-6">4. 第三方服务</h2>
@@ -49,7 +49,6 @@ export function Component() {
           </thead>
           <tbody>
             <tr><td className="py-1">Supabase</td><td className="py-1">数据库、认证、文件存储</td><td className="py-1">所有业务数据</td></tr>
-            <tr><td className="py-1">Cloudflare Turnstile</td><td className="py-1">登录/注册机器人检测</td><td className="py-1">浏览器行为特征（验证后不保留）</td></tr>
             <tr><td className="py-1">Cloudflare R2</td><td className="py-1">笔记图片存储</td><td className="py-1">用户上传的图片文件（公开 URL 可直接访问，请勿上传敏感内容）</td></tr>
           </tbody>
         </table>

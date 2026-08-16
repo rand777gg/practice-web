@@ -120,6 +120,9 @@ export interface Profile {
   totp_enabled?: boolean
   preferred_2fa?: 'totp' | 'passkey'
   passkey_timeout_minutes?: number
+  mfa_grace_until?: string | null
+  mfa_validity_days?: number
+  onboarded_at?: string | null
   created_at: string
 }
 

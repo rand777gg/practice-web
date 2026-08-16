@@ -35,7 +35,7 @@ serve(async (req: Request) => {
     const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink",
       email: user.email,
-      options: { redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:5173"}/` }
+      options: { redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:5173"}/mfa` }
     })
 
     if (!linkData) return new Response(JSON.stringify({ error: "link failed" }), { status: 500, headers: corsHeaders })

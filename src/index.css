@@ -532,6 +532,16 @@
   animation: page-enter 0.4s ease-out;
 }
 
+/* 作答分布进度条展开动画 */
+@keyframes dist-bar-grow {
+  from { opacity: 0; transform: scaleX(0); }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+.animate-dist-bar {
+  transform-origin: left;
+  animation: dist-bar-grow 0.35s ease-out both;
+}
+
 /* Passkey verification animations */
 @keyframes passkey-ripple {
   0% { transform: scale(0.8); opacity: 1; }

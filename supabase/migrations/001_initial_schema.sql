@@ -1517,3 +1517,44 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION public.load_practice_session(UUID, TEXT) TO authenticated;
+
+
+-- ============================================================================
+-- Section 18: 融合 MFA —— 会话级验证(GitHub) + 账号级宽限期(腾讯云) + 敏感操作保护
+-- ============================================================================
+
+-- L2: 账号级宽限期(0 = 严格模式,每次登录都验证;默认 7 天,腾讯云同款)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS mfa_grace_until   TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS mfa_validity_days INTEGER NOT NULL DEFAULT 7,
+  ADD COLUMN IF NOT EXISTS onboarded_at      TIMESTAMPTZ;   -- 新用户全屏引导完成/跳过时间
+
+-- L1: 会话级已验证记录(仅 Edge Function 经 service_role 写入;用户可查/可撤销自己的行)
+CREATE TABLE IF NOT EXISTS public.user_mfa_sessions (
+  session_id  TEXT PRIMARY KEY,
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  method      TEXT NOT NULL DEFAULT 'totp' CHECK (method IN ('totp','passkey')),
+  verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ums_user ON public.user_mfa_sessions(user_id);
+
+ALTER TABLE public.user_mfa_sessions ENABLE ROW LEVEL SECURITY;
+
+-- 用户可读自己的已验证会话(设置页列表)
+DROP POLICY IF EXISTS ums_own_select ON public.user_mfa_sessions;
+CREATE POLICY ums_own_select ON public.user_mfa_sessions
+  FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- 用户可撤销自己的已验证会话(退出该会话的免验证)
+DROP POLICY IF EXISTS ums_own_delete ON public.user_mfa_sessions;
+CREATE POLICY ums_own_delete ON public.user_mfa_sessions
+  FOR DELETE TO authenticated USING (user_id = auth.uid());
+-- 注意:无 INSERT/UPDATE 策略 —— 客户端绝不能自标记已验证,写入只走 Edge Function(service_role)
+
+-- 过期清理(与 cleanup_expired_devices 同风格)
+CREATE OR REPLACE FUNCTION public.cleanup_mfa_expired()
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
+AS $$
+  DELETE FROM public.user_mfa_sessions WHERE expires_at < NOW();
+$$;

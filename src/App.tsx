@@ -8,7 +8,6 @@ import { useSettingsStore, FONT_OPTIONS } from '@/stores/settings-store'
 import type { Profile } from '@/types'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { PwaUpdatePrompt } from '@/components/layout/PwaUpdatePrompt'
-import { OtpGuard } from '@/components/auth/OtpGuard'
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -200,9 +199,7 @@ export default function App() {
   return (
     <AppearanceInitializer>
       <AuthInitializer>
-        <OtpGuard>
-          <RouterProvider router={router} />
-        </OtpGuard>
+        <RouterProvider router={router} />
       </AuthInitializer>
       <PwaUpdatePrompt />
     </AppearanceInitializer>

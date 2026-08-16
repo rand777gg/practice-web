@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { cn, naturalSort } from '@/lib/utils'
-import { useSubjectExplanations } from '@/hooks/use-subject-explanations'
-import { SubjectExplanationDialog } from '@/components/practice/SubjectExplanationDialog'
 import { ExcludedQuestionsDialog } from '@/components/practice/ExcludedQuestionsDialog'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 
 interface KpGroup {
   kp: string
@@ -12,6 +12,23 @@ interface KpGroup {
   end: number
   total: number
   done: number
+}
+
+export type SessionDistStatus = 'correct' | 'wrong' | 'tooEasy'
+export interface SessionDistEntry {
+  status: SessionDistStatus
+  kp?: string
+}
+
+export type DistStatus = SessionDistStatus | 'unanswered'
+
+export interface GroupDist {
+  statuses: DistStatus[]
+  correct: number
+  wrong: number
+  tooEasy: number
+  unanswered: number
+  total: number
 }
 
 interface Props {
@@ -27,6 +44,10 @@ interface Props {
   selectedKps?: string[]
   onExcludedRestored?: () => void
   answeredThisSession?: Set<string>
+  sessionDist?: Map<string, SessionDistEntry>
+  showDist: boolean
+  onShowDistChange: (v: boolean) => void
+  onCurrentKpDist?: (d: GroupDist | null) => void
 }
 
 function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets?: Record<string, string> | null, planResetAt?: string | null) {
@@ -45,12 +66,41 @@ interface ExclStatRow extends ExclStat {
   kp: string
 }
 
-export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, subject, selectedKps, onExcludedRestored, answeredThisSession }: Props) {
+function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<string, string>, latestCorrectMap: Map<string, boolean>, sessionDist: Map<string, SessionDistEntry> | undefined, subjectResets?: Record<string, string> | null, planResetAt?: string | null): GroupDist {
+  const statuses: DistStatus[] = []
+  const seen = new Set<string>()
+  for (let j = g.start; j <= g.end; j++) {
+    const id = questionIds[j]
+    seen.add(id)
+    const entry = sessionDist?.get(id)
+    if (entry) { statuses.push(entry.status); continue }
+    const at = answeredMap.get(id)
+    if (at != null && isAnsweredAfterReset(at, g.subject, subjectResets, planResetAt)) {
+      const ok = latestCorrectMap.get(id)
+      statuses.push(ok === undefined ? 'unanswered' : ok ? 'correct' : 'wrong')
+    } else {
+      statuses.push('unanswered')
+    }
+  }
+  if (sessionDist) {
+    for (const [id, entry] of sessionDist) {
+      if (entry.status === 'tooEasy' && entry.kp === g.kp && !seen.has(id)) {
+        statuses.push('tooEasy')
+        seen.add(id)
+      }
+    }
+  }
+  const counts = { correct: 0, wrong: 0, tooEasy: 0, unanswered: 0 }
+  for (const st of statuses) counts[st]++
+  return { statuses, ...counts, total: statuses.length }
+}
+
+export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, subject, selectedKps, onExcludedRestored, answeredThisSession, sessionDist, showDist, onShowDistChange, onCurrentKpDist }: Props) {
   const [answeredMap, setAnsweredMap] = useState<Map<string, string>>(new Map())
-  const [viewSubject, setViewSubject] = useState<string | null>(null)
+  const [latestCorrectMap, setLatestCorrectMap] = useState<Map<string, boolean>>(new Map())
   const [excludedKp, setExcludedKp] = useState<string | null>(null)
   const [exclStats, setExclStats] = useState<Map<string, ExclStat>>(new Map())
-  const { explanations } = useSubjectExplanations()
+  const [showTooEasy, setShowTooEasy] = useState(true)
 
   const isDone = useCallback((index: number, subject: string): boolean => {
     const id = questionIds[index]
@@ -84,19 +134,24 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     for (let i = 0; i < questionIds.length; i += CHUNK) chunks.push(questionIds.slice(i, i + CHUNK))
     Promise.all(chunks.map(chunk =>
       supabase.from('user_answers')
-        .select('question_id, answered_at')
+        .select('question_id, answered_at, is_correct')
         .eq('user_id', userId)
         .in('question_id', chunk)
     )).then(results => {
       if (cancelled) return
       const map = new Map<string, string>()
+      const correctMap = new Map<string, boolean>()
       for (const r of results) {
-        for (const row of (r.data ?? []) as { question_id: string; answered_at: string }[]) {
+        for (const row of (r.data ?? []) as { question_id: string; answered_at: string; is_correct: boolean }[]) {
           const prev = map.get(row.question_id)
-          if (!prev || row.answered_at > prev) map.set(row.question_id, row.answered_at)
+          if (!prev || row.answered_at > prev) {
+            map.set(row.question_id, row.answered_at)
+            correctMap.set(row.question_id, row.is_correct)
+          }
         }
       }
       setAnsweredMap(map)
+      setLatestCorrectMap(correctMap)
     })
     return () => { cancelled = true }
   }, [userId, questionIds])
@@ -129,6 +184,10 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     if (!subject) return groups
     return groups.filter((g) => (g.subject || '其他') === subject)
   }, [groups, subject])
+
+  const currentGroup = useMemo(() => {
+    return filteredGroups.find((g) => currentIndex >= g.start && currentIndex <= g.end) ?? null
+  }, [filteredGroups, currentIndex])
 
   const subjectGroups = useMemo(() => {
     const m = new Map<string, KpGroup[]>()
@@ -165,6 +224,38 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     return [...m.entries()].map(([subj, arr]) => [subj, arr.sort((a, b) => naturalSort(a.kp, b.kp))] as [string, { kp: string; group?: KpGroup; excluded?: number }[]])
   }, [subjectGroups, excludedBySubject])
 
+  const groupDists = useMemo(() => {
+    const m = new Map<KpGroup, GroupDist>()
+    for (const g of filteredGroups) {
+      m.set(g, computeGroupDist(g, questionIds, answeredMap, latestCorrectMap, sessionDist, subjectResets, planResetAt))
+    }
+    return m
+  }, [filteredGroups, questionIds, answeredMap, latestCorrectMap, sessionDist, subjectResets, planResetAt])
+
+  const distTotals = useMemo(() => {
+    const t = { correct: 0, wrong: 0, tooEasy: 0, unanswered: 0 }
+    for (const d of groupDists.values()) {
+      t.correct += d.correct
+      t.wrong += d.wrong
+      t.tooEasy += d.tooEasy
+      t.unanswered += d.unanswered
+    }
+    return t
+  }, [groupDists])
+
+  useEffect(() => {
+    const g = currentGroup
+    const d = g ? groupDists.get(g) : null
+    if (!d) { onCurrentKpDist?.(null); return }
+    const effective = showTooEasy ? d : {
+      ...d,
+      statuses: d.statuses.filter((st) => st !== 'tooEasy'),
+      tooEasy: 0,
+      total: d.total - d.tooEasy,
+    }
+    onCurrentKpDist?.(effective)
+  }, [currentGroup, groupDists, showTooEasy, onCurrentKpDist])
+
   const totalDone = filteredGroups.reduce((s, g) => s + g.done, 0)
   const totalCount = filteredGroups.reduce((s, g) => s + g.total, 0)
 
@@ -174,19 +265,37 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     <>
       <div className="rounded-xl border bg-card p-3 flex flex-col h-full min-h-0">
         <div className="flex items-center justify-between mb-2 shrink-0">
-          <span className="text-sm font-medium">{subject ? `${subject} · 知识点` : '知识点目录'}</span>
+          <span className="text-sm font-medium truncate">{subject ? `${subject} · 知识点` : '知识点目录'}</span>
           <span className="text-xs text-muted-foreground tabular-nums">{totalDone}/{totalCount}</span>
         </div>
+        {showDist && (
+          <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] text-muted-foreground mb-2 shrink-0 animate-[page-enter_0.3s_ease-out_both]">
+            <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-green-500" />正确 {distTotals.correct}</span>
+            <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-red-500" />错误 {distTotals.wrong}</span>
+            {showTooEasy && <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />太简单 {distTotals.tooEasy}</span>}
+            <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-border" />未答 {distTotals.unanswered}</span>
+          </div>
+        )}
       <div key={subject ?? 'all'} className="space-y-3 pr-1 flex-1 min-h-0 overflow-y-auto">
         {renderItems.map(([subj, items]) => (
           <div key={subj}>
-            <div className="mb-1 animate-[page-enter_0.4s_ease-out_both]">
-              {explanations.has(subj) ? (
-                <button type="button" className="text-[11px] font-medium text-primary hover:underline" onClick={() => setViewSubject(subj)}>
-                  查看{subj}编排说明
-                </button>
+            <div className="mb-1 flex items-center gap-1.5 animate-[page-enter_0.4s_ease-out_both]">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => onShowDistChange(!showDist)}
+                title={showDist ? '返回知识点进度' : '查看全部知识点作答分布'}
+              >
+                {showDist ? '返回' : '作答情况'}
+              </Button>
+              {showDist ? (
+                <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0 animate-in fade-in-0 duration-200">
+                  显示太简单
+                  <Switch checked={showTooEasy} onCheckedChange={setShowTooEasy} />
+                </label>
               ) : (
-                <span className="text-[11px] font-medium text-muted-foreground">{subj}</span>
+                <span className="text-[11px] font-medium text-muted-foreground truncate">{subj}</span>
               )}
             </div>
             <div className="space-y-1">
@@ -222,12 +331,38 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                         )}
                         <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{g.done}/{g.total}</span>
                       </div>
-                      <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={cn('h-full transition-all duration-300', status === 'done' ? 'bg-green-500' : status === 'partial' ? 'bg-blue-500' : 'bg-transparent')}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
+                      {showDist ? (
+                        <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden flex animate-dist-bar" style={{ animationDelay: `${Math.min(i, 10) * 0.04}s` }}>
+                          {(() => {
+                            const d = groupDists.get(g)
+                            if (!d) return null
+                            const statuses = showTooEasy ? d.statuses : d.statuses.filter((st) => st !== 'tooEasy')
+                            const n = statuses.length
+                            return statuses.map((st, idx) => (
+                              <div
+                                key={idx}
+                                className={cn(
+                                  'h-full transition-all duration-300',
+                                  st === 'correct' && 'bg-green-500',
+                                  st === 'wrong' && 'bg-red-500',
+                                  st === 'tooEasy' && 'bg-muted-foreground/40',
+                                  idx === 0 && 'rounded-l-full',
+                                  idx === n - 1 && 'rounded-r-full',
+                                )}
+                                style={{ width: `${100 / n}%` }}
+                                title={st === 'correct' ? '正确' : st === 'wrong' ? '错误' : st === 'tooEasy' ? '太简单' : '未答'}
+                              />
+                            ))
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden animate-in fade-in-0 duration-200">
+                          <div
+                            className={cn('h-full transition-all duration-300', status === 'done' ? 'bg-green-500' : status === 'partial' ? 'bg-blue-500' : 'bg-transparent')}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
                     </button>
                   )
                 }
@@ -252,12 +387,6 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
         ))}
       </div>
     </div>
-      <SubjectExplanationDialog
-        subject={viewSubject ?? ''}
-        content={viewSubject ? explanations.get(viewSubject)?.content ?? '' : ''}
-        open={viewSubject !== null}
-        onOpenChange={(o) => { if (!o) setViewSubject(null) }}
-      />
       <ExcludedQuestionsDialog
         userId={userId}
         kp={excludedKp ?? ''}

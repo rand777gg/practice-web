@@ -22,7 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SequentialProgressBar } from '@/components/practice/SequentialProgressBar'
-import { SequentialKpNav } from '@/components/practice/SequentialKpNav'
+import { SequentialKpNav, type SessionDistEntry, type GroupDist } from '@/components/practice/SequentialKpNav'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -39,7 +39,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, List, Plus, Shuffle, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Plus, Shuffle, Trash2 } from 'lucide-react'
 
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 
@@ -64,6 +64,12 @@ function sameSubjects(left: string[], right: string[]) {
   if (left.length !== right.length) return false
   const rightSet = new Set(right)
   return left.every((subject) => rightSet.has(subject))
+}
+
+function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets: Record<string, string> | null | undefined, planResetAt: string | null | undefined) {
+  const threshold = (subjectResets && subjectResets[subject]) || planResetAt
+  if (!threshold) return true
+  return new Date(answeredAt).getTime() >= new Date(threshold).getTime()
 }
 
 interface PracticeFilters {
@@ -247,6 +253,11 @@ export function PracticeSession() {
   const answeredThisSession = useRef<Set<string>>(new Set())
   const [answeredSessionSnapshot, setAnsweredSessionSnapshot] = useState<Set<string>>(new Set())
   const [justAnsweredId, setJustAnsweredId] = useState<string | null>(null)
+  const sessionDistRef = useRef<Map<string, SessionDistEntry>>(new Map())
+  const [sessionDistSnapshot, setSessionDistSnapshot] = useState<Map<string, SessionDistEntry>>(new Map())
+  const [distMode, setDistMode] = useState(false)
+  const [kpSeekMode, setKpSeekMode] = useState(false)
+  const [currentKpDist, setCurrentKpDist] = useState<GroupDist | null>(null)
 
   useEffect(() => {
     setJustAnsweredId(null)
@@ -255,6 +266,7 @@ export function PracticeSession() {
   const historyRef = useRef<{ question: Question; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }[]>([])
   const snapRef = useRef<{ question: Question | null; answer: CorrectAnswer | null; submitted: boolean; note: string; isPublic: boolean; answerId: string | null; attempts: number; wrongs: number }>({ question: null, answer: null, submitted: false, note: '', isPublic: false, answerId: null, attempts: 0, wrongs: 0 })
   useEffect(() => { snapRef.current = { question, answer: selectedAnswer, submitted: isSubmitted, note, isPublic, answerId, attempts: attemptCount, wrongs: wrongCount } })
+
   const [blockSkipOpen, setBlockSkipOpen] = useState(false)
   const [tooEasyOpen, setTooEasyOpen] = useState(false)
   const [resumePrompt, setResumePrompt] = useState<{ kps: string[]; subs: string[] } | null>(null)
@@ -316,6 +328,55 @@ export function PracticeSession() {
   }, [seqSelectedKps, kpToSubject])
 
   const seqQuestionSubjects = useSequentialStore((s) => s.questionSubjects)
+
+  // 会话加载/恢复时，从数据库回填"本次会话已作答"集合（按重置阈值过滤），
+  // 使恢复的会话中所有已作答题目都显示"本题此次会话已作答过"
+  useEffect(() => {
+    const user = useAuthStore.getState().user
+    if (!user || !seqActive || seqQuestionIds.length === 0) return
+    let cancelled = false
+    const CHUNK = 200
+    const chunks: string[][] = []
+    for (let i = 0; i < seqQuestionIds.length; i += CHUNK) chunks.push(seqQuestionIds.slice(i, i + CHUNK))
+    Promise.all(chunks.map(chunk =>
+      supabase.from('user_answers')
+        .select('question_id, answered_at')
+        .eq('user_id', user.id)
+        .in('question_id', chunk)
+    )).then(results => {
+      if (cancelled) return
+      const latest = new Map<string, string>()
+      for (const r of results) {
+        for (const row of (r.data ?? []) as { question_id: string; answered_at: string }[]) {
+          const prev = latest.get(row.question_id)
+          if (!prev || row.answered_at > prev) latest.set(row.question_id, row.answered_at)
+        }
+      }
+      let changed = false
+      for (let i = 0; i < seqQuestionIds.length; i++) {
+        const id = seqQuestionIds[i]
+        if (answeredThisSession.current.has(id)) continue
+        const at = latest.get(id)
+        if (!at) continue
+        if (isAnsweredAfterReset(at, seqQuestionSubjects[i] ?? '', profile?.subject_reset_at ?? null, profile?.plan_reset_at ?? null)) {
+          answeredThisSession.current.add(id)
+          changed = true
+        }
+      }
+      if (changed) setAnsweredSessionSnapshot(new Set(answeredThisSession.current))
+    })
+    return () => { cancelled = true }
+  }, [seqActive, seqQuestionIds, seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at])
+
+  // 总进度：完成题数/总题数（只随作答变化，不随当前题位置/拖动变化）
+  const sessionProgress = useMemo(() => {
+    if (!seqActive) return { done: 0, total: 0 }
+    let done = 0
+    for (const id of seqQuestionIds) {
+      if (answeredSessionSnapshot.has(id)) done++
+    }
+    return { done, total: seqQuestionIds.length }
+  }, [seqActive, seqQuestionIds, answeredSessionSnapshot])
 
   const subjectBlocks = useMemo(() => {
     if (!seqActive || seqQuestionKps.length === 0) return [] as { subject: string; start: number; end: number; count: number }[]
@@ -759,6 +820,8 @@ export function PracticeSession() {
 
   const startNewSession = useCallback(async (kps: string[], subs: string[], ignoreAnswered: boolean) => {
     const user = useAuthStore.getState().user; if (!user) return
+    sessionDistRef.current.clear()
+    setSessionDistSnapshot(new Map())
     await seqStart(user.id, kps, subs, '', ignoreAnswered)
     seqLoadSessions(user.id)
     loadSequentialQuestion(useSequentialStore.getState().currentIndex)
@@ -805,6 +868,16 @@ export function PracticeSession() {
     await seqStart(u.id, s.selectedKps, subjectsForKps(s.selectedKps), '')
     const s2 = useSequentialStore.getState()
     loadSequentialQuestion(Math.min(idx, Math.max(0, s2.questionIds.length - 1)))
+    // Restored questions are back in the session — drop their too-easy marks
+    const restoredIds = new Set(s2.questionIds)
+    let changed = false
+    for (const id of [...sessionDistRef.current.keys()]) {
+      if (sessionDistRef.current.get(id)?.status === 'tooEasy' && restoredIds.has(id)) {
+        sessionDistRef.current.delete(id)
+        changed = true
+      }
+    }
+    if (changed) setSessionDistSnapshot(new Map(sessionDistRef.current))
   }, [seqStart, subjectsForKps, loadSequentialQuestion])
 
   const modeInitRef = useRef(false)
@@ -883,6 +956,10 @@ export function PracticeSession() {
     const u = useAuthStore.getState().user
     if (!u) return
     setCompletionOpen(false)
+    answeredThisSession.current.clear()
+    setAnsweredSessionSnapshot(new Set())
+    sessionDistRef.current.clear()
+    setSessionDistSnapshot(new Map())
     const subs = subjectsForKps(seqKps)
     const now = new Date().toISOString()
     const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', u.id).single()
@@ -893,6 +970,8 @@ export function PracticeSession() {
     await useAuthStore.getState().refreshProfile()
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
+    sessionDistRef.current.clear()
+    setSessionDistSnapshot(new Map())
     await seqStart(u.id, seqKps, subs, '')
     loadSequentialQuestion(0)
   }, [subjectsForKps, seqKps, seqStart, loadSequentialQuestion, bumpRefresh])
@@ -908,6 +987,8 @@ export function PracticeSession() {
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
     const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks)
+    sessionDistRef.current.set(question.id, { status: isCorrect ? 'correct' : 'wrong' })
+    setSessionDistSnapshot(new Map(sessionDistRef.current))
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
     setAnswerId(id)
     bumpRefresh()
@@ -1019,6 +1100,20 @@ export function PracticeSession() {
     if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
   }, [questionMode, loadSequentialQuestion])
 
+  const handleSeekKp = useCallback(async (rel: number) => {
+    const s = useSequentialStore.getState()
+    if (!s.isActive || s.questionIds.length === 0) return
+    const kp = s.questionKps[s.currentIndex]
+    if (!kp) return
+    let start = s.currentIndex
+    while (start > 0 && s.questionKps[start - 1] === kp) start--
+    const target = Math.min(s.questionIds.length - 1, Math.max(0, start + rel))
+    await loadSequentialQuestion(target)
+    const s2 = useSequentialStore.getState()
+    const u = useAuthStore.getState().user
+    if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+  }, [loadSequentialQuestion])
+
   const prevRef = useRef(handlePrev)
   const nextRef = useRef(handleNext)
   const submitRef = useRef(handleSubmit)
@@ -1056,6 +1151,11 @@ export function PracticeSession() {
       // Remove excluded question from current session
       const s = useSequentialStore.getState()
       const idx = s.questionIds.indexOf(question.id)
+      const kp = idx >= 0 ? s.questionKps[idx] : (question.key_points?.split(/[,，;；]/)[0]?.trim() ?? null)
+      if (kp) {
+        sessionDistRef.current.set(question.id, { status: 'tooEasy', kp })
+        setSessionDistSnapshot(new Map(sessionDistRef.current))
+      }
       if (idx >= 0) {
         const newIds = s.questionIds.filter((_, i) => i !== idx)
         const newKps = s.questionKps.filter((_, i) => i !== idx)
@@ -1074,6 +1174,8 @@ export function PracticeSession() {
   const handleMarkUnsure = useCallback(async () => {
     if (!question) return
     setSelectedAnswer([])
+    sessionDistRef.current.set(question.id, { status: 'wrong' })
+    setSessionDistSnapshot(new Map(sessionDistRef.current))
     const id = await saveAnswer(question.id, [], false, 'practice')
     setAnswerId(id)
     answeredThisSession.current.add(question.id)
@@ -1192,6 +1294,10 @@ export function PracticeSession() {
                   selectedKps={seqSelectedKps}
                   onExcludedRestored={handleKpsRestored}
                   answeredThisSession={answeredSessionSnapshot}
+                  sessionDist={sessionDistSnapshot}
+                  showDist={distMode}
+                  onShowDistChange={setDistMode}
+                  onCurrentKpDist={setCurrentKpDist}
                 />
               ) : (
                 <p className="text-xs text-muted-foreground py-2">暂无进行中的会话</p>
@@ -1486,6 +1592,15 @@ export function PracticeSession() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      className={cn('h-7 w-7 shrink-0', kpSeekMode && 'bg-accent text-accent-foreground')}
+                      onClick={() => setKpSeekMode((v) => !v)}
+                      title={kpSeekMode ? '关闭拖动进度条切换题目' : '开启拖动进度条切换题目'}
+                    >
+                      <MoveHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className={cn('h-7 w-7 shrink-0', !isMobile && tocVisible && 'bg-accent text-accent-foreground')}
                       onClick={() => { if (isMobile) setTocOpen(true); else setTocVisible(v => !v) }}
                       title={isMobile ? '知识点目录' : tocVisible ? '隐藏目录' : '显示目录'}
@@ -1511,7 +1626,7 @@ export function PracticeSession() {
                 try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
                 const lastSync = seqLastSyncAt || [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
                 const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
-                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} syncStatus={seqSyncStatus} />
+                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} syncStatus={seqSyncStatus} seekable={kpSeekMode} onSeekKp={handleSeekKp} distMode={distMode} dist={currentKpDist} done={sessionProgress.done} doneTotal={sessionProgress.total} />
               })()}
             </div>
             </div>
@@ -1562,10 +1677,18 @@ export function PracticeSession() {
                       {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.prev} />}
                     </Button>
                     {!isSubmitted ? (
-                      <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
-                        {t('practice.submitAnswer')}{" "}
-                        {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.submit} />}
-                      </Button>
+                      <>
+                        {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && (
+                          <Button onClick={handleNext}>
+                            {t('practice.nextQuestion')}{" "}
+                            {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.next} />}
+                          </Button>
+                        )}
+                        <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
+                          {t('practice.submitAnswer')}{" "}
+                          {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.submit} />}
+                        </Button>
+                      </>
                     ) : (
                       <Button onClick={handleNext}>
                         {t('practice.nextQuestion')}{" "}
@@ -1593,6 +1716,10 @@ export function PracticeSession() {
                   selectedKps={seqSelectedKps}
                   onExcludedRestored={handleKpsRestored}
                   answeredThisSession={answeredSessionSnapshot}
+                  sessionDist={sessionDistSnapshot}
+                  showDist={distMode}
+                  onShowDistChange={setDistMode}
+                  onCurrentKpDist={setCurrentKpDist}
                 />
               </div>
             </aside>

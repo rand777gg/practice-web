@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { OtpGuard } from '@/components/auth/OtpGuard'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Component as LoginPage } from '@/pages/LoginPage'
 import { Component as RegisterPage } from '@/pages/RegisterPage'
@@ -36,6 +37,18 @@ export const router = createBrowserRouter([
         lazy: () => import('@/pages/WelcomePage'),
       },
       {
+        path: '/guide',
+        lazy: () => import('@/pages/GuidePage'),
+      },
+      {
+        path: '/mfa',
+        lazy: () => import('@/pages/MfaPage'),
+      },
+      {
+        path: '/mfa/:method',
+        lazy: () => import('@/pages/MfaPage'),
+      },
+      {
         path: '/farewell',
         lazy: () => import('@/pages/FarewellPage'),
       },
@@ -44,7 +57,7 @@ export const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           {
-            element: <AppLayout />,
+            element: <OtpGuard><AppLayout /></OtpGuard>,
             children: [
               {
                 index: true,

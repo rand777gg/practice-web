@@ -1,33 +1,9 @@
-import type { GetResult } from '@fingerprintjs/fingerprintjs'
-
 export interface DeviceInfo {
-  fingerprint: string
   os: string
   browser: string
   osIcon: string
   browserIcon: string
   displayName: string
-}
-
-export interface DeviceDetail {
-  fingerprint: string
-  os: string
-  browser: string
-  osIcon: string
-  browserIcon: string
-  displayName: string
-  ip: string | null
-  screen: string | null
-  cpu: string | null
-  timezone: string | null
-  language: string | null
-  canvas: string | null
-  webgl: string | null
-  fonts: string | null
-  audio: string | null
-  platform: string | null
-  touchSupport: string | null
-  confidence: number
 }
 
 const ua = navigator.userAgent
@@ -106,89 +82,14 @@ export function getBrowserLabel(key: BrowserKey | string): string {
   return BROWSER_ICONS[key as BrowserKey]?.label || BROWSER_ICONS.unknown.label
 }
 
-function buildDeviceInfo(raw: OsCategory, browser: BrowserKey): DeviceInfo {
+export function getDeviceInfoSync(): DeviceInfo {
+  const raw = detectOsCategory()
+  const browser = detectBrowser()
   return {
-    fingerprint: '',
     os: raw,
     browser,
     osIcon: OS_ICONS[raw].icon,
     browserIcon: BROWSER_ICONS[browser].icon,
     displayName: `${OS_ICONS[raw].label} · ${BROWSER_ICONS[browser].label}`,
-  }
-}
-
-export function getDeviceInfoSync(): DeviceInfo {
-  return buildDeviceInfo(detectOsCategory(), detectBrowser())
-}
-
-// --- FingerprintJS ---
-
-let fpAgentPromise: Promise<any> | null = null
-let cachedFpResult: GetResult | null = null
-
-async function loadFpAgent() {
-  if (!fpAgentPromise) {
-    fpAgentPromise = (async () => {
-      const { load } = await import('@fingerprintjs/fingerprintjs')
-      return load({ monitoring: false })
-    })()
-  }
-  return fpAgentPromise
-}
-
-/** Get the raw FPJS components object (all 37 entropy sources) */
-export function getFpComponents(): Record<string, unknown> | null {
-  if (!cachedFpResult) return null
-  return cachedFpResult.components as unknown as Record<string, unknown>
-}
-
-export async function getFingerprint(): Promise<string> {
-  if (cachedFpResult) return cachedFpResult.visitorId
-  const agent = await loadFpAgent()
-  const result = await agent.get()
-  cachedFpResult = result
-  return result.visitorId
-}
-
-function fpComponentValue(components: any, key: string): string | null {
-  try {
-    const c = components[key]
-    if (!c || c.error) return null
-    if (typeof c.value === 'string') return c.value
-    if (typeof c.value === 'number') return String(c.value)
-    if (typeof c.value === 'boolean') return c.value ? 'Yes' : 'No'
-    return JSON.stringify(c.value).slice(0, 200)
-  } catch {
-    return null
-  }
-}
-
-export async function getDeviceDetail(): Promise<DeviceDetail> {
-  const [osCategory, fp] = await Promise.all([
-    Promise.resolve(detectOsCategory()),
-    getFingerprint(),
-  ])
-  const browser = detectBrowser()
-  const components = cachedFpResult?.components || {}
-
-  return {
-    fingerprint: fp,
-    os: osCategory,
-    browser,
-    osIcon: OS_ICONS[osCategory].icon,
-    browserIcon: BROWSER_ICONS[browser].icon,
-    displayName: `${OS_ICONS[osCategory].label} · ${BROWSER_ICONS[browser].label}`,
-    ip: null,
-    screen: fpComponentValue(components, 'screenResolution'),
-    cpu: fpComponentValue(components, 'hardwareConcurrency'),
-    timezone: fpComponentValue(components, 'timezone'),
-    language: fpComponentValue(components, 'language'),
-    canvas: fpComponentValue(components, 'canvas'),
-    webgl: fpComponentValue(components, 'webGl'),
-    fonts: fpComponentValue(components, 'fonts'),
-    audio: fpComponentValue(components, 'audio'),
-    platform: fpComponentValue(components, 'platform'),
-    touchSupport: fpComponentValue(components, 'touchSupport'),
-    confidence: cachedFpResult?.confidence?.score ?? 0,
   }
 }

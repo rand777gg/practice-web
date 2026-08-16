@@ -20,6 +20,9 @@ dist-ssr
 CLAUDE.md
 TODO.md
 
+# Design docs (not committed)
+docs/
+
 # Supabase
 supabase/.temp
 

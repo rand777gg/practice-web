@@ -29,10 +29,12 @@ import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
-import { DeviceLabel } from '@/components/ui/device-label'
-import { getTrustInfo, getDeviceIdSync } from '@/lib/otp-trust'
+import { OtpSetupDialog } from '@/components/auth/OtpSetupDialog'
+import { MfaMethodPicker } from '@/components/auth/MfaMethodPicker'
+import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
+import { getMfaStatus, getDeviceToken, type MfaStatus } from '@/lib/mfa'
+import { getDeviceInfoSync } from '@/lib/device-info'
 import { Icon } from '@/lib/icons'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -85,12 +87,70 @@ export function Component() {
  const [deleteOpen, setDeleteOpen] = useState(false)
  const [deleting, setDeleting] = useState(false)
  const [logoutOpen, setLogoutOpen] = useState(false)
- const [trustedDevicesOpen, setTrustedDevicesOpen] = useState(false)
  const [passkeySetupOpen, setPasskeySetupOpen] = useState(false)
+ const [otpSetupOpen, setOtpSetupOpen] = useState(false)
+ const [pickOpen, setPickOpen] = useState(false)
+ const [devicesOpen, setDevicesOpen] = useState(false)
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
- const trustInfo = getTrustInfo()
- const currentDeviceId = getDeviceIdSync() || ''
+
+ // MFA validity + verified sessions
+ const [mfaValidity, setMfaValidity] = useState(profile?.mfa_validity_days ?? 7)
+ const [mfaSessions, setMfaSessions] = useState<any[]>([])
+ const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null)
+ useEffect(() => {
+  if (!user) return
+  getMfaStatus().then(setMfaStatus).catch(() => {})
+  supabase
+   .from('user_mfa_sessions')
+   .select('session_id, method, verified_at, expires_at')
+   .eq('user_id', user.id)
+   .order('verified_at', { ascending: false })
+   .then(({ data }) => setMfaSessions((data as any[]) || []))
+ }, [user])
+
+ const hasTotp = mfaStatus?.availableMethods.totp === true
+ const hasPasskey = mfaStatus?.availableMethods.passkey === true
+ const hasAnyMfa = hasTotp || hasPasskey
+
+ const updateMfaValidity = async (days: number) => {
+  if (!user) return
+  setMfaValidity(days)
+  await supabase.from('profiles').update({ mfa_validity_days: days }).eq('id', user.id)
+  // Apply immediately to THIS device: days>0 → trust it for that long; 0 → revoke this device's trust
+  const deviceId = getDeviceToken()
+  if (days > 0) {
+    const expiresAt = new Date(Date.now() + days * 86400_000).toISOString()
+    await supabase.from('user_trusted_devices').upsert({
+      user_id: user.id,
+      device_id: deviceId,
+      device_name: getDeviceInfoSync().displayName,
+      device_info: {},
+      expires_at: expiresAt,
+    }, { onConflict: 'user_id,device_id' })
+  } else {
+    // 0 = verify every sign-in: revoke this device's trust (mark as self-revoke so Realtime won't force re-verify)
+    sessionStorage.setItem('mfa_self_revoke', '1')
+    setTimeout(() => sessionStorage.removeItem('mfa_self_revoke'), 5000)
+    await supabase.from('user_trusted_devices').delete().eq('user_id', user.id).eq('device_id', deviceId)
+  }
+  refreshProfile()
+  getMfaStatus().then(setMfaStatus).catch(() => {})
+ }
+
+ const revokeMfaSession = async (sessionId: string) => {
+  if (!user) return
+  if (!confirm(t('auth.mfaRevokeConfirm'))) return
+  await supabase.from('user_mfa_sessions').delete().eq('user_id', user.id).eq('session_id', sessionId)
+  setMfaSessions((prev) => prev.filter((s) => s.session_id !== sessionId))
+ }
+
+ const mfaValidityOptions = [
+  { value: 0, label: t('auth.mfaValidityEveryLogin') },
+  { value: 7, label: t('auth.mfaValidity7') },
+  { value: 14, label: t('auth.mfaValidity14') },
+  { value: 30, label: t('auth.mfaValidity30') },
+ ]
 
  // Detect OAuth redirect result
  useEffect(() => {
@@ -293,102 +353,142 @@ export function Component() {
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground align-top">{t('auth.otpStatus')}</td>
           <td className="py-1.5 space-y-2">
-           <div className="flex items-center gap-2 flex-wrap">
-            <Badge color={profile?.totp_enabled ? 'green' : 'gray'} variant="soft" radius="full">
-             {profile?.totp_enabled ? t('auth.otpEnabled') : t('auth.otpDisabled')}
-            </Badge>
-            {profile?.totp_enabled && (
+            <div className="flex items-center gap-2 flex-wrap">
+             <Badge color={hasAnyMfa ? 'green' : 'gray'} variant="soft" radius="full">
+              {hasAnyMfa ? t('auth.otpEnabled') : t('auth.otpDisabled')}
+             </Badge>
+             {!hasAnyMfa && (
+              <Button
+               variant="default"
+               size="sm"
+               className="h-6 text-[10px] gap-1"
+               onClick={() => setPickOpen(true)}
+              >
+               <Icon icon="mdi:cellphone-text" className="h-3 w-3" />
+               {t('auth.otpSetupTitle')}
+              </Button>
+             )}
+             {hasAnyMfa && (
+              <DropdownMenu>
+               <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1">
+                 {profile?.preferred_2fa === 'passkey' ? t('auth.passkeyMethod') : t('auth.totpMethod')}
+                 <ChevronDown className="h-3 w-3 opacity-50" />
+                </Button>
+               </DropdownMenuTrigger>
+               <DropdownMenuContent align="start">
+                <DropdownMenuItem
+                 onClick={async () => {
+                  await supabase.from('profiles').update({ preferred_2fa: 'totp' }).eq('id', user!.id)
+                  await refreshProfile()
+                 }}
+                >
+                 <Icon icon="mdi:cellphone-text" className="h-4 w-4 mr-2" />
+                 {t('auth.totpMethod')}
+                 {profile?.preferred_2fa !== 'passkey' && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                 onClick={async () => {
+                  await supabase.from('profiles').update({ preferred_2fa: 'passkey' }).eq('id', user!.id)
+                  await refreshProfile()
+                 }}
+                >
+                 <Icon icon="mdi:key-chain" className="h-4 w-4 mr-2" />
+                 {t('auth.passkeyMethod')}
+                 {profile?.preferred_2fa === 'passkey' && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+               </DropdownMenuContent>
+              </DropdownMenu>
+             )}
+             {hasAnyMfa && profile?.preferred_2fa === 'passkey' && (
+              <Button
+               variant="outline"
+               size="sm"
+               className="h-6 text-[10px] gap-1"
+               onClick={() => setPasskeySetupOpen(true)}
+              >
+               <Icon icon="mdi:key-chain" className="h-3 w-3" />
+               {t('auth.passkeyManage')}
+              </Button>
+             )}
+             {hasAnyMfa && profile?.preferred_2fa !== 'passkey' && (
+              <Button
+               variant="outline"
+               size="sm"
+               className="h-6 text-[10px] gap-1"
+               onClick={() => setOtpSetupOpen(true)}
+              >
+               <Icon icon="mdi:cellphone-text" className="h-3 w-3" />
+               {t('auth.mfaManageApp')}
+              </Button>
+             )}
+            </div>
+
+            {/* MFA validity period (L2 grace, Tencent-style) */}
+            <div className="flex items-center gap-2 flex-wrap">
+             <span className="text-xs text-muted-foreground">{t('auth.mfaValidity')}</span>
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
                <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1">
-                {profile?.preferred_2fa === 'passkey' ? t('auth.passkeyMethod') : t('auth.totpMethod')}
+                {mfaValidityOptions.find((o) => o.value === mfaValidity)?.label ?? t('auth.mfaValidity7')}
                 <ChevronDown className="h-3 w-3 opacity-50" />
                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-               <DropdownMenuItem
-                onClick={async () => {
-                 await supabase.from('profiles').update({ preferred_2fa: 'totp' }).eq('id', user!.id)
-                 await refreshProfile()
-                }}
-               >
-                <Icon icon="mdi:cellphone-text" className="h-4 w-4 mr-2" />
-                {t('auth.totpMethod')}
-                {profile?.preferred_2fa === 'totp' && <Check className="h-4 w-4 ml-auto" />}
-               </DropdownMenuItem>
-               <DropdownMenuItem
-                onClick={async () => {
-                 await supabase.from('profiles').update({ preferred_2fa: 'passkey' }).eq('id', user!.id)
-                 await refreshProfile()
-                }}
-               >
-                <Icon icon="mdi:key-chain" className="h-4 w-4 mr-2" />
-                {t('auth.passkeyMethod')}
-                {profile?.preferred_2fa === 'passkey' && <Check className="h-4 w-4 ml-auto" />}
-               </DropdownMenuItem>
+               {mfaValidityOptions.map((o) => (
+                <DropdownMenuItem key={o.value} onClick={() => updateMfaValidity(o.value)}>
+                 {o.label}
+                 {mfaValidity === o.value && <Check className="h-4 w-4 ml-auto" />}
+                </DropdownMenuItem>
+               ))}
               </DropdownMenuContent>
              </DropdownMenu>
+             {hasAnyMfa && (
+              <Button
+               variant="outline"
+               size="sm"
+               className="h-6 text-[10px] gap-1"
+               onClick={() => setDevicesOpen(true)}
+              >
+               <Icon icon="mdi:devices" className="h-3 w-3" />
+               {t('auth.otpManageDevices')}
+              </Button>
+             )}
+             {mfaStatus?.deviceExpiresAt && (
+              <span className="text-xs text-green-600 dark:text-green-400">
+               {t('auth.mfaGraceExpires')}: {new Date(mfaStatus.deviceExpiresAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </span>
+             )}
+            </div>
+            <p className="text-xs text-muted-foreground max-w-sm">{t('auth.mfaValidityDesc')}</p>
+
+            {/* Verified sessions (L1) */}
+            {mfaSessions.length > 0 && (
+             <div className="space-y-1 pt-1">
+              <p className="text-xs font-medium text-muted-foreground">{t('auth.mfaSessions')}</p>
+              {mfaSessions.map((s) => (
+               <div key={s.session_id} className="flex items-center gap-2">
+                <Icon
+                 icon={s.method === 'passkey' ? 'mdi:key-chain' : 'mdi:cellphone-text'}
+                 className="h-3.5 w-3.5 text-muted-foreground"
+                />
+                <span className="text-xs text-muted-foreground">
+                 {s.method === 'passkey' ? t('auth.mfaSessionPasskey') : t('auth.mfaSessionTotp')}
+                 {' · '}
+                 {new Date(s.verified_at).toLocaleString()}
+                </span>
+                <Button
+                 variant="ghost"
+                 size="sm"
+                 className="h-5 text-[10px] text-muted-foreground hover:text-destructive"
+                 onClick={() => revokeMfaSession(s.session_id)}
+                >
+                 {t('auth.mfaRevokeSession')}
+                </Button>
+               </div>
+              ))}
+             </div>
             )}
-           </div>
-
-           {/* TOTP: device trust info */}
-           {profile?.totp_enabled && profile?.preferred_2fa !== 'passkey' && trustInfo && (
-            <div className="flex items-center gap-2 flex-wrap">
-             <DeviceLabel
-              deviceName={trustInfo.deviceName}
-              fallback={`${currentDeviceId.slice(0, 8)}…`}
-              className="text-xs text-muted-foreground"
-             />
-             <span className="text-xs text-muted-foreground">
-              {t('auth.otpTrustExpires')}: {new Date(trustInfo.expiresAt).toLocaleDateString()}
-             </span>
-             <Button
-              variant="outline"
-              size="sm"
-              className="h-6 text-[10px]"
-              onClick={() => setTrustedDevicesOpen(true)}
-             >
-              {t('auth.otpManageDevices')}
-             </Button>
-            </div>
-           )}
-
-           {/* Passkey: manage button + re-verify timeout */}
-           {profile?.totp_enabled && profile?.preferred_2fa === 'passkey' && (
-            <div className="flex gap-2">
-             <Button
-              variant="outline"
-              size="sm"
-              className="h-6 text-[10px] gap-1 flex-1"
-              onClick={() => setPasskeySetupOpen(true)}
-             >
-              <Icon icon="mdi:key-chain" className="h-3 w-3" />
-              {t('auth.passkeyManage')}
-             </Button>
-             <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="flex-1 h-7 text-[10px] gap-1 justify-between">
-                    <span>{profile?.passkey_timeout_minutes ? `${profile.passkey_timeout_minutes} 分钟` : "免密周期"}</span>
-                    <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" style={{ width: 'var(--radix-dropdown-menu-trigger-width)' }}>
-                  {[0, 5, 10, 15, 20, 25, 30].map((m) => (
-                    <DropdownMenuItem
-                      key={m}
-                      onClick={async () => {
-                        await supabase.from("profiles").update({ passkey_timeout_minutes: m }).eq("id", user!.id)
-                        refreshProfile()
-                      }}
-                    >
-                      <span className="flex-1">{m === 0 ? "免密周期" : `${m} 分钟`}</span>
-                      {(profile?.passkey_timeout_minutes ?? 0) === m && <Check className="h-3 w-3 ml-auto" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-           )}
           </td>
          </tr>
          <tr>
@@ -895,8 +995,19 @@ export function Component() {
      </Card>
     </div>
    </div>
-   <TrustedDevicesDialog open={trustedDevicesOpen} onOpenChange={setTrustedDevicesOpen} />
    <PasskeySetupDialog open={passkeySetupOpen} onOpenChange={setPasskeySetupOpen} onRegistered={() => refreshProfile()} />
+   <OtpSetupDialog
+    open={otpSetupOpen}
+    onSetupComplete={() => { setOtpSetupOpen(false); refreshProfile() }}
+    onCancel={() => setOtpSetupOpen(false)}
+   />
+   <MfaMethodPicker
+    open={pickOpen}
+    onOpenChange={setPickOpen}
+    onPickPasskey={() => setPasskeySetupOpen(true)}
+    onPickTotp={() => setOtpSetupOpen(true)}
+   />
+   <TrustedDevicesDialog open={devicesOpen} onOpenChange={setDevicesOpen} />
   </div>
  )
 }

@@ -43,6 +43,46 @@ function serializeForClient(val: unknown): unknown {
   return val
 }
 
+/** Decode a JWT payload (base64url) without verification — token is already trusted via getUser. */
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const part = token.split(".")[1] ?? ""
+  const b64 = part.replace(/-/g, "+").replace(/_/g, "/")
+  const padded = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=")
+  const json = new TextDecoder().decode(Uint8Array.from(atob(padded), (c) => c.charCodeAt(0)))
+  return JSON.parse(json)
+}
+
+/** Mark current session as MFA-verified (L1) and optionally extend account grace (L2). */
+async function markSessionVerified(
+  supabaseAdmin: any,
+  userId: string,
+  sid: string,
+  method: "totp" | "passkey",
+  remember: boolean,
+): Promise<void> {
+  const { data: prof } = await supabaseAdmin
+    .from("profiles")
+    .select("mfa_validity_days")
+    .eq("id", userId)
+    .single()
+  const validityDays = Math.max(0, prof?.mfa_validity_days ?? 7)
+  const expiresAt = new Date(Date.now() + validityDays * 86400_000).toISOString()
+
+  await supabaseAdmin
+    .from("user_mfa_sessions")
+    .upsert(
+      { session_id: sid, user_id: userId, method, expires_at: expiresAt },
+      { onConflict: "session_id" },
+    )
+
+  if (remember && validityDays > 0) {
+    await supabaseAdmin
+      .from("profiles")
+      .update({ mfa_grace_until: expiresAt })
+      .eq("id", userId)
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -209,6 +249,10 @@ serve(async (req: Request) => {
         })
       }
 
+      // Registering a passkey is itself a strong-auth moment — mark session verified (L1 + optional L2)
+      const sid = (decodeJwtPayload(token).sid as string) || ""
+      await markSessionVerified(supabaseAdmin, userId, sid, "passkey", body.remember === true)
+
       return new Response(JSON.stringify({ verified: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
@@ -332,6 +376,10 @@ serve(async (req: Request) => {
         .update({ counter: verification.authenticationInfo.newCounter, last_used_at: new Date().toISOString() })
         .eq("id", storedCred.id)
 
+      // Successful passkey auth counts as MFA verification for this session (L1 + optional L2)
+      const sid = (decodeJwtPayload(token).sid as string) || ""
+      await markSessionVerified(supabaseAdmin, userId, sid, "passkey", body.remember === true)
+
       return new Response(JSON.stringify({ verified: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
@@ -359,6 +407,36 @@ serve(async (req: Request) => {
       const elapsed = Date.now() - new Date(lastUsed).getTime()
       const valid = elapsed < timeoutMinutes * 60 * 1000
       return new Response(JSON.stringify({ valid, elapsed, timeoutMinutes }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
+
+    // ============================================================
+    // RENAME a passkey's display name
+    // ============================================================
+    if (action === "rename") {
+      const { credentialId, name } = body
+      if (!credentialId || !name) {
+        return new Response(JSON.stringify({ error: "missing credentialId or name" }), {
+          status: 400,
+          headers: corsHeaders,
+        })
+      }
+
+      const { error } = await supabaseAdmin
+        .from("passkey_credentials")
+        .update({ device_name: String(name).slice(0, 50) })
+        .eq("id", credentialId)
+        .eq("user_id", userId)
+
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+          headers: corsHeaders,
+        })
+      }
+
+      return new Response(JSON.stringify({ renamed: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }

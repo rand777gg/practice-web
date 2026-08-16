@@ -39,14 +39,14 @@ export async function registerPasskey(userId: string, deviceName?: string, platf
   return result.verified === true
 }
 
-/** Authenticate with passkey — returns true if verified */
-export async function authenticateWithPasskey(userId: string): Promise<boolean> {
+/** Authenticate with passkey — returns true if verified. remember extends account-level grace (L2). */
+export async function authenticateWithPasskey(userId: string, remember = false): Promise<boolean> {
   const options = await callFn('authenticate-begin', { userId })
   if (options.error) throw new Error(options.error)
 
   const credential = await startAuthentication({ optionsJSON: options })
 
-  const result = await callFn('authenticate-complete', { userId, credential })
+  const result = await callFn('authenticate-complete', { userId, credential, remember })
   if (result.error) throw new Error(result.error)
 
   return result.verified === true
@@ -58,13 +58,12 @@ export async function listPasskeys(userId: string): Promise<PasskeyCredential[]>
   return data as PasskeyCredential[]
 }
 
-/** Check if user is within re-verification grace period (server-side last_used_at) */
-export async function checkPasskeyGrace(userId: string, timeoutMinutes: number): Promise<boolean> {
-  const data = await callFn('check-grace', { userId, timeoutMinutes })
-  return (data as { valid: boolean }).valid === true
-}
-
 /** Delete a passkey credential */
 export async function deletePasskey(userId: string, credentialId: string): Promise<void> {
   await callFn('delete', { userId, credentialId })
+}
+
+/** Rename a passkey's display name */
+export async function renamePasskey(userId: string, credentialId: string, name: string): Promise<void> {
+  await callFn('rename', { userId, credentialId, name })
 }

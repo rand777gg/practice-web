@@ -30,17 +30,19 @@ const APP_NAME = 'PracticeWeb'
 interface Props {
   open: boolean
   onSetupComplete: () => void
+  onCancel?: () => void
 }
 
-export function OtpSetupDialog({ open, onSetupComplete }: Props) {
+export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
   const { t } = useT()
-  const { user, signOut } = useAuthStore()
+  const { user } = useAuthStore()
   const [step, setStep] = useState<'setup' | 'verify' | 'recovery'>('setup')
   const [secret, setSecret] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [autoSubmit, setAutoSubmit] = useState(true)
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -57,11 +59,12 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
       setError('')
       setStep('setup')
       setRecoveryCodes([])
+      setAutoSubmit(true)
     }
   }, [open, user?.email])
 
   const handleVerify = useCallback(async () => {
-    if (code.length !== 6 || !user) return
+    if (code.length !== 6 || !user || isSubmitting) return
     setError('')
     setIsSubmitting(true)
 
@@ -69,6 +72,7 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
       // Client-side verify first to confirm the setup
       const result = await verify({ secret, token: code })
       if (!result.valid) {
+        setAutoSubmit(false)
         setError(t('auth.otpInvalidCode'))
         setIsSubmitting(false)
         return
@@ -98,7 +102,12 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
     } finally {
       setIsSubmitting(false)
     }
-  }, [code, user, secret, t])
+  }, [code, user, secret, isSubmitting, t])
+
+  // Auto-submit once all 6 digits are entered (turns off after one wrong attempt)
+  useEffect(() => {
+    if (step === 'verify' && autoSubmit && code.length === 6 && !isSubmitting) handleVerify()
+  }, [step, code, isSubmitting, handleVerify, autoSubmit])
 
   const handleCopyCode = useCallback(async (code: string, index: number) => {
     await navigator.clipboard.writeText(code)
@@ -111,14 +120,10 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
     onSetupComplete()
   }, [onSetupComplete])
 
-  const handleLogout = useCallback(async () => {
-    await signOut()
-  }, [signOut])
-
   return (
     <Dialog open={open} modal>
       <DialogContent
-        className="sm:max-w-md"
+        className="sm:max-w-md z-[130]"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
@@ -166,7 +171,7 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
               >
                 {isSubmitting ? t('auth.otpVerifying') : t('auth.otpVerify')}
               </Button>
-              <Button variant="link" size="sm" onClick={() => { setStep('setup'); setCode(''); setError('') }}>
+              <Button variant="link" size="sm" onClick={() => { setStep('setup'); setCode(''); setError(''); setAutoSubmit(true) }}>
                 {t('common.cancel')}
               </Button>
             </div>
@@ -211,14 +216,14 @@ export function OtpSetupDialog({ open, onSetupComplete }: Props) {
         )}
 
         <div className="border-t pt-4 text-center">
-          <Button variant="destructive" size="sm" onClick={handleLogout}>
-            {t('auth.logout')}
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            {t('auth.obBack')}
           </Button>
         </div>
       </DialogContent>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="z-[140]">
           <AlertDialogHeader>
             <AlertDialogTitle>{t('auth.otpRecoveryConfirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('auth.otpRecoveryConfirmDesc')}</AlertDialogDescription>

@@ -17,7 +17,8 @@ export function Component() {
     return () => clearTimeout(t)
   }, [])
 
-  if (user) return <Navigate to="/" replace />
+  // Stay on this page while the register form is handling MFA/onboarding (mfa_pending is set)
+  if (user && !sessionStorage.getItem('mfa_pending')) return <Navigate to="/" replace />
 
   const isDark = theme === 'dark'
 

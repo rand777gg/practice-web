@@ -10,9 +10,10 @@ import {
   AlertDialogContent, AlertDialogDescription as AlertDesc,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle as AlertTitle,
 } from '@/components/ui/alert-dialog'
-import { registerPasskey, listPasskeys, deletePasskey } from '@/lib/passkey'
+import { registerPasskey, listPasskeys, deletePasskey, renamePasskey } from '@/lib/passkey'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Icon } from '@/lib/icons'
+import { Pencil, Check, X } from 'lucide-react'
 import type { PasskeyCredential } from '@/types'
 
 interface Props {
@@ -31,6 +32,9 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [renaming, setRenaming] = useState(false)
 
   const fetchPasskeys = useCallback(async () => {
     if (!user) return
@@ -89,6 +93,26 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
     setPasskeys((prev) => prev.filter((p) => p.id !== deleteTarget))
     setDeleteTarget(null)
   }, [user, deleteTarget])
+
+  const startRename = useCallback((pk: PasskeyCredential) => {
+    setEditingId(pk.id)
+    setEditName(pk.device_name || '')
+  }, [])
+
+  const handleRename = useCallback(async () => {
+    if (!user || !editingId) return
+    const name = editName.trim()
+    if (!name) return
+    setRenaming(true)
+    try {
+      await renamePasskey(user.id, editingId, name)
+      setPasskeys((prev) => prev.map((p) => (p.id === editingId ? { ...p, device_name: name } : p)))
+    } catch {
+      /* ignore */
+    }
+    setRenaming(false)
+    setEditingId(null)
+  }, [user, editingId, editName])
 
   const platformIcon = (p: string | null) => {
     if (!p) return 'mingcute:computer-line'
@@ -160,22 +184,64 @@ export function PasskeySetupDialog({ open, onOpenChange, onRegistered }: Props) 
                 <div className="space-y-1.5">
                   {passkeys.map((pk) => (
                     <div key={pk.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Icon icon={platformIcon(pk.platform)} className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <p className="text-sm truncate">{pk.device_name || 'Passkey'}</p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {new Date(pk.created_at).toLocaleDateString()}
-                          </p>
+                      {editingId === pk.id ? (
+                        <div className="flex items-center gap-2 w-full">
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            maxLength={50}
+                            autoFocus
+                            className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary"
+                          />
+                          <Button
+                            variant="outline" size="sm"
+                            className="h-8 w-8 p-0 shrink-0"
+                            onClick={handleRename}
+                            disabled={renaming || !editName.trim()}
+                            title={t('common.confirm')}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="sm"
+                            className="h-8 w-8 p-0 shrink-0 text-muted-foreground"
+                            onClick={() => setEditingId(null)}
+                            title={t('common.cancel')}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
-                      </div>
-                      <Button
-                        variant="ghost" size="sm"
-                        className="h-7 text-xs text-destructive hover:bg-destructive/10 shrink-0 ml-2"
-                        onClick={() => setDeleteTarget(pk.id)}
-                      >
-                        {t('auth.passkeyRemove')}
-                      </Button>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Icon icon={platformIcon(pk.platform)} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0">
+                              <p className="text-sm truncate">{pk.device_name || 'Passkey'}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {new Date(pk.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0 ml-2">
+                            <Button
+                              variant="ghost" size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => startRename(pk)}
+                              title={t('auth.passkeyRename')}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="sm"
+                              className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeleteTarget(pk.id)}
+                            >
+                              {t('auth.passkeyRemove')}
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

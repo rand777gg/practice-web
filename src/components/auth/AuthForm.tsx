@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { useT } from '@/i18n/use-t'
 import { GalleryVerticalEnd, QrCode } from 'lucide-react'
 import { QrLoginDialog } from '@/components/auth/QrLoginDialog'
-import { TurnstileWidget, type TurnstileHandle } from '@/components/auth/TurnstileWidget'
 
 export function AuthForm({ className, mode = 'login', ...props }: React.ComponentProps<"div"> & { mode?: 'login' | 'register' }) {
   const { t } = useT()
@@ -19,21 +18,12 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
   const navigate = useNavigate()
-  const turnstileRef = useRef<TurnstileHandle>(null)
-
-  async function validateTurnstile() {
-    const token = await turnstileRef.current?.getFreshToken()
-    if (!token) throw new Error('验证未通过，请重试')
-    const { data } = await supabase.functions.invoke('cloudflare-turnstile', { body: { token } })
-    if (!(data as { success: boolean })?.success) throw new Error('安全验证失败，请重试')
-  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setIsSubmitting(true)
     try {
-      await validateTurnstile()
       if (isLogin) {
         const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
         if (authError) { setError(authError.message); setIsSubmitting(false) }
@@ -50,14 +40,9 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
     }
   }
 
-  const handleSocialAuth = async (action: () => void) => {
+  const handleSocialAuth = (action: () => void) => {
     setError('')
-    try {
-      await validateTurnstile()
-      action()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '验证失败')
-    }
+    action()
   }
 
   return (
@@ -86,9 +71,6 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="text-white placeholder:text-white/40 border-white/30 focus:border-white/60" />
           </Field>
           <Field>
-            <TurnstileWidget ref={turnstileRef} />
-          </Field>
-          <Field>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? (isLogin ? t('auth.signingIn') : t('auth.creatingAccount')) : (isLogin ? t('auth.signIn') : t('auth.createAccount'))}
             </Button>
@@ -100,7 +82,7 @@ export function AuthForm({ className, mode = 'login', ...props }: React.Componen
                 <QrCode className="h-5 w-5 text-white/70" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" type="button" className="rounded-full size-10 bg-transparent border border-white/20 hover:bg-white/10" onClick={() => handleSocialAuth(() => supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin } }))} title="GitHub 登录">
+            <Button variant="ghost" size="icon" type="button" className="rounded-full size-10 bg-transparent border border-white/20 hover:bg-white/10" onClick={() => handleSocialAuth(() => supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin + '/mfa' } }))} title="GitHub 登录">
               <svg className="h-5 w-5 text-white/70" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
             </Button>
           </Field>

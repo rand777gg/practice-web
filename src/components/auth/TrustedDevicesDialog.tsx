@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableRow, TableCell } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
-import { getDeviceIdSync, clearDeviceTrust } from '@/lib/otp-trust'
+import { getDeviceTokenSync, clearDeviceToken } from '@/lib/mfa'
 import { DeviceLabel } from '@/components/ui/device-label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -257,7 +257,7 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
   const selectedIdRef = useRef<string | null>(null)
   selectedIdRef.current = selectedId
 
-  const currentDeviceId = getDeviceIdSync() || ''
+  const currentDeviceId = getDeviceTokenSync() || ''
 
   const fetchDevices = useCallback(async () => {
     if (!user) return
@@ -292,7 +292,7 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
     setRevoking(deviceId)
     await supabase.from('user_trusted_devices').delete().eq('user_id', user.id).eq('device_id', deviceId)
     if (isCurrent) {
-      clearDeviceTrust()
+      clearDeviceToken()
       signOut()
       return
     }

@@ -45,6 +45,49 @@ function isRateLimited(ip: string): boolean {
   return false
 }
 
+/** Decode a JWT payload (base64url) without verification — token is already trusted via getUser. */
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const part = token.split(".")[1] ?? ""
+  const b64 = part.replace(/-/g, "+").replace(/_/g, "/")
+  const padded = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=")
+  const json = new TextDecoder().decode(Uint8Array.from(atob(padded), (c) => c.charCodeAt(0)))
+  return JSON.parse(json)
+}
+
+/** Mark current session as MFA-verified (L1) and optionally extend account grace (L2). */
+async function markSessionVerified(
+  supabaseAdmin: any,
+  userId: string,
+  sid: string,
+  method: "totp" | "passkey",
+  remember: boolean,
+): Promise<{ expiresAt: string; graceUntil: string | null }> {
+  const { data: prof } = await supabaseAdmin
+    .from("profiles")
+    .select("mfa_validity_days")
+    .eq("id", userId)
+    .single()
+  const validityDays = Math.max(0, prof?.mfa_validity_days ?? 7)
+  const expiresAt = new Date(Date.now() + validityDays * 86400_000).toISOString()
+
+  await supabaseAdmin
+    .from("user_mfa_sessions")
+    .upsert(
+      { session_id: sid, user_id: userId, method, expires_at: expiresAt },
+      { onConflict: "session_id" },
+    )
+
+  let graceUntil: string | null = null
+  if (remember && validityDays > 0) {
+    await supabaseAdmin
+      .from("profiles")
+      .update({ mfa_grace_until: expiresAt })
+      .eq("id", userId)
+    graceUntil = expiresAt
+  }
+  return { expiresAt, graceUntil }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -77,7 +120,8 @@ serve(async (req: Request) => {
     }
 
     const userId = user.id
-    const { action, code, secret, deviceId, deviceName, deviceInfo, customName } = await req.json()
+    const sid = (decodeJwtPayload(token).sid as string) || ""
+    const { action, code, secret, remember, deviceToken, deviceName } = await req.json()
 
     if (!action) {
       return new Response(JSON.stringify({ error: "missing action" }), {
@@ -86,7 +130,46 @@ serve(async (req: Request) => {
       })
     }
 
-    // --- SETUP: verify code against provided secret, then store ---
+    // --- STATUS: server-authoritative MFA gate decision (L1 session / device trust / available methods)
+    if (action === "status") {
+      const [{ data: prof }, { count: passkeyCount }, { data: sess }, { data: totp }, { data: rc }, { data: dev }] = await Promise.all([
+        supabaseAdmin.from("profiles").select("mfa_grace_until, mfa_validity_days, onboarded_at, role").eq("id", userId).single(),
+        supabaseAdmin.from("passkey_credentials").select("id", { count: "exact", head: true }).eq("user_id", userId),
+        supabaseAdmin.from("user_mfa_sessions").select("method, expires_at").eq("session_id", sid).eq("user_id", userId).maybeSingle(),
+        supabaseAdmin.from("user_totp").select("user_id").eq("user_id", userId).maybeSingle(),
+        supabaseAdmin.from("user_recovery_codes").select("codes").eq("user_id", userId).maybeSingle(),
+        deviceToken
+          ? supabaseAdmin.from("user_trusted_devices").select("expires_at").eq("user_id", userId).eq("device_id", deviceToken).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ])
+
+      const now = Date.now()
+      const sessionVerified = !!sess && new Date(sess.expires_at).getTime() > now
+      // Device trust (per-device grace): this device's token row is valid
+      const deviceTrusted = !!dev?.expires_at && new Date(dev.expires_at).getTime() > now
+      // Legacy account-level grace (kept for compatibility, no longer the primary gate)
+      const graceActive = (prof?.mfa_validity_days ?? 7) > 0
+        && !!prof?.mfa_grace_until
+        && new Date(prof.mfa_grace_until).getTime() > now
+
+      return new Response(JSON.stringify({
+        needsMfa: !sessionVerified && !deviceTrusted,
+        sessionVerified,
+        deviceTrusted,
+        deviceExpiresAt: deviceTrusted ? dev.expires_at : null,
+        graceUntil: graceActive ? prof.mfa_grace_until : null,
+        validityDays: prof?.mfa_validity_days ?? 7,
+        onboarded: !!prof?.onboarded_at,
+        role: prof?.role ?? "user",
+        availableMethods: {
+          passkey: (passkeyCount ?? 0) > 0,
+          totp: !!totp,
+          recovery: !!(rc?.codes?.length),
+        },
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    }
+
+    // --- SETUP: verify code against provided secret, then store
     if (action === "setup") {
       if (!secret || !code) {
         return new Response(JSON.stringify({ error: "missing secret or code" }), {
@@ -144,12 +227,15 @@ serve(async (req: Request) => {
         })
       }
 
-      return new Response(JSON.stringify({ valid: true, recoveryCodes: plainCodes }), {
+      // Setup counts as this session being verified (L1 + optional L2)
+      const marked = await markSessionVerified(supabaseAdmin, userId, sid, "totp", remember === true)
+
+      return new Response(JSON.stringify({ valid: true, recoveryCodes: plainCodes, graceUntil: marked.graceUntil }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
-    // --- RECOVER: verify a recovery code and disable TOTP ---
+    // --- RECOVER: verify a recovery code and disable TOTP
     if (action === "recover") {
       if (!code) {
         return new Response(JSON.stringify({ error: "missing code" }), {
@@ -202,7 +288,7 @@ serve(async (req: Request) => {
       })
     }
 
-    // --- VERIFY: verify code against stored secret ---
+    // --- VERIFY: verify code against stored secret
     if (action === "verify") {
       if (!code) {
         return new Response(JSON.stringify({ error: "missing code" }), {
@@ -225,38 +311,40 @@ serve(async (req: Request) => {
       }
 
       const result = await verify({ token: code, secret: totp.totp_secret })
-      return new Response(JSON.stringify({ valid: result.valid }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
-    }
-
-    // --- TRUST: upsert trusted device with 7-day expiry ---
-    if (action === "trust") {
-      if (!deviceId) {
-        return new Response(JSON.stringify({ error: "missing deviceId" }), {
-          status: 400,
-          headers: corsHeaders,
+      if (!result.valid) {
+        return new Response(JSON.stringify({ valid: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         })
       }
 
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null
-      const info = deviceInfo ? { ...deviceInfo, ip } : { ip }
+      // Mark this session verified (L1)
+      await markSessionVerified(supabaseAdmin, userId, sid, "totp", remember === true)
 
-      const { error: upsertErr } = await supabaseAdmin
-        .from("user_trusted_devices")
-        .upsert({ user_id: userId, device_id: deviceId, device_name: deviceName || null, custom_name: customName || null, device_info: info, expires_at: expiresAt }, {
-          onConflict: "user_id,device_id",
-        })
-
-      if (upsertErr) {
-        return new Response(JSON.stringify({ error: upsertErr.message }), {
-          status: 500,
-          headers: corsHeaders,
-        })
+      // Trust this device (per-device grace) when the user opted in
+      let deviceExpiresAt: string | null = null
+      if (remember === true && deviceToken) {
+        const { data: prof } = await supabaseAdmin
+          .from("profiles")
+          .select("mfa_validity_days")
+          .eq("id", userId)
+          .single()
+        const validityDays = Math.max(0, prof?.mfa_validity_days ?? 7)
+        if (validityDays > 0) {
+          deviceExpiresAt = new Date(Date.now() + validityDays * 86400_000).toISOString()
+          const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null
+          await supabaseAdmin
+            .from("user_trusted_devices")
+            .upsert({
+              user_id: userId,
+              device_id: deviceToken,
+              device_name: deviceName || null,
+              device_info: { ip },
+              expires_at: deviceExpiresAt,
+            }, { onConflict: "user_id,device_id" })
+        }
       }
 
-      return new Response(JSON.stringify({ trusted: true, expiresAt }), {
+      return new Response(JSON.stringify({ valid: true, deviceExpiresAt }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
