@@ -23,7 +23,7 @@ export function Component() {
           <li><strong>学习数据</strong> — 答题记录、正确/错误结果、答题用时、收藏的题目、个人笔记（可选择公开分享）。</li>
           <li><strong>计划设置</strong> — 长期学习计划科目、每日目标量、截止日期。</li>
           <li><strong>认证凭证</strong> — TOTP 密钥（加密存储于服务端隔离表）、Passkey 公钥（WebAuthn 标准，私钥仅存于您的设备安全芯片）。</li>
-          <li><strong>设备指纹</strong> — 仅在您选择"信任此设备"时采集，包含操作系统、浏览器类型、屏幕分辨率、时区和语言。用于识别受信任设备，7 天后自动过期。</li>
+          <li><strong>设备信任</strong> — 仅在您勾选「7 天内免验证」时记录，内容为一个随机设备令牌（用于识别受信任设备，到期后自动失效）。不采集操作系统、浏览器、屏幕、时区等任何设备信息。</li>
           <li><strong>偏好设置</strong> — 界面语言、主题、代码高亮风格等。</li>
         </ul>
 
@@ -39,7 +39,7 @@ export function Component() {
         <ul className="list-disc pl-5 space-y-1">
           <li><strong>TOTP</strong> — 设置完成后密钥写入 <code>user_totp</code> 表，该表启用 RLS 但无任何 SELECT 策略，仅 Edge Function 通过 service_role 可读取。前端应用和普通用户 API 请求完全不可访问。</li>
           <li><strong>Passkey</strong> — 私钥始终存储于您设备的 TPM/安全芯片中，服务器仅保存公钥和签名计数器。每次认证需服务端签发一次性 challenge（有效期 5 分钟），过时即失效。成功认证后更新 <code>last_used_at</code> 时间戳，用于免验周期判断。</li>
-          <li><strong>MFA 宽限期</strong> — 验证通过后账号进入 7 天免验证期（可在设置页调整），期间登录不再要求验证码。会话级验证记录存于服务端 <code>user_mfa_sessions</code> 表，您可在设置页撤销任一已验证会话。</li>
+          <li><strong>设备免验（信任设备）</strong> — 验证时勾选「7 天内免验证」后，当前设备以随机令牌记录于服务端 <code>user_trusted_devices</code> 表，免验期内该设备新登录无需再次验证。令牌为随机字符串，不含任何设备信息；您可在设置页「管理设备」查看、重命名或撤销任一设备。会话级验证记录存于 <code>user_mfa_sessions</code>，可在设置页撤销。</li>
         </ul>
 
         <h2 className="text-lg font-semibold mt-6">4. 第三方服务</h2>
@@ -68,7 +68,7 @@ export function Component() {
         <h2 className="text-lg font-semibold mt-6">7. Cookie 与本地存储</h2>
         <ul className="list-disc pl-5 space-y-1">
           <li>Supabase Auth 的登录会话 Cookie（必要，维持登录状态）</li>
-          <li>设备信任状态、界面主题语言偏好（localStorage 存储，不上传）</li>
+          <li>设备信任令牌、界面主题语言偏好（localStorage 存储，不上传）</li>
           <li>不包含任何第三方跟踪 Cookie 或广告标识符</li>
         </ul>
       </div>

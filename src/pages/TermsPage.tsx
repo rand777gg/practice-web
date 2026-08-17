@@ -26,7 +26,7 @@ export function Component() {
           <li><strong>GitHub OAuth 登录</strong> — 通过 GitHub 官方 OAuth 流程认证，本网站不会获取您的 GitHub 密码或代码仓库访问权限。</li>
           <li><strong>TOTP 两步验证</strong> — 支持 Google Authenticator、Microsoft Authenticator 等标准认证器应用，生成基于时间的一次性 6 位验证码。密钥仅存储在服务端隔离表中，客户端不可读取。</li>
           <li><strong>Passkey 生物认证</strong> — 支持指纹、面容、PIN 等设备原生认证方式。密钥材料（私钥）仅存储在您的设备安全芯片中，服务器仅保存公钥用于验证签名。采用 WebAuthn 标准的 challenge-response 机制，每次认证需服务器颁发一次性 challenge。</li>
-          <li><strong>MFA 宽限期</strong> — TOTP 验证通过后可设置 7 天内免验证（可在设置页调整有效期或设为每次登录都验证）。</li>
+          <li><strong>设备免验</strong> — 验证通过后可勾选「7 天内免验证」信任当前设备，该设备在免验期内新登录无需再次验证。设备以随机令牌标识（不采集任何设备信息），可在设置页「管理设备」中随时撤销。</li>
         </ul>
         <p>用户应妥善保管账号和认证设备，因自身原因导致账号泄露的，本网站不承担责任。</p>
 

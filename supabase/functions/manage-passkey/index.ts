@@ -392,14 +392,13 @@ serve(async (req: Request) => {
         const validityDays = Math.max(0, prof?.mfa_validity_days ?? 7)
         if (validityDays > 0) {
           const expiresAt = new Date(Date.now() + validityDays * 86400_000).toISOString()
-          const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null
           await supabaseAdmin
             .from("user_trusted_devices")
             .upsert({
               user_id: userId,
               device_id: deviceToken,
               device_name: deviceName || null,
-              device_info: { ip },
+              device_info: {},
               expires_at: expiresAt,
             }, { onConflict: "user_id,device_id" })
         }
