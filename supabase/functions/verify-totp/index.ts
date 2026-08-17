@@ -120,7 +120,9 @@ serve(async (req: Request) => {
     }
 
     const userId = user.id
-    const sid = (decodeJwtPayload(token).sid as string) || ""
+    // Supabase JWT exposes the session id as "session_id" (not "sid")
+    const payload = decodeJwtPayload(token)
+    const sid = (payload.session_id || payload.sid) as string || ""
     const { action, code, secret, remember, deviceToken, deviceName } = await req.json()
 
     if (!action) {

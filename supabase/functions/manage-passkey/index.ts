@@ -250,7 +250,8 @@ serve(async (req: Request) => {
       }
 
       // Registering a passkey is itself a strong-auth moment — mark session verified (L1 + optional L2)
-      const sid = (decodeJwtPayload(token).sid as string) || ""
+      const payload = decodeJwtPayload(token)
+      const sid = (payload.session_id || payload.sid) as string || ""
       await markSessionVerified(supabaseAdmin, userId, sid, "passkey", body.remember === true)
 
       return new Response(JSON.stringify({ verified: true }), {
@@ -376,8 +377,9 @@ serve(async (req: Request) => {
         .update({ counter: verification.authenticationInfo.newCounter, last_used_at: new Date().toISOString() })
         .eq("id", storedCred.id)
 
-      // Successful passkey auth counts as MFA verification for this session (L1 + optional L2)
-      const sid = (decodeJwtPayload(token).sid as string) || ""
+      // Supabase JWT exposes the session id as "session_id" (not "sid")
+      const payload = decodeJwtPayload(token)
+      const sid = (payload.session_id || payload.sid) as string || ""
       await markSessionVerified(supabaseAdmin, userId, sid, "passkey", body.remember === true)
 
       return new Response(JSON.stringify({ verified: true }), {
