@@ -1,5 +1,7 @@
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import { supabase } from '@/lib/supabase'
+import { getDeviceToken } from '@/lib/mfa'
+import { getDeviceInfoSync } from '@/lib/device-info'
 import type { PasskeyCredential } from '@/types'
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-passkey`
@@ -39,14 +41,20 @@ export async function registerPasskey(userId: string, deviceName?: string, platf
   return result.verified === true
 }
 
-/** Authenticate with passkey — returns true if verified. remember extends account-level grace (L2). */
-export async function authenticateWithPasskey(userId: string, remember = false): Promise<boolean> {
+/** Authenticate with passkey — returns true if verified. remember=true (default) trusts this device. */
+export async function authenticateWithPasskey(userId: string, remember = true): Promise<boolean> {
   const options = await callFn('authenticate-begin', { userId })
   if (options.error) throw new Error(options.error)
 
   const credential = await startAuthentication({ optionsJSON: options })
 
-  const result = await callFn('authenticate-complete', { userId, credential, remember })
+  const result = await callFn('authenticate-complete', {
+    userId,
+    credential,
+    remember,
+    deviceToken: getDeviceToken(),
+    deviceName: getDeviceInfoSync().displayName,
+  })
   if (result.error) throw new Error(result.error)
 
   return result.verified === true

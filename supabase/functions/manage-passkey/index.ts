@@ -295,7 +295,7 @@ serve(async (req: Request) => {
     // AUTHENTICATE: verify assertion
     // ============================================================
     if (action === "authenticate-complete") {
-      const { credential } = body
+      const { credential, remember, deviceToken, deviceName } = body
       if (!credential) {
         return new Response(JSON.stringify({ error: "missing credential" }), {
           status: 400,
@@ -380,7 +380,30 @@ serve(async (req: Request) => {
       // Supabase JWT exposes the session id as "session_id" (not "sid")
       const payload = decodeJwtPayload(token)
       const sid = (payload.session_id || payload.sid) as string || ""
-      await markSessionVerified(supabaseAdmin, userId, sid, "passkey", body.remember === true)
+      await markSessionVerified(supabaseAdmin, userId, sid, "passkey", remember === true)
+
+      // Passkey is device-bound strong auth → trust this device automatically (per-device grace)
+      if (remember === true && deviceToken) {
+        const { data: prof } = await supabaseAdmin
+          .from("profiles")
+          .select("mfa_validity_days")
+          .eq("id", userId)
+          .single()
+        const validityDays = Math.max(0, prof?.mfa_validity_days ?? 7)
+        if (validityDays > 0) {
+          const expiresAt = new Date(Date.now() + validityDays * 86400_000).toISOString()
+          const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null
+          await supabaseAdmin
+            .from("user_trusted_devices")
+            .upsert({
+              user_id: userId,
+              device_id: deviceToken,
+              device_name: deviceName || null,
+              device_info: { ip },
+              expires_at: expiresAt,
+            }, { onConflict: "user_id,device_id" })
+        }
+      }
 
       return new Response(JSON.stringify({ verified: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

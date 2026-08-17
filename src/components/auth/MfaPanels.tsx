@@ -66,7 +66,7 @@ export function MfaPanels({ status, panel, onPanelChange, onVerified }: Props) {
     setPkVerifying(true)
     setPkError('')
     try {
-      const valid = await authenticateWithPasskey(user.id, remember)
+      const valid = await authenticateWithPasskey(user.id, true)
       if (valid) {
         setPkSuccess(true)
         setPkVerifying(false)
