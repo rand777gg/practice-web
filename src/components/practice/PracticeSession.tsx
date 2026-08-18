@@ -368,16 +368,6 @@ export function PracticeSession() {
     return () => { cancelled = true }
   }, [seqActive, seqQuestionIds, seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at])
 
-  // 总进度：完成题数/总题数（只随作答变化，不随当前题位置/拖动变化）
-  const sessionProgress = useMemo(() => {
-    if (!seqActive) return { done: 0, total: 0 }
-    let done = 0
-    for (const id of seqQuestionIds) {
-      if (answeredSessionSnapshot.has(id)) done++
-    }
-    return { done, total: seqQuestionIds.length }
-  }, [seqActive, seqQuestionIds, answeredSessionSnapshot])
-
   const subjectBlocks = useMemo(() => {
     if (!seqActive || seqQuestionKps.length === 0) return [] as { subject: string; start: number; end: number; count: number }[]
     // Use stored questionSubjects (from DB query) as primary source, fallback to KP→subject map
@@ -410,6 +400,25 @@ export function PracticeSession() {
     if (!kp) return null
     return selectedKpToSubject.get(kp) || kpToSubject.get(kp) || null
   }, [seqActive, seqIndex, seqQuestionKps, selectedKpToSubject, kpToSubject])
+
+  // 总进度：对应学科的完成题数/该学科总题数（只随作答变化，不随当前题位置/拖动变化）
+  const sessionProgress = useMemo(() => {
+    if (!seqActive) return { done: 0, total: 0 }
+    if (currentSubject == null) {
+      let done = 0
+      for (const id of seqQuestionIds) {
+        if (answeredSessionSnapshot.has(id)) done++
+      }
+      return { done, total: seqQuestionIds.length }
+    }
+    const block = subjectBlocks.find(b => b.subject === currentSubject)
+    if (!block) return { done: 0, total: 0 }
+    let done = 0
+    for (let i = block.start; i <= block.end; i++) {
+      if (answeredSessionSnapshot.has(seqQuestionIds[i])) done++
+    }
+    return { done, total: block.count }
+  }, [seqActive, currentSubject, subjectBlocks, seqQuestionIds, answeredSessionSnapshot])
 
   const kpBySubjectRef = useRef(kpBySubject)
   kpBySubjectRef.current = kpBySubject
