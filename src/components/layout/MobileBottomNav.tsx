@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Pencil, Clock, Star, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -31,7 +32,26 @@ const labelKeyMap: Record<BottomNavTabKey, string> = {
 export function MobileBottomNav() {
   const { t } = useT()
   const bottomNavTabs = useSettingsStore((s) => s.bottomNavTabs)
+  const hideDelay = useSettingsStore((s) => s.bottomNavHideDelay)
   const { pathname } = useLocation()
+  const [hidden, setHidden] = useState(false)
+  const timerRef = useRef<number | null>(null)
+
+  // 无交互 hideDelay 秒后向下收起，任何触控/滚轮/滚动交互立即弹出
+  useEffect(() => {
+    const wake = () => {
+      setHidden(false)
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setHidden(true), hideDelay * 1000)
+    }
+    wake()
+    const events = ['touchstart', 'pointerdown', 'scroll', 'wheel'] as const
+    events.forEach((ev) => window.addEventListener(ev, wake, { passive: true }))
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, wake))
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    }
+  }, [hideDelay])
 
   if (bottomNavTabs.length === 0) return null
 
@@ -44,7 +64,13 @@ export function MobileBottomNav() {
   const idx = Math.max(activeIndex, 0)
 
   return (
-    <nav className="xl:hidden fixed bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] inset-x-3 z-30">
+    <nav
+      className={cn(
+        'xl:hidden fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] z-30',
+        'transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform',
+        hidden && 'pointer-events-none translate-y-[calc(100%+24px)] opacity-0',
+      )}
+    >
       <div className="relative mx-auto flex items-stretch h-14 max-w-lg overflow-hidden rounded-3xl border border-border/40 bg-background/55 shadow-lg shadow-black/10 backdrop-blur-2xl p-1.5">
         {/* Liquid glass specular highlight */}
         <span aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/45 via-white/10 to-transparent dark:from-white/10 dark:via-white/5 dark:to-transparent" />

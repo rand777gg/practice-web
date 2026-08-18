@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useAiStore } from '@/stores/ai-store'
-import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, BOTTOM_NAV_HIDE_DELAY_MIN, BOTTOM_NAV_HIDE_DELAY_MAX, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -66,7 +66,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -942,6 +942,21 @@ export function Component() {
            </div>
           )
          })}
+        </div>
+        <div className="mt-4">
+         <p className="text-sm mb-1">{t('settings.bottomNavHide')}</p>
+         <p className="text-xs text-muted-foreground mb-3">{t('settings.bottomNavHideDesc')}</p>
+         <div className="flex items-center gap-3">
+          <Slider
+           min={BOTTOM_NAV_HIDE_DELAY_MIN}
+           max={BOTTOM_NAV_HIDE_DELAY_MAX}
+           step={1}
+           value={bottomNavHideDelay}
+           onChange={setBottomNavHideDelay}
+           className="flex-1"
+          />
+          <span className="text-sm tabular-nums shrink-0 w-8 text-right">{bottomNavHideDelay}s</span>
+         </div>
         </div>
        </div>
       </CardContent>

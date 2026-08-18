@@ -367,6 +367,8 @@ export const zh = {
     offlineModeDesc: '开启后答案仅保存在本地，不自动上传',
     bottomNav: '底部导航栏',
     bottomNavDesc: '在移动端底部显示的导航选项',
+    bottomNavHide: '自动隐藏',
+    bottomNavHideDesc: '无触控操作 N 秒后自动向下收起导航栏，触控屏幕即弹出',
     sync: {
       title: '同步设置',
       direction: '同步方向',
@@ -1006,6 +1008,8 @@ export const en = {
     offlineModeDesc: 'Save answers locally without auto-upload',
     bottomNav: 'Bottom Navigation',
     bottomNavDesc: 'Navigation tabs shown on mobile bottom bar',
+    bottomNavHide: 'Auto-hide',
+    bottomNavHideDesc: 'Auto-collapse the nav after Ns without touch, reappear on touch',
     sync: {
       title: 'Sync Settings',
       direction: 'Sync Direction',

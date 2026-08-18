@@ -12,6 +12,7 @@ export interface AiFeatureFlags {
 
 const FLAGS_KEY = 'ai_feature_flags'
 const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
+const BOTTOM_NAV_HIDE_DELAY_KEY = 'bottom_nav_hide_delay'
 const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
 const OFFLINE_KEY = 'offline_mode'
 const PRACTICE_SHORTCUTS_KEY = 'practice_shortcuts'
@@ -135,6 +136,16 @@ function loadLightCodeTheme(): string {
   return localStorage.getItem(LIGHT_CODE_THEME_KEY) || 'github-light'
 }
 
+export const BOTTOM_NAV_HIDE_DELAY_MIN = 1
+export const BOTTOM_NAV_HIDE_DELAY_MAX = 5
+export const BOTTOM_NAV_HIDE_DELAY_DEFAULT = 3
+
+function loadBottomNavHideDelay(): number {
+  const v = Number(localStorage.getItem(BOTTOM_NAV_HIDE_DELAY_KEY))
+  if (Number.isFinite(v) && v >= BOTTOM_NAV_HIDE_DELAY_MIN && v <= BOTTOM_NAV_HIDE_DELAY_MAX) return Math.round(v)
+  return BOTTOM_NAV_HIDE_DELAY_DEFAULT
+}
+
 interface SettingsState {
   flags: AiFeatureFlags
   offlineMode: boolean
@@ -147,6 +158,7 @@ interface SettingsState {
   fontWeight: number
   noteRecognitionMode: NoteRecognitionMode
   bottomNavTabs: BottomNavTabKey[]
+  bottomNavHideDelay: number
   practiceShortcuts: ShortcutConfig
   defaultPage: string
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
@@ -159,6 +171,7 @@ interface SettingsState {
   setFontWeight: (value: number) => void
   setNoteRecognitionMode: (value: NoteRecognitionMode) => void
   setBottomNavTabs: (tabs: BottomNavTabKey[]) => void
+  setBottomNavHideDelay: (value: number) => void
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   setDefaultPage: (page: string) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
@@ -188,6 +201,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   fontWeight: loadFontWeight(),
   noteRecognitionMode: loadNoteRecognitionMode(),
   bottomNavTabs: loadBottomNavTabs(),
+  bottomNavHideDelay: loadBottomNavHideDelay(),
   practiceShortcuts: loadPracticeShortcuts(),
   defaultPage: loadDefaultPage(),
   setFlag: (key, value) => {
@@ -238,6 +252,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setBottomNavTabs: (tabs) => {
     localStorage.setItem(BOTTOM_NAV_TABS_KEY, JSON.stringify(tabs))
     set({ bottomNavTabs: tabs })
+  },
+  setBottomNavHideDelay: (value) => {
+    const clamped = Math.min(Math.max(Math.round(value), BOTTOM_NAV_HIDE_DELAY_MIN), BOTTOM_NAV_HIDE_DELAY_MAX)
+    localStorage.setItem(BOTTOM_NAV_HIDE_DELAY_KEY, String(clamped))
+    set({ bottomNavHideDelay: clamped })
   },
   setPracticeShortcut: (action, keys) => {
     set((s) => {
