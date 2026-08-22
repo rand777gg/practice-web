@@ -1558,3 +1558,15 @@ RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$
   DELETE FROM public.user_mfa_sessions WHERE expires_at < NOW();
 $$;
+
+-- ============================================================================
+-- Section 19: 题目问题标记 —— 发现题目可能有错但来不及修改时,先打标待处理
+--   issue_flag: none(无) / suspected(疑似有错) / confirmed(已确认有错)
+-- ============================================================================
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS issue_flag  TEXT NOT NULL DEFAULT 'none'
+    CHECK (issue_flag IN ('none', 'suspected', 'confirmed')),
+  ADD COLUMN IF NOT EXISTS issue_note  TEXT,
+  ADD COLUMN IF NOT EXISTS flagged_at  TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_questions_issue_flag ON public.questions(issue_flag);

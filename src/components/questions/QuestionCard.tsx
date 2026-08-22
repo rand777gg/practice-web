@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer, CodingAnswer, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle } from 'lucide-react'
+import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert } from 'lucide-react'
 import { CodeEditor } from '@/components/practice/CodeEditor'
 import { CodeResult } from '@/components/practice/CodeResult'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
@@ -61,13 +61,15 @@ interface Props {
   onMarkTooEasy?: () => void
   onMarkUnsure?: () => void
   onVerify?: () => void
+  onFlagIssue?: () => void
   unsureKbd?: string
   favoriteKbd?: string
   tooEasyKbd?: string
+  flagIssueKbd?: string
 
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, unsureKbd, favoriteKbd, tooEasyKbd }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
   useEffect(() => {
@@ -100,6 +102,19 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
 
   return (
     <div className="relative rounded-xl border bg-card p-4 lg:p-6 space-y-3 lg:space-y-4">
+
+      {question.issue_flag && question.issue_flag !== 'none' && (
+        <div className={cn('flex items-start gap-2 rounded-lg px-3 py-2 text-xs',
+          question.issue_flag === 'confirmed'
+            ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900'
+            : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900')}>
+          <TriangleAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">{question.issue_flag === 'confirmed' ? '本题已确认存在问题,正在修正中,请谨慎作答' : '本题疑似存在问题,正在核查中,请谨慎作答'}</p>
+            {question.issue_note && <p className="mt-0.5 opacity-80 whitespace-pre-wrap">{question.issue_note}</p>}
+          </div>
+        </div>
+      )}
 
       <div {...row(100)}>
         <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
@@ -444,7 +459,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       </div>
 
       <div {...row(500)}>
-      {(onToggleFavorite || onMarkTooEasy || onMarkUnsure || showResult) && (
+      {(onToggleFavorite || onMarkTooEasy || onMarkUnsure || onFlagIssue || showResult) && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
           {onToggleFavorite && (
@@ -461,6 +476,18 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           {onMarkUnsure && (
             <Button variant="outline" size="sm" onClick={onMarkUnsure} className="text-muted-foreground hover:text-orange-600 hover:border-orange-400">
               <HelpCircle className="h-3 w-3 mr-1" />不确定{unsureKbd && <Kbd className="ml-1">{unsureKbd}</Kbd>}
+            </Button>
+          )}
+          {onFlagIssue && (
+            <Button variant="outline" size="sm" onClick={onFlagIssue}
+              className={question.issue_flag === 'confirmed'
+                ? 'text-red-600 hover:text-red-700 border-red-300 dark:text-red-400 dark:border-red-800'
+                : question.issue_flag === 'suspected'
+                  ? 'text-amber-600 hover:text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800'
+                  : 'text-muted-foreground hover:text-amber-600 hover:border-amber-400'}>
+              <TriangleAlert className="h-3 w-3 mr-1" />
+              {question.issue_flag && question.issue_flag !== 'none' ? '修改标记' : '标记问题'}
+              {flagIssueKbd && <Kbd className="ml-1">{flagIssueKbd}</Kbd>}
             </Button>
           )}
           </div>

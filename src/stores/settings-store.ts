@@ -75,16 +75,18 @@ function loadFlags(): AiFeatureFlags {
   return { exam: true, summary: false, suggestions: false, analysis: false, mineru: true, keypoints: true }
 }
 
-export type ShortcutAction = 'prev' | 'next' | 'submit' | 'markUnsure' | 'markWrong' | 'favorite' | 'tooEasy'
+export type ShortcutAction = 'prev' | 'next' | 'submit' | 'markUnsure' | 'markWrong' | 'favorite' | 'tooEasy' | 'flagIssue'
 export type ShortcutConfig = Record<ShortcutAction, string>
 
-export const DEFAULT_SHORTCUTS: ShortcutConfig = { prev: 'ArrowLeft', next: 'ArrowRight', submit: 'Enter', markUnsure: 'e', markWrong: 'r', favorite: 'q', tooEasy: 'w' }
+export const DEFAULT_SHORTCUTS: ShortcutConfig = { prev: 'ArrowLeft', next: 'ArrowRight', submit: 'Enter', markUnsure: 'e', markWrong: 'x', favorite: 'q', tooEasy: 'w', flagIssue: 'r' }
 
 function loadPracticeShortcuts(): ShortcutConfig {
   try {
     const raw = localStorage.getItem(PRACTICE_SHORTCUTS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<ShortcutConfig>
+      // v1: 'r' 原属"纠错",现归"标记问题"所有,老配置自动迁移
+      if (parsed.markWrong === 'r' && !parsed.flagIssue) parsed.markWrong = 'x'
       return { ...DEFAULT_SHORTCUTS, ...parsed }
     }
   } catch { /* ignore */ }

@@ -48,6 +48,8 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [keyPoints, setKeyPoints] = useState(initialData?.key_points ?? '')
   const [seqNumber, setSeqNumber] = useState(initialData?.seq_number ?? '')
   const [verified, setVerified] = useState(initialData?.verified ?? false)
+  const [issueFlag, setIssueFlag] = useState<'none' | 'suspected' | 'confirmed'>(initialData?.issue_flag ?? 'none')
+  const [issueNote, setIssueNote] = useState(initialData?.issue_note ?? '')
   const [allowUnordered, setAllowUnordered] = useState(initialData?.allow_unordered ?? false)
   const [unorderedBlanks, setUnorderedBlanks] = useState<number[]>(initialData?.unordered_blanks ?? [])
   const [analysisOpen, setAnalysisOpen] = useState(true)
@@ -238,6 +240,9 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         key_points: keyPoints.trim() || null,
         seq_number: seqNumber ? Number(seqNumber) : null,
         verified,
+        issue_flag: issueFlag,
+        issue_note: issueFlag === 'none' ? null : (issueNote.trim() || null),
+        flagged_at: issueFlag === 'none' ? null : (initialData?.flagged_at ?? new Date().toISOString()),
         allow_unordered: allowUnordered,
         unordered_blanks: unorderedBlanks.length > 0 && unorderedBlanks[0] !== -1 ? unorderedBlanks : null,
         import_mode: initialData?.import_mode ?? 'manual',
@@ -768,6 +773,25 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   <p className="text-xs text-muted-foreground">标记该题目已通过人工审核</p>
                 </div>
                 <Switch checked={verified} onCheckedChange={setVerified} />
+              </div>
+
+              <div className="space-y-2 pt-1 border-t">
+                <Label className="text-sm">问题标记</Label>
+                <p className="text-xs text-muted-foreground">发现题目有错但来不及修改时,先打标待处理</p>
+                <div className="flex gap-1.5">
+                  {([['none', '无'], ['suspected', '疑似有错'], ['confirmed', '已确认有错']] as const).map(([val, label]) => (
+                    <Button key={val} type="button" size="sm" variant={issueFlag === val ? 'default' : 'outline'}
+                      className={issueFlag === 'suspected' && issueFlag === val ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500' : issueFlag === 'confirmed' && issueFlag === val ? 'bg-red-500 hover:bg-red-600 text-white border-red-500' : ''}
+                      onClick={() => setIssueFlag(val)}>
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                {issueFlag !== 'none' && (
+                  <Textarea value={issueNote} onChange={(e) => setIssueNote(e.target.value)}
+                    placeholder="简要记录问题所在,方便以后修改(如:选项C答案有误 / 解析与答案不符)"
+                    className="text-sm min-h-[70px]" />
+                )}
               </div>
 
               <div className="space-y-2">

@@ -14,6 +14,7 @@ export interface FetchParams {
   importMode?: string
   verified?: '' | 'true' | 'false'
   keyPoints?: string
+  issueFlag?: '' | 'suspected' | 'confirmed'
 }
 
 export function useQuestions() {
@@ -28,7 +29,7 @@ export function useQuestions() {
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
 
   const fetchQuestions = useCallback(async (params: FetchParams = {}) => {
-    const { page: p = 1, pageSize: ps = pageSize, search, subject, category, questionType, importMode, verified, keyPoints } = params
+    const { page: p = 1, pageSize: ps = pageSize, search, subject, category, questionType, importMode, verified, keyPoints, issueFlag } = params
     paramsRef.current = { ...params, pageSize: ps }
     setIsLoading(true)
     setError(null)
@@ -48,6 +49,7 @@ export function useQuestions() {
     if (importMode) query = query.eq('import_mode', importMode)
     if (verified === 'true') query = query.eq('verified', true)
     else if (verified === 'false') query = query.eq('verified', false)
+    if (issueFlag) query = query.eq('issue_flag', issueFlag)
     if (keyPoints === '__none__') query = query.or('key_points.is.null,key_points.eq.""')
     else if (keyPoints) query = query.ilike('key_points', `%${keyPoints}%`)
 

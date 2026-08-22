@@ -40,7 +40,7 @@ export function Component() {
   const navigate = useNavigate()
   const [, setSearchParams] = useSearchParams()
   const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
-  const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints })
+  const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints, issueFlag: selectedIssueFlag })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
@@ -54,6 +54,7 @@ export function Component() {
   const [selectedImportMode, setSelectedImportMode] = useState(() => new URLSearchParams(window.location.search).get('import') || '')
   const [selectedVerified, setSelectedVerified] = useState<'' | 'true' | 'false'>(() => (new URLSearchParams(window.location.search).get('verified') || '') as '' | 'true' | 'false')
   const [selectedKeyPoints, setSelectedKeyPoints] = useState(() => new URLSearchParams(window.location.search).get('kp') || '')
+  const [selectedIssueFlag, setSelectedIssueFlag] = useState<'' | 'suspected' | 'confirmed'>(() => (new URLSearchParams(window.location.search).get('issue') || '') as '' | 'suspected' | 'confirmed')
 
   const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
   const btnRowRef = useRef<HTMLDivElement>(null)
@@ -137,10 +138,11 @@ export function Component() {
         importMode: selectedImportMode,
         verified: selectedVerified,
         keyPoints: selectedKeyPoints,
+        issueFlag: selectedIssueFlag,
       })
     }, 300)
     return () => { if (debounceRef.current !== null) clearTimeout(debounceRef.current) }
-  }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, fetchQuestions])
+  }, [search, selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, selectedIssueFlag, fetchQuestions])
 
   // Update filtered categories and reset category when subject changes
   // Update filtered categories and reset category when subject changes
@@ -159,8 +161,9 @@ export function Component() {
     if (selectedImportMode) params.set('import', selectedImportMode)
     if (selectedVerified) params.set('verified', selectedVerified)
     if (selectedKeyPoints) params.set('kp', selectedKeyPoints)
+    if (selectedIssueFlag) params.set('issue', selectedIssueFlag)
     setSearchParams(params, { replace: true })
-  }, [selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, setSearchParams])
+  }, [selectedSubject, selectedCategory, selectedType, selectedImportMode, selectedVerified, selectedKeyPoints, selectedIssueFlag, setSearchParams])
 
   // Pre-fill bulk key points from filter
   useEffect(() => {
@@ -208,6 +211,15 @@ export function Component() {
   const handleSingleDelete = async (id: string) => {
     setDeleteConfirm(null)
     await deleteQuestion(id)
+  }
+
+  const setIssueFlag = async (id: string, flag: 'none' | 'suspected' | 'confirmed') => {
+    await supabase.from('questions').update({
+      issue_flag: flag,
+      issue_note: flag === 'none' ? null : undefined,
+      flagged_at: flag === 'none' ? null : new Date().toISOString(),
+    }).eq('id', id)
+    refetch()
   }
 
   const [kpConfirm, setKpConfirm] = useState<{ oldKp: string; newKp: string; selectedCount: number; totalCount: number } | null>(null)
@@ -461,6 +473,28 @@ export function Component() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className={`gap-1 text-xs ${selectedIssueFlag ? 'border-amber-500/60 text-amber-600 dark:text-amber-400' : ''}`}>
+              {selectedIssueFlag === 'suspected' ? '⚠ 疑似有错' : selectedIssueFlag === 'confirmed' ? '⚠ 已确认' : '问题标记'}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => setSelectedIssueFlag('')}>
+              <span className="text-muted-foreground">问题标记</span>
+              {!selectedIssueFlag && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedIssueFlag('suspected')}>
+              疑似有错
+              {selectedIssueFlag === 'suspected' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSelectedIssueFlag('confirmed')}>
+              已确认有错
+              {selectedIssueFlag === 'confirmed' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {kpsBySubject.size > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -530,6 +564,7 @@ export function Component() {
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleAll={toggleAll}
+            onSetIssue={setIssueFlag}
           />
           {selectedIds.size > 0 && (
             <div className="sticky bottom-0 z-10 -mx-4 sm:mx-0 px-4 py-3 bg-background border-t flex items-center justify-between gap-3 rounded-b-lg flex-wrap">
@@ -699,6 +734,8 @@ export function Component() {
                     questionType: selectedType,
                     importMode: selectedImportMode,
                     verified: selectedVerified,
+                    keyPoints: selectedKeyPoints,
+                    issueFlag: selectedIssueFlag,
                   })}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -718,6 +755,8 @@ export function Component() {
                     questionType: selectedType,
                     importMode: selectedImportMode,
                     verified: selectedVerified,
+                    keyPoints: selectedKeyPoints,
+                    issueFlag: selectedIssueFlag,
                   })}
                 >
                   <ChevronRight className="h-4 w-4" />

@@ -2,8 +2,9 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import type { Question } from '@/types'
-import { Pencil, Trash2, Check } from 'lucide-react'
+import { Pencil, Trash2, Check, TriangleAlert, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { TYPE_COLORS } from '@/lib/constants'
@@ -14,9 +15,10 @@ interface Props {
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onToggleAll: () => void
+  onSetIssue: (id: string, flag: 'none' | 'suspected' | 'confirmed') => void
 }
 
-export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect, onToggleAll }: Props) {
+export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect, onToggleAll, onSetIssue }: Props) {
   const { t } = useT()
   const allSelected = questions.length > 0 && selectedIds.size === questions.length
 
@@ -43,6 +45,7 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
             <TableHead>{t('questions.questionType')}</TableHead>
             <TableHead className="w-[70px]">导入</TableHead>
             <TableHead className="w-[70px]">验证</TableHead>
+            <TableHead className="w-[80px]">标记</TableHead>
             <TableHead className="w-20">{t('questions.actions')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -121,6 +124,64 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-600 dark:text-amber-400">待验证</span>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {q.issue_flag && q.issue_flag !== 'none' ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button"
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer ${
+                            q.issue_flag === 'confirmed'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50'
+                              : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                          }`}>
+                          <TriangleAlert className="h-3 w-3" />
+                          {q.issue_flag === 'confirmed' ? '已确认' : '疑似'}
+                          <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[160px]">
+                        {q.issue_note && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground max-w-[220px] whitespace-pre-wrap break-words border-b">
+                              {q.issue_note}
+                            </div>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
+                        <DropdownMenuItem onClick={() => onSetIssue(q.id, 'suspected')}>
+                          标记疑似有错
+                          {q.issue_flag === 'suspected' && <Check className="h-3 w-3 ml-auto" />}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onSetIssue(q.id, 'confirmed')}>
+                          标记已确认
+                          {q.issue_flag === 'confirmed' && <Check className="h-3 w-3 ml-auto" />}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onSetIssue(q.id, 'none')}>
+                          <span className="text-muted-foreground">清除标记</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button"
+                          className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 text-[10px] text-muted-foreground cursor-pointer hover:border-amber-500/60 hover:text-amber-600 dark:hover:text-amber-400">
+                          <TriangleAlert className="h-3 w-3" />
+                          标记
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[160px]">
+                        <DropdownMenuItem onClick={() => onSetIssue(q.id, 'suspected')}>
+                          标记疑似有错
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onSetIssue(q.id, 'confirmed')}>
+                          标记已确认
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </TableCell>
                 <TableCell>

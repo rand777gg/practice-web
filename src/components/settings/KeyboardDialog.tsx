@@ -10,7 +10,7 @@ import {
 } from './keyboard-layout'
 import { cn } from '@/lib/utils'
 
-const LABELS: Record<ShortcutAction, string> = { prev: '上一题', next: '下一题', submit: '提交答案', markUnsure: '不确定', markWrong: '纠错', favorite: '收藏', tooEasy: '太简单' }
+const LABELS: Record<ShortcutAction, string> = { prev: '上一题', next: '下一题', submit: '提交答案', markUnsure: '不确定', markWrong: '纠错', favorite: '收藏', tooEasy: '太简单', flagIssue: '标记问题' }
 
 interface Props {
   open: boolean

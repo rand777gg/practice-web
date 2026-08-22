@@ -12,6 +12,7 @@ import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
 import { QuestionCard } from '@/components/questions/QuestionCard'
+import { FlagIssueDialog } from '@/components/questions/FlagIssueDialog'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
 import { PlanDialog } from '@/components/layout/PlanDialog'
 
@@ -155,6 +156,7 @@ export function PracticeSession() {
   }, [])
   const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [flagDialogOpen, setFlagDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [showSkeleton, setShowSkeleton] = useState(false)
   const [questionReady, setQuestionReady] = useState(false)
@@ -1130,6 +1132,7 @@ export function PracticeSession() {
   const markWrongRef = useRef<() => void>(() => {})
   const favoriteRef = useRef<() => void>(() => {})
   const tooEasyRef = useRef<() => void>(() => {})
+  const flagIssueRef = useRef<() => void>(() => {})
   const shortcutsRef = useRef(practiceShortcuts)
   useEffect(() => { prevRef.current = handlePrev; nextRef.current = handleNext; submitRef.current = handleSubmit; shortcutsRef.current = practiceShortcuts })
 
@@ -1145,10 +1148,11 @@ export function PracticeSession() {
       if (matchShortcut(e, sc.markWrong)) { e.preventDefault(); markWrongRef.current() }
       if (!isSubmitted && matchShortcut(e, sc.tooEasy)) { e.preventDefault(); tooEasyRef.current() }
       if (matchShortcut(e, sc.favorite)) { e.preventDefault(); favoriteRef.current() }
+      if (isAdmin && matchShortcut(e, sc.flagIssue)) { e.preventDefault(); flagIssueRef.current() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isSubmitted, selectedAnswer, isLoading, showSkeleton])
+  }, [isSubmitted, selectedAnswer, isLoading, showSkeleton, isAdmin])
 
   const handleMarkTooEasy = useCallback(async () => {
     if (!question) return
@@ -1196,7 +1200,19 @@ export function PracticeSession() {
     useDashboardStore.getState().invalidatePlanCache()
   }, [question, saveAnswer, bumpRefresh])
 
-  useEffect(() => { markUnsureRef.current = handleMarkUnsure; markWrongRef.current = handleMarkUnsure; favoriteRef.current = () => { if (question) toggleFavorite(question.id) }; tooEasyRef.current = () => setTooEasyOpen(true) })
+  const handleSaveIssue = useCallback(async (flag: 'none' | 'suspected' | 'confirmed', noteText: string) => {
+    if (!question) return
+    const trimmed = noteText.trim()
+    const patch = {
+      issue_flag: flag,
+      issue_note: flag === 'none' ? null : (trimmed || null),
+      flagged_at: flag === 'none' ? null : new Date().toISOString(),
+    }
+    await supabase.from('questions').update(patch).eq('id', question.id)
+    setQuestion({ ...question, ...patch })
+  }, [question, setQuestion])
+
+  useEffect(() => { markUnsureRef.current = handleMarkUnsure; markWrongRef.current = handleMarkUnsure; favoriteRef.current = () => { if (question) toggleFavorite(question.id) }; tooEasyRef.current = () => setTooEasyOpen(true); flagIssueRef.current = () => setFlagDialogOpen(true) })
 
 
   useEffect(() => {
@@ -1665,7 +1681,7 @@ export function PracticeSession() {
             <>
               <div className="space-y-4">
                   <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
                   </div>
                   {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && justAnsweredId !== question.id && (
                     <div className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2">
@@ -1735,6 +1751,7 @@ export function PracticeSession() {
           )}
         </div>
       )}
+      <FlagIssueDialog open={flagDialogOpen} onOpenChange={setFlagDialogOpen} question={question} onSave={handleSaveIssue} />
     </div>
   )
 }

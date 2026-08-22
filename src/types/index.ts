@@ -165,6 +165,9 @@ export interface Question {
   runtime_config?: RuntimeConfig
   execution_mode?: 'stdio' | 'function'
   examples?: ExampleCase[]
+  issue_flag?: 'none' | 'suspected' | 'confirmed'
+  issue_note?: string | null
+  flagged_at?: string | null
 }
 
 export interface ExamSession {
