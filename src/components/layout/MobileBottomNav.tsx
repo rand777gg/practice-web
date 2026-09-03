@@ -67,8 +67,8 @@ export function MobileBottomNav() {
     <nav
       className={cn(
         'xl:hidden fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] z-30',
-        'transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform',
-        hidden && 'pointer-events-none translate-y-[calc(100%+24px)] opacity-0',
+        'transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-opacity',
+        hidden && 'pointer-events-none opacity-0',
       )}
     >
       <div className="relative mx-auto flex items-stretch h-14 max-w-lg overflow-hidden rounded-3xl border border-border/40 bg-background/55 shadow-lg shadow-black/10 backdrop-blur-2xl p-1.5">

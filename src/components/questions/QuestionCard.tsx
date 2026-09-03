@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
@@ -72,11 +72,42 @@ interface Props {
 export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
+  // 底部操作按钮(收藏/太简单/不确定/标记问题): <sm 折叠成纯图标,点击后展开图标+文字; ≥sm 恒展开。与题目管理顶部按钮同款动画。
+  const [expandedOp, setExpandedOp] = useState<string | null>(null)
+  const opBarRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     setVisible(false)
+    setExpandedOp(null)
     const id = requestAnimationFrame(() => setVisible(true))
     return () => cancelAnimationFrame(id)
   }, [question.id])
+  useEffect(() => {
+    if (expandedOp === null) return
+    const handler = (e: MouseEvent | TouchEvent) => {
+      if (opBarRef.current && !opBarRef.current.contains(e.target as Node)) setExpandedOp(null)
+    }
+    document.addEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
+  }, [expandedOp])
+  const handleOp = (key: string, action: () => void) => () => {
+    // 桌面(≥640px,与 sm: 断点一致)始终直接执行;移动端先展开文字,已展开再点击才执行
+    if (window.innerWidth >= 640) return action()
+    if (expandedOp === key) {
+      setExpandedOp(null)
+      return action()
+    }
+    setExpandedOp(key)
+  }
+  const opShared = 'shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2'
+  const opExpanded = 'px-3 gap-2'
+  const opCollapsed = 'px-1.5'
+  const opLabel = (isOpen: boolean) =>
+    `whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[12rem] sm:opacity-100 sm:pl-2 ${isOpen ? 'max-w-[12rem] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`
+
   const { submit, loading: codingLoading, results: codingResults, judgeStatus } = useCodeSubmission(question.id)
   const [editableTestCases, setEditableTestCases] = useState<TestCase[]>([])
   const codingAnswer = selectedAnswer && typeof selectedAnswer === 'object' && 'code' in (selectedAnswer as unknown as Record<string, unknown>) ? selectedAnswer as CodingAnswer : null
@@ -458,41 +489,53 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       )}
       </div>
 
-      <div {...row(500)}>
+      {/* pt 让操作按钮与上方选项/解析拉开间距;不用 mt 以避免与卡片 space-y 冲突 */}
+      <div {...row(500)} className={cn(row(500).className, 'pt-2.5 sm:pt-3.5')} style={row(500).style}>
       {(onToggleFavorite || onMarkTooEasy || onMarkUnsure || onFlagIssue || showResult) && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div ref={opBarRef} className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
           {onToggleFavorite && (
-            <Button variant="outline" size="sm" onClick={onToggleFavorite} className={isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground'}>
-              {isFavorited ? <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" /> : <Star className="h-3 w-3" />}
-              {isFavorited ? t('favorites.remove') : t('favorites.add')}{favoriteKbd && <Kbd className="ml-1">{favoriteKbd}</Kbd>}
+            <Button variant="outline" size="sm" onClick={handleOp('fav', onToggleFavorite)}
+              className={cn(opShared, isFavorited ? 'text-yellow-500 hover:text-yellow-600 border-yellow-300' : 'text-muted-foreground', expandedOp === 'fav' ? opExpanded : opCollapsed)}>
+              <Star className={cn('h-4 w-4 shrink-0', isFavorited && 'fill-yellow-500 text-yellow-500')} />
+              <span className={opLabel(expandedOp === 'fav')}>
+                {isFavorited ? t('favorites.remove') : t('favorites.add')}{favoriteKbd && <Kbd className="ml-1">{favoriteKbd}</Kbd>}
+              </span>
             </Button>
           )}
           {onMarkTooEasy && (
-            <Button variant="outline" size="sm" onClick={onMarkTooEasy} className="text-muted-foreground hover:text-green-600 hover:border-green-400">
-              <ThumbsDown className="h-3 w-3 mr-1" />太简单{tooEasyKbd && <Kbd className="ml-1">{tooEasyKbd}</Kbd>}
+            <Button variant="outline" size="sm" onClick={handleOp('tooEasy', onMarkTooEasy)}
+              className={cn(opShared, 'text-muted-foreground hover:text-green-600 hover:border-green-400', expandedOp === 'tooEasy' ? opExpanded : opCollapsed)}>
+              <ThumbsDown className="h-4 w-4 shrink-0" />
+              <span className={opLabel(expandedOp === 'tooEasy')}>太简单{tooEasyKbd && <Kbd className="ml-1">{tooEasyKbd}</Kbd>}</span>
             </Button>
           )}
           {onMarkUnsure && (
-            <Button variant="outline" size="sm" onClick={onMarkUnsure} className="text-muted-foreground hover:text-orange-600 hover:border-orange-400">
-              <HelpCircle className="h-3 w-3 mr-1" />不确定{unsureKbd && <Kbd className="ml-1">{unsureKbd}</Kbd>}
+            <Button variant="outline" size="sm" onClick={handleOp('unsure', onMarkUnsure)}
+              className={cn(opShared, 'text-muted-foreground hover:text-orange-600 hover:border-orange-400', expandedOp === 'unsure' ? opExpanded : opCollapsed)}>
+              <HelpCircle className="h-4 w-4 shrink-0" />
+              <span className={opLabel(expandedOp === 'unsure')}>不确定{unsureKbd && <Kbd className="ml-1">{unsureKbd}</Kbd>}</span>
             </Button>
           )}
           {onFlagIssue && (
-            <Button variant="outline" size="sm" onClick={onFlagIssue}
-              className={question.issue_flag === 'confirmed'
-                ? 'text-red-600 hover:text-red-700 border-red-300 dark:text-red-400 dark:border-red-800'
-                : question.issue_flag === 'suspected'
-                  ? 'text-amber-600 hover:text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800'
-                  : 'text-muted-foreground hover:text-amber-600 hover:border-amber-400'}>
-              <TriangleAlert className="h-3 w-3 mr-1" />
-              {question.issue_flag && question.issue_flag !== 'none' ? '修改标记' : '标记问题'}
-              {flagIssueKbd && <Kbd className="ml-1">{flagIssueKbd}</Kbd>}
+            <Button variant="outline" size="sm" onClick={handleOp('flag', onFlagIssue)}
+              className={cn(opShared,
+                question.issue_flag === 'confirmed'
+                  ? 'text-red-600 hover:text-red-700 border-red-300 dark:text-red-400 dark:border-red-800'
+                  : question.issue_flag === 'suspected'
+                    ? 'text-amber-600 hover:text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800'
+                    : 'text-muted-foreground hover:text-amber-600 hover:border-amber-400',
+                expandedOp === 'flag' ? opExpanded : opCollapsed)}>
+              <TriangleAlert className="h-4 w-4 shrink-0" />
+              <span className={opLabel(expandedOp === 'flag')}>
+                {question.issue_flag && question.issue_flag !== 'none' ? '修改标记' : '标记问题'}
+                {flagIssueKbd && <Kbd className="ml-1">{flagIssueKbd}</Kbd>}
+              </span>
             </Button>
           )}
           </div>
           {showResult && (
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1.5">
               {!question.verified && onVerify && (
                 <Button variant="outline" size="sm" onClick={onVerify}>
                   <Check className="h-3 w-3 mr-1" />确认验证

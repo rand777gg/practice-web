@@ -31,8 +31,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
 import { SubjectExplanationManagerDialog } from '@/components/practice/SubjectExplanationManagerDialog'
+import { KpExplanationManagerDialog } from '@/components/practice/KpExplanationManagerDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen } from 'lucide-react'
+import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen, GitMerge, GraduationCap } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
@@ -45,6 +46,7 @@ export function Component() {
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
   const [explainOpen, setExplainOpen] = useState(false)
+  const [kpExplainOpen, setKpExplainOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'single'; id: string } | { type: 'bulk'; count: number } | null>(null)
@@ -295,9 +297,11 @@ export function Component() {
         </div>
         <div className="flex gap-2" ref={btnRowRef}>
           {([
+            { icon: GitMerge, label: '题目查重', to: '/admin/duplicates', variant: 'outline' as const },
             { icon: Sparkles, label: 'AI 智能解析', to: '/admin/ai-import', variant: 'outline' as const, className: 'ai-nav-item' },
             { icon: FlaskConical, label: '测试题目', to: '/admin/questions/test', variant: 'outline' as const },
             { icon: BookOpen, label: '编排说明', action: () => setExplainOpen(true), variant: 'outline' as const },
+            { icon: GraduationCap, label: '知识点解读', action: () => setKpExplainOpen(true), variant: 'outline' as const },
             { icon: Upload, label: t('questions.import'), action: () => setShowImport(true), variant: 'outline' as const },
             { icon: Plus, label: t('questions.addQuestion'), to: '/admin/questions/new', variant: 'default' as const },
           ]).map((btn, i) => {
@@ -790,6 +794,8 @@ export function Component() {
       />
 
       <SubjectExplanationManagerDialog open={explainOpen} onOpenChange={setExplainOpen} />
+
+      <KpExplanationManagerDialog open={kpExplainOpen} onOpenChange={setKpExplainOpen} />
 
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>

@@ -116,6 +116,10 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/pages/admin/TestQuestionPage'),
                   },
                   {
+                    path: 'duplicates',
+                    lazy: () => import('@/pages/admin/DuplicateCheckPage'),
+                  },
+                  {
                     path: 'ai-import',
                     lazy: () => import('@/pages/admin/AiImportPage'),
                   },

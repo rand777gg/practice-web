@@ -20,9 +20,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   daily_deadline  TEXT,
   plan_reset_at     TIMESTAMPTZ,
   subject_reset_at  JSONB DEFAULT '{}'::jsonb,
+  plan_scope        JSONB,
   daily_reset_at    TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+COMMENT ON COLUMN public.profiles.plan_scope IS
+  '计划学科 -> 认领知识点数组的映射。如 {"数学":["一元二次方程"]}。NULL 或缺省=该学科全部知识点。';
 
 CREATE INDEX IF NOT EXISTS idx_profiles_id ON public.profiles(id);
 
@@ -847,6 +851,77 @@ AS $$
 $$;
 GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[], JSONB) TO authenticated;
 
+-- 计划知识点范围(plan_scope)进度 — 按“选中知识点集合”统计,解决学习计划按学科统计总量、
+-- 刷题会话按选中知识点统计题量时“分母不一致”的问题。
+--   语义:计划学科 S 认领了一组知识点 K[S],则该学科的“可刷总量” = 属于 S 且命中 K[S] 的
+--   去重题目数(而非整科题量)。当 K[S] = S 全部知识点时,该值 ≈ 整科 total(整科还含 missing_kp)。
+--   原 get_subject_progress 保持整科口径不变(零回归);客户端对设置了 plan_scope 的学科
+--   用本函数,未设置的学科(默认整科)继续走 get_subject_progress —— 二者分母对齐。
+--   返回的 missing_kp 恒为 0:该口径只关心已打标题、被认领知识点下的题。
+CREATE OR REPLACE FUNCTION public.get_kp_scope_progress(
+  p_user_id          UUID,
+  p_kp_scope         JSONB,
+  p_plan_reset_at    TIMESTAMPTZ DEFAULT NULL,
+  p_today_since      TIMESTAMPTZ DEFAULT NULL,
+  p_subject_resets   JSONB       DEFAULT NULL
+)
+RETURNS TABLE(
+  subject     TEXT,
+  total       BIGINT,
+  done_all    BIGINT,
+  done_today  BIGINT,
+  missing_kp  BIGINT
+)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT
+    sc.subject,
+    COUNT(DISTINCT sc.qid)                        AS total,
+    COUNT(DISTINCT CASE WHEN ua_all.question_id IS NOT NULL THEN sc.qid END)   AS done_all,
+    COUNT(DISTINCT CASE WHEN ua_today.question_id IS NOT NULL THEN sc.qid END) AS done_today,
+    0::BIGINT                                     AS missing_kp
+  FROM (
+    -- 命中认领知识点的题目(学科维度,同题多知识点去重)
+    SELECT q.subject AS subject, m.question_id AS qid
+    FROM public.kp_question_map m
+    JOIN public.questions q ON q.id = m.question_id
+    JOIN jsonb_each_text(p_kp_scope) sc ON sc.key = q.subject
+    WHERE sc.value::jsonb ? m.kp
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ueq
+        WHERE ueq.question_id = m.question_id AND ueq.user_id = p_user_id
+      )
+    GROUP BY q.subject, m.question_id
+  ) sc
+  LEFT JOIN public.user_answers ua_all
+    ON ua_all.question_id = sc.qid
+    AND ua_all.user_id = p_user_id
+    AND (
+      (p_subject_resets IS NOT NULL AND p_subject_resets ? sc.subject
+          AND ua_all.answered_at >= (p_subject_resets->>sc.subject)::TIMESTAMPTZ)
+      OR
+      ((p_subject_resets IS NULL OR NOT (p_subject_resets ? sc.subject))
+          AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at))
+    )
+  LEFT JOIN public.user_answers ua_today
+    ON ua_today.question_id = sc.qid
+    AND ua_today.user_id = p_user_id
+    AND ua_today.answered_at >= p_today_since
+    AND (
+      (p_subject_resets IS NOT NULL AND p_subject_resets ? sc.subject
+          AND ua_today.answered_at >= (p_subject_resets->>sc.subject)::TIMESTAMPTZ)
+      OR
+      ((p_subject_resets IS NULL OR NOT (p_subject_resets ? sc.subject))
+          AND (p_plan_reset_at IS NULL OR ua_today.answered_at >= p_plan_reset_at))
+    )
+  GROUP BY sc.subject
+  ORDER BY sc.subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_kp_scope_progress(UUID, JSONB, TIMESTAMPTZ, TIMESTAMPTZ, JSONB) TO authenticated;
+
 -- 每日各学科完成情况
 CREATE OR REPLACE FUNCTION public.get_daily_completion(
   p_user_id UUID, p_days INTEGER DEFAULT 30, p_subjects TEXT[] DEFAULT NULL
@@ -1570,3 +1645,639 @@ ALTER TABLE public.questions
   ADD COLUMN IF NOT EXISTS flagged_at  TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_questions_issue_flag ON public.questions(issue_flag);
+-- ============================================================================
+-- Section 20: 题目查重 —— 同科跨分类重复题扫描 + 人工复核 + 安全合并
+--   用法: 管理员在「后台 → 题目查重」页按学科扫描;
+--   扫描输出候选对与「重复概率」,可逐对选择: 合并(保留一条) / 保留两题 / 标记非重复
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+ALTER EXTENSION pg_trgm SET SCHEMA public;
+
+-- 20.1 文本规范化: 去掉 HTML 标签、空白、标点(含中文全角)后小写,用于精确指纹
+-- 中文标点用 translate 显式删除(避免超长正则字符类的兼容性问题), ASCII 标点/空白走 POSIX 类
+CREATE OR REPLACE FUNCTION public.norm_dup_compact(p_text TEXT)
+RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT lower(regexp_replace(
+    translate(
+      regexp_replace(
+        regexp_replace(coalesce(p_text, ''), '<[^>]*>', ' ', 'g'),
+        '[[:space:]]+', ' ', 'g'),
+      '，。！？；：、（）《》【】“”‘’…—·～『』「」〈〉﹏＿─—', ''),
+    '[[:punct:]]+', '', 'g'))
+$$;
+
+-- 20.2 文本规范化: 仅折叠空白、去标签,保留结构用于 trigram 相似度
+CREATE OR REPLACE FUNCTION public.norm_dup_stem(p_text TEXT)
+RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT lower(btrim(regexp_replace(
+    regexp_replace(coalesce(p_text, ''), '<[^>]*>', ' ', 'g'),
+    '[[:space:]]+', ' ', 'g')))
+$$;
+
+-- 20.3 选项重叠度: 两个规范化选项数组的 Jaccard(交集 / 较大集合大小)
+CREATE OR REPLACE FUNCTION public.dup_arr_jaccard(a TEXT[], b TEXT[])
+RETURNS numeric LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN cardinality(a) IS NULL OR cardinality(b) IS NULL THEN 0
+    WHEN cardinality(a) = 0 AND cardinality(b) = 0 THEN 1
+    WHEN cardinality(a) = 0 OR cardinality(b) = 0 THEN 0
+    ELSE (SELECT count(*)::numeric FROM (SELECT unnest(a) INTERSECT SELECT unnest(b)) i)
+         / GREATEST(cardinality(a), cardinality(b))::numeric
+  END
+$$;
+
+-- 20.4 分数 → 重复概率(规则版,未校准; 抽样人工复核后可迭代)
+CREATE OR REPLACE FUNCTION public.dup_score_prob(p_score NUMERIC)
+RETURNS numeric LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN p_score >= 0.95 THEN 1.0
+    WHEN p_score >= 0.85 THEN 0.93
+    WHEN p_score >= 0.75 THEN 0.85
+    WHEN p_score >= 0.65 THEN 0.72
+    WHEN p_score >= 0.55 THEN 0.58
+    ELSE 0.45
+  END
+$$;
+
+-- 20.5 题目正文 JSON(供扫描结果直接返回,避免二次查询)
+CREATE OR REPLACE FUNCTION public.dup_question_json(p_id UUID)
+RETURNS jsonb LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT jsonb_build_object(
+    'id', q.id,
+    'subject', q.subject,
+    'category', q.category,
+    'categories', COALESCE(q.categories, '[]'::jsonb),
+    'questionType', q.question_type,
+    'questionText', q.question_text,
+    'options', COALESCE(q.options, '[]'::jsonb),
+    'correctAnswer', q.correct_answer,
+    'keyPoints', q.key_points,
+    'verified', q.verified,
+    'importMode', q.import_mode,
+    'sourcePage', q.source_page,
+    'seqNumber', q.seq_number,
+    'createdAt', q.created_at,
+    'answerExplanation', q.answer_explanation,
+    'analysis', q.analysis,
+    'allowUnordered', q.allow_unordered,
+    'unorderedBlanks', q.unordered_blanks)
+  FROM public.questions q
+  WHERE q.id = p_id
+$$;
+
+-- 20.6 查重缓存表(规范化指纹 + trigram,由触发器维护)
+CREATE TABLE IF NOT EXISTS public.question_dup_cache (
+  question_id UUID PRIMARY KEY REFERENCES public.questions(id) ON DELETE CASCADE,
+  subject     TEXT NOT NULL DEFAULT '',
+  stem        TEXT NOT NULL DEFAULT '',
+  stem_fp     TEXT NOT NULL DEFAULT '',
+  opts        TEXT[] NOT NULL DEFAULT '{}',
+  opts_fp     TEXT NOT NULL DEFAULT '',
+  ans_fp      TEXT NOT NULL DEFAULT '',
+  len         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_qdc_subject ON public.question_dup_cache(subject);
+CREATE INDEX IF NOT EXISTS idx_qdc_fp      ON public.question_dup_cache(subject, stem_fp);
+CREATE INDEX IF NOT EXISTS idx_qdc_trgm    ON public.question_dup_cache USING gin (stem public.gin_trgm_ops);
+ALTER TABLE public.question_dup_cache ENABLE ROW LEVEL SECURITY;
+
+-- 单行同步(INSERT/SELECT 共用的指纹计算)
+CREATE OR REPLACE FUNCTION public.sync_dup_cache_question(p_id UUID)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
+  INSERT INTO public.question_dup_cache (question_id, subject, stem, stem_fp, opts, opts_fp, ans_fp, len)
+  SELECT q.id,
+         COALESCE(q.subject, ''),
+         f.stem,
+         md5(f.compact),
+         f.opts,
+         md5(COALESCE(array_to_string(f.opts, '|'), '')),
+         md5(public.norm_dup_compact(q.correct_answer::text)),
+         length(f.stem)
+  FROM public.questions q
+  CROSS JOIN LATERAL (
+    SELECT public.norm_dup_stem(q.question_text) AS stem,
+           public.norm_dup_compact(q.question_text) AS compact,
+           COALESCE((SELECT array_agg(nv ORDER BY nv)
+            FROM (SELECT DISTINCT public.norm_dup_compact(v) AS nv
+                  FROM jsonb_array_elements_text(q.options) v) s
+            WHERE nv <> ''), '{}'::text[]) AS opts
+  ) f
+  WHERE q.id = p_id
+  ON CONFLICT (question_id) DO UPDATE SET
+    subject = EXCLUDED.subject, stem = EXCLUDED.stem, stem_fp = EXCLUDED.stem_fp,
+    opts = EXCLUDED.opts, opts_fp = EXCLUDED.opts_fp, ans_fp = EXCLUDED.ans_fp, len = EXCLUDED.len
+$$;
+
+-- 整学科 / 全量重建(扫描前调用)
+CREATE OR REPLACE FUNCTION public.refresh_dup_cache(p_subject TEXT DEFAULT NULL)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  DELETE FROM public.question_dup_cache c
+  WHERE (p_subject IS NULL OR c.subject = p_subject)
+    AND NOT EXISTS (SELECT 1 FROM public.questions q WHERE q.id = c.question_id);
+
+  INSERT INTO public.question_dup_cache (question_id, subject, stem, stem_fp, opts, opts_fp, ans_fp, len)
+  SELECT q.id, COALESCE(q.subject, ''), f.stem, md5(f.compact), f.opts,
+         md5(COALESCE(array_to_string(f.opts, '|'), '')),
+         md5(public.norm_dup_compact(q.correct_answer::text)), length(f.stem)
+  FROM public.questions q
+  CROSS JOIN LATERAL (
+    SELECT public.norm_dup_stem(q.question_text) AS stem,
+           public.norm_dup_compact(q.question_text) AS compact,
+           COALESCE((SELECT array_agg(nv ORDER BY nv)
+            FROM (SELECT DISTINCT public.norm_dup_compact(v) AS nv
+                  FROM jsonb_array_elements_text(q.options) v) s
+            WHERE nv <> ''), '{}'::text[]) AS opts
+  ) f
+  WHERE (p_subject IS NULL OR COALESCE(q.subject, '') = p_subject)
+  ON CONFLICT (question_id) DO UPDATE SET
+    subject = EXCLUDED.subject, stem = EXCLUDED.stem, stem_fp = EXCLUDED.stem_fp,
+    opts = EXCLUDED.opts, opts_fp = EXCLUDED.opts_fp, ans_fp = EXCLUDED.ans_fp, len = EXCLUDED.len;
+END
+$$;
+
+-- 行级触发器: 题目增删改时保持缓存新鲜
+CREATE OR REPLACE FUNCTION public.trg_dup_cache_sync()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM public.question_dup_cache WHERE question_id = OLD.id;
+  ELSE
+    PERFORM public.sync_dup_cache_question(NEW.id);
+  END IF;
+  RETURN NULL;
+END
+$$;
+DROP TRIGGER IF EXISTS trg_dup_cache_sync ON public.questions;
+CREATE TRIGGER trg_dup_cache_sync
+  AFTER INSERT OR UPDATE OR DELETE ON public.questions
+  FOR EACH ROW EXECUTE FUNCTION public.trg_dup_cache_sync();
+
+-- 20.7 人工复核表: keep=有意保留两题, not_dup=判定非重复(二者都让该对不再出现在扫描里)
+CREATE TABLE IF NOT EXISTS public.question_dup_reviews (
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  q1_id      UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  q2_id      UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  subject    TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL CHECK (status IN ('keep', 'not_dup')),
+  note       TEXT,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (q1_id, q2_id)
+);
+CREATE INDEX IF NOT EXISTS idx_qdr_subject_status ON public.question_dup_reviews(subject, status);
+ALTER TABLE public.question_dup_reviews ENABLE ROW LEVEL SECURITY;
+
+-- 20.8 合并审计表(被删题删除后仍保留记录; 无外键避免级联丢失历史)
+CREATE TABLE IF NOT EXISTS public.question_merge_log (
+  id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  subject          TEXT NOT NULL DEFAULT '',
+  kept_id          UUID NOT NULL,
+  removed_id       UUID NOT NULL,
+  score            NUMERIC(6,4),
+  reason           TEXT,
+  merged_categories JSONB,
+  created_by       UUID,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_qml_removed ON public.question_merge_log(removed_id);
+CREATE INDEX IF NOT EXISTS idx_qml_created  ON public.question_merge_log(created_at DESC);
+ALTER TABLE public.question_merge_log ENABLE ROW LEVEL SECURITY;
+
+-- 20.9 扫描函数: 同学科内 精确指纹(L0) + trigram 近似(L1) 候选,按重复概率排序
+CREATE OR REPLACE FUNCTION public.scan_question_duplicates(
+  p_subject TEXT DEFAULT NULL,
+  p_min_sim NUMERIC DEFAULT 0.55,
+  p_limit   INTEGER DEFAULT 300
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
+DECLARE
+  v_sim   NUMERIC := GREATEST(0.4, LEAST(COALESCE(p_min_sim, 0.55), 0.95));
+  v_lim   INTEGER := GREATEST(1, LEAST(COALESCE(p_limit, 300), 1000));
+  v_result jsonb;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'forbidden'; END IF;
+
+  PERFORM public.refresh_dup_cache(p_subject);
+
+  IF p_subject IS NULL AND (SELECT count(*) FROM public.question_dup_cache) > 20000 THEN
+    RAISE EXCEPTION '题库超过 20000 题,请按学科扫描以控制耗时';
+  END IF;
+
+  PERFORM set_config('pg_trgm.similarity_threshold', v_sim::text, true);
+
+  WITH exact AS (
+    SELECT a.question_id AS q1, b.question_id AS q2,
+           'exact'::text AS kind, 1.0::numeric AS score,
+           1.0::numeric AS s_text, 1.0::numeric AS o_overlap,
+           CASE WHEN a.ans_fp = b.ans_fp THEN 1.0::numeric ELSE 0.0::numeric END AS a_same,
+           md5(a.subject || '|' || a.stem_fp) AS gkey,
+           (SELECT count(*) FROM public.question_dup_cache cc
+             WHERE cc.subject = a.subject AND cc.stem_fp = a.stem_fp)::int AS gsize
+    FROM public.question_dup_cache a
+    JOIN public.question_dup_cache b
+      ON a.stem_fp = b.stem_fp AND a.subject = b.subject AND a.question_id < b.question_id
+    WHERE p_subject IS NULL OR a.subject = p_subject
+  ),
+  fuzzy AS (
+    SELECT a.question_id AS q1, b.question_id AS q2,
+           'fuzzy'::text AS kind,
+           round(
+             public.similarity(a.stem, b.stem)::numeric
+             * (0.55 + 0.25 * public.dup_arr_jaccard(a.opts, b.opts)
+                     + 0.20 * CASE WHEN a.ans_fp = b.ans_fp THEN 1 ELSE 0 END),
+             4
+           ) AS score,
+           public.similarity(a.stem, b.stem)::numeric AS s_text,
+           public.dup_arr_jaccard(a.opts, b.opts) AS o_overlap,
+           CASE WHEN a.ans_fp = b.ans_fp THEN 1.0::numeric ELSE 0.0::numeric END AS a_same,
+           NULL::text AS gkey, NULL::int AS gsize
+    FROM public.question_dup_cache a
+    JOIN public.question_dup_cache b
+      ON a.subject = b.subject AND a.question_id < b.question_id
+     AND a.stem % b.stem
+     AND a.len BETWEEN b.len * 0.7 AND b.len * 1.45
+     AND a.stem_fp <> b.stem_fp
+    WHERE (p_subject IS NULL OR a.subject = p_subject)
+      AND a.len >= 10 AND b.len >= 10
+  ),
+  merged AS (
+    SELECT q1, q2, kind, score, s_text, o_overlap, a_same, gkey, gsize,
+           row_number() OVER (PARTITION BY q1, q2
+                              ORDER BY (kind = 'exact') DESC, score DESC) AS rn
+    FROM (
+      SELECT q1, q2, kind, score, s_text, o_overlap, a_same, gkey, gsize FROM exact
+      UNION ALL
+      SELECT q1, q2, kind, score, s_text, o_overlap, a_same, gkey, gsize FROM fuzzy
+    ) u
+  ),
+  filtered AS MATERIALIZED (
+    SELECT q1, q2, kind, score, s_text, o_overlap, a_same, gkey, gsize
+    FROM merged
+    WHERE rn = 1
+      AND score >= 0.55
+      AND NOT EXISTS (
+        SELECT 1 FROM public.question_dup_reviews r
+        WHERE (r.q1_id = q1 AND r.q2_id = q2) OR (r.q1_id = q2 AND r.q2_id = q1))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.question_merge_log m
+        WHERE (m.kept_id = q1 AND m.removed_id = q2) OR (m.kept_id = q2 AND m.removed_id = q1))
+  ),
+  ranked AS (
+    SELECT f.*, row_number() OVER (ORDER BY f.score DESC, f.q1, f.q2) AS rr
+    FROM filtered f
+  )
+  SELECT jsonb_build_object(
+    'subject', p_subject,
+    'total', (SELECT count(*)::int FROM filtered),
+    'limit', v_lim,
+    'truncated', (SELECT count(*)::int FROM filtered) > v_lim,
+    'candidates', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'kind', kind,
+        'score', score,
+        'prob', public.dup_score_prob(score),
+        'level', CASE WHEN score >= 0.85 THEN 'high' WHEN score >= 0.65 THEN 'mid' ELSE 'low' END,
+        'signals', jsonb_build_object('sText', s_text, 'oOverlap', o_overlap, 'aSame', a_same),
+        'group', CASE WHEN gkey IS NOT NULL THEN jsonb_build_object(
+                   'key', gkey, 'size', gsize,
+                   'members', (SELECT COALESCE(
+                                jsonb_agg(public.dup_question_json(cc.question_id)
+                                          ORDER BY q.created_at, cc.question_id), '[]'::jsonb)
+                               FROM public.question_dup_cache cc
+                               JOIN public.questions q ON q.id = cc.question_id
+                               WHERE md5(cc.subject || '|' || cc.stem_fp) = gkey))
+                   ELSE NULL END,
+        'a', public.dup_question_json(q1),
+        'b', public.dup_question_json(q2)
+      ) ORDER BY score DESC, q1, q2)
+      FROM ranked WHERE rr <= v_lim), '[]'::jsonb)
+  ) INTO v_result;
+
+  RETURN v_result;
+END
+$$;
+
+-- 20.10 人工复核: 保留两题(keep) / 判定非重复(not_dup)
+CREATE OR REPLACE FUNCTION public.save_dup_review(
+  p_q1 UUID, p_q2 UUID, p_status TEXT, p_note TEXT DEFAULT NULL
+)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'forbidden'; END IF;
+  IF p_status NOT IN ('keep', 'not_dup') THEN RAISE EXCEPTION 'invalid status: %', p_status; END IF;
+
+  INSERT INTO public.question_dup_reviews (q1_id, q2_id, subject, status, note, created_by)
+  SELECT LEAST(p_q1, p_q2), GREATEST(p_q1, p_q2),
+         COALESCE((SELECT q.subject FROM public.questions q WHERE q.id = p_q1), ''),
+         p_status, p_note, auth.uid()
+  ON CONFLICT (q1_id, q2_id) DO UPDATE SET
+    status = EXCLUDED.status, note = EXCLUDED.note,
+    created_by = EXCLUDED.created_by, created_at = NOW();
+END
+$$;
+
+-- 20.11 合并: 保留 p_keep, 删除 p_remove; 先重指所有引用,合并分类/解析,再删除
+CREATE OR REPLACE FUNCTION public.merge_dup_questions(
+  p_keep UUID, p_remove UUID, p_reason TEXT DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_subject   TEXT;
+  v_moved_ua  INT := 0;
+  v_moved_sub INT := 0;
+  v_kcats     jsonb;
+  v_rcats     jsonb;
+  v_merged    jsonb;
+  v_rkp       TEXT;
+  v_rexp      TEXT;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'forbidden'; END IF;
+  IF p_keep = p_remove THEN RAISE EXCEPTION 'keep 与 remove 不能相同'; END IF;
+
+  SELECT COALESCE(k.subject, ''), COALESCE(k.categories, '[]'::jsonb),
+         COALESCE(r.categories, '[]'::jsonb), r.key_points, r.answer_explanation
+    INTO v_subject, v_kcats, v_rcats, v_rkp, v_rexp
+    FROM public.questions k
+    JOIN public.questions r ON r.id = p_remove
+    WHERE k.id = p_keep;
+  IF NOT FOUND THEN RAISE EXCEPTION '题目不存在: keep=% remove=%', p_keep, p_remove; END IF;
+
+  -- 合并分类(保留 keep 原有顺序, 末尾追加 remove 独有分类)
+  SELECT COALESCE(jsonb_agg(t.elem ORDER BY t.pos), '[]'::jsonb) INTO v_merged
+  FROM (
+    SELECT kk.elem, kk.pos
+    FROM jsonb_array_elements_text(v_kcats) WITH ORDINALITY AS kk(elem, pos)
+    UNION ALL
+    SELECT rr.elem, 100000 + rr.pos
+    FROM jsonb_array_elements_text(v_rcats) WITH ORDINALITY AS rr(elem, pos)
+    WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(v_kcats) x WHERE x = rr.elem)
+  ) t;
+
+  -- 合并期间暂停全量元数据重建触发器(结束后手动刷新一次),避免每步都全表重建
+  ALTER TABLE public.questions DISABLE TRIGGER trg_question_meta_refresh;
+
+  UPDATE public.questions qk
+  SET categories = v_merged,
+      key_points = COALESCE(NULLIF(qk.key_points, ''), v_rkp),
+      answer_explanation = COALESCE(NULLIF(qk.answer_explanation, ''), v_rexp)
+  WHERE qk.id = p_keep;
+
+  UPDATE public.user_answers SET question_id = p_keep WHERE question_id = p_remove;
+  GET DIAGNOSTICS v_moved_ua = ROW_COUNT;
+
+  INSERT INTO public.favorites (user_id, question_id, created_at)
+  SELECT user_id, p_keep, MIN(created_at) FROM public.favorites WHERE question_id = p_remove GROUP BY user_id
+  ON CONFLICT (user_id, question_id) DO NOTHING;
+  DELETE FROM public.favorites WHERE question_id = p_remove;
+
+  INSERT INTO public.user_excluded_questions (user_id, question_id, created_at)
+  SELECT user_id, p_keep, MIN(created_at) FROM public.user_excluded_questions WHERE question_id = p_remove GROUP BY user_id
+  ON CONFLICT (user_id, question_id) DO NOTHING;
+  DELETE FROM public.user_excluded_questions WHERE question_id = p_remove;
+
+  INSERT INTO public.question_bank_items (bank_id, question_id, added_at)
+  SELECT bank_id, p_keep, MIN(added_at) FROM public.question_bank_items WHERE question_id = p_remove GROUP BY bank_id
+  ON CONFLICT (bank_id, question_id) DO NOTHING;
+  DELETE FROM public.question_bank_items WHERE question_id = p_remove;
+
+  UPDATE public.submissions SET question_id = p_keep WHERE question_id = p_remove;
+  GET DIAGNOSTICS v_moved_sub = ROW_COUNT;
+
+  -- 历史会话/顺序刷题里已记录的题目 id 一并重指(避免断链)
+  UPDATE public.exam_sessions es
+  SET question_ids = COALESCE((
+    SELECT jsonb_agg(CASE WHEN v = p_remove::text THEN p_keep::text ELSE v END)
+    FROM jsonb_array_elements_text(es.question_ids) v), '[]'::jsonb)
+  WHERE es.question_ids ? p_remove::text;
+
+  UPDATE public.practice_sequential_state ps
+  SET question_ids = COALESCE((
+    SELECT array_agg(CASE WHEN x = p_remove THEN p_keep ELSE x END)
+    FROM unnest(ps.question_ids) x), '{}'::uuid[])
+  WHERE p_remove = ANY(ps.question_ids);
+
+  INSERT INTO public.question_merge_log (subject, kept_id, removed_id, reason, merged_categories, created_by)
+  VALUES (v_subject, p_keep, p_remove, p_reason, v_merged, auth.uid());
+
+  DELETE FROM public.questions WHERE id = p_remove;
+
+  ALTER TABLE public.questions ENABLE TRIGGER trg_question_meta_refresh;
+  PERFORM public.refresh_question_meta_cache();
+  PERFORM public.refresh_kp_question_map();
+
+  RETURN jsonb_build_object(
+    'ok', true, 'kept', p_keep, 'removed', p_remove,
+    'movedUserAnswers', v_moved_ua, 'movedSubmissions', v_moved_sub);
+END
+$$;
+
+-- 20.12 组内一键合并: 保留 p_keep, 依次合并删除 p_removes 里的其余重复(单事务)
+CREATE OR REPLACE FUNCTION public.merge_dup_group(
+  p_keep UUID, p_removes UUID[], p_reason TEXT DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  r       UUID;
+  v_count INT := 0;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'forbidden'; END IF;
+  FOREACH r IN ARRAY COALESCE(p_removes, '{}'::uuid[]) LOOP
+    IF r <> p_keep THEN
+      PERFORM public.merge_dup_questions(p_keep, r, p_reason);
+      v_count := v_count + 1;
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kept', p_keep, 'merged', v_count);
+END
+$$;
+
+-- 20.13 组内全部保留: 对组内任意两两组合记录 keep 复核(避免下次扫描再提示)
+CREATE OR REPLACE FUNCTION public.keep_dup_group(
+  p_ids UUID[], p_note TEXT DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  i INT; j INT; v_count INT := 0;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'forbidden'; END IF;
+  IF p_ids IS NULL OR cardinality(p_ids) < 2 THEN
+    RETURN jsonb_build_object('ok', true, 'recorded', 0);
+  END IF;
+  FOR i IN 1 .. cardinality(p_ids) LOOP
+    FOR j IN i + 1 .. cardinality(p_ids) LOOP
+      PERFORM public.save_dup_review(p_ids[i], p_ids[j], 'keep', p_note);
+      v_count := v_count + 1;
+    END LOOP;
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'recorded', v_count);
+END
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.scan_question_duplicates(text, numeric, integer) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.save_dup_review(uuid, uuid, text, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.merge_dup_questions(uuid, uuid, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.merge_dup_group(uuid, uuid[], text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.keep_dup_group(uuid[], text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.scan_question_duplicates(text, numeric, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.save_dup_review(uuid, uuid, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.merge_dup_questions(uuid, uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.merge_dup_group(uuid, uuid[], text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.keep_dup_group(uuid[], text) TO authenticated;
+
+-- ============================================================================
+-- Section 21: 知识点解读 —— 管理员按 (学科, 知识点) 维护 Markdown 解读,
+--   练习模式答完题目后可点击查看（顺序刷题答完当前知识点自动提示）。
+--   用法与 subject_explanations 一致: 所有登录用户可读, 仅管理员可写。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.kp_explanations (
+  subject    TEXT NOT NULL,
+  kp         TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (subject, kp)
+);
+CREATE INDEX IF NOT EXISTS idx_kp_explanations_kp ON public.kp_explanations(kp);
+
+ALTER TABLE public.kp_explanations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS kp_explanations_select_all ON public.kp_explanations;
+CREATE POLICY kp_explanations_select_all ON public.kp_explanations FOR SELECT
+  USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS kp_explanations_write_admin ON public.kp_explanations;
+CREATE POLICY kp_explanations_write_admin ON public.kp_explanations FOR ALL
+  USING (public.is_admin());
+
+-- ============================================================================
+-- Section 22: 考试模板预设 —— 每种题型的数量与出题顺序
+--   exam_templates: 用户私有模板(RLS 按 user_id 隔离); 通用内置预设写在前端代码里, 不入库
+--   compose_exam:   一次 RPC 完成 "逐分区抽题 → 抽题策略排序 → 整卷排序"
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.exam_templates (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  subject      TEXT,
+  duration_min INT  NOT NULL DEFAULT 60,
+  order_mode   TEXT NOT NULL DEFAULT 'section'
+                 CHECK (order_mode IN ('section', 'shuffle')),
+  sample_mode  TEXT NOT NULL DEFAULT 'random'
+                 CHECK (sample_mode IN ('random', 'wrong_first', 'unseen_first', 'seq')),
+  sections     JSONB NOT NULL DEFAULT '[]'::jsonb,
+  sort_order   INT  NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_exam_templates_user    ON public.exam_templates(user_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_exam_templates_subject ON public.exam_templates(user_id, subject);
+
+ALTER TABLE public.exam_templates ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS exam_templates_own_rw ON public.exam_templates;
+CREATE POLICY exam_templates_own_rw ON public.exam_templates FOR ALL
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+DROP TRIGGER IF EXISTS trg_exam_templates_updated_at ON public.exam_templates;
+CREATE TRIGGER trg_exam_templates_updated_at BEFORE UPDATE ON public.exam_templates
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 22.1 按模板组卷
+--   p_types:     分区未指定题型时的兜底题型白名单(旧版多选题型筛选用)
+--   p_sections: [{ type: 题型|null(不限), count: 题数, categories?: 分区分类(空则回落整卷) }], 数组顺序即分区顺序
+--   p_sample_mode: random 随机 / wrong_first 错题优先 / unseen_first 未做优先 / seq 真题原序
+--   p_order_mode:  section 按分区顺序拼接 / shuffle 全卷打散
+--   返回: { question_ids: [...], sections: [{ type, requested, got }] }
+CREATE OR REPLACE FUNCTION public.compose_exam(
+  p_subjects    TEXT[],
+  p_categories  TEXT[],
+  p_sections    JSONB,
+  p_types       TEXT[] DEFAULT NULL,
+  p_sample_mode TEXT DEFAULT 'random',
+  p_order_mode  TEXT DEFAULT 'section'
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  v_uid  UUID := auth.uid();
+  v_sec  JSONB;
+  v_ids  UUID[];
+  v_all  UUID[] := ARRAY[]::UUID[];
+  v_stat JSONB  := '[]'::jsonb;
+  v_want INT;
+  v_sec_cats TEXT[];
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'not authenticated'; END IF;
+
+  IF p_sections IS NULL OR jsonb_array_length(p_sections) = 0 THEN
+    RETURN jsonb_build_object('question_ids', '[]'::jsonb, 'sections', '[]'::jsonb);
+  END IF;
+
+  FOR v_sec IN SELECT value FROM jsonb_array_elements(p_sections) AS t(value) LOOP
+    v_want := GREATEST(COALESCE(NULLIF(v_sec->>'count', '')::INT, 0), 0);
+    CONTINUE WHEN v_want = 0;
+
+    -- 分区自带分类时优先用它, 否则回落到整卷分类
+    v_sec_cats := CASE
+      WHEN jsonb_typeof(v_sec->'categories') = 'array' AND jsonb_array_length(v_sec->'categories') > 0
+      THEN ARRAY(SELECT jsonb_array_elements_text(v_sec->'categories'))
+      ELSE NULL END;
+
+    WITH picked AS (
+      SELECT q.id,
+             CASE p_sample_mode
+               WHEN 'wrong_first'  THEN -COALESCE(a.wrong_count, 0)
+               WHEN 'unseen_first' THEN  COALESCE(a.answer_count, 0)
+               ELSE 0
+             END AS rank_key,
+             q.seq_number,
+             random() AS rnd
+      FROM public.questions q
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) FILTER (WHERE NOT ua.is_correct) AS wrong_count,
+               COUNT(*) AS answer_count
+        FROM public.user_answers ua
+        WHERE ua.user_id = v_uid AND ua.question_id = q.id
+      ) a ON TRUE
+      WHERE (p_subjects IS NULL OR cardinality(p_subjects) = 0 OR q.subject = ANY(p_subjects))
+        AND ((NULLIF(v_sec->>'type', '') IS NOT NULL AND q.question_type = v_sec->>'type')
+             OR (NULLIF(v_sec->>'type', '') IS NULL
+                 AND (p_types IS NULL OR cardinality(p_types) = 0 OR q.question_type = ANY(p_types))))
+        AND (cardinality(COALESCE(v_sec_cats, p_categories)) IS NULL
+             OR cardinality(COALESCE(v_sec_cats, p_categories)) = 0
+             OR q.categories ?| COALESCE(v_sec_cats, p_categories))
+        AND NOT (q.id = ANY(v_all))
+      ORDER BY rank_key ASC,
+               CASE WHEN p_sample_mode = 'seq' THEN q.seq_number END ASC NULLS LAST,
+               rnd
+      LIMIT v_want
+    )
+    SELECT COALESCE(
+             ARRAY(
+               SELECT p.id FROM picked p
+               ORDER BY p.rank_key ASC,
+                        CASE WHEN p_sample_mode = 'seq' THEN p.seq_number END ASC NULLS LAST,
+                        p.rnd
+             ),
+             ARRAY[]::UUID[]
+           )
+      INTO v_ids;
+
+    v_all  := v_all || v_ids;
+    v_stat := v_stat || jsonb_build_object(
+      'type',      NULLIF(v_sec->>'type', ''),
+      'requested', v_want,
+      'got',       cardinality(v_ids)
+    );
+  END LOOP;
+
+  IF p_order_mode = 'shuffle' THEN
+    SELECT ARRAY(SELECT u FROM unnest(v_all) AS u ORDER BY random()) INTO v_all;
+  END IF;
+
+  RETURN jsonb_build_object('question_ids', to_jsonb(v_all), 'sections', v_stat);
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT) TO authenticated;

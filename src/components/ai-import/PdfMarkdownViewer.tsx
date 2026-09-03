@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { segmentMarkdownForPages } from '@/lib/ai/markdown-match'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -234,9 +235,13 @@ export function PdfMarkdownViewer({ pdfUrl, jsonData, markdown, pageRanges, page
     ? parseLayoutTree(jsonData, pageRanges)
     : { sections: [] as MdSection[], blocks: [] as BlockNode[] }
 
+  // Fallback (no layout.json — lightweight MinerU parse): no block coordinates exist,
+  // but we still distribute paragraphs in reading order across the rendered page
+  // count instead of stamping everything "page 1".
   const fallbackSections: MdSection[] = !jsonData
-    ? markdown.split(/\n\n+/).filter(p => p.trim()).map(p => ({
-        text: p, page: 1, bbox: null as [number, number, number, number] | null, blockIndex: -1,
+    ? segmentMarkdownForPages(markdown, renderedPages.length).map(s => ({
+        ...s,
+        blockIndex: -1,
       }))
     : []
 

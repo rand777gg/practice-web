@@ -15,8 +15,11 @@ const R2_BUCKET = requireEnv("R2_BUCKET")
 const R2_PUBLIC_HOST = Deno.env.get("R2_PUBLIC_HOST") || "r2-rpw.pguide.dev"
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]
-const ALLOWED_FILE_TYPES = [...ALLOWED_IMAGE_TYPES, "application/pdf", "text/plain",
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"]
+const ALLOWED_FILE_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, "application/pdf", "text/plain",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+// Multipart uploads buffer the whole file in function memory, so keep the cap
+// low; large videos must use the presigned "upload-url" path (direct to R2).
 const MAX_SIZE = 200 * 1024 * 1024
 
 const s3 = new S3Client({

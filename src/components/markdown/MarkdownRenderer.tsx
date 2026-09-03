@@ -1,9 +1,12 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
+import { useMemo, useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
 import { visit } from 'unist-util-visit'
 import { X, ZoomIn } from 'lucide-react'
+
+// Video player chunk is only fetched when a <video> appears in the markdown
+const MarkdownVideo = lazy(() => import('./MarkdownVideo'))
 
 // rehype plugin: remark-math nodes → MathJax \(...\) / \[...\] delimiters
 // In remark-math v6 + mdast-util-to-hast v13, inlineMath produces
@@ -262,6 +265,17 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
             <ZoomIn className="h-3.5 w-3.5" />
           </span>
         </span>
+      )
+    },
+    // Raw HTML <video> — R2-hosted MP4/WebM rendered with a styled player
+    video({ src, poster, title }: any) {
+      if (!src) return null
+      return (
+        <Suspense fallback={
+          <div className="my-2 flex h-40 items-center justify-center rounded-xl border bg-muted/30 text-xs text-muted-foreground">视频加载中…</div>
+        }>
+          <MarkdownVideo src={String(src)} poster={poster ? String(poster) : undefined} title={title ? String(title) : undefined} />
+        </Suspense>
       )
     },
     // Links open in new tab

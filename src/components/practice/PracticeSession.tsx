@@ -11,9 +11,11 @@ import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSwipe } from '@/hooks/use-swipe'
+import { useKpExplanations, kpExplanationKey } from '@/hooks/use-kp-explanations'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { FlagIssueDialog } from '@/components/questions/FlagIssueDialog'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
+import { KpExplanationDialog } from '@/components/practice/KpExplanationDialog'
 import { PlanDialog } from '@/components/layout/PlanDialog'
 
 
@@ -40,7 +42,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Plus, Shuffle, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Plus, Shuffle, Trash2, BookOpen } from 'lucide-react'
 
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 
@@ -1125,6 +1127,50 @@ export function PracticeSession() {
     if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
   }, [loadSequentialQuestion])
 
+  // ---- 知识点解读 (KP explanations) ----
+  const kpExpl = useKpExplanations()
+  const [kpExplainView, setKpExplainView] = useState<{ subject: string; kp: string } | null>(null)
+  const [kpDonePrompt, setKpDonePrompt] = useState<{ subject: string; kp: string } | null>(null)
+  const kpPromptedRef = useRef<Set<string>>(new Set())
+  useEffect(() => { kpPromptedRef.current.clear() }, [seqSessionKey])
+
+  const resolveSubjectForKp = useCallback((kp: string, fallback?: string | null): string =>
+    selectedKpToSubject.get(kp) ?? kpToSubject.get(kp) ?? fallback ?? '其他', [selectedKpToSubject, kpToSubject])
+
+  // KPs of the answered question that have a configured explanation (both modes)
+  const availableKpEntries = useMemo(() => {
+    if (!question || !isSubmitted) return [] as { subject: string; kp: string }[]
+    const kps = (question.key_points ?? '').split(/[,，;；]/).map((s) => s.trim()).filter(Boolean)
+    const out: { subject: string; kp: string }[] = []
+    const seen = new Set<string>()
+    for (const kp of kps) {
+      const subject = resolveSubjectForKp(kp, question.subject)
+      const key = kpExplanationKey(subject, kp)
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (kpExpl.explanations.has(key)) out.push({ subject, kp })
+    }
+    return out
+  }, [question, isSubmitted, kpExpl.explanations, resolveSubjectForKp])
+
+  // Sequential mode: when the user finishes the current KP's questions and moves
+  // into the next KP, surface the explanation of the just-finished KP once.
+  useEffect(() => {
+    if (questionMode !== 'sequential' || !seqActive || seqIndex <= 0) return
+    const prevKp = seqQuestionKps[seqIndex - 1]
+    const curKp = seqQuestionKps[seqIndex]
+    if (!prevKp || !curKp || prevKp === curKp) return
+    const prevId = seqQuestionIds[seqIndex - 1]
+    if (!prevId || !answeredThisSession.current.has(prevId)) return
+    const subject = resolveSubjectForKp(prevKp, seqQuestionSubjects[seqIndex - 1] ?? null)
+    const key = kpExplanationKey(subject, prevKp)
+    if (!kpExpl.explanations.has(key)) return
+    const promptKey = `${seqSessionKey}:${key}`
+    if (kpPromptedRef.current.has(promptKey)) return
+    kpPromptedRef.current.add(promptKey)
+    setKpDonePrompt({ subject, kp: prevKp })
+  }, [seqIndex, seqActive, questionMode, seqQuestionKps, seqQuestionIds, seqQuestionSubjects, answeredSessionSnapshot, kpExpl.explanations, resolveSubjectForKp, seqSessionKey])
+
   const prevRef = useRef(handlePrev)
   const nextRef = useRef(handleNext)
   const submitRef = useRef(handleSubmit)
@@ -1440,6 +1486,26 @@ export function PracticeSession() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={kpDonePrompt !== null} onOpenChange={(o) => { if (!o) setKpDonePrompt(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">「{kpDonePrompt?.kp ?? ''}」知识点已完成刷题</AlertDialogTitle>
+            <AlertDialogDescription>该知识点的题目已全部作答，可查看解读巩固复习，或继续下一个知识点。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续下一知识点</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { const p = kpDonePrompt; setKpDonePrompt(null); if (p) setKpExplainView(p) }}>查看知识点解读</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <KpExplanationDialog
+        subject={kpExplainView?.subject ?? ''}
+        kp={kpExplainView?.kp ?? ''}
+        open={kpExplainView !== null}
+        onOpenChange={(o) => { if (!o) setKpExplainView(null) }}
+      />
+
       {questionMode !== 'sequential' && (
         <div className="flex flex-wrap gap-2">
           <FilterBtn label={({ all: '全部', favorites: '仅收藏', wrong: '仅错题' } as Record<string, string>)[questionScope]}>
@@ -1683,6 +1749,23 @@ export function PracticeSession() {
                   <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
                     <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
                   </div>
+                  {availableKpEntries.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+                      <BookOpen className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-xs font-medium">知识点解读</span>
+                      <span className="text-[11px] text-muted-foreground">本题涉及的知识点，可点击查看解读</span>
+                      {availableKpEntries.map((e) => (
+                        <button
+                          key={kpExplanationKey(e.subject, e.kp)}
+                          type="button"
+                          onClick={() => setKpExplainView({ subject: e.subject, kp: e.kp })}
+                          className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/20"
+                        >
+                          {e.kp}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && justAnsweredId !== question.id && (
                     <div className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2">
                       <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">本题此次会话已作答过</span>

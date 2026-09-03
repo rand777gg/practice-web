@@ -532,6 +532,20 @@
   animation: page-enter 0.4s ease-out;
 }
 
+/* 卷面/卡片 切换水平滑入(左右平移) */
+@keyframes wb-slide-right {
+  from { opacity: 0; transform: translateX(64px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes wb-slide-left {
+  from { opacity: 0; transform: translateX(-64px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.wb-slide-in-right { animation: wb-slide-right 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); }
+.wb-slide-in-left  { animation: wb-slide-left  0.3s cubic-bezier(0.22, 0.61, 0.36, 1); }
+/* 试卷纸张/分区容器淡入 */
+.wb-fade-in { animation: page-enter 0.35s ease-out; }
+
 /* 作答分布进度条展开动画 */
 @keyframes dist-bar-grow {
   from { opacity: 0; transform: scaleX(0); }

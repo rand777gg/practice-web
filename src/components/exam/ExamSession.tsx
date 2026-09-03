@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -30,7 +30,11 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronLeft, ChevronRight, Play, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ExamTemplatePanel } from './ExamTemplatePanel'
+import { PaperPreview } from './PaperPreview'
+import { buildPaperSections, composeExamIds, fetchQuestionsByIds, type PaperSection } from '@/lib/exam-compose'
 
 import {
   EXAM_DEFAULT_COUNT,
@@ -40,7 +44,7 @@ import {
   EXAM_MIN_DURATION_MIN,
   EXAM_MAX_DURATION_MIN,
 } from '@/lib/constants'
-import type { ExamSession as ExamSessionType, QuestionType } from '@/types'
+import type { ExamSession as ExamSessionType, ExamTemplate, QuestionType } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -89,6 +93,15 @@ export function ExamSession() {
   const [aiFade, setAiFade] = useState(false)
   const [aiReason, setAiReason] = useState('')
   const [showSheet, setShowSheet] = useState(false)
+  const [template, setTemplate] = useState<ExamTemplate | null>(null)
+  const [paperMode, setPaperMode] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
+  const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>('sheet') // 卷面单栏/多栏摊开
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewSections, setPreviewSections] = useState<PaperSection[]>([])
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState('')
+  const [paperNotice, setPaperNotice] = useState('')
   const { setSidebarCollapsed } = useSettingsStore()
 
   useEffect(() => {
@@ -165,16 +178,50 @@ export function ExamSession() {
     return () => { cancelled = true }
   }, [searchParams, user?.id, resumeExam])
 
+  const filterArgs = {
+    subjects: selectedSubjects.length ? selectedSubjects : undefined,
+    categories: selectedCategories.length ? selectedCategories : undefined,
+    questionTypes: selectedTypes.length ? selectedTypes : undefined,
+  }
+
   const handleStart = async () => {
     if (!user) return
     const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
     const mins = Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, durationMin || EXAM_DEFAULT_DURATION_MIN))
-    await startExam(user.id, count, mins * 60 * 1000, selectedSubjects.length ? selectedSubjects : undefined, selectedCategories.length ? selectedCategories : undefined, selectedTypes.length ? selectedTypes : undefined)
+    const result = await startExam({
+      userId: user.id,
+      questionCount: count,
+      durationMs: mins * 60 * 1000,
+      template,
+      ...filterArgs,
+    })
     const s = useExamStore.getState().session
-    if (s) setSearchParams({ sessionId: s.id }, { replace: true })
+    if (!s) return
+    setPaperNotice(result.stats?.some((x) => x.got < x.requested) ? t('examTemplate.insufficient') : '')
+    setSearchParams({ sessionId: s.id }, { replace: true })
     setSidebarCollapsed(true)
     setShowStart(false)
     setHasStarted(true)
+  }
+
+  const handlePreview = async () => {
+    setPreviewOpen(true)
+    setPreviewLoading(true)
+    setPreviewError('')
+    setPreviewSections([])
+    try {
+      const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
+      const { questionIds } = await composeExamIds({ template, questionCount: count, ...filterArgs })
+      if (questionIds.length === 0) {
+        setPreviewError(t('examTemplate.previewEmpty'))
+        return
+      }
+      setPreviewSections(buildPaperSections(await fetchQuestionsByIds(questionIds), template))
+    } catch (e) {
+      setPreviewError((e as Error).message)
+    } finally {
+      setPreviewLoading(false)
+    }
   }
 
   const handleResume = async () => {
@@ -208,6 +255,30 @@ export function ExamSession() {
     handleSubmitExam()
     setSearchParams({}, { replace: true })
   }
+
+  // 收起答题卡 → 卷面自动切成「多栏摊开」吃满腾出的宽度(内容随收起拉伸);
+  // 展开答题卡 → 回到收起前的布局(若该 spread 是由收起自动带来的则回单栏 sheet)。
+  const sheetAutoSpreadRef = useRef(false)
+  const setSheetCollapsed = (collapsed: boolean) => {
+    setSheetOpen(!collapsed)
+    if (paperMode) {
+      if (collapsed) {
+        sheetAutoSpreadRef.current = true
+        setPaperLayout('spread')
+      } else if (sheetAutoSpreadRef.current) {
+        sheetAutoSpreadRef.current = false
+        setPaperLayout('sheet')
+      }
+    }
+  }
+
+  // 在卡片模式先收起答题卡、之后再切进卷面: 此时答题卡处于收起态 → 一进卷面就摊开填满
+  useEffect(() => {
+    if (paperMode && !sheetOpen && paperLayout === 'sheet') {
+      sheetAutoSpreadRef.current = true
+      setPaperLayout('spread')
+    }
+  }, [paperMode, sheetOpen, paperLayout])
 
   const handleCloseResult = () => {
     setResultDialogOpen(false)
@@ -391,6 +462,21 @@ export function ExamSession() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('examTemplate.sections')}</Label>
+                  {user && (
+                    <ExamTemplatePanel
+                      userId={user.id}
+                      subjects={subjects}
+                      categories={categories}
+                      value={template}
+                      onChange={(next) => {
+                        setTemplate(next)
+                        if (next) setDurationMin(next.duration_min)
+                      }}
+                    />
+                  )}
+                </div>
                 <div className="flex gap-3">
                   <div className="flex-1 space-y-1.5">
                     <Label htmlFor="questionCount" className="text-xs">{t('exam.questionCount')}</Label>
@@ -400,6 +486,7 @@ export function ExamSession() {
                       min={EXAM_MIN_COUNT}
                       max={EXAM_MAX_COUNT}
                       value={questionCount}
+                      disabled={!!template}
                       onChange={(e) => setQuestionCount(Number(e.target.value))}
                       className={`transition-[border-color,box-shadow] duration-1500 ease-out ${aiGlow ? '[animation:colorWheel_3s_linear_infinite,geminiBorderGlow_3s_ease-in-out_infinite]' : aiFade ? 'border-purple-500 shadow-[0_0_12px_rgba(139,92,246,0.4)]' : ''}`}
                     />
@@ -424,6 +511,11 @@ export function ExamSession() {
               {isLoading ? <Spinner /> : <Play className="h-4 w-4" />}
               {t('exam.startExam')}
             </Button>
+            <Button onClick={handlePreview} disabled={isLoading} size="sm" variant="outline" className="w-full gap-1 text-xs">
+              <FileText className="h-3.5 w-3.5" />
+              {t('examTemplate.preview')}
+            </Button>
+            {paperNotice && <p className="text-xs text-amber-600 dark:text-amber-500">{paperNotice}</p>}
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
@@ -454,6 +546,31 @@ export function ExamSession() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{t('examTemplate.preview')}</DialogTitle>
+              <DialogDescription>{t('examTemplate.previewDesc')}</DialogDescription>
+            </DialogHeader>
+            {previewLoading && <Skeleton className="h-64 w-full" />}
+            {!previewLoading && previewError && (
+              <p className="text-sm text-muted-foreground">{previewError}</p>
+            )}
+            {!previewLoading && !previewError && previewSections.length > 0 && (
+              <PaperPreview
+                title={template?.name ?? t('exam.title')}
+                meta={[
+                  template?.subject ?? (selectedSubjects.length ? selectedSubjects.join('、') : ''),
+                  `${durationMin} ${t('exam.minutes')}`,
+                ].filter(Boolean).join(' · ')}
+                sections={previewSections}
+                answers={new Map()}
+                readOnly
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </>
     )
   }
@@ -498,59 +615,146 @@ export function ExamSession() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-0 lg:h-[calc(100vh-7rem)]">
-      {/* ── Left: Answer Sheet ────────────────────────────────── */}
-      <div className="flex-[2] min-w-0 lg:border-r bg-muted/20 hidden lg:flex flex-col">
-        <div className="p-3 border-b">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold">答题卡</p>
+      {/* ── Left: Answer Sheet (desktop, collapsible) ─────────── */}
+      <aside
+        className={cn(
+          'hidden lg:flex shrink-0 flex-col border-r bg-muted/20 overflow-hidden transition-[width] duration-300 ease-in-out',
+          sheetOpen ? 'w-[300px]' : 'w-14',
+        )}
+      >
+        {sheetOpen ? (
+          <div className="flex h-full min-h-0 w-[300px] flex-col">
+            <div className="p-3 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold">答题卡</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <ExamTimer startedAt={session.started_at} durationMs={session.duration_ms} onExpire={handleTimerExpire} />
+                  <button
+                    type="button"
+                    onClick={() => setSheetCollapsed(true)}
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title={t('exam.collapseSheet')}
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" />已答</div>
+                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted border border-dashed border-muted-foreground/20" />未答</div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <ExamTimer startedAt={session.started_at} durationMs={session.duration_ms} onExpire={handleTimerExpire} />
+            <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex flex-wrap gap-2 content-start">
+                {questionIds.map((id, i) => {
+                  const isAnswered = answers.has(id)
+                  const isCurrent = i === currentIndex
+                  return (
+                    <button key={id}
+                      onClick={() => jumpTo(i)}
+                      className={cn(
+                        'w-8 h-8 rounded text-xs tabular-nums transition-all border border-dashed flex items-center justify-center',
+                        isCurrent && 'bg-primary text-primary-foreground border-primary',
+                        !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
+                        !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
+                      )}
+                    >
+                      {i + 1}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="p-3 border-t space-y-2">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">进度</span>
+                  <span className="tabular-nums">{answeredCount}/{questions.length}</span>
+                </div>
+                <Progress value={(answeredCount / questions.length) * 100} className="h-2 [&>div]:bg-emerald-500" />
+              </div>
+              <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleSubmitExam} disabled={isSubmitting}>
+                {isSubmitting ? t('exam.submitting') : '交卷'}
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
-            <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" />已答</div>
-            <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted border border-dashed border-muted-foreground/20" />未答</div>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          <div className="flex flex-wrap gap-2 content-start">
-            {questionIds.map((id, i) => {
-              const isAnswered = answers.has(id)
-              const isCurrent = i === currentIndex
-              return (
-                <button key={id}
-                  onClick={() => jumpTo(i)}
-                  className={cn(
-                    'w-8 h-8 rounded text-xs tabular-nums transition-all border border-dashed flex items-center justify-center',
-                    isCurrent && 'bg-primary text-primary-foreground border-primary',
-                    !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
-                    !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
-                  )}
-                >
-                  {i + 1}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        <div className="p-3 border-t space-y-2">
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">进度</span>
-              <span className="tabular-nums">{answeredCount}/{questions.length}</span>
+        ) : (
+          <div className="flex h-full w-14 flex-col items-center gap-5 py-3">
+            <button
+              type="button"
+              onClick={() => setSheetCollapsed(false)}
+              className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground"
+              title={t('exam.expandSheet')}
+            >
+              <PanelLeftOpen className="h-5 w-5" />
+            </button>
+            <div className="flex flex-col items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
+              <span className="font-semibold text-emerald-600">{answeredCount}</span>
+              <span>/</span>
+              <span>{questions.length}</span>
             </div>
-            <Progress value={(answeredCount / questions.length) * 100} className="h-2 [&>div]:bg-emerald-500" />
+            <button
+              type="button"
+              onClick={handleSubmitExam}
+              disabled={isSubmitting}
+              className="rotate-0 text-[10px] text-muted-foreground hover:text-destructive"
+              title="交卷"
+            >
+              {isSubmitting ? '…' : '交卷'}
+            </button>
           </div>
-          <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleSubmitExam} disabled={isSubmitting}>
-            {isSubmitting ? t('exam.submitting') : '交卷'}
-          </Button>
-        </div>
-      </div>
+        )}
+      </aside>
 
+      {paperMode && (
+        <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
+          <div className="flex items-center gap-2 border-b bg-background/80 px-4 py-2 text-xs text-muted-foreground backdrop-blur">
+            <span className="font-medium text-foreground">{template?.name ?? t('exam.title')}</span>
+            <div className="ml-auto flex items-center gap-1">
+              <span className="mr-1">共 {questions.length} 题</span>
+              <button
+                type="button"
+                onClick={() => setPaperLayout(paperLayout === 'spread' ? 'sheet' : 'spread')}
+                className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent"
+                title={paperLayout === 'spread' ? t('examTemplate.singlePage') : t('examTemplate.spreadPage')}
+              >
+                {paperLayout === 'spread'
+                  ? <><FileText className="h-3 w-3" />{t('examTemplate.singlePage')}</>
+                  : <><Columns2 className="h-3 w-3" />{t('examTemplate.spreadPage')}</>}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaperMode(false)}
+                className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent"
+              >
+                <LayoutGrid className="h-3 w-3" />
+                {t('examTemplate.cardMode')}
+              </button>
+            </div>
+          </div>
+          <div key={paperLayout} className="wb-fade-in flex-1 overflow-y-auto">
+            <PaperPreview
+              title={template?.name ?? t('exam.title')}
+              meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${questions.length} 题`}
+              sections={buildPaperSections(questions, template)}
+              answers={answers}
+              onAnswer={answerQuestion}
+              currentQuestionId={currentQuestion?.id ?? null}
+              onFocus={(id) => {
+                const i = questionIds.indexOf(id)
+                if (i >= 0 && i !== currentIndex) jumpTo(i)
+              }}
+              layout={paperLayout}
+            />
+          </div>
+        </div>
+      )}
+      {!paperMode && (
+        <div key="card" className="wb-slide-in-right flex-1 min-w-0 flex flex-col lg:flex-row">
       {/* ── Center: Question ──────────────────────────────────── */}
-      <div className="flex-[4] flex flex-col min-w-0 lg:overflow-hidden lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
+      <div className="flex-1 flex flex-col min-w-0 lg:overflow-hidden lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
         <div className="flex items-center gap-2 px-4 py-2 border-b text-xs text-muted-foreground">
           <span className="font-medium text-foreground">第 {currentIndex + 1} 题</span>
           <span className="text-border">|</span>
@@ -558,6 +762,15 @@ export function ExamSession() {
           <span className="text-border">|</span>
           <span>{currentQuestion?.question_type ? t(`questionTypes.${currentQuestion.question_type}` as any) : ''}</span>
           <span className="ml-auto">共 {questions.length} 题</span>
+          <button
+            type="button"
+            onClick={() => setPaperMode(true)}
+            className="ml-2 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent"
+            title={t('examTemplate.paperMode')}
+          >
+            <FileText className="h-3 w-3" />
+            {t('examTemplate.paperMode')}
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {currentQuestion && (
@@ -571,7 +784,7 @@ export function ExamSession() {
       </div>
 
       {/* ── Right: Answer Area ─────────────────────────────────── */}
-      <div className="flex-[4] min-w-0 lg:border-l bg-muted/20 flex flex-col lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
+      <div className="flex-1 min-w-0 lg:border-l bg-muted/20 flex flex-col lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
         <div className="p-3 border-b">
           <p className="text-sm font-semibold">作答区</p>
           <span className="text-xs text-muted-foreground">
@@ -731,6 +944,7 @@ export function ExamSession() {
           </div>
         </div>
       </div>
+      </div>)}
       {/* Mobile answer sheet floating button */}
       <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
         <Button size="sm" className="shadow-lg gap-1 rounded-full px-4" onClick={() => setShowSheet(true)}>

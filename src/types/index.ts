@@ -106,6 +106,36 @@ export function normalizeDailyTargets(raw: any[] | null | undefined): DailyTarge
   })
 }
 
+/** 计划学科 -> 认领知识点数组。如 {"数学":["一元二次方程"]}。 */
+export type PlanScope = Record<string, string[]>
+
+/**
+ * 从 profile 读取并归一化 plan_scope。
+ * 返回空对象表示"无显式范围"(即沿用旧行为:按整科学科统计)。
+ */
+export function getPlanScope(profile: { plan_scope?: PlanScope | null } | null): PlanScope {
+  const raw = profile?.plan_scope
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: PlanScope = {}
+  for (const [subj, kps] of Object.entries(raw)) {
+    if (Array.isArray(kps)) {
+      const clean = kps.filter((k): k is string => typeof k === 'string' && k.trim() !== '')
+      if (clean.length > 0) out[subj] = [...new Set(clean)]
+    }
+  }
+  return out
+}
+
+/**
+ * 判断某学科是否处于“显式知识点范围”内。
+ * - 该学科没有 entry -> false(视为整科)
+ * - entry 为 [] 或空数组 -> false(视为整科)
+ */
+export function hasKpScope(scope: PlanScope, subject: string): boolean {
+  const kps = scope[subject]
+  return Array.isArray(kps) && kps.length > 0
+}
+
 export interface Profile {
   id: string
   role: UserRole
@@ -115,6 +145,8 @@ export interface Profile {
   daily_targets: string | null
   daily_deadline: string | null
   plan_reset_at: string | null
+  /** 计划学科 -> 认领知识点数组的映射。如 {"数学":["一元二次方程"]}。NULL 或缺省=该学科全部知识点 */
+  plan_scope: PlanScope | null
   subject_reset_at: Record<string, string> | null
   daily_reset_at: string | null
   totp_enabled?: boolean
@@ -183,6 +215,48 @@ export interface ExamSession {
   started_at: string
   completed_at: string | null
 }
+
+/** 整卷排序: section=按分区顺序拼接, shuffle=全卷打散 */
+export type ExamOrderMode = 'section' | 'shuffle'
+
+/** 分区内抽题策略: random=随机, wrong_first=错题优先, unseen_first=未做优先, seq=真题原序 */
+export type ExamSampleMode = 'random' | 'wrong_first' | 'unseen_first' | 'seq'
+
+export interface ExamTemplateSection {
+  id: string
+  /** 题型; 空表示不限题型（仅旧版单分区模式使用） */
+  type: QuestionType | null
+  count: number
+  /** 每题分值 */
+  score: number
+  /** 该分区限定分类, 空表示不限 */
+  categories: string[]
+}
+
+export interface ExamTemplate {
+  id: string
+  user_id: string | null
+  name: string
+  subject: string | null
+  duration_min: number
+  order_mode: ExamOrderMode
+  sample_mode: ExamSampleMode
+  sections: ExamTemplateSection[]
+  sort_order: number
+  created_at: string
+  updated_at: string
+  /** 内置预设只存在于前端代码, 不可编辑/删除 */
+  builtin?: boolean
+}
+
+export interface ExamComposeStat {
+  type: string | null
+  requested: number
+  got: number
+}
+
+/** 内置预设在前端定义, 未落库时的占位值 */
+export const BUILTIN_TEMPLATE_ORIGIN = '__builtin__'
 
 export interface UserAnswer {
   id: string

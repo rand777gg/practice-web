@@ -2,7 +2,27 @@ import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { useRefreshStore } from './refresh-store'
 import { isAnswerCorrect } from '@/lib/answer-utils'
-import type { ExamSession, Question, CorrectAnswer } from '@/types'
+import { composeExamIds, fetchQuestionsByIds } from '@/lib/exam-compose'
+import type { ExamSession, Question, CorrectAnswer, ExamTemplate, ExamSampleMode, ExamComposeStat } from '@/types'
+
+export interface StartExamParams {
+  userId: string
+  /** 无模板时使用 */
+  questionCount: number
+  durationMs: number
+  subjects?: string[]
+  categories?: string[]
+  questionTypes?: string[]
+  /** 有模板时按模板分区组卷, 忽略 questionCount / questionTypes */
+  template?: ExamTemplate | null
+  sampleMode?: ExamSampleMode
+}
+
+export interface StartExamResult {
+  ok: boolean
+  /** 各分区实际抽到的题数, 用于提示题库不足 */
+  stats?: ExamComposeStat[]
+}
 
 interface ExamState {
   session: ExamSession | null
@@ -13,7 +33,7 @@ interface ExamState {
   isSubmitting: boolean
   error: string | null
 
-  startExam: (userId: string, questionCount: number, durationMs: number, subjects?: string[], categories?: string[], questionTypes?: string[]) => Promise<void>
+  startExam: (params: StartExamParams) => Promise<StartExamResult>
   resumeExam: (sessionId: string) => Promise<void>
   answerQuestion: (questionId: string, answer: CorrectAnswer) => void
   nextQuestion: () => void
@@ -32,68 +52,40 @@ export const useExamStore = create<ExamState>((set, get) => ({
   isSubmitting: false,
   error: null,
 
-  startExam: async (userId, questionCount, durationMs, subjects, categories, questionTypes) => {
+  startExam: async ({ userId, questionCount, durationMs, subjects, categories, questionTypes, template, sampleMode }) => {
     set({ isLoading: true, error: null })
 
-    let query = supabase.from('questions').select('id, subject, categories')
-    if (subjects?.length) query = query.in('subject', subjects)
-    if (questionTypes?.length) query = query.in('question_type', questionTypes)
+    const { questionIds, stats } = await composeExamIds({
+      template,
+      questionCount,
+      subjects,
+      categories,
+      questionTypes,
+      sampleMode,
+    }).catch((e: Error) => {
+      set({ isLoading: false, error: e.message })
+      return { questionIds: [] as string[], stats: [] as ExamComposeStat[] }
+    })
 
-    const { data: allQuestions, error: fetchError } = await query
-
-    if (fetchError) {
-      set({ isLoading: false, error: fetchError.message })
-      return
+    if (questionIds.length === 0) {
+      if (!get().error) {
+        set({ isLoading: false, error: 'No questions available. Please add questions first.' })
+      }
+      return { ok: false, stats }
     }
 
-    if (!allQuestions || allQuestions.length === 0) {
-      set({ isLoading: false, error: 'No questions available. Please add questions first.' })
-      return
-    }
+    const orderedQuestions = await fetchQuestionsByIds(questionIds).catch((e: Error) => {
+      set({ isLoading: false, error: e.message })
+      return [] as Question[]
+    })
 
-    // Client-side JSONB categories filter (PostgREST lacks JSONB array overlap operator)
-    let filtered = allQuestions as { id: string; subject: string; categories: string[] }[]
-    if (categories?.length) {
-      const catSet = new Set(categories)
-      filtered = filtered.filter(q => {
-        if (!q.categories || !Array.isArray(q.categories)) return false
-        return q.categories.some(c => catSet.has(c))
-      })
-    }
-
-    if (filtered.length === 0) {
-      set({ isLoading: false, error: 'No questions available for the selected filters.' })
-      return
-    }
-
-    const count = Math.min(questionCount, filtered.length)
-    const shuffled = [...filtered].sort(() => Math.random() - 0.5)
-    const selected = shuffled.slice(0, count)
-    const questionIds: string[] = selected.map((q: { id: string }) => q.id)
-
-    const { data: questions, error: qError } = await supabase
-      .from('questions')
-      .select('*')
-      .in('id', questionIds)
-
-    if (qError || !questions) {
-      set({ isLoading: false, error: qError?.message ?? 'Failed to load questions' })
-      return
-    }
-
-    const questionMap = new Map<string, Question>()
-    for (const q of questions as Question[]) {
-      questionMap.set(q.id, q)
-    }
-    const orderedQuestions = questionIds
-      .map((id) => questionMap.get(id))
-      .filter((q): q is Question => q !== undefined)
+    if (orderedQuestions.length === 0) return { ok: false, stats }
 
     const { data: session, error: sError } = await supabase
       .from('exam_sessions')
       .insert({
         user_id: userId,
-        total_questions: count,
+        total_questions: orderedQuestions.length,
         duration_ms: durationMs,
         question_ids: questionIds,
         current_index: 0,
@@ -105,7 +97,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     if (sError || !session) {
       set({ isLoading: false, error: sError?.message ?? 'Failed to create session' })
-      return
+      return { ok: false }
     }
 
     set({
@@ -115,6 +107,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
       answers: new Map(),
       isLoading: false,
     })
+    return { ok: true, stats }
   },
 
   resumeExam: async (sessionId) => {
