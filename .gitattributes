@@ -1,0 +1,16 @@
+# Normalize all text files to LF in the repository (GitHub-style)
+# - text=auto: let Git detect text vs binary
+# - eol=lf:    store & check out with LF line endings
+* text=auto eol=lf
+
+# Explicit binary files (never convert)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
