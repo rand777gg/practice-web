@@ -72,6 +72,10 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/ExamPage'),
               },
               {
+                path: 'exam/templates',
+                lazy: () => import('@/pages/ExamTemplatesPage'),
+              },
+              {
                 path: 'exam/result/:sessionId',
                 lazy: () => import('@/pages/ExamResultPage'),
               },

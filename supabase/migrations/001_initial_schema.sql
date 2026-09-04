@@ -2281,3 +2281,27 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT) TO authenticated;
+
+-- ============================================================================
+-- Section 23: 考试模板封面(cover) —— 每张模板可选自带一张封面
+--   结构: 密级条 / 居中标题组(考试名+科目+科目代码) / 考生注意事项标题 /
+--         编号注意事项列表 / 信息表(考生编号+姓名 等填涂行) / 自定义附加块。
+--   存储: JSONB; 内置预设不带 cover, 不存表里; 用户模板可空。
+-- ============================================================================
+ALTER TABLE public.exam_templates ADD COLUMN IF NOT EXISTS cover JSONB;
+
+-- ============================================================================
+-- Section 24: 考试模板排版 (layout) —— 控制整张卷子的纸张/边距/字号/分栏/
+--   装订线/密封条/水印/页眉页脚/得分框/附加块。结构见 src/lib/paper-layout.ts。
+--   与 cover 独立: cover 只管「封面写了什么」, layout 管「卷子长什么样」。
+-- ============================================================================
+ALTER TABLE public.exam_templates ADD COLUMN IF NOT EXISTS layout JSONB;
+
+-- ============================================================================
+-- Section 25: 考试模板继承 (parent_id) —— 新建模板时可选择一个父模板做「快照继承」,
+--   父模板的 sections/cover/layout 会被复制进新模板, 保存后两者互不影响,
+--   parent_id 仅用于展示来源 (列表里显示「继承自 XX」)。
+--   不做外键: 父可能是内置预设(builtin:*) 或已被删除, 子模板不应因此失效。
+-- ============================================================================
+ALTER TABLE public.exam_templates ADD COLUMN IF NOT EXISTS parent_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_exam_templates_parent ON public.exam_templates(user_id, parent_id);

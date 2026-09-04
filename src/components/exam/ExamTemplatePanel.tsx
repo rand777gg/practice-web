@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -8,7 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Layers, Settings2, Plus } from 'lucide-react'
+import { ChevronDown, Layers, Settings2, Plus, LayoutTemplate } from 'lucide-react'
 import { useExamTemplateStore, selectAllTemplates } from '@/stores/exam-template-store'
 import { isBuiltinTemplate, totalQuestions, totalScore } from '@/lib/exam-presets'
 import { ExamTemplateEditorDialog } from './ExamTemplateEditorDialog'
@@ -77,6 +78,14 @@ export function ExamTemplatePanel({ userId, subjects, categories, value, onChang
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <Link
+          to="/exam/templates"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title={t('nav.templateCanvas')}
+        >
+          <LayoutTemplate className="h-3.5 w-3.5" />
+        </Link>
+
         <Button
           variant="ghost"
           size="icon"
@@ -131,6 +140,7 @@ export function ExamTemplatePanel({ userId, subjects, categories, value, onChang
         subjects={subjects}
         categories={categories}
         userId={userId}
+        parents={all}
         onSaved={(saved) => {
           onChange(saved)
           setEditing(saved)

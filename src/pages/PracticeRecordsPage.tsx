@@ -99,7 +99,11 @@ function RecordCard({ record, onDelete }: { record: NoteWithQuestion; onDelete?:
             {record.questions.subject}
           </span>
         )}
-        <p className="text-sm font-medium leading-relaxed">{record.questions?.question_text || t('notes.untitled')}</p>
+        <div className="text-sm font-medium leading-relaxed">
+          {record.questions?.question_text
+            ? <MarkdownRenderer content={record.questions.question_text} className="[&_p]:my-0" />
+            : t('notes.untitled')}
+        </div>
         {record.questions && <AnswerInfo q={record.questions} selected={record.selected_answer} />}
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <span className={cn('inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs',

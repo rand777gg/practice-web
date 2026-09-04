@@ -48,6 +48,7 @@ import type { ExamSession as ExamSessionType, ExamTemplate, QuestionType } from 
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useT } from '@/i18n/use-t'
 
 export function ExamSession() {
@@ -96,12 +97,15 @@ export function ExamSession() {
   const [template, setTemplate] = useState<ExamTemplate | null>(null)
   const [paperMode, setPaperMode] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
-  const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>('sheet') // 卷面单栏/多栏摊开
+  const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>('sheet') // 卷面 单页摊开/双页摊开
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewSections, setPreviewSections] = useState<PaperSection[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState('')
   const [paperNotice, setPaperNotice] = useState('')
+  // 双页视图查看工具栏(缩放/平移/全屏)锚点: 桌面端挂在顶栏模板名右侧; 移动端回退浮层
+  const [spreadToolbarEl, setSpreadToolbarEl] = useState<HTMLElement | null>(null)
+  const isMobile = useIsMobile()
   const { setSidebarCollapsed } = useSettingsStore()
 
   useEffect(() => {
@@ -567,6 +571,8 @@ export function ExamSession() {
                 sections={previewSections}
                 answers={new Map()}
                 readOnly
+                cover={template?.cover ?? null}
+                paperLayout={template?.layout ?? null}
               />
             )}
           </DialogContent>
@@ -710,9 +716,18 @@ export function ExamSession() {
 
       {paperMode && (
         <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
-          <div className="flex items-center gap-2 border-b bg-background/80 px-4 py-2 text-xs text-muted-foreground backdrop-blur">
-            <span className="font-medium text-foreground">{template?.name ?? t('exam.title')}</span>
-            <div className="ml-auto flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto border-b bg-background/80 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur">
+            <span
+              className="min-w-0 max-w-[34%] truncate font-medium text-foreground"
+              title={template?.name ?? t('exam.title')}
+            >
+              {template?.name ?? t('exam.title')}
+            </span>
+            {/* 双页视图查看工具栏(缩放/平移/全屏)锚点 */}
+            {paperLayout === 'spread' && !isMobile && (
+              <span ref={setSpreadToolbarEl} className="flex shrink-0 items-center" />
+            )}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               <span className="mr-1">共 {questions.length} 题</span>
               <button
                 type="button"
@@ -747,6 +762,9 @@ export function ExamSession() {
                 if (i >= 0 && i !== currentIndex) jumpTo(i)
               }}
               layout={paperLayout}
+              cover={template?.cover ?? null}
+              paperLayout={template?.layout ?? null}
+              spreadToolbarAnchor={paperLayout === 'spread' && !isMobile ? spreadToolbarEl : null}
             />
           </div>
         </div>

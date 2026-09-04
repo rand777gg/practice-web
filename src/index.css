@@ -79,6 +79,9 @@
   --sidebar: hsl(240 5.9% 10%);
 }
 
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+
 /* Eye-care light mode — Chinese traditional color palettes (zhongguose.com) */
 /* Shared eye-care warm scrollbar */
 .eye-care- {

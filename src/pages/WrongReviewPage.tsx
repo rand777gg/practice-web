@@ -256,7 +256,7 @@ export function Component() {
                       <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
                     ))}
                   </div>
-                  <p className="text-sm font-medium leading-relaxed">{q.question_text}</p>
+                  <div className="text-sm font-medium leading-relaxed"><MarkdownRenderer content={q.question_text} className="[&_p]:my-0" /></div>
                   <AnswerInfo q={q} selected={a.selected_answer} />
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className={cn('rounded-full px-1.5 py-0.5 text-xs', a.mode === 'exam' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700')}>{a.mode === 'exam' ? '考试' : '练习'}</span>

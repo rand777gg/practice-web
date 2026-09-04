@@ -3,18 +3,28 @@ import { Link } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
 import { supabase } from '@/lib/supabase'
+import { fetchQuestionsByIds } from '@/lib/exam-compose'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { QuestionCard } from '@/components/questions/QuestionCard'
-import type { ExamSession, UserAnswer, Question } from '@/types'
-import { RotateCcw, Home } from 'lucide-react'
+import { ExamPaperReview } from './ExamPaperReview'
+import type { ExamSession, UserAnswer, Question, CorrectAnswer } from '@/types'
+import { RotateCcw, Home, FileText, LayoutGrid } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
 interface Props {
   sessionId: string
+}
+
+function viewBtnClass(on: boolean) {
+  return cn(
+    'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]',
+    on ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent',
+  )
 }
 
 export function ExamResultCard({ sessionId }: Props) {
@@ -25,7 +35,10 @@ export function ExamResultCard({ sessionId }: Props) {
   const isDark = theme === 'dark'
   const [session, setSession] = useState<ExamSession | null>(null)
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
+  const [paperQuestions, setPaperQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [paperLoading, setPaperLoading] = useState(true)
+  const [view, setView] = useState<'paper' | 'card'>('paper')
 
   useEffect(() => {
     async function load() {
@@ -53,6 +66,31 @@ export function ExamResultCard({ sessionId }: Props) {
     }
     load()
   }, [sessionId])
+
+  // 卷面视角需要完整题目列表(含未作答的题), 按出卷顺序还原成一张卷子
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    setPaperLoading(true)
+    fetchQuestionsByIds(session.question_ids ?? [])
+      .then((qs) => { if (!cancelled) setPaperQuestions(qs) })
+      .catch(() => { if (!cancelled) setPaperQuestions([]) })
+      .finally(() => { if (!cancelled) setPaperLoading(false) })
+    return () => { cancelled = true }
+  }, [session])
+
+  const answersMap = useMemo(
+    () => new Map(answers.map((a) => [a.question_id, a.selected_answer] as [string, CorrectAnswer])),
+    [answers],
+  )
+  const resultsMap = useMemo(
+    () => new Map(answers.map((a) => [a.question_id, a.is_correct] as [string, boolean])),
+    [answers],
+  )
+  const paperList = useMemo(
+    () => (paperQuestions.length ? paperQuestions : answers.map((a) => a.questions).filter(Boolean)),
+    [paperQuestions, answers],
+  )
 
   const textColor = isDark ? '#d1d5db' : '#374151'
 
@@ -191,18 +229,62 @@ export function ExamResultCard({ sessionId }: Props) {
       )}
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">{t('exam.reviewAnswers')}</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {answers.map((ans) => (
-          <QuestionCard
-            key={ans.id}
-            question={ans.questions}
-            selectedAnswer={ans.selected_answer}
-            showResult
-            showEditLink={isAdmin}
-          />
-        ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold">{t('exam.reviewAnswers')}</h2>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setView('paper')}
+              className={viewBtnClass(view === 'paper')}
+              title={t('examTemplate.paperMode')}
+            >
+              <FileText className="h-3 w-3" />
+              {t('examTemplate.paperMode')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('card')}
+              className={viewBtnClass(view === 'card')}
+              title={t('examTemplate.cardMode')}
+            >
+              <LayoutGrid className="h-3 w-3" />
+              {t('examTemplate.cardMode')}
+            </button>
+          </div>
         </div>
+
+        {view === 'paper' ? (
+          paperLoading ? (
+            <div className="flex justify-center py-12">
+              <Spinner />
+            </div>
+          ) : (
+            <div className="rounded-lg bg-muted/30">
+              <ExamPaperReview
+                title={t('exam.reviewPaperTitle')}
+                meta={[
+                  session.completed_at ? new Date(session.completed_at).toLocaleString() : '',
+                  `${t('exam.score')} ${session.score ?? 0}%`,
+                ].filter(Boolean).join(' · ')}
+                questions={paperList}
+                answers={answersMap}
+                results={resultsMap}
+              />
+            </div>
+          )
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {answers.map((ans) => (
+              <QuestionCard
+                key={ans.id}
+                question={ans.questions}
+                selectedAnswer={ans.selected_answer}
+                showResult
+                showEditLink={isAdmin}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">

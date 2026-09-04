@@ -233,6 +233,36 @@ export interface ExamTemplateSection {
   categories: string[]
 }
 
+import type {
+  ExamTemplateCover,
+  ExamTemplateCoverBlock,
+  ExamTemplateCoverInfoRow,
+} from '@/lib/paper-cover'
+import type {
+  ExamTemplateLayout,
+  PaperAdditionalBlock,
+  PaperBinderLine,
+  PaperHeaderFooter,
+  PaperMargins,
+  PaperSealBand,
+  PaperWatermark,
+} from '@/lib/paper-layout'
+
+export type {
+  ExamTemplateCover,
+  ExamTemplateCoverBlock,
+  ExamTemplateCoverInfoRow,
+}
+export type {
+  ExamTemplateLayout,
+  PaperAdditionalBlock,
+  PaperBinderLine,
+  PaperHeaderFooter,
+  PaperMargins,
+  PaperSealBand,
+  PaperWatermark,
+}
+
 export interface ExamTemplate {
   id: string
   user_id: string | null
@@ -242,6 +272,12 @@ export interface ExamTemplate {
   order_mode: ExamOrderMode
   sample_mode: ExamSampleMode
   sections: ExamTemplateSection[]
+  /** 可选封面; 编辑器里编辑 / PDF 解析填充; PaperPreview 自动渲染在最前面 */
+  cover?: ExamTemplateCover | null
+  /** 可选排版 token; 控制纸张/边距/字号/分栏/装订线/密封条/水印/页眉页脚/得分框 */
+  layout?: ExamTemplateLayout | null
+  /** 继承来源模板 id (快照继承: 仅记录来源, 内容已复制, 后续互不影响) */
+  parent_id?: string | null
   sort_order: number
   created_at: string
   updated_at: string

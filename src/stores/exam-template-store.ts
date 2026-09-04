@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import type { ExamTemplate, ExamTemplateSection, ExamOrderMode, ExamSampleMode, QuestionType } from '@/types'
+import type { ExamTemplateCover, ExamTemplateCoverBlock } from '@/lib/paper-cover'
+import { normalizeLayout, type ExamTemplateLayout } from '@/lib/paper-layout'
 import { BUILTIN_EXAM_TEMPLATES, isBuiltinTemplate } from '@/lib/exam-presets'
 
 export type ExamTemplateDraft = {
@@ -10,6 +12,12 @@ export type ExamTemplateDraft = {
   order_mode: ExamOrderMode
   sample_mode: ExamSampleMode
   sections: ExamTemplateSection[]
+  /** 可选封面, 没传 = 不变, 显式 null = 清除 */
+  cover?: ExamTemplateCover | null
+  /** 可选排版, 没传 = 不变, 显式 null = 清除 */
+  layout?: ExamTemplateLayout | null
+  /** 继承来源模板 id (快照继承: 仅记录来源) */
+  parent_id?: string | null
 }
 
 const ORDER_MODES: ExamOrderMode[] = ['section', 'shuffle']
@@ -33,6 +41,62 @@ function normalizeSections(raw: unknown): ExamTemplateSection[] {
   return raw.map(normalizeSection).filter((s): s is ExamTemplateSection => s !== null)
 }
 
+function normalizeCoverBlocks(raw: unknown): ExamTemplateCoverBlock[] | null {
+  if (!Array.isArray(raw)) return null
+  const blocks: ExamTemplateCoverBlock[] = []
+  for (const b of raw) {
+    if (!b || typeof b !== 'object') continue
+    const o = b as Record<string, unknown>
+    const kind = o.kind === 'heading' || o.kind === 'paragraph' || o.kind === 'rule' ? o.kind : 'paragraph'
+    const block: ExamTemplateCoverBlock = { kind }
+    if (typeof o.text === 'string') block.text = o.text
+    if (o.align === 'left' || o.align === 'center' || o.align === 'right') block.align = o.align
+    if (typeof o.bold === 'boolean') block.bold = o.bold
+    if (o.size === 'sm' || o.size === 'md' || o.size === 'lg' || o.size === 'xl') block.size = o.size
+    if (o.placement === 'header' || o.placement === 'footer' || o.placement === 'cover-end') {
+      block.placement = o.placement
+    }
+    blocks.push(block)
+  }
+  return blocks.length ? blocks : null
+}
+
+function normalizeCover(raw: unknown): ExamTemplateCover | null {
+  if (raw == null) return null
+  if (typeof raw !== 'object') return null
+  const c = raw as Record<string, unknown>
+  const pick = (k: string): string | null => {
+    const v = c[k]
+    return typeof v === 'string' ? v : null
+  }
+  const notices = Array.isArray(c.notices)
+    ? c.notices.filter((n): n is string => typeof n === 'string')
+    : null
+  const infoTable = Array.isArray(c.infoTable)
+    ? c.infoTable
+        .map((r) => {
+          if (!r || typeof r !== 'object') return null
+          const row = r as Record<string, unknown>
+          if (typeof row.label !== 'string') return null
+          const boxes = Math.max(0, Math.min(60, Number(row.boxes) || 0))
+          const widthMm = typeof row.widthMm === 'number' ? row.widthMm : undefined
+          return { label: row.label, boxes, widthMm }
+        })
+        .filter((r): r is { label: string; boxes: number; widthMm: number | undefined } => r !== null)
+    : null
+  return {
+    banner: pick('banner'),
+    examName: pick('examName'),
+    title: pick('title'),
+    codeLine: pick('codeLine'),
+    noticeTitle: pick('noticeTitle'),
+    notices,
+    infoHint: pick('infoHint'),
+    infoTable: infoTable && infoTable.length ? infoTable : null,
+    customBlocks: normalizeCoverBlocks(c.customBlocks),
+  }
+}
+
 function rowToTemplate(row: Record<string, unknown>): ExamTemplate {
   return {
     id: String(row.id),
@@ -43,6 +107,9 @@ function rowToTemplate(row: Record<string, unknown>): ExamTemplate {
     order_mode: ORDER_MODES.includes(row.order_mode as ExamOrderMode) ? (row.order_mode as ExamOrderMode) : 'section',
     sample_mode: SAMPLE_MODES.includes(row.sample_mode as ExamSampleMode) ? (row.sample_mode as ExamSampleMode) : 'random',
     sections: normalizeSections(row.sections),
+    cover: normalizeCover(row.cover),
+    layout: normalizeLayout(row.layout),
+    parent_id: row.parent_id == null ? null : String(row.parent_id),
     sort_order: Number(row.sort_order) || 0,
     created_at: String(row.created_at ?? ''),
     updated_at: String(row.updated_at ?? ''),
@@ -95,6 +162,9 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
         order_mode: draft.order_mode,
         sample_mode: draft.sample_mode,
         sections: draft.sections as unknown as Record<string, unknown>[],
+        cover: (draft.cover ?? null) as unknown as Record<string, unknown>,
+        layout: (draft.layout ?? null) as unknown as Record<string, unknown>,
+        parent_id: (draft.parent_id ?? null),
         sort_order: get().templates.length,
       })
       .select()
@@ -119,6 +189,8 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
     if (patch.order_mode !== undefined) payload.order_mode = patch.order_mode
     if (patch.sample_mode !== undefined) payload.sample_mode = patch.sample_mode
     if (patch.sections !== undefined) payload.sections = patch.sections as unknown as Record<string, unknown>[]
+    if (patch.cover !== undefined) payload.cover = (patch.cover ?? null) as unknown as Record<string, unknown>
+    if (patch.layout !== undefined) payload.layout = (patch.layout ?? null) as unknown as Record<string, unknown>
 
     const { data, error } = await supabase
       .from('exam_templates')

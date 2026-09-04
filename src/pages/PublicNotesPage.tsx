@@ -129,7 +129,11 @@ function NoteCard({
      </span>
     ))}
 
-    <p className="text-sm font-medium leading-relaxed">{note.questions?.question_text || t('notes.untitled')}</p>
+    <div className="text-sm font-medium leading-relaxed">
+     {note.questions?.question_text
+      ? <MarkdownRenderer content={note.questions.question_text} className="[&_p]:my-0" />
+      : t('notes.untitled')}
+    </div>
 
     {note.questions && (
      <AnswerInfo q={note.questions} selected={note.selected_answer} />

@@ -196,7 +196,7 @@ export function Component() {
                     <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
                   ))}
                 </div>
-                <p className="text-sm font-medium leading-relaxed">{q.question_text}</p>
+                <div className="text-sm font-medium leading-relaxed"><MarkdownRenderer content={q.question_text} className="[&_p]:my-0" /></div>
                 <AnswerInfo q={q} selected={q.latest_answer} />
                 {q.answered_at && <span className="text-xs text-muted-foreground">{new Date(q.answered_at).toLocaleDateString()}</span>}
               </div>
