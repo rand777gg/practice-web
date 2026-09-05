@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { PaperPreview, type PaperGrade } from './PaperPreview'
 import { buildPaperSections } from '@/lib/exam-compose'
+import { caseSubResults } from '@/lib/answer-utils'
 import type { CorrectAnswer, ExamTemplate, Question } from '@/types'
 
 interface Props {
@@ -38,10 +39,29 @@ export function ExamPaperReview({
     const m = new Map<string, PaperGrade>()
     for (const q of questions) {
       const answered = answers.has(q.id)
+      let isCorrect: boolean | null = MANUAL_TYPES.has(q.question_type)
+        ? null
+        : answered
+          ? (results.get(q.id) ?? false)
+          : false
+      // 案例分析题统一按「小题口径」判分: partial 携带答对/总小题数, 整题是否全对由其推导
+      let partial: PaperGrade['partial'] = null
+      if (q.question_type === 'case_analysis') {
+        const subRes = caseSubResults(q.case_questions ?? [], answers.get(q.id))
+        if (subRes && subRes.length > 0) {
+          const correct = subRes.filter((r) => r.correct).length
+          partial = { correct, total: subRes.length }
+          isCorrect = correct === subRes.length
+        }
+      }
       m.set(q.id, {
-        isCorrect: MANUAL_TYPES.has(q.question_type) ? null : answered ? (results.get(q.id) ?? false) : false,
-        correctAnswer: q.correct_answer,
+        isCorrect,
+        // 案例分析题的"正确答案"以逐小题答案的复合结构给出, 便于卷面逐小题展示
+        correctAnswer: q.question_type === 'case_analysis'
+          ? { subs: (q.case_questions ?? []).map((sub) => ({ id: sub.id, value: sub.answer })) } as CorrectAnswer
+          : q.correct_answer,
         explanation: q.answer_explanation ?? q.analysis,
+        partial,
       })
     }
     return m

@@ -7,7 +7,8 @@ import { BUILTIN_EXAM_TEMPLATES, isBuiltinTemplate } from '@/lib/exam-presets'
 
 export type ExamTemplateDraft = {
   name: string
-  subject: string | null
+  /** 整卷学科(可多选); 空数组 / null = 不限学科 */
+  subject: string[] | null
   duration_min: number
   order_mode: ExamOrderMode
   sample_mode: ExamSampleMode
@@ -23,6 +24,19 @@ export type ExamTemplateDraft = {
 const ORDER_MODES: ExamOrderMode[] = ['section', 'shuffle']
 const SAMPLE_MODES: ExamSampleMode[] = ['random', 'wrong_first', 'unseen_first', 'seq']
 
+/** 兼容数组与旧版单字符串; 空结果返回 null(=不限/跟随整卷) */
+function normalizeSubjectList(raw: unknown): string[] | null {
+  const arr = typeof raw === 'string' ? (raw.trim() ? [raw.trim()] : []) : Array.isArray(raw) ? raw : []
+  const out = [
+    ...new Set(
+      arr
+        .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+        .map((x) => x.trim()),
+    ),
+  ]
+  return out.length ? out : null
+}
+
 function normalizeSection(raw: unknown, index: number): ExamTemplateSection | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Record<string, unknown>
@@ -33,6 +47,7 @@ function normalizeSection(raw: unknown, index: number): ExamTemplateSection | nu
     count: Math.max(0, Math.min(200, Number(s.count) || 0)),
     score: Math.max(0, Math.min(100, Number(s.score) || 0)),
     categories: Array.isArray(s.categories) ? s.categories.filter((c): c is string => typeof c === 'string') : [],
+    subject: normalizeSubjectList(s.subject),
   }
 }
 
@@ -102,7 +117,7 @@ function rowToTemplate(row: Record<string, unknown>): ExamTemplate {
     id: String(row.id),
     user_id: row.user_id == null ? null : String(row.user_id),
     name: String(row.name ?? ''),
-    subject: row.subject == null ? null : String(row.subject),
+    subject: normalizeSubjectList(row.subject),
     duration_min: Math.max(1, Math.min(600, Number(row.duration_min) || 60)),
     order_mode: ORDER_MODES.includes(row.order_mode as ExamOrderMode) ? (row.order_mode as ExamOrderMode) : 'section',
     sample_mode: SAMPLE_MODES.includes(row.sample_mode as ExamSampleMode) ? (row.sample_mode as ExamSampleMode) : 'random',
@@ -157,7 +172,7 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
       .insert({
         user_id: userId,
         name: draft.name,
-        subject: draft.subject,
+        subject: normalizeSubjectList(draft.subject),
         duration_min: draft.duration_min,
         order_mode: draft.order_mode,
         sample_mode: draft.sample_mode,
@@ -184,7 +199,7 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
     set({ error: null })
     const payload: Record<string, unknown> = {}
     if (patch.name !== undefined) payload.name = patch.name
-    if (patch.subject !== undefined) payload.subject = patch.subject
+    if (patch.subject !== undefined) payload.subject = normalizeSubjectList(patch.subject)
     if (patch.duration_min !== undefined) payload.duration_min = patch.duration_min
     if (patch.order_mode !== undefined) payload.order_mode = patch.order_mode
     if (patch.sample_mode !== undefined) payload.sample_mode = patch.sample_mode
@@ -221,7 +236,7 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
   clear: () => set({ templates: [], isLoading: false, error: null }),
 }))
 
-/** 内置预设在前, 用户模板在后 */
+/** 用户模板在前, 内置预设在后 */
 export function selectAllTemplates(user: ExamTemplate[]): ExamTemplate[] {
-  return [...BUILTIN_EXAM_TEMPLATES, ...user]
+  return [...user, ...BUILTIN_EXAM_TEMPLATES]
 }

@@ -18,6 +18,8 @@ export function PaperSheetStyles() {
         font-size: var(--paper-font-size, 15px);
         line-height: var(--paper-line-height, 1.9);
         box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 8px 24px rgba(0,0,0,.08);
+        border-radius: 0; /* 试卷纸张直角(真实 A4 无圆角) */
+        overflow: hidden;
         position: relative;
       }
       .paper-sheet-spread {
@@ -211,8 +213,8 @@ export function PaperSheetStyles() {
       /* ===== 打印 ===== */
       @media print {
         .paper-sheet { width: auto; min-height: 0; padding: 0; box-shadow: none; font-size: 12pt;
-          background: #fff !important; color: #000 !important; border: none; }
-        .paper-sheet-spread { width: auto; padding: 0; border: none; }
+          background: #fff !important; color: #000 !important; border: none; border-radius: 0; overflow: visible; }
+        .paper-sheet-spread { width: auto; padding: 0; border: none; border-radius: 0; }
         .paper-columns { columns: auto; }
         .paper-no-print { display: none !important; }
         .paper-cover { page-break-after: always; }

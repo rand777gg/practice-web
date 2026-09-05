@@ -1,16 +1,14 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import ReactECharts from 'echarts-for-react'
-import echarts from '@/lib/echarts'
 import { supabase } from '@/lib/supabase'
 import { fetchQuestionsByIds } from '@/lib/exam-compose'
 import { useAuthStore } from '@/stores/auth-store'
-import { useThemeStore } from '@/stores/theme-store'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { ExamPaperReview } from './ExamPaperReview'
+import { questionItemCount, questionCorrectItemCount } from '@/lib/answer-utils'
 import type { ExamSession, UserAnswer, Question, CorrectAnswer } from '@/types'
 import { RotateCcw, Home, FileText, LayoutGrid } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -18,6 +16,12 @@ import { useT } from '@/i18n/use-t'
 
 interface Props {
   sessionId: string
+}
+
+function formatDuration(ms: number) {
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
 }
 
 function viewBtnClass(on: boolean) {
@@ -31,8 +35,6 @@ export function ExamResultCard({ sessionId }: Props) {
   const { t } = useT()
   const { profile } = useAuthStore()
   const isAdmin = profile?.role === 'admin'
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
   const [session, setSession] = useState<ExamSession | null>(null)
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
   const [paperQuestions, setPaperQuestions] = useState<Question[]>([])
@@ -92,15 +94,16 @@ export function ExamResultCard({ sessionId }: Props) {
     [paperQuestions, answers],
   )
 
-  const textColor = isDark ? '#d1d5db' : '#374151'
-
   const subjectStats = useMemo(() => {
     const map = new Map<string, { total: number; correct: number }>()
     for (const a of answers) {
-      const s = a.questions?.subject || 'Other'
+      const q = a.questions
+      if (!q) continue
+      const s = q.subject || 'Other'
       const entry = map.get(s) || { total: 0, correct: 0 }
-      entry.total++
-      if (a.is_correct) entry.correct++
+      // 案例分析题按小题口径统计(与得分口径一致)
+      entry.total += questionItemCount(q)
+      entry.correct += questionCorrectItemCount(q, a.selected_answer)
       map.set(s, entry)
     }
     return [...map.entries()].map(([name, v]) => ({ name, total: v.total, correct: v.correct, rate: Math.round((v.correct / v.total) * 100) }))
@@ -120,113 +123,76 @@ export function ExamResultCard({ sessionId }: Props) {
 
   const correct = session.correct_count
   const wrong = session.total_questions - correct
-
-  const gaugeOption = {
-    series: [{
-      type: 'gauge',
-      startAngle: 210,
-      endAngle: -30,
-      center: ['50%', '60%'],
-      radius: '90%',
-      min: 0,
-      max: 100,
-      axisLine: {
-        show: true,
-        lineStyle: { width: 18, color: [[0.6, '#ff4d4f'], [0.8, '#faad14'], [1, '#52c41a']] },
-      },
-      pointer: { length: '60%', width: 6, itemStyle: { color: textColor } },
-      axisTick: { show: false },
-      splitLine: { show: false },
-      axisLabel: { show: false },
-      detail: {
-        valueAnimation: true,
-        formatter: '{value}%',
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: textColor,
-        offsetCenter: [0, '70%'],
-      },
-      title: { show: false },
-      data: [{ value: session.score }],
-    }],
-  }
-
-  const donutOption = {
-    tooltip: { trigger: 'item' as const },
-    legend: { bottom: 0, textStyle: { color: textColor, fontSize: 11 } },
-    series: [{
-      type: 'pie',
-      radius: ['55%', '75%'],
-      center: ['50%', '45%'],
-      itemStyle: { borderRadius: 4, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 2 },
-      label: { show: false },
-      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
-      data: [
-        { name: t('exam.correct'), value: correct, itemStyle: { color: '#52c41a' } },
-        { name: t('exam.wrong'), value: wrong, itemStyle: { color: '#ff4d4f' } },
-      ],
-    }],
-  }
-
-  const subjectBarOption = subjectStats.length > 0 ? {
-    tooltip: { trigger: 'axis' as const },
-    grid: { left: 8, right: 30, top: 8, bottom: 20 },
-    xAxis: {
-      type: 'value' as const, max: 100,
-      axisLabel: { fontSize: 10, color: textColor, formatter: '{value}%' },
-      splitLine: { lineStyle: { color: isDark ? '#374151' : '#e5e7eb' } },
-    },
-    yAxis: {
-      type: 'category' as const,
-      data: subjectStats.map(s => s.name).reverse(),
-      axisLabel: { fontSize: 10, color: textColor },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    series: [{
-      type: 'bar',
-      data: subjectStats.map(s => s.rate).reverse(),
-      barWidth: 14,
-      itemStyle: {
-        borderRadius: [0, 6, 6, 0],
-        color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
-          colorStops: [{ offset: 0, color: '#3b82f6' }, { offset: 1, color: '#8b5cf6' }] },
-      },
-      label: { show: true, position: 'right' as const, fontSize: 10, color: textColor, formatter: '{c}%' },
-    }],
-  } : null
+  const score = session.score ?? 0
+  const avgSec = session.total_questions > 0
+    ? Math.round(session.duration_ms / session.total_questions / 1000)
+    : 0
+  const rateColor =
+    score >= 90
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : score >= 60
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-600 dark:text-red-400'
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="border-0 shadow-none">
-          <CardHeader className="pb-0"><CardTitle className="text-sm text-muted-foreground">{t('exam.score')}</CardTitle></CardHeader>
-          <CardContent>
-            <ReactECharts echarts={echarts} option={gaugeOption} style={{ height: 220 }} />
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-none">
-          <CardHeader className="pb-0"><CardTitle className="text-sm text-muted-foreground">{t('exam.correctRate')}</CardTitle></CardHeader>
-          <CardContent>
-            <ReactECharts echarts={echarts} option={donutOption} style={{ height: 220 }} />
-          </CardContent>
-        </Card>
-      </div>
+      {/* 成绩概览: 纯文本统计 */}
+      <Card className="border-0 shadow-none">
+        <CardContent className="p-6">
+          <div className="flex flex-wrap items-start gap-x-10 gap-y-6">
+            <div className="min-w-[160px]">
+              <p className="text-sm text-muted-foreground">{t('exam.score')}</p>
+              <p className={cn('text-5xl font-bold tabular-nums leading-tight', rateColor)}>
+                {score}
+                <span className="ml-0.5 text-2xl font-semibold text-muted-foreground">%</span>
+              </p>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                {t('exam.correct')} {correct} · {t('exam.wrong')} {wrong}
+              </p>
+            </div>
 
-      {subjectBarOption && (
-        <Card className="border-0 shadow-none">
-          <CardHeader className="pb-0"><CardTitle className="text-sm text-muted-foreground">各学科正确率</CardTitle></CardHeader>
-          <CardContent>
-            <ReactECharts echarts={echarts} option={subjectBarOption} style={{ height: Math.max(120, subjectStats.length * 32) }} />
-          </CardContent>
-        </Card>
-      )}
+            <div className="grid min-w-[260px] flex-1 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">{t('exam.historyCorrectRate')}</p>
+                <p className="mt-0.5 text-lg font-semibold tabular-nums">
+                  {session.total_questions > 0 ? Math.round((correct / session.total_questions) * 100) : 0}%
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('exam.historyDuration')}</p>
+                <p className="mt-0.5 text-lg font-semibold tabular-nums">{formatDuration(session.duration_ms)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('exam.historyAvgTime')}</p>
+                <p className="mt-0.5 text-lg font-semibold tabular-nums">{avgSec}s</p>
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <p className="text-xs text-muted-foreground">{t('exam.historyTime')}</p>
+                <p className="mt-0.5 text-sm">
+                  {session.completed_at ? new Date(session.completed_at).toLocaleString() : '-'}
+                </p>
+              </div>
+            </div>
+          </div>
 
-      {session.completed_at && (
-        <p className="text-xs text-muted-foreground text-center -mt-4">
-          {new Date(session.completed_at).toLocaleString()}
-        </p>
-      )}
+          {subjectStats.length > 0 && (
+            <div className="mt-6 border-t pt-4">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">各学科正确率</p>
+              <div className="grid gap-x-10 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                {subjectStats.map((s) => (
+                  <div key={s.name} className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate text-muted-foreground">{s.name}</span>
+                    <span className="shrink-0 tabular-nums">
+                      <span className="font-medium">{s.rate}%</span>
+                      <span className="text-xs text-muted-foreground"> ({s.correct}/{s.total})</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">

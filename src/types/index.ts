@@ -12,6 +12,7 @@ export type QuestionType =
   | 'analysis'
   | 'judge_correct'
   | 'coding'
+  | 'case_analysis'
 
 export interface TestCase {
   input: string
@@ -57,6 +58,21 @@ export interface CodingAnswer {
   allPassed: boolean
 }
 
+/** 案例分析题中的一个小题; 与整题共用 case 材料作为题干 */
+export interface CaseQuestion {
+  id: string
+  /** 仅允许可自动判分的小题型: 单选/多选/判断/判断改错/填空/简答 */
+  type: QuestionType
+  text: string
+  options: string[]
+  answer: CorrectAnswer
+}
+
+/** 案例分析题整题的用户作答: 每个小题一份子答案 */
+export interface CaseAnswer {
+  subs: { id: string; value: CorrectAnswer }[]
+}
+
 export type CorrectAnswer =
   | number      // single_choice: index into options
   | number[]    // multi_select: indices into options
@@ -65,6 +81,7 @@ export type CorrectAnswer =
   | string[]    // short_answer: acceptable answers
   | null        // analysis: manual grading
   | CodingAnswer // coding: submission result
+  | CaseAnswer  // case_analysis: per-sub answers
 
 export interface DailyTarget {
   subjects: { subject: string; count: number }[]
@@ -197,6 +214,8 @@ export interface Question {
   runtime_config?: RuntimeConfig
   execution_mode?: 'stdio' | 'function'
   examples?: ExampleCase[]
+  /** 案例分析题的小题列表; question_text 为共用案例材料 */
+  case_questions?: CaseQuestion[]
   issue_flag?: 'none' | 'suspected' | 'confirmed'
   issue_note?: string | null
   flagged_at?: string | null
@@ -231,6 +250,11 @@ export interface ExamTemplateSection {
   score: number
   /** 该分区限定分类, 空表示不限 */
   categories: string[]
+  /**
+   * 该分区限定学科(可多选);
+   * null / 空数组 / 缺省 = 继承整卷学科(整卷学科也为空时=不限学科)
+   */
+  subject?: string[] | null
 }
 
 import type {
@@ -267,7 +291,11 @@ export interface ExamTemplate {
   id: string
   user_id: string | null
   name: string
-  subject: string | null
+  /**
+   * 整卷学科(可多选); 空数组 / null = 不限学科。
+   * 兼容旧版单字符串存储, 读取端由 store normalize 为数组。
+   */
+  subject: string[] | null
   duration_min: number
   order_mode: ExamOrderMode
   sample_mode: ExamSampleMode
@@ -363,6 +391,10 @@ export function parseCorrectAnswer(raw: unknown, type: QuestionType): CorrectAns
       return Array.isArray(raw) ? raw.map(String) : [String(raw)]
     case 'analysis':
       return null
+    case 'case_analysis':
+      return raw && typeof raw === 'object' && !Array.isArray(raw) && 'subs' in (raw as Record<string, unknown>)
+        ? (raw as CaseAnswer)
+        : { subs: [] } as CaseAnswer
     case 'coding':
       if (raw && typeof raw === 'object' && 'code' in (raw as Record<string, unknown>)) {
         return raw as CodingAnswer

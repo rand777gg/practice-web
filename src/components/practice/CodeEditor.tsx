@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
@@ -73,16 +74,16 @@ export function CodeEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <select
-          value={language}
-          onChange={(e) => handleLanguageChange(e.target.value)}
-          disabled={disabled || loading}
-          className="h-8 text-xs rounded-md border border-input bg-background px-2.5 py-0 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          {SUPPORTED_LANGUAGES.map((lang) => (
-            <option key={lang.value} value={lang.value}>{lang.label}</option>
-          ))}
-        </select>
+        <Select value={language} onValueChange={handleLanguageChange} disabled={disabled || loading}>
+          <SelectTrigger size="sm" className="w-36 shrink-0" aria-label="编程语言">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <SelectItem key={lang.value} value={lang.value}>{lang.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           size="sm"
           className="h-8 gap-1.5"

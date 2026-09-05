@@ -1,7 +1,11 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import { useRefreshStore } from './refresh-store'
-import { isAnswerCorrect } from '@/lib/answer-utils'
+import {
+  isAnswerCorrect,
+  questionCorrectItemCount,
+  questionItemCount,
+} from '@/lib/answer-utils'
 import { composeExamIds, fetchQuestionsByIds } from '@/lib/exam-compose'
 import type { ExamSession, Question, CorrectAnswer, ExamTemplate, ExamSampleMode, ExamComposeStat } from '@/types'
 
@@ -81,11 +85,14 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     if (orderedQuestions.length === 0) return { ok: false, stats }
 
+    // 总题数按「小题」展开: 案例分析题 = 小题数, 其余 = 1
+    const totalItems = orderedQuestions.reduce((sum, q) => sum + questionItemCount(q), 0)
+
     const { data: session, error: sError } = await supabase
       .from('exam_sessions')
       .insert({
         user_id: userId,
-        total_questions: orderedQuestions.length,
+        total_questions: totalItems,
         duration_ms: durationMs,
         question_ids: questionIds,
         current_index: 0,
@@ -180,7 +187,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     // Auto-save to DB so answers survive refresh
     if (session) {
       const q = questions.find(x => x.id === questionId)
-      const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks) : false
+      const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions) : false
       supabase.from('user_answers').upsert({
         user_id: session.user_id,
         question_id: questionId,
@@ -231,7 +238,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     set({ isSubmitting: true, error: null })
 
-    let correctCount = 0
+    let correctItems = 0
+    const totalItems = questions.reduce((sum, q) => sum + questionItemCount(q), 0)
     const answerRecords: {
       user_id: string
       question_id: string
@@ -244,13 +252,20 @@ export const useExamStore = create<ExamState>((set, get) => ({
     for (const q of questions) {
       const selected = answers.get(q.id)
       if (selected == null) continue
-      const isCorrect = isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks)
-      if (isCorrect) correctCount++
+      const isCase = q.question_type === 'case_analysis'
+      // 案例分析题按小题计分(可部分得分); 其余整题全对才算对
+      const okCount = isCase
+        ? questionCorrectItemCount(q, selected)
+        : isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
+          ? questionItemCount(q)
+          : 0
+      correctItems += okCount
+      const fullCorrect = !isCase ? okCount > 0 : ((q.case_questions?.length ?? 0) > 0 && okCount === (q.case_questions?.length ?? 0))
       answerRecords.push({
         user_id: session.user_id,
         question_id: q.id,
         selected_answer: selected,
-        is_correct: isCorrect,
+        is_correct: fullCorrect,
         mode: 'exam',
         exam_session_id: session.id,
       })
@@ -258,7 +273,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     const now = new Date()
     const actualDuration = now.getTime() - new Date(session.started_at).getTime()
-    const score = Math.round((correctCount / questions.length) * 100)
+    const score = totalItems > 0 ? Math.round((correctItems / totalItems) * 100) : 0
 
     if (answerRecords.length > 0) {
       const { error: aError } = await supabase.from('user_answers').insert(answerRecords)
@@ -272,7 +287,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
       .from('exam_sessions')
       .update({
         status: 'completed',
-        correct_count: correctCount,
+        correct_count: correctItems,
         score,
         duration_ms: actualDuration,
         current_index: get().currentIndex,
@@ -286,7 +301,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     }
 
     set({
-      session: { ...session, status: 'completed', correct_count: correctCount, score, duration_ms: actualDuration },
+      session: { ...session, status: 'completed', correct_count: correctItems, score, duration_ms: actualDuration },
       isSubmitting: false,
     })
     useRefreshStore.getState().bump()

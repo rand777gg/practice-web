@@ -64,6 +64,31 @@ export function hasCoverContent(c: ExamTemplateCover | null | undefined): boolea
   )
 }
 
+/**
+ * 画布双击就地改文字: 按字段/下标把新文字写回 cover (空值 = 删除该字段/该条)。
+ * - field='notice' + index: 修改 cover.notices 的第 index 条, 清空则该条被移除;
+ * - 其它 field 与 ExamTemplateCover 的字符串字段同名 (banner/examName/title/codeLine/noticeTitle/infoHint)。
+ */
+export function setCoverFieldText(
+  cover: ExamTemplateCover,
+  field: string,
+  index: number | undefined,
+  value: string,
+): ExamTemplateCover {
+  if (field === 'notice') {
+    const cur = cover.notices ?? []
+    if (index == null || index < 0 || index >= cur.length) return cover
+    const next = value.trim()
+      ? cur.map((n, i) => (i === index ? value : n))
+      : cur.filter((_, i) => i !== index)
+    return { ...cover, notices: next.length ? next : null }
+  }
+  const out = { ...cover } as Record<string, unknown>
+  if (value.trim()) out[field] = value
+  else delete out[field]
+  return out as unknown as ExamTemplateCover
+}
+
 /* -------------------- 题型名 → QuestionType 映射 -------------------- */
 
 const TYPE_NAME_MAP: Array<{ re: RegExp; type: QuestionType }> = [

@@ -42,7 +42,7 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer | nu
       </div>
     )
   }
-  const ok = isAnswerCorrect(selected, correct, type, q.allow_unordered)
+  const ok = isAnswerCorrect(selected, correct, type, q.allow_unordered, q.unordered_blanks, q.case_questions)
   return <span className={`text-xs rounded px-1.5 py-0.5 ${ok ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-red-100 dark:bg-red-900/30 text-red-700'}`}>{ok ? '✓ 正确' : '✗ 错误'}</span>
 }
 

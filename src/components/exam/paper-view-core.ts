@@ -9,6 +9,11 @@ export interface PaperGrade {
   isCorrect: boolean | null
   correctAnswer: CorrectAnswer
   explanation?: string | null
+  /**
+   * 案例分析题按小题计分的明细(答对小题数/总小题数)。
+   * 存在时, 卷面题号徽标与「得分 x/y」抬头均按小题口径展示, 而非整题对错。
+   */
+  partial?: { correct: number; total: number } | null
 }
 
 export const CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二']
@@ -23,7 +28,10 @@ export function isBlankAnswer(a: CorrectAnswer | null | undefined): boolean {
   if (a === null || a === undefined) return true
   if (typeof a === 'string') return a.trim() === ''
   if (Array.isArray(a)) return a.length === 0
-  if (typeof a === 'object') return !(a as CodingAnswer).code?.trim()
+  if (typeof a === 'object') {
+    if ('subs' in (a as object)) return false
+    return !(a as CodingAnswer).code?.trim()
+  }
   return false
 }
 

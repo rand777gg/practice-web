@@ -16,6 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import { Hand, Maximize, Minimize, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DEFAULT_LAYOUT,
   layoutToCssVars,
@@ -29,6 +30,7 @@ import { PaperSheetStyles } from './paper-sheet-styles'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
 import {
+  CaseSubItem,
   GradeBar,
   GradeMark,
   PageFooterBar,
@@ -37,7 +39,7 @@ import {
   type PaperGrade,
 } from './paper-view-parts'
 import { CN_NUM } from './paper-view-core'
-import type { CorrectAnswer } from '@/types'
+import type { CaseAnswer, CorrectAnswer } from '@/types'
 import type { PaperSection } from '@/lib/exam-compose'
 
 /** mm → px (CSS 96dpi) */
@@ -55,6 +57,9 @@ const PCT_MAX = 200 // 固定百分比缩放下限
 const PCT_STEP = 10 // +/- 步进
 
 const clampNum = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
+
+/** 与 paper-view-parts 一致的分数格式化(整数不带小数点) */
+const fmtScore = (v: number): string => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100))
 
 interface Props {
   title: string
@@ -85,6 +90,11 @@ type FlowItem =
   | { kind: 'head'; key: string }
   | { kind: 'secHead'; key: string; si: number; sec: PaperSection; total: number; noScore: boolean }
   | { kind: 'q'; key: string; si: number; qid: string; no: number; sec: PaperSection }
+  // 案例分析题拆分为三个子类原子块: 题干/材料(qCase) + 每个小题独立分页(qSub) + 批改解析尾(qTail)。
+  // 小题逐块分页后不再出现「一整道案例超高占一页+页内滚动」的情况, 双页视图不会裁切。
+  | { kind: 'qCase'; key: string; si: number; qid: string; no: number; sec: PaperSection }
+  | { kind: 'qSub'; key: string; si: number; qid: string; sec: PaperSection; subIdx: number }
+  | { kind: 'qTail'; key: string; si: number; qid: string; sec: PaperSection }
 
 interface PageData {
   /** items 下标(共用全局 flowItems 数组) */
@@ -159,8 +169,14 @@ export function PaperSpreadView({
     let done = 0
     for (const g of grading.values()) {
       if (g.isCorrect === null) continue
-      done++
-      if (g.isCorrect) correct++
+      // 案例分析题按小题口径累计(与最终得分一致); 其余题目按整题计
+      if (g.partial && g.partial.total > 0) {
+        done += g.partial.total
+        correct += g.partial.correct
+      } else {
+        done++
+        if (g.isCorrect) correct++
+      }
     }
     return { correct, done }
   }, [grading])
@@ -206,11 +222,22 @@ export function PaperSpreadView({
         noScore: sec.scorePerQuestion <= 0,
       })
       sec.items.forEach(({ q, no }) => {
-        out.push({ kind: 'q', key: `flow-q-${q.id}`, si, qid: q.id, no, sec })
+        // 案例分析题: 题干与每个小题各是独立原子块, 便于分页时逐小题流动(不超高、不裁切)
+        if (q.question_type === 'case_analysis') {
+          const subs = q.case_questions ?? []
+          out.push({ kind: 'qCase', key: `flow-case-${q.id}`, si, qid: q.id, no, sec })
+          subs.forEach((_, subIdx) => {
+            out.push({ kind: 'qSub', key: `flow-csub-${q.id}-${subIdx}`, si, qid: q.id, sec, subIdx })
+          })
+          // 批改视图才有的「解析/正确答案」尾条, 紧随最后一个小题之后流动
+          if (grading) out.push({ kind: 'qTail', key: `flow-ctail-${q.id}`, si, qid: q.id, sec })
+        } else {
+          out.push({ kind: 'q', key: `flow-q-${q.id}`, si, qid: q.id, no, sec })
+        }
       })
     })
     return out
-  }, [coverPresent, numbered])
+  }, [coverPresent, numbered, grading])
 
   /** 单个原子块的渲染; 测量容器与真实分页页必须共用同一实现, 保证高度一致 */
   const renderItemContent = useCallback(
@@ -278,7 +305,103 @@ export function PaperSpreadView({
           </div>
         )
       }
-      // kind === 'q'
+      // === 案例分析题: 题干/材料独立一页块(qCase) ===
+      if (item.kind === 'qCase') {
+        const q = numbered[item.si]?.items.find((it) => it.q.id === item.qid)?.q
+        if (!q) return null
+        const grade = grading?.get(q.id)
+        const active = activeQid === q.id
+        const flashing = flashQid === q.id
+        const subs = q.case_questions ?? []
+        const scorePerQuestion = numbered[item.si]?.scorePerQuestion ?? 0
+        return (
+          <div
+            className={cn(
+              'paper-q rounded',
+              (active || flashing) && 'rounded px-2 ring-2 ring-blue-400/60',
+              flashing && 'ring-amber-400',
+              active && '-mx-2 px-2',
+            )}
+            data-qid={q.id}
+            onMouseDown={() => onFocus?.(q.id)}
+          >
+            <div className="flex gap-2">
+              <span className="shrink-0 tabular-nums">{item.no}.</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-2">
+                  <span style={tb.questionStem} className="contents">
+                    <MarkdownRenderer content={q.question_text} className="paper-md inline-block align-top" />
+                  </span>
+                  {grade && <GradeMark isCorrect={grade.isCorrect} partial={grade.partial} />}
+                </div>
+                {subs.length > 0 ? (
+                  scorePerQuestion > 0 && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      本题共 {subs.length} 小题，每小题 {fmtScore(scorePerQuestion / subs.length)} 分
+                    </p>
+                  )
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">该案例尚未配置小题</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }
+      // === 案例分析题: 每个小题是独立原子块, 可跨页流动 ===
+      if (item.kind === 'qSub') {
+        const q = numbered[item.si]?.items.find((it) => it.q.id === item.qid)?.q
+        if (!q) return null
+        const sub = q.case_questions?.[item.subIdx]
+        if (!sub) return null
+        const cur = answers.get(q.id)
+        const answerObj =
+          cur && typeof cur === 'object' && !Array.isArray(cur) && 'subs' in (cur as object)
+            ? (cur as CaseAnswer)
+            : null
+        const grade = grading?.get(q.id)
+        const active = activeQid === q.id
+        const flashing = flashQid === q.id
+        return (
+          <div
+            className={cn(
+              'ml-5 rounded',
+              (active || flashing) && 'ring-2 ring-blue-400/60',
+              flashing && 'ring-amber-400',
+            )}
+            data-qid={q.id}
+            onMouseDown={() => onFocus?.(q.id)}
+          >
+            <CaseSubItem
+              sub={sub}
+              si={item.subIdx}
+              value={answerObj?.subs?.find((s) => s.id === sub.id)?.value}
+              grading={!!grade}
+              readOnly={readOnly}
+              optionStyle={tb.questionOption}
+              onSet={(v) => {
+                if (readOnly) return
+                onAnswer?.(q.id, {
+                  subs: [...(answerObj?.subs ?? []).filter((s) => s.id !== sub.id), { id: sub.id, value: v }],
+                } as CaseAnswer)
+              }}
+            />
+          </div>
+        )
+      }
+      // === 案例分析题: 批改解析尾(正确答案/你的答案/解析), 仅在批改视图存在 ===
+      if (item.kind === 'qTail') {
+        const q = numbered[item.si]?.items.find((it) => it.q.id === item.qid)?.q
+        if (!q) return null
+        const grade = grading?.get(q.id)
+        if (!grade) return null
+        return (
+          <div className="ml-5" data-qid={q.id}>
+            <GradeBar q={q} grade={grade} answer={answers.get(q.id) ?? null} />
+          </div>
+        )
+      }
+      // kind === 'q' (非案例分析题)
       const q = numbered[item.si]?.items.find((it) => it.q.id === item.qid)?.q
       if (!q) return null
       const answer = answers.get(q.id)
@@ -307,7 +430,7 @@ export function PaperSpreadView({
                 <span style={tb.questionStem} className="contents">
                   <MarkdownRenderer content={q.question_text} className="paper-md inline-block align-top" />
                 </span>
-                {grade && <GradeMark isCorrect={grade.isCorrect} />}
+                {grade && <GradeMark isCorrect={grade.isCorrect} partial={grade.partial} />}
               </div>
               <QuestionBody
                 q={q}
@@ -316,6 +439,7 @@ export function PaperSpreadView({
                 readOnly={readOnly}
                 grade={grade}
                 optionStyle={tb.questionOption}
+                scorePerQuestion={numbered[item.si]?.scorePerQuestion ?? 0}
               />
               {grade && <GradeBar q={q} grade={grade} answer={answer ?? null} />}
             </div>
@@ -328,8 +452,21 @@ export function PaperSpreadView({
   )
 
   /* 原子块的间隔(写在包装 div 的 margin-bottom 上; 分页测量按「包含间隔的推进高度」计) */
-  const itemSpaceClass = (item: FlowItem) =>
-    item.kind === 'cover' ? '' : item.kind === 'q' ? 'mb-3' : item.kind === 'secHead' ? 'mb-2' : 'mb-5'
+  const itemSpaceClass = (item: FlowItem) => {
+    switch (item.kind) {
+      case 'cover':
+        return ''
+      case 'q':
+      case 'qCase':
+      case 'qSub':
+      case 'qTail':
+        return 'mb-3'
+      case 'secHead':
+        return 'mb-2'
+      default:
+        return 'mb-5'
+    }
+  }
 
   /* ---------------- 测量 & 分页 ---------------- */
   const measureRef = useRef<HTMLDivElement | null>(null)
@@ -383,16 +520,22 @@ export function PaperSpreadView({
     setPages(out.length ? out : [])
   }, [items, geom, coverOwnPage, fontTick])
 
-  // 网页字体就绪后高度可能变化 → 触发一次重测
+  // 网页字体就绪后高度可能变化 → 触发一次重测;
+  // 额外延迟再测两次以覆盖 Markdown 图片等异步资源加载完成后引起的行高变化, 避免页内裁切。
   useEffect(() => {
     let mounted = true
-    document.fonts?.ready
-      .then(() => {
-        if (mounted) setFontTick((n) => n + 1)
-      })
-      .catch(() => {})
+    const bump = () => {
+      if (mounted) setFontTick((n) => n + 1)
+    }
+    document.fonts?.ready.then(bump).catch(() => {})
+    const t1 = window.setTimeout(bump, 500)
+    const t2 = window.setTimeout(bump, 1500)
+    window.addEventListener('load', bump)
     return () => {
       mounted = false
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.removeEventListener('load', bump)
     }
   }, [])
 
@@ -511,7 +654,7 @@ export function PaperSpreadView({
     let pageIdx = -1
     for (let p = 0; p < pages.length; p++) {
       for (const i of pages[p].indexes) {
-        if (items[i].kind === 'q' && items[i].qid === currentQuestionId) {
+        if ((items[i].kind === 'q' || items[i].kind === 'qCase') && items[i].qid === currentQuestionId) {
           pageIdx = p
           break
         }
@@ -564,7 +707,7 @@ export function PaperSpreadView({
     return (
       <div
         key={pageNo}
-        className="relative shrink-0 rounded-sm"
+        className="relative shrink-0"
         style={{ width: scaledW, height: scaledH, overflow: 'hidden' }}
       >
         <div
@@ -599,23 +742,24 @@ export function PaperSpreadView({
   /* 查看工具栏控件(浮层 / 锚定到外部顶栏 共用同一份) */
   const toolbarControls = (
     <>
-      <select
-        value={zoomSelectValue}
-        onChange={(e) => handleZoomSelect(e.target.value)}
-        title={t('paperPreview.zoomTitle')}
-        className="h-7 max-w-[200px] rounded border border-border bg-background px-1 text-xs text-foreground outline-none"
-      >
-        <option value="auto">{t('paperPreview.zoomAuto')}</option>
-        <option value="page">{t('paperPreview.zoomFitPage')}</option>
-        <option value="width">{t('paperPreview.zoomFitWidth')}</option>
-        <optgroup label="%">
-          {pctOptions.map((v) => (
-            <option key={v} value={`pct-${v}`}>
-              {v}%
-            </option>
-          ))}
-        </optgroup>
-      </select>
+      <Select value={zoomSelectValue} onValueChange={handleZoomSelect}>
+        <SelectTrigger size="none" title={t('paperPreview.zoomTitle')} className="h-7 w-auto max-w-[200px] px-1 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">{t('paperPreview.zoomAuto')}</SelectItem>
+          <SelectItem value="page">{t('paperPreview.zoomFitPage')}</SelectItem>
+          <SelectItem value="width">{t('paperPreview.zoomFitWidth')}</SelectItem>
+          <SelectGroup>
+            <SelectLabel>%</SelectLabel>
+            {pctOptions.map((v) => (
+              <SelectItem key={v} value={`pct-${v}`}>
+                {v}%
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
 
       <span className="mx-0.5 h-4 w-px bg-border" />
 

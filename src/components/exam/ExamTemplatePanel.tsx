@@ -57,19 +57,19 @@ export function ExamTemplatePanel({ userId, subjects, categories, value, onChang
           <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
             <DropdownMenuItem onClick={() => onChange(null)}>{t('examTemplate.noTemplate')}</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] text-muted-foreground">{t('examTemplate.builtinGroup')}</DropdownMenuLabel>
-            {builtins.map((x) => (
+            <DropdownMenuLabel className="text-[10px] text-muted-foreground">{t('examTemplate.myGroup')}</DropdownMenuLabel>
+            {mine.length === 0 && (
+              <div className="px-2 py-1.5 text-[10px] text-muted-foreground">{t('examTemplate.noCustom')}</div>
+            )}
+            {mine.map((x) => (
               <DropdownMenuItem key={x.id} onClick={() => onChange(x)}>
                 {x.name}
                 <span className="ml-auto text-[10px] text-muted-foreground">{totalQuestions(x.sections)}</span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] text-muted-foreground">{t('examTemplate.myGroup')}</DropdownMenuLabel>
-            {mine.length === 0 && (
-              <div className="px-2 py-1.5 text-[10px] text-muted-foreground">{t('examTemplate.noCustom')}</div>
-            )}
-            {mine.map((x) => (
+            <DropdownMenuLabel className="text-[10px] text-muted-foreground">{t('examTemplate.builtinGroup')}</DropdownMenuLabel>
+            {builtins.map((x) => (
               <DropdownMenuItem key={x.id} onClick={() => onChange(x)}>
                 {x.name}
                 <span className="ml-auto text-[10px] text-muted-foreground">{totalQuestions(x.sections)}</span>

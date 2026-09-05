@@ -17,15 +17,20 @@ import {
   type PaperPick,
   type PaperTextBlockKey,
   type PaperTextBlockStyle,
+  type PaperTextEditReq,
 } from '@/lib/paper-layout'
-import type { ExamTemplateCover, ExamTemplateCoverBlock } from '@/lib/paper-cover'
+import { setCoverFieldText, type ExamTemplateCover, type ExamTemplateCoverBlock } from '@/lib/paper-cover'
 import type { ExamTemplateSection } from '@/types'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PaperOutline } from './PaperOutline'
 
 const MM_PX = 96 / 25.4
 
 /** 模板尚未自带 layout 时的编辑基线: 沿用旧预览「显示卷首标题/meta」的观感, 首次点调即以此落库 */
 const FALLBACK_LAYOUT: ExamTemplateLayout = { ...DEFAULT_LAYOUT, showPaperTitle: true, showPaperMeta: true }
+
+/** Radix Select 不接受空字符串 value; 用此 token 表示"默认字族" */
+const DEFAULT_FONT = '__default__'
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 const round1 = (v: number) => Math.round(v * 10) / 10
@@ -43,8 +48,28 @@ interface Props {
   onLayoutChange: (next: ExamTemplateLayout) => void
   /** 封面的任何修改 (含自定义文字块) 由调用方回写 */
   onCoverChange?: (next: ExamTemplateCover | null) => void
+  /** 卷首大标题的文字修改 (双击标题就地编辑), 由调用方回写模板名 */
+  onTitleChange?: (title: string) => void
   pick: PaperPick | null
   onPick: (p: PaperPick | null) => void
+}
+
+/** 就地编辑中覆盖在原文字上的输入框几何/外观 (纸张未缩放坐标) */
+interface InlineEditState {
+  req: PaperTextEditReq
+  value: string
+  anchor: {
+    x: number
+    y: number
+    w: number
+    h: number
+    font: string
+    weight: string
+    align: string
+    color: string
+    fontFamily: string
+    bg: string
+  }
 }
 
 /** 覆写单个文本块样式; 与 PaperLayoutEditor.patchTextBlock 同一套「清空即删除」语义 */
@@ -67,7 +92,7 @@ const patchMargin = (layout: ExamTemplateLayout, side: PaperMarginSide, mm: numb
   return { ...layout, margins: { ...layout.margins, [key]: mm } }
 }
 
-export function TemplatePaperPreview({ title, meta, sections, cover, layout, onLayoutChange, onCoverChange, pick, onPick }: Props) {
+export function TemplatePaperPreview({ title, meta, sections, cover, layout, onLayoutChange, onCoverChange, onTitleChange, pick, onPick }: Props) {
   const { t } = useT()
   const eff = layout ?? FALLBACK_LAYOUT
 
@@ -75,6 +100,9 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [availW, setAvailW] = useState(0)
   const [hostH, setHostH] = useState(0)
+
+  /** 双击文字后的就地编辑框 (null=未在编辑) */
+  const [editing, setEditing] = useState<InlineEditState | null>(null)
 
   // 画布可用宽度 (决定缩放比)
   useEffect(() => {
@@ -180,6 +208,60 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
   }
   const dragMargin = (side: PaperMarginSide, mm: number) => onLayoutChange(patchMargin(eff, side, mm))
 
+  /** 当前待编辑文字 (读自 props 里的实时数据) */
+  const readCurrent = (req: PaperTextEditReq): string => {
+    if (req.kind === 'paperTitle') return title ?? ''
+    if (req.kind === 'coverField') {
+      if (req.field === 'notice') return cover?.notices?.[req.index ?? -1] ?? ''
+      return String((cover as Record<string, unknown> | null | undefined)?.[req.field] ?? '')
+    }
+    return ''
+  }
+
+  /** 双击文字 → 在目标元素原位弹一个跟随纸张缩放的输入框 */
+  const openInlineEdit = (req: PaperTextEditReq, el: HTMLElement) => {
+    const host = hostRef.current
+    if (!host) return
+    const er = el.getBoundingClientRect()
+    const hr = host.getBoundingClientRect()
+    const layoutW = host.offsetWidth
+    const scale = layoutW > 0 && hr.width > 0 ? hr.width / layoutW : 1
+    const cs = getComputedStyle(el)
+    const sheet = el.closest('.paper-sheet')
+    const bg = sheet ? getComputedStyle(sheet).backgroundColor : ''
+    setEditing({
+      req,
+      value: readCurrent(req),
+      anchor: {
+        x: (er.left - hr.left) / scale - 3,
+        y: (er.top - hr.top) / scale,
+        w: er.width / scale + 6,
+        h: Math.max(er.height / scale, 26),
+        font: cs.fontSize,
+        weight: cs.fontWeight,
+        align: cs.textAlign,
+        color: cs.color,
+        fontFamily: cs.fontFamily,
+        bg: bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)' ? bg : '',
+      },
+    })
+    onPick(null)
+  }
+
+  /** 提交就地编辑 (Enter/失焦): 空值 = 删除该文字 */
+  const commitInlineEdit = (req: PaperTextEditReq, raw: string) => {
+    setEditing(null)
+    onPick(null)
+    const value = raw.trim()
+    if (req.kind === 'paperTitle') {
+      onTitleChange?.(value)
+      return
+    }
+    if (req.kind === 'coverField' && cover && onCoverChange) {
+      onCoverChange(setCoverFieldText(cover, req.field, req.index, value))
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       {/* 顶部工具条: 常显 (未选中=提示, 选中=微调控件) */}
@@ -204,15 +286,19 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
 
             <span className="flex items-center gap-1">
               <span className="text-[10px] text-muted-foreground">{t('examTemplate.layout.tbFont')}</span>
-              <select
-                className="h-6 w-[92px] rounded-md border border-input bg-transparent px-1 text-[11px] outline-none"
-                value={blockStyle?.fontFamily ?? ''}
-                onChange={(e) => applyBlock({ fontFamily: e.target.value || null })}
+              <Select
+                value={blockStyle?.fontFamily || DEFAULT_FONT}
+                onValueChange={(v) => applyBlock({ fontFamily: v === DEFAULT_FONT ? null : v })}
               >
-                {LAYOUT_FONT_PRESETS.map((f) => (
-                  <option key={f.labelKey} value={f.value}>{t(`examTemplate.layout.${f.labelKey}`)}</option>
-                ))}
-              </select>
+                <SelectTrigger size="xs" className="w-[92px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LAYOUT_FONT_PRESETS.map((f) => (
+                    <SelectItem key={f.labelKey} value={f.value || DEFAULT_FONT}>{t(`examTemplate.layout.${f.labelKey}`)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </span>
 
             <FieldStepper
@@ -295,15 +381,16 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
                 />
                 <span className="flex items-center gap-1">
                   <span className="text-[10px] text-muted-foreground">{t('examTemplate.direct.cbSize')}</span>
-                  <select
-                    className="h-6 rounded-md border border-input bg-transparent px-1 text-[11px] outline-none"
-                    value={cbTarget.size ?? 'md'}
-                    onChange={(e) => applyCoverBlock({ size: e.target.value as ExamTemplateCoverBlock['size'] })}
-                  >
-                    {CB_SIZES.map((s) => (
-                      <option key={s} value={s}>{t(sizeLabelKey(s))}</option>
-                    ))}
-                  </select>
+                  <Select value={cbTarget.size ?? 'md'} onValueChange={(v) => applyCoverBlock({ size: v as ExamTemplateCoverBlock['size'] })}>
+                    <SelectTrigger size="xs" className="min-w-14">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CB_SIZES.map((s) => (
+                        <SelectItem key={s} value={s}>{t(sizeLabelKey(s))}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </span>
                 <span className="flex items-center gap-0.5" title={t('examTemplate.direct.cbAlign')}>
                   {cbAligns.map(({ a, active }) => {
@@ -374,8 +461,48 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
               direct
               pick={pick}
               onPick={onPick}
+              onEditText={openInlineEdit}
               onMarginDrag={dragMargin}
             />
+
+            {editing && (
+              <input
+                autoFocus
+                value={editing.value}
+                onChange={(e) => setEditing((s) => (s ? { ...s, value: e.target.value } : s))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitInlineEdit(editing.req, editing.value)
+                  else if (e.key === 'Escape') setEditing(null)
+                }}
+                onBlur={() => commitInlineEdit(editing.req, editing.value)}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  left: editing.anchor.x,
+                  top: editing.anchor.y,
+                  width: editing.anchor.w,
+                  minWidth: 96,
+                  height: editing.anchor.h,
+                  zIndex: 40,
+                  boxSizing: 'border-box',
+                  padding: '0 4px',
+                  fontSize: editing.anchor.font,
+                  fontWeight: editing.anchor.weight,
+                  fontFamily: editing.anchor.fontFamily,
+                  textAlign: (editing.anchor.align || 'left') as 'left' | 'center' | 'right',
+                  lineHeight: 'normal',
+                  color: editing.anchor.color || 'inherit',
+                  background: editing.anchor.bg || '#fff',
+                  border: '2px solid hsl(var(--primary))',
+                  borderRadius: 2,
+                  outline: 'none',
+                  boxShadow: '0 1px 4px rgba(0,0,0,.25)',
+                }}
+              />
+            )}
           </div>
         </div>
       </div>

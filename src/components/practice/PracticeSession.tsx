@@ -999,7 +999,7 @@ export function PracticeSession() {
 
   const handleSubmit = async () => {
     if (!question || selectedAnswer === null) return
-    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks)
+    const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks, question.case_questions)
     sessionDistRef.current.set(question.id, { status: isCorrect ? 'correct' : 'wrong' })
     setSessionDistSnapshot(new Map(sessionDistRef.current))
     const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')

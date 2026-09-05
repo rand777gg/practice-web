@@ -11,6 +11,7 @@ import {
   type PaperMarginSide,
   type PaperPick,
   type PaperTextBlockKey,
+  type PaperTextEditReq,
 } from '@/lib/paper-layout'
 import { useT } from '@/i18n/use-t'
 import type { ExamTemplateSection, QuestionType } from '@/types'
@@ -33,6 +34,8 @@ interface Props {
   pick?: PaperPick | null
   /** 点击命中回调 (direct 时); 点空白/非命中元素 = null */
   onPick?: (p: PaperPick | null) => void
+  /** 双击文字回调 (direct 时): 由上层画布就地编辑该文字内容 */
+  onEditText?: (req: PaperTextEditReq, el: HTMLElement) => void
   /** 边距热区拖拽回调 (direct 时): 手指在纸上直接拉边距 */
   onMarginDrag?: (side: PaperMarginSide, mm: number) => void
 }
@@ -59,7 +62,7 @@ function width(no: number, k: number): string {
  * 试卷骨架: 用真实卷面版式呈现模板的分区结构(题型/题数/分值/分类), 题目本身是占位行。
  * 与 PaperPreview 共用纸张样式, 让编辑模板时看到的就是将来发到手上的那张纸。
  */
-export function PaperOutline({ title, meta, sections, className, compact, cover, paperLayout, direct = false, pick = null, onPick, onMarginDrag }: Props) {
+export function PaperOutline({ title, meta, sections, className, compact, cover, paperLayout, direct = false, pick = null, onPick, onEditText, onMarginDrag }: Props) {
   const { t } = useT()
   const [expanded, setExpanded] = useState(false)
   // direct(直调编辑) = 真实纸张(不缩排、不分栏), 由外层缩放包装
@@ -92,6 +95,25 @@ export function PaperOutline({ title, meta, sections, className, compact, cover,
     onPick(null)
   }
 
+  /** 双击文字 → 上层面板就地编辑; 只放行「有数据可写」的文字 (封面字段/卷首标题) */
+  const handlePaperDblClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!onEditText) return
+    const target = e.target as HTMLElement
+    const cf = target.closest('[data-cover-field]') as HTMLElement | null
+    if (cf) {
+      const field = cf.getAttribute('data-cover-field')
+      if (!field) return
+      e.preventDefault()
+      const ix = cf.getAttribute('data-cover-index')
+      return onEditText({ kind: 'coverField', field, index: ix === null ? undefined : Number(ix) }, cf)
+    }
+    const tbEl = target.closest('[data-paper-tb="paperTitle"]') as HTMLElement | null
+    if (tbEl) {
+      e.preventDefault()
+      return onEditText({ kind: 'paperTitle' }, tbEl)
+    }
+  }
+
   let cursor = 0
   const groups = sections.map((s) => {
     const count = Math.max(0, Math.round(s.count) || 0)
@@ -106,13 +128,14 @@ export function PaperOutline({ title, meta, sections, className, compact, cover,
       <PaperSheetStyles />
       <div
         className={cn(
-          'paper-sheet rounded-sm',
+          'paper-sheet',
           compact ? 'paper-sheet-compact' : direct ? undefined : 'paper-sheet-spread',
           direct && 'paper-sheet-direct',
           className,
         )}
         style={cssVars as React.CSSProperties}
         onClick={direct ? handlePaperClick : undefined}
+        onDoubleClick={direct && onEditText ? handlePaperDblClick : undefined}
       >
         {hasCoverContent(cover) && (
           <PaperCover cover={cover!} layout={sheetLayout} compact={compact} paperLayout={paperLayout} direct={direct} pick={pick} />
@@ -189,6 +212,12 @@ export function PaperOutline({ title, meta, sections, className, compact, cover,
                     {t('paperPreview.scoreBox')}
                   </span>
                 </div>
+
+                {(g.section.subject?.length ?? 0) > 0 && (
+                  <p className="mb-2 text-[10px] text-muted-foreground">
+                    {t('examTemplate.subject')}: {g.section.subject?.join('、')}
+                  </p>
+                )}
 
                 {(g.section.categories?.length ?? 0) > 0 && (
                   <p className="mb-2 text-[10px] text-muted-foreground">

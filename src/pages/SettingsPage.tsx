@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
  AlertDialog,
  AlertDialogTrigger,
@@ -112,6 +113,8 @@ export function Component() {
  const hasTotp = mfaStatus?.availableMethods.totp === true
  const hasPasskey = mfaStatus?.availableMethods.passkey === true
  const hasAnyMfa = hasTotp || hasPasskey
+ // MFA 状态来自 edge function，返回前不要误显示"未开启"，先渲染骨架
+ const mfaStatusLoading = user !== null && mfaStatus === null
 
  const updateMfaValidity = async (days: number) => {
   if (!user) return
@@ -353,6 +356,21 @@ export function Component() {
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground align-top">{t('auth.otpStatus')}</td>
           <td className="py-1.5 space-y-2">
+           {mfaStatusLoading ? (
+            <div className="space-y-2.5 animate-pulse">
+             <div className="flex items-center gap-2 flex-wrap">
+              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-6 w-28 rounded-md" />
+             </div>
+             <div className="flex items-center gap-2 flex-wrap">
+              <Skeleton className="h-5 w-14 rounded-md" />
+              <Skeleton className="h-5 w-28 rounded-md" />
+              <Skeleton className="h-5 w-24 rounded-md" />
+             </div>
+             <Skeleton className="h-3 w-64 max-w-full" />
+            </div>
+           ) : (
+            <>
             <div className="flex items-center gap-2 flex-wrap">
              <Badge color={hasAnyMfa ? 'green' : 'gray'} variant="soft" radius="full">
               {hasAnyMfa ? t('auth.otpEnabled') : t('auth.otpDisabled')}
@@ -461,9 +479,11 @@ export function Component() {
              )}
             </div>
             <p className="text-xs text-muted-foreground max-w-sm">{t('auth.mfaValidityDesc')}</p>
+            </>
+           )}
 
             {/* Verified sessions (L1) */}
-            {mfaSessions.length > 0 && (
+            {!mfaStatusLoading && mfaSessions.length > 0 && (
              <div className="space-y-1 pt-1">
               <p className="text-xs font-medium text-muted-foreground">{t('auth.mfaSessions')}</p>
               {mfaSessions.map((s) => (

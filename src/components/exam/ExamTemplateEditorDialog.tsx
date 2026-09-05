@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AutocompleteInput } from '@/components/ui/autocomplete-input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -18,7 +18,10 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChevronDown, ChevronUp, GripVertical, Plus, Trash2 } from 'lucide-react'
+import { SectionSubjectPicker } from './SectionSubjectPicker'
+import { PanelDivider } from '@/components/ui/panel-divider'
+import { cn } from '@/lib/utils'
+import { ChevronDown, GripVertical, Plus, Trash2 } from 'lucide-react'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { blankSection, isBuiltinTemplate, totalQuestions, totalScore } from '@/lib/exam-presets'
 import { useExamTemplateStore, type ExamTemplateDraft } from '@/stores/exam-template-store'
@@ -43,8 +46,8 @@ import type {
 import type { PaperPick } from '@/lib/paper-layout'
 import type { ExamTemplateCover } from '@/lib/paper-cover'
 
-const selectClass =
-  'h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+/** Radix Select 不接受空字符串 value; 用此 token 表示"不继承" */
+const NO_PARENT = '__none__'
 
 const ORDER_MODES: ExamOrderMode[] = ['section', 'shuffle']
 const SAMPLE_MODES: ExamSampleMode[] = ['random', 'wrong_first', 'unseen_first', 'seq']
@@ -79,7 +82,8 @@ export function ExamTemplateEditorDialog({
   const { create, update, remove } = useExamTemplateStore()
 
   const [name, setName] = useState('')
-  const [subject, setSubject] = useState('')
+  /** 整卷学科(可多选; 空 = 不限学科) */
+  const [subjectsSel, setSubjectsSel] = useState<string[]>([])
   const [durationMin, setDurationMin] = useState(60)
   const [orderMode, setOrderMode] = useState<ExamOrderMode>('section')
   const [sampleMode, setSampleMode] = useState<ExamSampleMode>('random')
@@ -95,13 +99,37 @@ export function ExamTemplateEditorDialog({
   /** 预览直调当前命中的目标 (点选文字/边距热区), 联动左侧排版表单高亮 */
   const [paperPick, setPaperPick] = useState<PaperPick | null>(null)
 
+  /** 桌面分栏: 右侧画布固定像素宽, 拖动分隔条调整(左侧表单至少保留约 340px) */
+  const paneWrapRef = useRef<HTMLDivElement>(null)
+  const [rightW, setRightW] = useState(540)
+  /** 题型分区拖拽排序(拖左手柄): 拖动源 / 当前让位目标索引 */
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [overIdx, setOverIdx] = useState<number | null>(null)
+  /** 分区行行距(行高+间距), 让位挤开动画与目标行换算共用 */
+  const listRef = useRef<HTMLDivElement>(null)
+  const [rowStep, setRowStep] = useState(48)
+  const measureRowStep = () => {
+    const el = listRef.current
+    if (!el || el.children.length === 0) return
+    if (el.children.length >= 2) {
+      const a = el.children[0] as HTMLElement
+      const b = el.children[1] as HTMLElement
+      setRowStep(b.getBoundingClientRect().top - a.getBoundingClientRect().top)
+    } else {
+      setRowStep((el.children[0] as HTMLElement).offsetHeight + 6)
+    }
+  }
+  /** 指针拖拽会话: 源行索引/起始 Y/pointerId; over 同步到 ref 防事件闭包滞后 */
+  const dragSessionRef = useRef<{ from: number; pointerId: number; startY: number } | null>(null)
+  const overIdxRef = useRef<number | null>(null)
+
   const isBuiltin = template ? isBuiltinTemplate(template.id) : false
   const isNew = !template
 
   // 深拷贝父模板配置 (快照继承): sections 重新给 id, cover/layout 结构拷贝
   const applyParent = (parent: ExamTemplate) => {
     setName(parent.name)
-    setSubject(parent.subject ?? '')
+    setSubjectsSel(parent.subject?.length ? [...parent.subject] : [])
     setDurationMin(parent.duration_min)
     setOrderMode(parent.order_mode)
     setSampleMode(parent.sample_mode)
@@ -119,7 +147,7 @@ export function ExamTemplateEditorDialog({
     setPaperPick(null)
     if (template) {
       setName(template.name)
-      setSubject(template.subject ?? '')
+      setSubjectsSel(template.subject?.length ? [...template.subject] : [])
       setDurationMin(template.duration_min)
       setOrderMode(template.order_mode)
       setSampleMode(template.sample_mode)
@@ -130,7 +158,7 @@ export function ExamTemplateEditorDialog({
       setParentId(isBuiltinTemplate(template.id) ? (template.parent_id ?? template.id) : (template.parent_id ?? null))
     } else {
       setName('')
-      setSubject('')
+      setSubjectsSel([])
       setDurationMin(60)
       setOrderMode('section')
       setSampleMode('random')
@@ -146,17 +174,83 @@ export function ExamTemplateEditorDialog({
     [sections],
   )
 
+  /** 分区学科候选的附加项: 整卷学科 + 所有分区已选学科(保证出现过的学科一定有选项) */
+  const subjectExtraOptions = useMemo(() => {
+    const out = new Set<string>()
+    for (const x of subjectsSel) if (x.trim()) out.add(x.trim())
+    for (const s of sections) for (const x of s.subject ?? []) if (x.trim()) out.add(x.trim())
+    return [...out]
+  }, [subjectsSel, sections])
+
   const patchSection = (id: string, patch: Partial<(typeof sections)[number]>) =>
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
 
-  const move = (index: number, delta: number) =>
+  /** 拖手排序: 把 from 行移动到 to 行位置 */
+  const reorderSection = (from: number, to: number) => {
+    if (from === to) return
     setSections((prev) => {
-      const next = index + delta
-      if (next < 0 || next >= prev.length) return prev
       const copy = [...prev]
-      ;[copy[index], copy[next]] = [copy[next], copy[index]]
+      const [item] = copy.splice(from, 1)
+      copy.splice(to, 0, item)
       return copy
     })
+  }
+
+  /** 按住拖手即进入排序: pointer capture 后 move/up 持续派发到手柄 */
+  const beginSectionDrag = (i: number) => (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (dragSessionRef.current) return
+    measureRowStep()
+    overIdxRef.current = i
+    dragSessionRef.current = { from: i, pointerId: e.pointerId, startY: e.clientY }
+    setDragIdx(i)
+    setOverIdx(i)
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    document.body.style.userSelect = 'none'
+  }
+
+  /** 拖动中: 按位移换算目标行; 源行/让位行位移动画由 dragIdx/overIdx state 驱动 */
+  const moveSectionDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const s = dragSessionRef.current
+    if (!s || e.pointerId !== s.pointerId) return
+    const step = rowStep || 48
+    const t = Math.max(0, Math.min(sections.length - 1, s.from + Math.round((e.clientY - s.startY) / step)))
+    if (t !== overIdxRef.current) {
+      overIdxRef.current = t
+      setOverIdx(t)
+    }
+    // 贴近可滚动祖先视口上下缘时自动滚动, 长列表也能拖到边缘
+    let sc: HTMLElement | null = listRef.current
+    while (sc && sc.scrollHeight <= sc.clientHeight + 2) sc = sc.parentElement
+    if (!sc) return
+    const r = sc.getBoundingClientRect()
+    const edge = 56
+    if (e.clientY < r.top + edge) sc.scrollTop -= 10
+    else if (e.clientY > r.bottom - edge) sc.scrollTop += 10
+  }
+
+  /** 松手落位: 重排后复位(取消则不重排, transform 归零平滑回弹) */
+  const endSectionDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const s = dragSessionRef.current
+    if (!s || e.pointerId !== s.pointerId) return
+    dragSessionRef.current = null
+    // eslint-disable-next-line react-hooks/immutability
+    document.body.style.userSelect = ''
+    const t = overIdxRef.current
+    setDragIdx(null)
+    setOverIdx(null)
+    overIdxRef.current = null
+    if (t !== null && t !== s.from) reorderSection(s.from, t)
+  }
+
+  /** 拖动分隔条: 画布在右, 鼠标右移(dx>0)时右栏变窄 */
+  const handlePaneDrag = (dx: number) => {
+    const wrap = paneWrapRef.current
+    if (!wrap) return
+    const max = Math.max(440, wrap.clientWidth - 340)
+    setRightW((w) => Math.min(Math.max(w - dx, 380), max))
+  }
 
   const handleImportPdf = async (file: File) => {
     setImporting(true)
@@ -224,7 +318,7 @@ export function ExamTemplateEditorDialog({
     setError('')
     const draft: ExamTemplateDraft = {
       name: name.trim(),
-      subject: subject || null,
+      subject: subjectsSel.length ? subjectsSel : null,
       duration_min: Math.max(1, Math.min(600, durationMin || 60)),
       order_mode: orderMode,
       sample_mode: sampleMode,
@@ -274,11 +368,10 @@ export function ExamTemplateEditorDialog({
             {t('examTemplate.inheritFrom')}
           </Label>
           <p className="text-[10px] text-muted-foreground">{t('examTemplate.inheritHint')}</p>
-          <select
-            className={selectClass}
-            value={parentId ?? ''}
-            onChange={(e) => {
-              const id = e.target.value
+          <Select
+            value={parentId ?? NO_PARENT}
+            onValueChange={(v) => {
+              const id = v === NO_PARENT ? '' : v
               const parent = id ? parents.find((p) => p.id === id) : null
               setParentId(parent ? parent.id : null)
               if (parent) {
@@ -288,7 +381,7 @@ export function ExamTemplateEditorDialog({
               } else {
                 // 清空继承选择: 重置为空白
                 setName('')
-                setSubject('')
+                setSubjectsSel([])
                 setDurationMin(60)
                 setOrderMode('section')
                 setSampleMode('random')
@@ -298,13 +391,16 @@ export function ExamTemplateEditorDialog({
               }
             }}
           >
-            <option value="">{t('examTemplate.inheritNone')}</option>
-            {parents.map((p) => (
-              <option key={p.id} value={p.id}>
-                {isBuiltinTemplate(p.id) ? `${p.name} (${t('examTemplate.builtin')})` : p.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_PARENT}>{t('examTemplate.inheritNone')}</SelectItem>
+              {parents.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {isBuiltinTemplate(p.id) ? `${p.name} (${t('examTemplate.builtin')})` : p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -315,13 +411,16 @@ export function ExamTemplateEditorDialog({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">{t('examTemplate.subject')}</Label>
-          <AutocompleteInput
-            className="h-8 text-xs"
-            value={subject}
-            onChange={setSubject}
-            suggestions={subjects}
-            placeholder={t('examTemplate.anySubject')}
-            clearable
+          <SectionSubjectPicker
+            className="w-full"
+            value={subjectsSel.length ? subjectsSel : null}
+            subjects={subjects}
+            extra={subjectExtraOptions}
+            onChange={(next) => setSubjectsSel(next ?? [])}
+            noneLabel={t('examTemplate.anySubject')}
+            noneHint={t('examTemplate.anySubjectHint')}
+            resetLabel={t('examTemplate.anySubject')}
+            showNames
           />
         </div>
         <div className="space-y-1.5">
@@ -336,19 +435,25 @@ export function ExamTemplateEditorDialog({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">{t('examTemplate.orderMode')}</Label>
-          <select className={selectClass} value={orderMode} onChange={(e) => setOrderMode(e.target.value as ExamOrderMode)}>
-            {ORDER_MODES.map((m) => (
-              <option key={m} value={m}>{t(`examTemplate.order_${m}`)}</option>
-            ))}
-          </select>
+          <Select value={orderMode} onValueChange={(v) => setOrderMode(v as ExamOrderMode)}>
+            <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ORDER_MODES.map((m) => (
+                <SelectItem key={m} value={m}>{t(`examTemplate.order_${m}`)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="col-span-2 space-y-1.5">
           <Label className="text-xs">{t('examTemplate.sampleMode')}</Label>
-          <select className={selectClass} value={sampleMode} onChange={(e) => setSampleMode(e.target.value as ExamSampleMode)}>
-            {SAMPLE_MODES.map((m) => (
-              <option key={m} value={m}>{t(`examTemplate.sample_${m}`)}</option>
-            ))}
-          </select>
+          <Select value={sampleMode} onValueChange={(v) => setSampleMode(v as ExamSampleMode)}>
+            <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SAMPLE_MODES.map((m) => (
+                <SelectItem key={m} value={m}>{t(`examTemplate.sample_${m}`)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -360,19 +465,50 @@ export function ExamTemplateEditorDialog({
           </span>
         </div>
 
-        <div className="space-y-1.5">
-          {sections.map((s, i) => (
-            <div key={s.id} className="flex items-center gap-1.5 rounded-lg border p-1.5">
-              <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-              <select
-                className={`${selectClass} flex-1`}
-                value={s.type ?? ''}
-                onChange={(e) => patchSection(s.id, { type: (e.target.value || null) as QuestionType | null })}
+        <div ref={listRef} className="space-y-1.5">
+          {sections.map((s, i) => {
+            const isSource = dragIdx === i
+            const isOver = overIdx === i && dragIdx !== null && !isSource
+            let ty = 0
+            if (dragIdx !== null && overIdx !== null) {
+              if (isSource) {
+                // 源行滑向目标槽位
+                ty = (overIdx - dragIdx) * rowStep
+              } else if (dragIdx < overIdx && i > dragIdx && i <= overIdx) {
+                ty = -rowStep // 中间行上移一个身位让位
+              } else if (dragIdx > overIdx && i >= overIdx && i < dragIdx) {
+                ty = rowStep // 中间行下移让位
+              }
+            }
+            return (
+            <div
+              key={s.id}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg border p-1.5 transition-transform duration-150 ease-out',
+                isSource && 'z-10 opacity-80 shadow-lg',
+                isOver && 'border-primary',
+              )}
+              style={{ transform: `translateY(${ty}px)` }}
+            >
+              <button
+                type="button"
+                onPointerDown={beginSectionDrag(i)}
+                onPointerMove={moveSectionDrag}
+                onPointerUp={endSectionDrag}
+                onPointerCancel={endSectionDrag}
+                title={t('examTemplate.dragToReorder')}
+                className="touch-none cursor-grab rounded p-0.5 text-muted-foreground/50 hover:bg-accent hover:text-foreground active:cursor-grabbing"
               >
-                {QUESTION_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
+              <Select value={s.type ?? ''} onValueChange={(v) => patchSection(s.id, { type: (v || null) as QuestionType | null })}>
+                <SelectTrigger size="sm" className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {QUESTION_TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
                 className="h-8 w-14 text-xs"
                 type="number"
@@ -420,28 +556,12 @@ export function ExamTemplateEditorDialog({
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <div className="flex flex-col">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-6"
-                  disabled={i === 0}
-                  onClick={() => move(i, -1)}
-                  title={t('examTemplate.moveUp')}
-                >
-                  <ChevronUp className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-6"
-                  disabled={i === sections.length - 1}
-                  onClick={() => move(i, 1)}
-                  title={t('examTemplate.moveDown')}
-                >
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </div>
+              <SectionSubjectPicker
+                value={s.subject ?? null}
+                subjects={subjects}
+                extra={subjectExtraOptions}
+                onChange={(next) => patchSection(s.id, { subject: next })}
+              />
               <Button
                 variant="ghost"
                 size="icon"
@@ -452,7 +572,8 @@ export function ExamTemplateEditorDialog({
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
-          ))}
+            )
+          })}
         </div>
 
         <Button
@@ -491,7 +612,7 @@ export function ExamTemplateEditorDialog({
   )
 
   const paperMeta = [
-    subject || t('examTemplate.anySubject'),
+    subjectsSel.length ? subjectsSel.join('、') : t('examTemplate.anySubject'),
     `${durationMin} ${t('exam.minutes')}`,
     `${t('examTemplate.totalScore')} ${totals.score}`,
   ].join(' · ')
@@ -526,9 +647,9 @@ export function ExamTemplateEditorDialog({
         </DialogHeader>
 
         <div className="min-h-0 overflow-hidden">
-          {/* 桌面: 左表单 tabs(设置/封面/排版) + 右侧常驻直调画布 */}
-          <div className="hidden h-full gap-4 px-6 pb-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(400px,540px)]">
-            <div className="min-h-0 overflow-y-auto pr-1">
+          {/* 桌面: 左表单 tabs(设置/封面/排版) + 右侧常驻直调画布; 中间分隔条可拖动调两侧比例 */}
+          <div ref={paneWrapRef} className="hidden h-full px-6 pb-4 lg:flex">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1">
               <Tabs value={tab} onValueChange={(v) => setTab(v as EditTab)} className="w-full">
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="form">{t('examTemplate.formTab')}</TabsTrigger>
@@ -540,7 +661,8 @@ export function ExamTemplateEditorDialog({
                 <TabsContent value="layout" className="mt-3">{layoutNode}</TabsContent>
               </Tabs>
             </div>
-            <div className="min-h-0 border-l pl-4">
+            <PanelDivider onDrag={handlePaneDrag} onReset={() => setRightW(540)} />
+            <div className="min-h-0 overflow-hidden" style={{ width: `${rightW}px` }}>
               <TemplatePaperPreview
                 title={name}
                 meta={paperMeta}
@@ -549,6 +671,7 @@ export function ExamTemplateEditorDialog({
                 layout={paperLayout}
                 onLayoutChange={setPaperLayout}
                 onCoverChange={setCover}
+                onTitleChange={setName}
                 pick={paperPick}
                 onPick={setPaperPick}
               />

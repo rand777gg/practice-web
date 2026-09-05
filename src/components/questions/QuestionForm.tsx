@@ -16,9 +16,9 @@ import { supabase } from '@/lib/supabase'
 import {
   Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X, Wand2,
 } from 'lucide-react'
-import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, CASE_SUB_TYPE_OPTIONS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
-import type { Question, QuestionType, CorrectAnswer, TestCase, RuntimeConfig, ExampleCase } from '@/types'
+import type { Question, QuestionType, CorrectAnswer, CaseQuestion, TestCase, RuntimeConfig, ExampleCase } from '@/types'
 import { generateKeyPoints, hasAiConfig, DeepSeekParser } from '@/lib/ai'
 import { getAiConfig } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -117,6 +117,142 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [examples, setExamples] = useState<ExampleCase[]>(
     initialData?.examples?.length ? initialData.examples : [],
   )
+
+  // === 案例分析题: 正文题干为案例材料, 小题列表存于 case_questions ===
+  const isCaseAnalysis = questionType === 'case_analysis'
+  const [caseQuestions, setCaseQuestions] = useState<CaseQuestion[]>(
+    initialData?.case_questions?.length
+      ? initialData.case_questions.map((c) => ({
+          ...c,
+          options: [...(c.options ?? [])],
+          answer: c.answer ?? getDefaultAnswer(c.type),
+        }))
+      : [],
+  )
+  const newSubId = () =>
+    (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
+
+  const defaultSubAnswer = (subType: QuestionType): CorrectAnswer => {
+    switch (subType) {
+      case 'single_choice': return 0
+      case 'multi_select': return []
+      case 'true_false': return true
+      case 'judge_correct': return true
+      case 'fill_blank': return [] as string[]
+      case 'short_answer': return [] as string[]
+      default: return 0
+    }
+  }
+
+  const newBlankSub = (subType: QuestionType = 'single_choice'): CaseQuestion => ({
+    id: newSubId(),
+    type: subType,
+    text: '',
+    options: subType === 'single_choice' || subType === 'multi_select' ? ['', ''] : [],
+    answer: defaultSubAnswer(subType),
+  })
+
+  const patchSub = (id: string, patch: Partial<CaseQuestion>) =>
+    setCaseQuestions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
+  const addSub = (subType: QuestionType = 'single_choice') =>
+    setCaseQuestions((prev) => [...prev, newBlankSub(subType)])
+  const removeSub = (id: string) =>
+    setCaseQuestions((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev))
+  const changeSubType = (id: string, subType: QuestionType) => {
+    const sub = caseQuestions.find((s) => s.id === id)
+    if (!sub || sub.type === subType) return
+    const choice = subType === 'single_choice' || subType === 'multi_select'
+    const wasChoice = sub.type === 'single_choice' || sub.type === 'multi_select'
+    setCaseQuestions((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              type: subType,
+              options: choice ? (wasChoice && s.options.length >= 2 ? s.options : ['', '']) : [],
+              answer: defaultSubAnswer(subType),
+            }
+          : s,
+      ),
+    )
+  }
+  const patchSubOptions = (id: string, index: number, value: string) =>
+    setCaseQuestions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, options: s.options.map((o, i) => (i === index ? value : o)) } : s)),
+    )
+  const addSubOption = (id: string) =>
+    setCaseQuestions((prev) => prev.map((s) => (s.id === id ? { ...s, options: [...s.options, ''] } : s)))
+  const removeSubOption = (id: string, index: number) =>
+    setCaseQuestions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id || s.options.length <= 2) return s
+        const options = s.options.filter((_, i) => i !== index)
+        let answer = s.answer
+        if (s.type === 'single_choice' && typeof answer === 'number') {
+          if (answer === index) answer = 0
+          else if (answer > index) answer = answer - 1
+        }
+        if (s.type === 'multi_select' && Array.isArray(answer)) {
+          const arr = answer as number[]
+          answer = arr.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i))
+        }
+        return { ...s, options, answer }
+      }),
+    )
+  const setSubSingleAnswer = (id: string, index: number) => patchSub(id, { answer: index })
+  const toggleSubMultiAnswer = (id: string, index: number) =>
+    setCaseQuestions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s
+        const cur = Array.isArray(s.answer) ? (s.answer as number[]) : []
+        const next = cur.includes(index) ? cur.filter((i) => i !== index) : [...cur, index]
+        return { ...s, answer: next }
+      }),
+    )
+  const patchSubText = (id: string, value: string) => {
+    const sub = caseQuestions.find((s) => s.id === id)
+    if (!sub) return
+    patchSub(id, { text: value })
+    // 填空题: 空数变化时同步答案数组长度
+    if (sub.type === 'fill_blank') {
+      const n = Math.max(1, (value.match(/_{2,}/g) || []).length)
+      const arr = Array.isArray(sub.answer) ? (sub.answer as string[]) : []
+      if (arr.length !== n) {
+        const next = Array.from({ length: n }, (_, i) => arr[i] ?? '')
+        setCaseQuestions((prev) => prev.map((s) => (s.id === id ? { ...s, answer: next } : s)))
+      }
+    }
+  }
+  const patchSubFill = (id: string, index: number, value: string) =>
+    setCaseQuestions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s
+        const arr = [...(Array.isArray(s.answer) ? (s.answer as string[]) : [])]
+        arr[index] = value
+        return { ...s, answer: arr }
+      }),
+    )
+  const patchSubShort = (id: string, value: string) => patchSub(id, { answer: value.split('\n').filter(Boolean) })
+
+  const validCaseQuestions = (): string | null => {
+    if (caseQuestions.length === 0) return '请至少添加一个小题'
+    for (const sub of caseQuestions) {
+      if (!sub.text.trim()) return '存在小题未填写小问内容'
+      const choice = sub.type === 'single_choice' || sub.type === 'multi_select'
+      if (choice) {
+        if (sub.options.length < 2 || sub.options.some((o) => !o.trim())) return '选择题小题需要至少两个非空选项'
+        if (sub.type === 'single_choice' && (typeof sub.answer !== 'number' || sub.answer < 0 || sub.answer >= sub.options.length))
+          return '请为每个单选题小题标记正确答案'
+        if (sub.type === 'multi_select' && (!Array.isArray(sub.answer) || sub.answer.length === 0)) return '请为每个多选题小题至少勾选一个正确答案'
+      }
+      if (sub.type === 'judge_correct' && sub.answer !== true && !String(sub.answer).trim()) return '判断改错小题标记错误时需填写修正表述'
+      if (sub.type === 'fill_blank' && Array.isArray(sub.answer) && sub.answer.some((a) => !String(a).trim())) return '存在填空题小题未填答案'
+      if (sub.type === 'short_answer' && Array.isArray(sub.answer) && sub.answer.length === 0) return '存在简答题小题未填可接受答案'
+    }
+    return null
+  }
 
   const handleTypeChange = (t: QuestionType) => {
     setQuestionType(t)
@@ -225,6 +361,11 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
       setError('请填写修正后的正确表述'); return
     }
 
+    if (isCaseAnalysis) {
+      const subErr = validCaseQuestions()
+      if (subErr) { setError(subErr); return }
+    }
+
     setIsSubmitting(true)
     try {
       await onSubmit({
@@ -251,6 +392,13 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         runtime_config: isCoding ? runtimeConfig : undefined,
         execution_mode: isCoding ? executionMode : undefined,
         examples: isCoding ? examples : undefined,
+        case_questions: isCaseAnalysis
+          ? caseQuestions.map((sub) => ({
+              ...sub,
+              text: sub.text.trim(),
+              options: (sub.options ?? []).map((o) => o.trim()),
+            }))
+          : undefined,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -335,6 +483,184 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
               />
             </CardContent>
           </Card>
+
+          {/* Case analysis: 正文题干即案例材料, 此处维护若干共用材料的小题 */}
+          {isCaseAnalysis && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm">案例分析小题</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">每个小题共用上方案例材料, 作答时逐个小题判分、按小题展开计分</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addSub()}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />添加小题
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {caseQuestions.length === 0 && (
+                  <p className="text-sm text-muted-foreground">还没有小题, 点击右上角「添加小题」开始编写。</p>
+                )}
+                {caseQuestions.map((sub, si) => {
+                  const choice = sub.type === 'single_choice' || sub.type === 'multi_select'
+                  const subIsSingle = sub.type === 'single_choice'
+                  const blanksN = sub.type === 'fill_blank'
+                    ? Math.max(1, (sub.text.match(/_{2,}/g) || []).length)
+                    : 0
+                  return (
+                    <div key={sub.id} className="space-y-2 rounded-lg border p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-muted-foreground shrink-0">第 {si + 1} 小题</span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                              {QUESTION_TYPE_LABELS[sub.type]}
+                              <ChevronDown className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {CASE_SUB_TYPE_OPTIONS.map((o) => (
+                              <DropdownMenuItem key={o.value} onClick={() => changeSubType(sub.id, o.value)}>
+                                {QUESTION_TYPE_LABELS[o.value]}
+                                {sub.type === o.value && <Check className="h-4 w-4 ml-auto" />}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button
+                          type="button" variant="ghost" size="icon"
+                          className="ml-auto h-7 w-7 text-muted-foreground hover:text-destructive"
+                          disabled={caseQuestions.length <= 1}
+                          onClick={() => removeSub(sub.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
+                      <Textarea
+                        value={sub.text}
+                        onChange={(e) => patchSubText(sub.id, e.target.value)}
+                        placeholder="小问内容, 如: 结合材料, 分析小米 2016 年陷入低谷的原因"
+                        className="text-sm min-h-[56px]"
+                      />
+
+                      {choice && (
+                        <div className="space-y-1.5 pt-0.5">
+                          {sub.options.map((opt, oi) => {
+                            const checked = subIsSingle
+                              ? sub.answer === oi
+                              : Array.isArray(sub.answer) && (sub.answer as number[]).includes(oi)
+                            return (
+                              <div key={oi} className="flex items-center gap-2 group">
+                                <button
+                                  type="button"
+                                  onClick={() => subIsSingle ? setSubSingleAnswer(sub.id, oi) : toggleSubMultiAnswer(sub.id, oi)}
+                                  className={cn(
+                                    'shrink-0 w-7 h-7 rounded-md border-2 flex items-center justify-center transition-colors',
+                                    checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50',
+                                    subIsSingle && 'rounded-full',
+                                  )}
+                                >
+                                  {checked && <Check className="h-3.5 w-3.5" />}
+                                </button>
+                                <span className="text-xs font-semibold text-muted-foreground w-4 text-center shrink-0">{OPTION_LABELS[oi]}</span>
+                                <Input
+                                  value={opt}
+                                  onChange={(e) => patchSubOptions(sub.id, oi, e.target.value)}
+                                  placeholder={`选项 ${OPTION_LABELS[oi]}`}
+                                  className="flex-1 h-8 text-sm"
+                                />
+                                <Button
+                                  type="button" variant="ghost" size="icon"
+                                  className="shrink-0 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  disabled={sub.options.length <= 2}
+                                  onClick={() => removeSubOption(sub.id, oi)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                                </Button>
+                              </div>
+                            )
+                          })}
+                          <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => addSubOption(sub.id)}>
+                            <Plus className="h-3 w-3 mr-1" />添加选项
+                          </Button>
+                        </div>
+                      )}
+
+                      {(sub.type === 'true_false') && (
+                        <div className="flex gap-2 pt-0.5">
+                          {[true, false].map((v) => (
+                            <Button key={String(v)} type="button" size="sm"
+                              variant={sub.answer === v ? 'default' : 'outline'}
+                              className={cn('h-8 flex-1 text-sm', sub.answer === v && v && 'bg-green-600 hover:bg-green-700', sub.answer === v && !v && 'bg-red-600 hover:bg-red-700')}
+                              onClick={() => patchSub(sub.id, { answer: v })}
+                            >
+                              {v ? '正确' : '错误'}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+
+                      {sub.type === 'judge_correct' && (
+                        <div className="space-y-1.5 pt-0.5">
+                          <div className="flex gap-2">
+                            <Button type="button" size="sm"
+                              variant={sub.answer === true ? 'default' : 'outline'}
+                              className={cn('h-8 flex-1 text-sm', sub.answer === true && 'bg-green-600 hover:bg-green-700')}
+                              onClick={() => patchSub(sub.id, { answer: true })}
+                            >正确</Button>
+                            <Button type="button" size="sm"
+                              variant={sub.answer !== true ? 'default' : 'outline'}
+                              className={cn('h-8 flex-1 text-sm', sub.answer !== true && 'bg-red-600 hover:bg-red-700')}
+                              onClick={() => patchSub(sub.id, { answer: '' })}
+                            >错误</Button>
+                          </div>
+                          {sub.answer !== true && (
+                            <Input
+                              value={typeof sub.answer === 'string' ? sub.answer : ''}
+                              onChange={(e) => patchSub(sub.id, { answer: e.target.value })}
+                              placeholder="修正后的正确表述"
+                              className="h-8 text-sm"
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {sub.type === 'fill_blank' && (
+                        <div className="space-y-1 pt-0.5">
+                          {Array.from({ length: blanksN }).map((_, bi) => {
+                            const arr = Array.isArray(sub.answer) ? (sub.answer as string[]) : []
+                            return (
+                              <div key={bi} className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground shrink-0 w-10">第{bi + 1}空</span>
+                                <Input
+                                  value={arr[bi] ?? ''}
+                                  onChange={(e) => patchSubFill(sub.id, bi, e.target.value)}
+                                  placeholder={`答案${bi + 1}; 近似答案用; 分隔`}
+                                  className="h-8 text-sm"
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {sub.type === 'short_answer' && (
+                        <Textarea
+                          value={Array.isArray(sub.answer) ? (sub.answer as string[]).join('\n') : ''}
+                          onChange={(e) => patchSubShort(sub.id, e.target.value)}
+                          placeholder="每行一个可接受的答案 (关键词包含即判对)"
+                          rows={2}
+                          className="text-sm"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Options (choice types) */}
           {isChoiceType && (

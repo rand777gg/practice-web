@@ -101,6 +101,9 @@ function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<st
 export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, subject, selectedKps, onExcludedRestored, answeredThisSession, sessionDist, showDist, onShowDistChange, onCurrentKpDist }: Props) {
   const [answeredMap, setAnsweredMap] = useState<Map<string, string>>(new Map())
   const [latestCorrectMap, setLatestCorrectMap] = useState<Map<string, boolean>>(new Map())
+  // 分批拉取作答状态时的增量累积容器（避免逐批 setState 依赖旧快照丢数据）
+  const answeredRef = useRef<Map<string, string>>(new Map())
+  const correctRef = useRef<Map<string, boolean>>(new Map())
   const [excludedKp, setExcludedKp] = useState<string | null>(null)
   const [exclStats, setExclStats] = useState<Map<string, ExclStat>>(new Map())
   const [showTooEasy, setShowTooEasy] = useState(true)
@@ -132,33 +135,35 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
 
   useEffect(() => { loadExclStats() }, [loadExclStats])
 
+  // 拉取本会话所有题目的作答状态：按 600/批并行请求，每批返回即增量合并渲染，
+  // 不用等全部批次完成——上千题的大目录能明显更快看到进度数据
   useEffect(() => {
-    let cancelled = false
     if (!userId || questionIds.length === 0) return
-    const CHUNK = 200
+    let cancelled = false
+    answeredRef.current = new Map()
+    correctRef.current = new Map()
+    const CHUNK = 600
     const chunks: string[][] = []
     for (let i = 0; i < questionIds.length; i += CHUNK) chunks.push(questionIds.slice(i, i + CHUNK))
-    Promise.all(chunks.map(chunk =>
+    for (const chunk of chunks) {
       supabase.from('user_answers')
         .select('question_id, answered_at, is_correct')
         .eq('user_id', userId)
         .in('question_id', chunk)
-    )).then(results => {
-      if (cancelled) return
-      const map = new Map<string, string>()
-      const correctMap = new Map<string, boolean>()
-      for (const r of results) {
-        for (const row of (r.data ?? []) as { question_id: string; answered_at: string; is_correct: boolean }[]) {
-          const prev = map.get(row.question_id)
-          if (!prev || row.answered_at > prev) {
-            map.set(row.question_id, row.answered_at)
-            correctMap.set(row.question_id, row.is_correct)
+        .then(({ data }) => {
+          if (cancelled) return
+          const rows = (data ?? []) as { question_id: string; answered_at: string; is_correct: boolean }[]
+          for (const row of rows) {
+            const prev = answeredRef.current.get(row.question_id)
+            if (!prev || row.answered_at > prev) {
+              answeredRef.current.set(row.question_id, row.answered_at)
+              correctRef.current.set(row.question_id, row.is_correct)
+            }
           }
-        }
-      }
-      setAnsweredMap(map)
-      setLatestCorrectMap(correctMap)
-    })
+          setAnsweredMap(new Map(answeredRef.current))
+          setLatestCorrectMap(new Map(correctRef.current))
+        })
+    }
     return () => { cancelled = true }
   }, [userId, questionIds])
 
@@ -350,9 +355,8 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                       type="button"
                       data-kp={g.kp}
                       onClick={() => onJump(jumpIndexForGroup(g))}
-                      style={{ animationDelay: `${i * 0.05}s` }}
                       className={cn(
-                        'w-full rounded-lg border px-2.5 py-1.5 text-left transition-colors hover:bg-accent animate-[page-enter_0.4s_ease-out_both]',
+                        'w-full rounded-lg border px-2.5 py-1.5 text-left transition-colors hover:bg-accent',
                         isActive ? 'border-primary/50 bg-primary/5' : 'border-border/60 bg-background',
                       )}
                     >
@@ -411,7 +415,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                     type="button"
                     onClick={() => setExcludedKp(item.kp)}
                     title="该知识点的题目均被标记为太简单，点击查看并恢复"
-                    className="w-full rounded-lg border border-dashed border-border/60 bg-muted/30 px-2.5 py-1.5 text-left hover:bg-muted/60 transition-colors animate-[page-enter_0.4s_ease-out_both]"
+                    className="w-full rounded-lg border border-dashed border-border/60 bg-muted/30 px-2.5 py-1.5 text-left hover:bg-muted/60 transition-colors"
                   >
                     <div className="flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-muted-foreground/40" />

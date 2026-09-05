@@ -114,8 +114,14 @@ export function PaperPreview({
     let done = 0
     for (const g of grading.values()) {
       if (g.isCorrect === null) continue
-      done++
-      if (g.isCorrect) correct++
+      // 案例分析题按小题口径累计(与最终得分一致); 其余题目按整题计
+      if (g.partial && g.partial.total > 0) {
+        done += g.partial.total
+        correct += g.partial.correct
+      } else {
+        done++
+        if (g.isCorrect) correct++
+      }
     }
     return { correct, done }
   }, [grading])
@@ -146,7 +152,7 @@ export function PaperPreview({
 
       <div className="flex justify-center py-6">
         <div
-          className="paper-sheet rounded-sm"
+          className="paper-sheet"
           style={cssVars as React.CSSProperties}
         >
           {paperLayout && <PaperLayoutOverlays layout={paperLayout} />}
@@ -221,7 +227,7 @@ export function PaperPreview({
                             <span style={tb.questionStem} className="contents">
                               <MarkdownRenderer content={q.question_text} className="paper-md inline-block align-top" />
                             </span>
-                            {grade && <GradeMark isCorrect={grade.isCorrect} />}
+                            {grade && <GradeMark isCorrect={grade.isCorrect} partial={grade.partial} />}
                           </div>
 
                           <QuestionBody
@@ -231,6 +237,7 @@ export function PaperPreview({
                             readOnly={readOnly}
                             grade={grade}
                             optionStyle={tb.questionOption}
+                            scorePerQuestion={sec.scorePerQuestion}
                           />
 
                           {grade && (

@@ -128,7 +128,7 @@ export function blankSection(): ExamTemplateSection {
   return { id: newSectionId(), type: 'single_choice', count: 5, score: 2, categories: [] }
 }
 
-export function blankTemplate(name: string, subject: string | null): Omit<ExamTemplate, 'id' | 'created_at' | 'updated_at'> {
+export function blankTemplate(name: string, subject: string[] | null): Omit<ExamTemplate, 'id' | 'created_at' | 'updated_at'> {
   return {
     user_id: null,
     name,

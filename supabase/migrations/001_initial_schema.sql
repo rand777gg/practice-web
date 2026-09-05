@@ -2186,7 +2186,8 @@ CREATE TRIGGER trg_exam_templates_updated_at BEFORE UPDATE ON public.exam_templa
 
 -- 22.1 按模板组卷
 --   p_types:     分区未指定题型时的兜底题型白名单(旧版多选题型筛选用)
---   p_sections: [{ type: 题型|null(不限), count: 题数, categories?: 分区分类(空则回落整卷) }], 数组顺序即分区顺序
+--   p_sections: [{ type: 题型|null(不限), count: 题数, categories?: 分区分类(空则回落整卷),
+--                 subject?: 分区学科(null/缺省=继承整卷 p_subjects) }], 数组顺序即分区顺序
 --   p_sample_mode: random 随机 / wrong_first 错题优先 / unseen_first 未做优先 / seq 真题原序
 --   p_order_mode:  section 按分区顺序拼接 / shuffle 全卷打散
 --   返回: { question_ids: [...], sections: [{ type, requested, got }] }
@@ -2208,6 +2209,7 @@ DECLARE
   v_stat JSONB  := '[]'::jsonb;
   v_want INT;
   v_sec_cats TEXT[];
+  v_sec_subjs TEXT[];
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'not authenticated'; END IF;
 
@@ -2223,6 +2225,14 @@ BEGIN
     v_sec_cats := CASE
       WHEN jsonb_typeof(v_sec->'categories') = 'array' AND jsonb_array_length(v_sec->'categories') > 0
       THEN ARRAY(SELECT jsonb_array_elements_text(v_sec->'categories'))
+      ELSE NULL END;
+
+    -- 分区自带学科(可多选数组, 兼容旧版单字符串)时按该批学科抽题; 缺省回落整卷学科(p_subjects)
+    v_sec_subjs := CASE
+      WHEN jsonb_typeof(v_sec->'subject') = 'array' AND jsonb_array_length(v_sec->'subject') > 0
+      THEN ARRAY(SELECT trim(x) FROM jsonb_array_elements_text(v_sec->'subject') AS x WHERE trim(x) <> '')
+      WHEN jsonb_typeof(v_sec->'subject') = 'string' AND NULLIF(v_sec->>'subject', '') IS NOT NULL
+      THEN ARRAY[v_sec->>'subject']
       ELSE NULL END;
 
     WITH picked AS (
@@ -2241,7 +2251,9 @@ BEGIN
         FROM public.user_answers ua
         WHERE ua.user_id = v_uid AND ua.question_id = q.id
       ) a ON TRUE
-      WHERE (p_subjects IS NULL OR cardinality(p_subjects) = 0 OR q.subject = ANY(p_subjects))
+      WHERE (v_sec_subjs IS NOT NULL AND q.subject = ANY(v_sec_subjs)
+             OR v_sec_subjs IS NULL
+                AND (p_subjects IS NULL OR cardinality(p_subjects) = 0 OR q.subject = ANY(p_subjects)))
         AND ((NULLIF(v_sec->>'type', '') IS NOT NULL AND q.question_type = v_sec->>'type')
              OR (NULLIF(v_sec->>'type', '') IS NULL
                  AND (p_types IS NULL OR cardinality(p_types) = 0 OR q.question_type = ANY(p_types))))
@@ -2305,3 +2317,36 @@ ALTER TABLE public.exam_templates ADD COLUMN IF NOT EXISTS layout JSONB;
 -- ============================================================================
 ALTER TABLE public.exam_templates ADD COLUMN IF NOT EXISTS parent_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_exam_templates_parent ON public.exam_templates(user_id, parent_id);
+
+-- ============================================================================
+-- Section 26: 案例分析题 (case_analysis) —— 一条题目 = 一段共用案例材料 + 若干小题
+--   材料存 question_text(题干), 小题列表存 case_questions JSONB:
+--     [{ id, type, text, options, answer }]
+--   小题允许类型: single_choice / multi_select / true_false / judge_correct /
+--                 fill_blank / short_answer (可自动判分)
+--   用户作答以复合结构存 user_answers.selected_answer:
+--     { "subs": [{ "id": <小题id>, "value": <该小题作答> }] }
+-- ============================================================================
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS case_questions JSONB DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.questions
+  DROP CONSTRAINT IF EXISTS questions_question_type_check;
+
+ALTER TABLE public.questions
+  ADD CONSTRAINT questions_question_type_check
+  CHECK (question_type IN ('single_choice','multi_select','true_false','fill_blank','short_answer','analysis','judge_correct','coding','case_analysis'));
+
+-- ============================================================================
+-- Section 27: 整卷学科多选 —— exam_templates.subject TEXT → TEXT[]
+--   模板「学科」从单选升级为多选: 旧记录(单值字符串)迁移为单元素数组。
+--   null / 空数组 = 不限学科; 组卷 RPC compose_exam 的 p_subjects 本就接收 TEXT[],
+--   前端写入数组后抽题逻辑无需改动。
+-- ============================================================================
+DROP INDEX IF EXISTS idx_exam_templates_subject;
+
+ALTER TABLE public.exam_templates
+  ALTER COLUMN subject TYPE TEXT[]
+  USING CASE WHEN subject IS NULL OR subject = '' THEN NULL ELSE ARRAY[subject] END;
+
+CREATE INDEX IF NOT EXISTS idx_exam_templates_subject ON public.exam_templates USING GIN (subject);

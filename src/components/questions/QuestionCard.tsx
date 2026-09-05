@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { Question, CorrectAnswer, CodingAnswer, TestCase, ExampleCase } from '@/types'
+import type { Question, CorrectAnswer, CodingAnswer, CaseAnswer, CaseQuestion, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
 import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert } from 'lucide-react'
@@ -21,6 +21,170 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 const BLANK_RE = new RegExp('_{2,}', 'g')
 
 const rowBase = 'transition-[opacity,transform] duration-500 ease-out'
+
+function isCaseAnswer(x: CorrectAnswer | null | undefined): x is CaseAnswer {
+  return !!x && typeof x === 'object' && !Array.isArray(x) && 'subs' in (x as object)
+}
+
+/** 小题参考答案的文本化 (用于结果区展示) */
+function subAnswerLabel(sub: CaseQuestion): string {
+  const a = sub.answer
+  switch (sub.type) {
+    case 'single_choice': return OPTION_LABELS[a as number] ?? String(a)
+    case 'multi_select': return Array.isArray(a) ? (a as number[]).map((i) => OPTION_LABELS[i] ?? '?').join('、') : String(a)
+    case 'true_false': return a ? '正确' : '错误'
+    case 'judge_correct': return a === true ? '正确' : `错误，修正：${String(a)}`
+    case 'fill_blank':
+    case 'short_answer': return Array.isArray(a) ? a.map(String).join('；') : String(a ?? '')
+    default: return String(a ?? '')
+  }
+}
+
+/** 案例分析题: 单个小题的作答控件 + 结果态逐小题批改 */
+function CaseSubBlock({ sub, index, value, showResult, disabled, onChange }: {
+  sub: CaseQuestion
+  index: number
+  value: CorrectAnswer | null | undefined
+  showResult?: boolean
+  disabled?: boolean
+  onChange: (v: CorrectAnswer) => void
+}) {
+  const type = sub.type
+  const isSingle = type === 'single_choice'
+  const isMulti = type === 'multi_select'
+  const choice = isSingle || isMulti
+  const isTrueFalse = type === 'true_false'
+  const isJudge = type === 'judge_correct'
+  const isFill = type === 'fill_blank'
+  const isShort = type === 'short_answer'
+  const subCorrect = showResult ? isAnswerCorrect(value, sub.answer, type) : null
+  const mark = (correct: boolean) =>
+    correct ? 'border-green-500 bg-green-50 dark:bg-green-950' : 'border-red-500 bg-red-50 dark:bg-red-950'
+  return (
+    <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 shrink-0 text-sm font-semibold text-muted-foreground">({index + 1})</span>
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <div className="flex items-start gap-2">
+            <MarkdownRenderer content={sub.text} className="flex-1 text-sm" />
+            {showResult && subCorrect !== null && (
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${subCorrect ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}`}>
+                {subCorrect ? '正确' : '错误'}
+              </span>
+            )}
+          </div>
+
+          {choice && (
+            <div className="space-y-1.5">
+              {sub.options.map((opt, oi) => {
+                const selected = isSingle ? value === oi : Array.isArray(value) && (value as number[]).includes(oi)
+                const isCorrectOpt = isSingle
+                  ? sub.answer === oi
+                  : Array.isArray(sub.answer) && (sub.answer as number[]).includes(oi)
+                let cls = 'border-input hover:bg-accent'
+                if (showResult) {
+                  if (isCorrectOpt) cls = mark(true)
+                  else if (selected && !isCorrectOpt) cls = mark(false)
+                } else if (selected) cls = 'border-primary ring-2 ring-primary/30'
+                return (
+                  <button
+                    key={oi}
+                    type="button"
+                    disabled={disabled || showResult}
+                    className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-sm transition-colors ${cls}`}
+                    onClick={() => {
+                      if (isMulti) {
+                        const arr: number[] = Array.isArray(value) ? [...(value as number[])] : []
+                        onChange(arr.includes(oi) ? arr.filter((x) => x !== oi) : [...arr, oi])
+                      } else onChange(oi)
+                    }}
+                  >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium">
+                      {OPTION_LABELS[oi]}
+                    </span>
+                    <span className="flex-1">{opt}</span>
+                    {showResult && isCorrectOpt && <span className="shrink-0 text-xs font-medium text-green-600">✓</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {(isTrueFalse || isJudge) && (
+            <div className="flex gap-2">
+              {[true, false].map((v) => {
+                const selected = isTrueFalse ? value === v : v ? value === true : value != null && value !== true
+                const isCorrectOpt = sub.answer === v || (isJudge && sub.answer !== true && !v)
+                let cls = 'border-input hover:bg-accent'
+                if (showResult) cls = isCorrectOpt ? mark(true) : selected && !isCorrectOpt ? mark(false) : 'border-input'
+                else if (selected) cls = 'border-primary ring-2 ring-primary/30'
+                return (
+                  <button key={String(v)} type="button" disabled={disabled || showResult}
+                    className={`flex-1 h-9 rounded-md border text-sm font-medium transition-colors ${cls}`}
+                    onClick={() => onChange(v ? true : (isJudge ? '' : false))}>
+                    {v ? '正确' : '错误'}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {isJudge && value != null && value !== true && (
+            <input
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+              value={typeof value === 'string' ? value : ''}
+              disabled={disabled || showResult}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="输入修正后的正确表述"
+            />
+          )}
+
+          {isFill && (
+            <div className="space-y-1.5">
+              {Array.from({ length: Math.max(1, (sub.text.match(BLANK_RE) || ['___']).length) }).map((_, bi) => {
+                const arr: string[] = Array.isArray(value) ? (value as string[]) : value != null ? [String(value)] : new Array(Math.max(1, (sub.text.match(BLANK_RE) || ['___']).length)).fill('')
+                const corArr = Array.isArray(sub.answer) ? (sub.answer as string[]) : [String(sub.answer ?? '')]
+                const ok = showResult && String(arr[bi] ?? '').trim().toLowerCase() === String(corArr[bi] ?? '').trim().toLowerCase()
+                return (
+                  <div key={bi} className="flex items-center gap-2">
+                    <span className="w-8 shrink-0 text-xs text-muted-foreground">第{bi + 1}空</span>
+                    <input
+                      className={`h-9 w-full rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 ${ok === true ? 'border-green-500' : ok === false ? 'border-red-500' : 'border-input'}`}
+                      value={arr[bi] ?? ''}
+                      disabled={disabled || showResult}
+                      onChange={(e) => {
+                        const next = [...(Array.isArray(value) ? (value as string[]) : [])]
+                        next[bi] = e.target.value
+                        onChange(next)
+                      }}
+                      placeholder={`答案 ${bi + 1}`}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {isShort && (
+            <input
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+              value={typeof value === 'string' ? value : ''}
+              disabled={disabled || showResult}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="输入简答答案"
+            />
+          )}
+
+          {showResult && subCorrect !== null && !subCorrect && (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <span className="font-medium">正确答案: </span>
+              {subAnswerLabel(sub)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
   const [open, setOpen] = useState(false)
@@ -120,6 +284,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isAnalysis = type === 'analysis'
   const isJudgeCorrect = type === 'judge_correct'
   const isCoding = type === 'coding'
+  const isCase = type === 'case_analysis'
 
   useEffect(() => {
     if (isCoding && question.test_cases?.length) {
@@ -127,7 +292,20 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
     }
   }, [question.id, isCoding, question.test_cases])
   const isTextInput = isFillBlank || isShort || isAnalysis
-  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered, question.unordered_blanks)
+  const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered, question.unordered_blanks, question.case_questions)
+  const caseSubs = question.case_questions ?? []
+  const caseAnswer = isCaseAnswer(selectedAnswer) ? selectedAnswer : { subs: [] as { id: string; value: CorrectAnswer }[] }
+  const setCaseSub = (subId: string, value: CorrectAnswer) => {
+    if (!onSelect) return
+    onSelect({ subs: [...caseAnswer.subs.filter((s) => s.id !== subId), { id: subId, value }] })
+  }
+  const caseResults = isCase
+    ? caseSubs.map((sub) => ({
+        sub,
+        ok: isAnswerCorrect(caseAnswer.subs.find((x) => x.id === sub.id)?.value, sub.answer, sub.type),
+      }))
+    : []
+  const caseCorrectCount = caseResults.filter((r) => r.ok).length
   const typeLabel = QUESTION_TYPE_LABELS[type]
   const row = (delay: number) => ({ className: cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'), style: { transitionDelay: `${delay}ms` } })
 
@@ -424,6 +602,43 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
             }}
           />
           <CodeResult results={codingResults} status={judgeStatus} />
+        </div>
+      )}
+
+      {/* 案例分析题: 案例材料已在题干的 question_text 渲染, 下方逐个渲染共用材料的小题 */}
+      {isCase && (
+        <div className="space-y-2.5">
+          <p className="text-xs text-muted-foreground">
+            {caseSubs.length > 0 && !showResult ? '阅读上方案例材料，回答下列小题（小题分别判分）。' : ''}
+            {showResult && (
+              <span
+                className={cn(
+                  'font-medium',
+                  caseCorrectCount > 0 && caseCorrectCount === caseSubs.length
+                    ? 'text-green-600 dark:text-green-400'
+                    : caseCorrectCount > 0
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-red-500',
+                )}
+              >
+                本题共 {caseSubs.length} 小题，答对 {caseCorrectCount} 题
+              </span>
+            )}
+          </p>
+          {caseSubs.map((sub, si) => {
+            const value = caseAnswer.subs.find((s) => s.id === sub.id)?.value
+            return (
+              <CaseSubBlock
+                key={sub.id}
+                sub={sub}
+                index={si}
+                value={value}
+                showResult={showResult}
+                disabled={disabled}
+                onChange={(v) => setCaseSub(sub.id, v)}
+              />
+            )
+          })}
         </div>
       )}
       </div>

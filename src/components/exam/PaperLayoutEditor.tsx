@@ -8,6 +8,8 @@ import { useT } from '@/i18n/use-t'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -69,7 +71,8 @@ const TEXT_BLOCK_KEYS: PaperTextBlockKey[] = [
 
 const fieldCls = 'h-8 text-xs'
 const numCls = `${fieldCls} w-20`
-const selectCls = 'h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+/** Radix Select 不接受空字符串 value; 用此 token 表示"默认字族" */
+const DEFAULT_FONT = '__default__'
 
 export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
   const { t } = useT()
@@ -135,26 +138,24 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.paperSize')}</Label>
-            <select
-              className={selectCls}
-              value={layout.paperSize}
-              onChange={(e) => patch({ paperSize: e.target.value as PaperSize })}
-            >
-              {PAPER_SIZES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <Select value={layout.paperSize} onValueChange={(v) => patch({ paperSize: v as PaperSize })}>
+              <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PAPER_SIZES.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.orientation')}</Label>
-            <select
-              className={selectCls}
-              value={layout.orientation}
-              onChange={(e) => patch({ orientation: e.target.value as 'portrait' | 'landscape' })}
-            >
-              <option value="portrait">{t('examTemplate.layout.portrait')}</option>
-              <option value="landscape">{t('examTemplate.layout.landscape')}</option>
-            </select>
+            <Select value={layout.orientation} onValueChange={(v) => patch({ orientation: v as 'portrait' | 'landscape' })}>
+              <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="portrait">{t('examTemplate.layout.portrait')}</SelectItem>
+                <SelectItem value="landscape">{t('examTemplate.layout.landscape')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </section>
@@ -218,15 +219,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
           </div>
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.columns')}</Label>
-            <select
-              className={selectCls}
-              value={layout.columns}
-              onChange={(e) => patch({ columns: Number(e.target.value) as 1 | 2 | 3 | 4 })}
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+            <Select value={String(layout.columns)} onValueChange={(v) => patch({ columns: Number(v) as 1 | 2 | 3 | 4 })}>
+              <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </section>
@@ -239,15 +239,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
         <div className="grid grid-cols-3 gap-2">
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.binderSide')}</Label>
-            <select
-              className={selectCls}
-              value={layout.binderLine.side}
-              onChange={(e) => patchBinder({ side: e.target.value as BinderSide })}
-            >
-              {BINDER_SIDES.map((b) => (
-                <option key={b.value} value={b.value}>{t(`examTemplate.layout.binder.${b.key}`)}</option>
-              ))}
-            </select>
+            <Select value={layout.binderLine.side} onValueChange={(v) => patchBinder({ side: v as BinderSide })}>
+              <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {BINDER_SIDES.map((b) => (
+                  <SelectItem key={b.value} value={b.value}>{t(`examTemplate.layout.binder.${b.key}`)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.binderOffset')}</Label>
@@ -285,15 +284,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.sealPosition')}</Label>
-            <select
-              className={selectCls}
-              value={layout.sealBand.position}
-              onChange={(e) => patchSeal({ position: e.target.value as SealPosition })}
-            >
-              {SEAL_POSITIONS.map((s) => (
-                <option key={s.value} value={s.value}>{t(`examTemplate.layout.seal.${s.key}`)}</option>
-              ))}
-            </select>
+            <Select value={layout.sealBand.position} onValueChange={(v) => patchSeal({ position: v as SealPosition })}>
+              <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SEAL_POSITIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{t(`examTemplate.layout.seal.${s.key}`)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">{t('examTemplate.layout.sealText')}</Label>
@@ -352,10 +350,9 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
             {t('examTemplate.layout.watermarkGroup')}
           </div>
           <label className="flex items-center gap-1.5 text-xs">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={layout.watermark.enabled}
-              onChange={(e) => patchWatermark({ enabled: e.target.checked })}
+              onCheckedChange={(v) => patchWatermark({ enabled: v === true })}
             />
             {t('examTemplate.layout.watermarkEnabled')}
           </label>
@@ -415,15 +412,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {t('examTemplate.layout.fontFamilyGroup')}
         </div>
-        <select
-          className={selectCls}
-          value={layout.fontFamily ?? ''}
-          onChange={(e) => patch({ fontFamily: e.target.value || null })}
-        >
-          {LAYOUT_FONT_PRESETS.map((f) => (
-            <option key={f.labelKey} value={f.value}>{t(`examTemplate.layout.${f.labelKey}`)}</option>
-          ))}
-        </select>
+        <Select value={layout.fontFamily || DEFAULT_FONT} onValueChange={(v) => patch({ fontFamily: v === DEFAULT_FONT ? null : v })}>
+          <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {LAYOUT_FONT_PRESETS.map((f) => (
+              <SelectItem key={f.labelKey} value={f.value || DEFAULT_FONT}>{t(`examTemplate.layout.${f.labelKey}`)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </section>
 
       {/* 封面独占页 + 卷首抬头 */}
@@ -432,27 +428,24 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
           {t('examTemplate.layout.paperHeadGroup')}
         </div>
         <label className="flex items-center gap-1.5 text-xs">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={layout.coverOwnPage}
-            onChange={(e) => patch({ coverOwnPage: e.target.checked })}
+            onCheckedChange={(v) => patch({ coverOwnPage: v === true })}
           />
           {t('examTemplate.layout.coverOwnPage')}
         </label>
         <p className="pl-4 text-[10px] text-muted-foreground">{t('examTemplate.layout.coverOwnPageHint')}</p>
         <label className="flex items-center gap-1.5 text-xs">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={layout.showPaperTitle}
-            onChange={(e) => patch({ showPaperTitle: e.target.checked })}
+            onCheckedChange={(v) => patch({ showPaperTitle: v === true })}
           />
           {t('examTemplate.layout.showPaperTitle')}
         </label>
         <label className="flex items-center gap-1.5 text-xs">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={layout.showPaperMeta}
-            onChange={(e) => patch({ showPaperMeta: e.target.checked })}
+            onCheckedChange={(v) => patch({ showPaperMeta: v === true })}
           />
           {t('examTemplate.layout.showPaperMeta')}
         </label>
@@ -484,15 +477,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
                 anchorId={`pl-row-${key}`}
               >
                 <div className={cn('flex items-center gap-1', active && '-mx-0.5 rounded-md px-0.5 ring-1 ring-ring/80')}>
-                  <select
-                    className="h-7 w-24 rounded-md border border-input bg-transparent px-1 text-[10px] outline-none"
-                    value={s?.fontFamily ?? ''}
-                    onChange={(e) => patchTextBlock(key, { fontFamily: e.target.value || null })}
-                  >
-                    {LAYOUT_FONT_PRESETS.map((f) => (
-                      <option key={f.labelKey} value={f.value}>{t(`examTemplate.layout.${f.labelKey}`)}</option>
-                    ))}
-                  </select>
+                  <Select value={s?.fontFamily || DEFAULT_FONT} onValueChange={(v) => patchTextBlock(key, { fontFamily: v === DEFAULT_FONT ? null : v })}>
+                    <SelectTrigger size="none" className="h-7 w-24 px-1 text-[10px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LAYOUT_FONT_PRESETS.map((f) => (
+                        <SelectItem key={f.labelKey} value={f.value || DEFAULT_FONT}>{t(`examTemplate.layout.${f.labelKey}`)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Input
                     className="h-7 w-10 px-1 text-center text-[10px]"
                     type="number"
@@ -544,10 +536,9 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
           />
         </div>
         <label className="flex items-center gap-1.5 text-xs">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={layout.headerFooter.showPageNumber}
-            onChange={(e) => patchHF({ showPageNumber: e.target.checked })}
+            onCheckedChange={(v) => patchHF({ showPageNumber: v === true })}
           />
           {t('examTemplate.layout.showPageNumber')}
         </label>
@@ -558,15 +549,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {t('examTemplate.layout.scoreBoxGroup')}
         </div>
-        <select
-          className={selectCls}
-          value={layout.scoreBox}
-          onChange={(e) => patch({ scoreBox: e.target.value as ScoreBoxMode })}
-        >
-          {SCORE_BOX_MODES.map((m) => (
-            <option key={m.value} value={m.value}>{t(`examTemplate.layout.scoreBox.${m.key}`)}</option>
-          ))}
-        </select>
+        <Select value={layout.scoreBox} onValueChange={(v) => patch({ scoreBox: v as ScoreBoxMode })}>
+          <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {SCORE_BOX_MODES.map((m) => (
+              <SelectItem key={m.value} value={m.value}>{t(`examTemplate.layout.scoreBox.${m.key}`)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </section>
 
       {/* 附加块 */}
@@ -594,19 +584,21 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
         <div className="space-y-1">
           {layout.additionalBlocks.map((b, i) => (
             <div key={i} className="flex items-center gap-1.5">
-              <select
-                className={`${selectCls} w-32`}
+              <Select
                 value={b.placement}
-                onChange={(e) => {
+                onValueChange={(v) => {
                   const next = [...layout.additionalBlocks]
-                  next[i] = { ...b, placement: e.target.value as PaperAdditionalBlock['placement'] }
+                  next[i] = { ...b, placement: v as PaperAdditionalBlock['placement'] }
                   setAdditionalBlocks(next)
                 }}
               >
-                <option value="cover-end">{t('examTemplate.layout.placement.coverEnd')}</option>
-                <option value="header">{t('examTemplate.layout.placement.header')}</option>
-                <option value="footer">{t('examTemplate.layout.placement.footer')}</option>
-              </select>
+                <SelectTrigger size="sm" className="w-32 shrink-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cover-end">{t('examTemplate.layout.placement.coverEnd')}</SelectItem>
+                  <SelectItem value="header">{t('examTemplate.layout.placement.header')}</SelectItem>
+                  <SelectItem value="footer">{t('examTemplate.layout.placement.footer')}</SelectItem>
+                </SelectContent>
+              </Select>
               <Input
                 className={`${fieldCls} flex-1`}
                 value={b.content}

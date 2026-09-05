@@ -73,6 +73,16 @@ export type PaperPick =
   | { kind: 'margin'; side: PaperMarginSide }
   | { kind: 'coverBlock'; index: number }
 
+/**
+ * 画布上的「双击就地改文字」请求:
+ * - paperTitle: 卷首大标题 → 写回模板名 (name)
+ * - coverField: 封面文字 → 写回 cover 对应字段 (field 与 ExamTemplateCover 字段同名;
+ *   field='notice' 时为注意事项第 index 条)
+ */
+export type PaperTextEditReq =
+  | { kind: 'paperTitle' }
+  | { kind: 'coverField'; field: string; index?: number }
+
 export interface PaperWatermark {
   enabled: boolean
   text: string

@@ -102,7 +102,7 @@ export function Component() {
   }, [selectedQuestion])
 
   const isCorrect = selectedQuestion && selectedAnswer !== null
-    ? isAnswerCorrect(selectedAnswer, selectedQuestion.correct_answer, selectedQuestion.question_type, selectedQuestion.allow_unordered, selectedQuestion.unordered_blanks)
+    ? isAnswerCorrect(selectedAnswer, selectedQuestion.correct_answer, selectedQuestion.question_type, selectedQuestion.allow_unordered, selectedQuestion.unordered_blanks, selectedQuestion.case_questions)
     : null
 
   return (
@@ -159,9 +159,9 @@ export function Component() {
               全部题型
             </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
-            {['single_choice', 'multi_select', 'true_false', 'judge_correct', 'fill_blank', 'short_answer', 'analysis', 'coding'].map((type) => (
+            {['single_choice', 'multi_select', 'true_false', 'judge_correct', 'fill_blank', 'short_answer', 'analysis', 'coding', 'case_analysis'].map((type) => (
               <DropdownMenuCheckboxItem key={type} checked={typeFilter === type} onCheckedChange={() => setTypeFilter(typeFilter === type ? '' : type)}>
-                {{ single_choice: '单选题', multi_select: '多选题', true_false: '判断题', judge_correct: '判断改错题', fill_blank: '填空题', short_answer: '简答题', analysis: '分析题', coding: '编程题' }[type]}
+                {{ single_choice: '单选题', multi_select: '多选题', true_false: '判断题', judge_correct: '判断改错题', fill_blank: '填空题', short_answer: '简答题', analysis: '分析题', coding: '编程题', case_analysis: '案例分析题' }[type]}
               </DropdownMenuCheckboxItem>
             ))}
             <DropdownMenuSeparator />

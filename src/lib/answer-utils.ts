@@ -1,4 +1,4 @@
-import type { CorrectAnswer, QuestionType } from '@/types'
+import type { CaseAnswer, CaseQuestion, CorrectAnswer, Question, QuestionType } from '@/types'
 
 export function isAnswerCorrect(
   selected: CorrectAnswer | null | undefined,
@@ -6,6 +6,8 @@ export function isAnswerCorrect(
   questionType: QuestionType,
   allowUnordered?: boolean,
   unorderedBlanks?: number[] | null,
+  /** case_analysis 的小题定义; 缺省时 case 题一律判错 */
+  subs?: CaseQuestion[] | null,
 ): boolean {
   if (selected == null || correct == null) return false
   switch (questionType) {
@@ -63,11 +65,58 @@ export function isAnswerCorrect(
       return selected === true ? correct === true : String(selected).trim().toLowerCase() === String(correct).trim().toLowerCase()
     case 'analysis':
       return false
+    case 'case_analysis': {
+      if (!subs || subs.length === 0) return false
+      const results = caseSubResults(subs, selected)
+      if (!results) return false
+      return results.every(r => r.correct)
+    }
     case 'coding': {
       const ca = selected as { allPassed?: boolean }
       return ca?.allPassed === true
     }
   }
+}
+
+/** 按小题逐一判分; 作答缺失或形状不对返回 null */
+export function caseSubResults(
+  subs: CaseQuestion[],
+  selected: CorrectAnswer | null | undefined,
+): { id: string; correct: boolean }[] | null {
+  if (!Array.isArray(subs) || subs.length === 0) return null
+  if (!selected || typeof selected !== 'object' || Array.isArray(selected) || !('subs' in (selected as object))) return null
+  const values = new Map((selected as CaseAnswer).subs?.map(s => [s.id, s.value]) ?? [])
+  return subs.map(sub => ({ id: sub.id, correct: isAnswerCorrect(values.get(sub.id), sub.answer, sub.type) }))
+}
+
+/** 一道案例题答对的小题数 / 小题总数 (小题粒度计分用) */
+export function caseScore(
+  subs: CaseQuestion[],
+  selected: CorrectAnswer | null | undefined,
+): { correct: number; total: number } {
+  const results = caseSubResults(subs, selected)
+  const total = Array.isArray(subs) ? subs.length : 0
+  if (!results) return { correct: 0, total }
+  return { correct: results.filter(r => r.correct).length, total }
+}
+
+/** 该题按「小题」展开后的计题数: 案例分析题 = 小题数, 其余 = 1 */
+export function questionItemCount(q: Pick<Question, 'question_type' | 'case_questions'>): number {
+  if (q.question_type === 'case_analysis') {
+    const n = q.case_questions?.length ?? 0
+    return Math.max(1, n)
+  }
+  return 1
+}
+
+/** 该题答对的小题数: 案例分析题 = 答对的小题数(可部分计分), 其余 = 全对 1 / 0 */
+export function questionCorrectItemCount(q: Question, selected: CorrectAnswer | null | undefined): number {
+  if (q.question_type === 'case_analysis') {
+    return caseScore(q.case_questions ?? [], selected).correct
+  }
+  return isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
+    ? 1
+    : 0
 }
 
 export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
@@ -79,6 +128,7 @@ export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
     case 'fill_blank': return [] as string[]
     case 'short_answer': return ''
     case 'analysis': return null
+    case 'case_analysis': return { subs: [] } as CaseAnswer
     case 'coding': return { code: '', language: 'javascript', allPassed: false }
   }
 }

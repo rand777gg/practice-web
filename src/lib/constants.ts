@@ -15,10 +15,16 @@ export const QUESTION_TYPE_OPTIONS = [
   { value: 'short_answer' as const, label: '简答题' },
   { value: 'analysis' as const, label: '分析题' },
   { value: 'coding' as const, label: '编程题' },
+  { value: 'case_analysis' as const, label: '案例分析题' },
 ]
 
 export const QUESTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   QUESTION_TYPE_OPTIONS.map(o => [o.value, o.label])
+)
+
+/** 案例分析题允许的小题型(可自动判分, 不包含分析/编程/案例自身) */
+export const CASE_SUB_TYPE_OPTIONS = QUESTION_TYPE_OPTIONS.filter(
+  (o) => o.value !== 'analysis' && o.value !== 'coding' && o.value !== 'case_analysis'
 )
 
 export const IMPORT_MODE_OPTIONS = [
@@ -43,6 +49,7 @@ export const TYPE_COLORS: Record<string, string> = {
   short_answer:  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   analysis:      'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
   coding:        'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+  case_analysis: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300',
 }
 
 export const POINT_COLORS = [

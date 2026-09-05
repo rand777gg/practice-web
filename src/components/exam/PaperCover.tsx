@@ -40,6 +40,12 @@ function hit(direct: boolean, tb: PaperTextBlockKey): { 'data-paper-tb'?: PaperT
   return direct ? { 'data-paper-tb': tb, 'data-paper-hit': '' } : {}
 }
 
+/** 直调双击编辑: 给可编辑文字挂上归属字段 (direct=false 时不挂) */
+function editAttr(direct: boolean, field: string, index?: number): Record<string, string> {
+  if (!direct) return {}
+  return index === undefined ? { 'data-cover-field': field } : { 'data-cover-field': field, 'data-cover-index': String(index) }
+}
+
 export function PaperCover({ cover, layout = 'sheet', compact = false, paperLayout, bare = false, overlays = true, direct = false, pick = null }: Props) {
   const spread = layout === 'spread'
   const compactCls = compact ? 'paper-cover-compact' : ''
@@ -76,23 +82,23 @@ export function PaperCover({ cover, layout = 'sheet', compact = false, paperLayo
       {paperLayout && overlays && <PaperLayoutOverlays layout={paperLayout} />}
 
       {cover.banner && (
-        <div {...hit(direct, 'coverBanner')} className={cn('paper-cover-banner', selCls(pick, 'coverBanner'))} style={tb.banner}>{cover.banner}</div>
+        <div {...hit(direct, 'coverBanner')} {...editAttr(direct, 'banner')} className={cn('paper-cover-banner', selCls(pick, 'coverBanner'))} style={tb.banner}>{cover.banner}</div>
       )}
 
       <div className="paper-cover-head">
-        {cover.examName && <div {...hit(direct, 'coverExamName')} className={cn('paper-cover-exam-name', selCls(pick, 'coverExamName'))} style={tb.examName}>{cover.examName}</div>}
-        {cover.title && <div {...hit(direct, 'coverTitle')} className={cn('paper-cover-title', selCls(pick, 'coverTitle'))} style={tb.title}>{cover.title}</div>}
-        {cover.codeLine && <div {...hit(direct, 'coverCode')} className={cn('paper-cover-code', selCls(pick, 'coverCode'))} style={tb.code}>{cover.codeLine}</div>}
+        {cover.examName && <div {...hit(direct, 'coverExamName')} {...editAttr(direct, 'examName')} className={cn('paper-cover-exam-name', selCls(pick, 'coverExamName'))} style={tb.examName}>{cover.examName}</div>}
+        {cover.title && <div {...hit(direct, 'coverTitle')} {...editAttr(direct, 'title')} className={cn('paper-cover-title', selCls(pick, 'coverTitle'))} style={tb.title}>{cover.title}</div>}
+        {cover.codeLine && <div {...hit(direct, 'coverCode')} {...editAttr(direct, 'codeLine')} className={cn('paper-cover-code', selCls(pick, 'coverCode'))} style={tb.code}>{cover.codeLine}</div>}
       </div>
 
       {cover.noticeTitle && (
-        <div {...hit(direct, 'coverNoticeTitle')} className={cn('paper-cover-notice-title', selCls(pick, 'coverNoticeTitle'))} style={tb.noticeTitle}>{cover.noticeTitle}</div>
+        <div {...hit(direct, 'coverNoticeTitle')} {...editAttr(direct, 'noticeTitle')} className={cn('paper-cover-notice-title', selCls(pick, 'coverNoticeTitle'))} style={tb.noticeTitle}>{cover.noticeTitle}</div>
       )}
 
       {cover.notices && cover.notices.length > 0 && (
         <ol className="paper-cover-notices">
           {cover.notices.map((n, i) => (
-            <li key={i} {...hit(direct, 'coverNoticeItem')} className={cn('paper-cover-notice-item', selCls(pick, 'coverNoticeItem'))} style={tb.noticeItem}>
+            <li key={i} {...hit(direct, 'coverNoticeItem')} {...editAttr(direct, 'notice', i)} className={cn('paper-cover-notice-item', selCls(pick, 'coverNoticeItem'))} style={tb.noticeItem}>
               <span className="paper-cover-notice-no">{i + 1}.</span>
               <span>{n}</span>
             </li>
@@ -101,7 +107,7 @@ export function PaperCover({ cover, layout = 'sheet', compact = false, paperLayo
       )}
 
       {cover.infoHint && (
-        <div {...hit(direct, 'coverInfoHint')} className={cn('paper-cover-info-hint', selCls(pick, 'coverInfoHint'))} style={tb.infoHint}>{cover.infoHint}</div>
+        <div {...hit(direct, 'coverInfoHint')} {...editAttr(direct, 'infoHint')} className={cn('paper-cover-info-hint', selCls(pick, 'coverInfoHint'))} style={tb.infoHint}>{cover.infoHint}</div>
       )}
 
       {cover.infoTable && cover.infoTable.length > 0 && (

@@ -12,6 +12,7 @@ import {
 import { Check, ChevronDown, CheckCircle, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { normalizeChineseText } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
@@ -177,14 +178,13 @@ export function AiImportQuestionCard({ question, index, selected, subject, categ
                   <input type="radio" name={`q-${index}`} checked={isCorrect} onChange={() => patch({ correct_answer: oi })}
                     className="shrink-0 h-3.5 w-3.5 accent-primary cursor-pointer" />
                 ) : (
-                  <input type="checkbox" checked={isCorrect} onChange={() => {
+                  <Checkbox checked={isCorrect} onCheckedChange={(v) => {
                     const arr: number[] = Array.isArray(question.correct_answer) ? [...question.correct_answer as number[]] : []
                     const idx = arr.indexOf(oi)
-                    if (idx >= 0) arr.splice(idx, 1)
-                    else arr.push(oi)
+                    if (v && idx < 0) arr.push(oi)
+                    else if (!v && idx >= 0) arr.splice(idx, 1)
                     patch({ correct_answer: arr })
-                  }}
-                    className="shrink-0 h-3.5 w-3.5 accent-primary cursor-pointer" />
+                  }} className="shrink-0 cursor-pointer" />
                 )}
                 <span className="text-[11px] text-muted-foreground w-4 tabular-nums shrink-0">{String.fromCharCode(65 + oi)}</span>
                 <Textarea

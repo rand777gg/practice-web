@@ -30,9 +30,10 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2 } from 'lucide-react'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, RefreshCw } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
+import { ExamHistory } from './ExamHistory'
 import { PaperPreview } from './PaperPreview'
 import { buildPaperSections, composeExamIds, fetchQuestionsByIds, type PaperSection } from '@/lib/exam-compose'
 
@@ -44,8 +45,8 @@ import {
   EXAM_MIN_DURATION_MIN,
   EXAM_MAX_DURATION_MIN,
 } from '@/lib/constants'
-import type { ExamSession as ExamSessionType, ExamTemplate, QuestionType } from '@/types'
-import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import type { ExamSession as ExamSessionType, ExamTemplate, QuestionType, CaseAnswer, CorrectAnswer } from '@/types'
+import { QUESTION_TYPE_OPTIONS, OPTION_LABELS } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -98,7 +99,8 @@ export function ExamSession() {
   const [paperMode, setPaperMode] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
   const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>('sheet') // 卷面 单页摊开/双页摊开
-  const [previewOpen, setPreviewOpen] = useState(false)
+  const [tab, setTab] = useState<'settings' | 'history'>('settings')
+  const [previewNonce, setPreviewNonce] = useState(0)
   const [previewSections, setPreviewSections] = useState<PaperSection[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -208,24 +210,46 @@ export function ExamSession() {
     setHasStarted(true)
   }
 
-  const handlePreview = async () => {
-    setPreviewOpen(true)
-    setPreviewLoading(true)
-    setPreviewError('')
-    setPreviewSections([])
-    try {
-      const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
-      const { questionIds } = await composeExamIds({ template, questionCount: count, ...filterArgs })
-      if (questionIds.length === 0) {
-        setPreviewError(t('examTemplate.previewEmpty'))
-        return
+  // ── 实时卷面预览: 「设置」页下配置/模板变化(防抖)后自动组卷渲染, 无需再点「试卷预览」 ──
+  useEffect(() => {
+    if (!showStart || tab !== 'settings' || checkingSession || pendingSession) return
+    let cancelled = false
+    const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
+    const timer = setTimeout(async () => {
+      setPreviewLoading(true)
+      setPreviewError('')
+      try {
+        const { questionIds } = await composeExamIds({
+          template,
+          questionCount: count,
+          subjects: selectedSubjects.length ? selectedSubjects : undefined,
+          categories: selectedCategories.length ? selectedCategories : undefined,
+          questionTypes: selectedTypes.length ? selectedTypes : undefined,
+        })
+        if (cancelled) return
+        if (questionIds.length === 0) {
+          setPreviewSections([])
+          setPreviewError(t('examTemplate.previewEmpty'))
+          return
+        }
+        setPreviewSections(buildPaperSections(await fetchQuestionsByIds(questionIds), template))
+      } catch (e) {
+        if (!cancelled) {
+          setPreviewSections([])
+          setPreviewError((e as Error).message || String(e))
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false)
       }
-      setPreviewSections(buildPaperSections(await fetchQuestionsByIds(questionIds), template))
-    } catch (e) {
-      setPreviewError((e as Error).message)
-    } finally {
-      setPreviewLoading(false)
+    }, 500)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
     }
+  }, [showStart, tab, checkingSession, pendingSession, template, questionCount, selectedSubjects, selectedCategories, selectedTypes, previewNonce, t])
+
+  const rerollPreview = () => {
+    setPreviewNonce((n) => n + 1)
   }
 
   const handleResume = async () => {
@@ -276,13 +300,18 @@ export function ExamSession() {
     }
   }
 
-  // 在卡片模式先收起答题卡、之后再切进卷面: 此时答题卡处于收起态 → 一进卷面就摊开填满
+  // 在卡片模式先收起答题卡、之后再切进卷面: 此时答题卡处于收起态 → 只在「进入卷面」瞬间摊开填满;
+  // 之后用户手动点「单页/双页」切换以用户选择为准, 不再被拉回 spread。
+  const prevPaperModeRef = useRef(paperMode)
   useEffect(() => {
-    if (paperMode && !sheetOpen && paperLayout === 'sheet') {
+    const entering = paperMode && !prevPaperModeRef.current
+    prevPaperModeRef.current = paperMode
+    if (entering && !sheetOpen && paperLayout === 'sheet') {
       sheetAutoSpreadRef.current = true
       setPaperLayout('spread')
     }
-  }, [paperMode, sheetOpen, paperLayout])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paperMode, sheetOpen])
 
   const handleCloseResult = () => {
     setResultDialogOpen(false)
@@ -313,11 +342,29 @@ export function ExamSession() {
   if (showStart) {
     return (
       <>
-        <Card className="max-w-2xl">
-          <CardContent className="py-6 lg:py-8 space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{t('exam.ready')}</h2>
-              {hasAiConfig() && isEnabled('exam') && (
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">
+              <FileText className="h-5 w-5 text-primary" />
+              {t('exam.title')}
+            </h1>
+            <p className="mt-1 max-w-2xl text-xs text-muted-foreground">{t('exam.setupDesc')}</p>
+          </div>
+        </div>
+
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'settings' | 'history')}>
+          <TabsList>
+            <TabsTrigger value="settings">{t('exam.tabSetup')}</TabsTrigger>
+            <TabsTrigger value="history">{t('exam.tabHistory')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="settings" className="mt-4">
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(340px,400px)_minmax(0,1fr)]">
+              <Card className="min-w-0 overflow-hidden xl:sticky xl:top-24">
+                <CardContent className="space-y-5 p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-base font-semibold">{t('exam.ready')}</h2>
+                    {hasAiConfig() && isEnabled('exam') && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -515,16 +562,74 @@ export function ExamSession() {
               {isLoading ? <Spinner /> : <Play className="h-4 w-4" />}
               {t('exam.startExam')}
             </Button>
-            <Button onClick={handlePreview} disabled={isLoading} size="sm" variant="outline" className="w-full gap-1 text-xs">
-              <FileText className="h-3.5 w-3.5" />
-              {t('examTemplate.preview')}
-            </Button>
             {paperNotice && <p className="text-xs text-amber-600 dark:text-amber-500">{paperNotice}</p>}
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
-          </CardContent>
-        </Card>
+                </CardContent>
+              </Card>
+
+              {/* ── 右侧: 实时卷面预览(选中模板/调整条件自动出卷) ── */}
+              <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card/30">
+                <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-background/70 px-3 py-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">{t('examTemplate.preview')}</h2>
+                  <span className="hidden text-[10px] text-muted-foreground lg:inline">{t('exam.previewPaneHint')}</span>
+                  <button
+                    type="button"
+                    onClick={rerollPreview}
+                    disabled={previewLoading}
+                    className="ml-auto flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
+                  >
+                    <RefreshCw className={cn('h-3 w-3', previewLoading && 'animate-spin')} />
+                    {t('exam.refreshPreview')}
+                  </button>
+                </header>
+                <div className="flex-1 overflow-auto bg-neutral-200/40 p-3 dark:bg-neutral-950/40">
+                  {previewLoading ? (
+                    <div className="flex min-h-[380px] items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Spinner />
+                      {t('exam.generatingPreview')}
+                    </div>
+                  ) : previewError ? (
+                    <div className="flex min-h-[380px] flex-col items-center justify-center gap-3 text-center">
+                      <p className="max-w-sm text-sm text-muted-foreground">{previewError}</p>
+                      <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={rerollPreview}>
+                        <RefreshCw className="h-3 w-3" />
+                        {t('exam.refreshPreview')}
+                      </Button>
+                    </div>
+                  ) : previewSections.length > 0 ? (
+                    <PaperPreview
+                      title={template?.name ?? t('exam.title')}
+                      meta={[
+                        template?.subject?.length
+                          ? template.subject.join('、')
+                          : selectedSubjects.length
+                            ? selectedSubjects.join('、')
+                            : '',
+                        `${durationMin} ${t('exam.minutes')}`,
+                      ].filter(Boolean).join(' · ')}
+                      sections={previewSections}
+                      answers={new Map()}
+                      readOnly
+                      cover={template?.cover ?? null}
+                      paperLayout={template?.layout ?? null}
+                    />
+                  ) : (
+                    <div className="flex min-h-[380px] items-center justify-center text-sm text-muted-foreground">
+                      {t('examTemplate.previewEmpty')}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="history" className="mt-4">
+            <ExamHistory />
+          </TabsContent>
+        </Tabs>
 
         <AlertDialog open={showResumeDialog} onOpenChange={setShowResumeDialog}>
           <AlertDialogContent>
@@ -550,33 +655,6 @@ export function ExamSession() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{t('examTemplate.preview')}</DialogTitle>
-              <DialogDescription>{t('examTemplate.previewDesc')}</DialogDescription>
-            </DialogHeader>
-            {previewLoading && <Skeleton className="h-64 w-full" />}
-            {!previewLoading && previewError && (
-              <p className="text-sm text-muted-foreground">{previewError}</p>
-            )}
-            {!previewLoading && !previewError && previewSections.length > 0 && (
-              <PaperPreview
-                title={template?.name ?? t('exam.title')}
-                meta={[
-                  template?.subject ?? (selectedSubjects.length ? selectedSubjects.join('、') : ''),
-                  `${durationMin} ${t('exam.minutes')}`,
-                ].filter(Boolean).join(' · ')}
-                sections={previewSections}
-                answers={new Map()}
-                readOnly
-                cover={template?.cover ?? null}
-                paperLayout={template?.layout ?? null}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
       </>
     )
   }
@@ -731,7 +809,11 @@ export function ExamSession() {
               <span className="mr-1">共 {questions.length} 题</span>
               <button
                 type="button"
-                onClick={() => setPaperLayout(paperLayout === 'spread' ? 'sheet' : 'spread')}
+                onClick={() => {
+                  // 手动切换以用户为准, 清除“收起自动摊开”带来的展开还原标记
+                  sheetAutoSpreadRef.current = false
+                  setPaperLayout(paperLayout === 'spread' ? 'sheet' : 'spread')
+                }}
                 className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent"
                 title={paperLayout === 'spread' ? t('examTemplate.singlePage') : t('examTemplate.spreadPage')}
               >
@@ -749,7 +831,11 @@ export function ExamSession() {
               </button>
             </div>
           </div>
-          <div key={paperLayout} className="wb-fade-in flex-1 overflow-y-auto">
+          {/* 单页长卷由外层滚动; 双页摊开由 PaperSpreadView 内部 scroller 滚动, 外层不再滚动, 避免右侧叠两根滚动条 */}
+          <div
+            key={paperLayout}
+            className={cn('wb-fade-in flex-1 min-h-0', paperLayout === 'spread' ? 'overflow-hidden' : 'overflow-y-auto')}
+          >
             <PaperPreview
               title={template?.name ?? t('exam.title')}
               meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${questions.length} 题`}
@@ -919,6 +1005,104 @@ export function ExamSession() {
                       onChange={(e) => answerQuestion(q.id, e.target.value)}
                     />
                   )}
+                </div>
+              )
+            }
+
+            if (type === 'case_analysis') {
+              const subs = q.case_questions ?? []
+              const cur: CaseAnswer =
+                currentAnswer && typeof currentAnswer === 'object' && !Array.isArray(currentAnswer) && 'subs' in currentAnswer
+                  ? (currentAnswer as CaseAnswer)
+                  : { subs: [] }
+              const subValue = (id: string) => cur.subs.find((s) => s.id === id)?.value
+              const setSub = (id: string, value: CorrectAnswer) => {
+                answerQuestion(q.id, { subs: [...cur.subs.filter((s) => s.id !== id), { id, value }] })
+              }
+              const inputCls = 'w-full h-9 px-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+              return (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">案例分析题 · 共 {subs.length} 个小题，均基于上方材料作答</p>
+                  {subs.length === 0 && <p className="text-sm text-muted-foreground">该案例尚未配置小题</p>}
+                  {subs.map((sub, si) => {
+                    const val = subValue(sub.id)
+                    const isSingle = sub.type === 'single_choice'
+                    const isMulti = sub.type === 'multi_select'
+                    const isTF = sub.type === 'true_false'
+                    const isJudge = sub.type === 'judge_correct'
+                    const isFill = sub.type === 'fill_blank'
+                    const isShort = sub.type === 'short_answer'
+                    const choice = isSingle || isMulti
+                    const blanks = isFill ? Math.max(1, (sub.text.match(/_{2,}/g) || []).length) : 0
+                    const blankVals = Array.isArray(val) ? (val as string[]) : val ? [String(val)] : Array(blanks).fill('')
+                    return (
+                      <div key={sub.id} className="space-y-2 rounded-lg border p-3">
+                        <p className="text-sm leading-relaxed"><span className="mr-1.5 font-semibold text-muted-foreground">({si + 1})</span>{sub.text}</p>
+                        {choice && (
+                          <div className="space-y-1.5">
+                            {sub.options.map((opt, oi) => {
+                              const checked = isSingle ? val === oi : Array.isArray(val) && (val as number[]).includes(oi)
+                              return (
+                                <button key={oi} onClick={() => {
+                                  if (isSingle) setSub(sub.id, oi)
+                                  else {
+                                    const arr = Array.isArray(val) ? [...(val as number[])] : []
+                                    setSub(sub.id, arr.includes(oi) ? arr.filter((x) => x !== oi) : [...arr, oi])
+                                  }
+                                }}
+                                  className={cn('w-full text-left flex items-center gap-3 p-2.5 rounded-lg border transition-all text-sm',
+                                    checked ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30 hover:bg-accent/50')}>
+                                  <span className={cn('w-5 h-5 border-2 flex items-center justify-center shrink-0 text-[10px] font-bold',
+                                    isMulti ? 'rounded' : 'rounded-full',
+                                    checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/30')}>
+                                    {checked ? (isMulti ? '✓' : '●') : OPTION_LABELS[oi]}
+                                  </span>
+                                  <span>{opt}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                        {(isTF || isJudge) && (
+                          <div className="flex gap-3">
+                            {[true, false].map((v) => {
+                              const on = v ? val === true : isTF ? val === false : val !== null && val !== undefined && val !== true
+                              return (
+                                <button key={String(v)} onClick={() => setSub(sub.id, v ? true : (isJudge ? '' : false))}
+                                  className={cn('flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all',
+                                    on ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30')}>
+                                  {v ? '✓ 正确' : '✗ 错误'}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                        {isJudge && val !== null && val !== undefined && val !== true && (
+                          <input className={inputCls} value={typeof val === 'string' ? val : ''}
+                            onChange={(e) => setSub(sub.id, e.target.value)} placeholder="输入修正后的正确表述" />
+                        )}
+                        {isFill && (
+                          <div className="space-y-2">
+                            {Array.from({ length: blanks }).map((_, bi) => (
+                              <div key={bi} className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground w-6 shrink-0">({bi + 1})</span>
+                                <input className={inputCls} value={blankVals[bi] ?? ''}
+                                  onChange={(e) => {
+                                    const next = [...(Array.isArray(val) ? (val as string[]) : Array(blanks).fill(''))]
+                                    next[bi] = e.target.value
+                                    setSub(sub.id, next)
+                                  }} placeholder={`第 ${bi + 1} 个空`} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {isShort && (
+                          <input className={inputCls} value={typeof val === 'string' ? val : ''}
+                            onChange={(e) => setSub(sub.id, e.target.value)} placeholder="输入简答答案" />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             }

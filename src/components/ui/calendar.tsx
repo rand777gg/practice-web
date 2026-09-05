@@ -6,10 +6,11 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
 } from "lucide-react"
-import { DayButton, DayPicker, getDefaultClassNames } from "react-day-picker"
+import { DayButton, DayPicker, getDefaultClassNames, type DropdownProps } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 function Calendar({
   className,
@@ -165,6 +166,7 @@ function Calendar({
             </td>
           )
         },
+        Dropdown: CalendarDropdown,
         ...components,
       }}
       {...props}
@@ -207,6 +209,33 @@ function CalendarDayButton({
       )}
       {...props}
     />
+  )
+}
+
+/**
+ * 主题化年月下拉: 替代 react-day-picker 默认原生 <select>(其浏览器弹层无法跟随主题)。
+ * 仅 captionLayout="dropdown" 时由 DayPicker 渲染。
+ */
+function CalendarDropdown({ options = [], value, onChange, disabled, "aria-label": ariaLabel }: DropdownProps) {
+  return (
+    <Select
+      value={value == null ? undefined : String(value)}
+      onValueChange={(v) =>
+        onChange?.({ target: { value: v } } as unknown as React.ChangeEvent<HTMLSelectElement>)
+      }
+      disabled={disabled}
+    >
+      <SelectTrigger size="none" aria-label={ariaLabel} className="h-6 min-w-14 px-1.5 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={String(o.value)} disabled={o.disabled}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

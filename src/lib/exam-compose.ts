@@ -21,7 +21,12 @@ export function buildComposeSections(req: ComposeRequest) {
   return hasSections
     ? req.template!.sections
         .filter((s) => s.count > 0)
-        .map((s) => ({ type: s.type, count: s.count, categories: s.categories ?? [] }))
+        .map((s) => ({
+          type: s.type,
+          count: s.count,
+          categories: s.categories ?? [],
+          subject: s.subject?.length ? s.subject : null,
+        }))
     : [{ type: null, count: Math.max(1, Math.min(EXAM_MAX_COUNT, req.questionCount)), categories: [] }]
 }
 
@@ -31,7 +36,7 @@ export async function composeExamIds(req: ComposeRequest): Promise<ComposeResult
   if (sections.length === 0) return { questionIds: [], stats: [] }
 
   const hasSections = (req.template?.sections?.length ?? 0) > 0
-  const subjectFilter = req.template?.subject ? [req.template.subject] : req.subjects?.length ? req.subjects : null
+  const subjectFilter = req.template?.subject?.length ? req.template.subject : req.subjects?.length ? req.subjects : null
 
   const { data, error } = await supabase.rpc('compose_exam', {
     p_subjects: subjectFilter,
@@ -85,10 +90,20 @@ export function buildPaperSections(questions: Question[], template: ExamTemplate
   const used = new Set<string>()
   for (const s of template.sections) {
     if (!s.type) continue
-    const picked = questions.filter((q) => q.question_type === s.type && !used.has(q.id))
+    const picked = questions.filter(
+      (q) =>
+        q.question_type === s.type &&
+        !used.has(q.id) &&
+        (!s.subject?.length || (q.subject != null && s.subject.includes(q.subject))),
+    )
     if (picked.length === 0) continue
     picked.forEach((q) => used.add(q.id))
-    out.push({ name: QUESTION_TYPE_LABELS[s.type] ?? s.type, scorePerQuestion: s.score, questions: picked })
+    const baseName = QUESTION_TYPE_LABELS[s.type] ?? s.type
+    out.push({
+      name: s.subject?.length ? `${baseName}（${s.subject.join('、')}）` : baseName,
+      scorePerQuestion: s.score,
+      questions: picked,
+    })
   }
   const rest = questions.filter((q) => !used.has(q.id))
   if (rest.length) out.push({ name: QUESTION_TYPE_LABELS[rest[0].question_type] ?? '其他', scorePerQuestion: 0, questions: rest })
