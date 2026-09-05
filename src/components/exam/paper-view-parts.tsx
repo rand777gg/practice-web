@@ -25,6 +25,23 @@ function fmtScore(v: number): string {
   return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100)
 }
 
+/** 卷面分值手写体: 优先本地子集 ScoreHand(方正硬笔行书简体), 未加载回退行楷/楷体 */
+export const SCORE_HAND_FONT =
+  "'ScoreHand','FZXingKai-B04S','方正硬笔行书简体','STXingkai','Xingkai SC','KaiTi','楷体',cursive"
+
+/** 得分框内容: 某题型对应的分值(每大题得分框填入该题分值), 红色手写行书呈现 */
+export function ScoreValue({ score, className }: { score: number; className?: string }) {
+  return (
+    <span
+      className={cn('inline-flex items-baseline gap-px whitespace-nowrap', className)}
+      style={{ fontFamily: SCORE_HAND_FONT, color: '#d64545' }}
+    >
+      <span style={{ fontSize: '5em', lineHeight: 1 }}>{fmtScore(score)}</span>
+      <span style={{ fontSize: '0.6em' }}>分</span>
+    </span>
+  )
+}
+
 /** 案例小题作答值 → 文本 (卷面批改展示) */
 function subValueText(sub: CaseQuestion, value: CorrectAnswer | null | undefined): string {
   if (value === null || value === undefined) return DASH
@@ -630,6 +647,7 @@ export function PaperLayoutOverlays({ layout }: { layout: ExamTemplateLayout }) 
 export function PaperFooter({ layout }: { layout: ExamTemplateLayout }) {
   const { t } = useT()
   const text = layout.headerFooter.footerText
+  if (!text && !layout.headerFooter.showPageNumber) return null
   return (
     <div className="paper-footer">
       <span>{text || ''}</span>

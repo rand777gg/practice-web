@@ -37,7 +37,7 @@ import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { getMfaStatus, getDeviceToken, type MfaStatus } from '@/lib/mfa'
 import { getDeviceInfoSync } from '@/lib/device-info'
 import { Icon } from '@/lib/icons'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, FileText, Columns2, LayoutGrid } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
 import { cn } from '@/lib/utils'
@@ -67,7 +67,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -718,6 +718,37 @@ export function Component() {
          <div className="border-t pt-4" />
         </>
        )}
+
+       {/* Exam default view */}
+       <div className="border-t pt-4" />
+       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 mr-2">
+         <p className="text-sm">{t('settings.examViewMode')}</p>
+         <p className="text-xs text-muted-foreground">{t('settings.examViewModeDesc')}</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+         {([
+          { value: 'card', label: t('examTemplate.cardMode'), Icon: LayoutGrid },
+          { value: 'sheet', label: t('examTemplate.singlePage'), Icon: FileText },
+          { value: 'spread', label: t('examTemplate.spreadPage'), Icon: Columns2 },
+         ] as const).map(({ value, label, Icon }) => (
+          <button
+           key={value}
+           type="button"
+           onClick={() => setExamViewMode(value)}
+           className={cn(
+            'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs transition-colors',
+            examViewMode === value
+             ? 'border-primary bg-accent text-accent-foreground'
+             : 'text-muted-foreground hover:bg-accent',
+           )}
+          >
+           <Icon className="h-3.5 w-3.5" />
+           {label}
+          </button>
+         ))}
+        </div>
+       </div>
 
        {/* Code theme */}
        <div>

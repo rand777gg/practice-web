@@ -1,16 +1,15 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
 import { fetchQuestionsByIds } from '@/lib/exam-compose'
-import { useAuthStore } from '@/stores/auth-store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { QuestionCard } from '@/components/questions/QuestionCard'
 import { ExamPaperReview } from './ExamPaperReview'
 import { questionItemCount, questionCorrectItemCount } from '@/lib/answer-utils'
-import type { ExamSession, UserAnswer, Question, CorrectAnswer } from '@/types'
-import { RotateCcw, Home, FileText, LayoutGrid } from 'lucide-react'
+import type { ExamSession, UserAnswer, Question, CorrectAnswer, ExamTemplate, ExamTemplateSection } from '@/types'
+import { RotateCcw, Home, FileText, Columns2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 
@@ -33,14 +32,12 @@ function viewBtnClass(on: boolean) {
 
 export function ExamResultCard({ sessionId }: Props) {
   const { t } = useT()
-  const { profile } = useAuthStore()
-  const isAdmin = profile?.role === 'admin'
   const [session, setSession] = useState<ExamSession | null>(null)
   const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
   const [paperQuestions, setPaperQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [paperLoading, setPaperLoading] = useState(true)
-  const [view, setView] = useState<'paper' | 'card'>('paper')
+  const [view, setView] = useState<'sheet' | 'spread'>('spread')
 
   useEffect(() => {
     async function load() {
@@ -94,6 +91,52 @@ export function ExamResultCard({ sessionId }: Props) {
     [paperQuestions, answers],
   )
 
+  // 历史记录元信息: 开考时写入的 模板科目标题 + 分区分值快照(旧数据只存了标题字符串)
+  interface StoredExamMeta { title?: string; sections?: ExamTemplateSection[] }
+  const examMeta = useMemo<StoredExamMeta | null>(() => {
+    if (!session) return null
+    try {
+      const map = JSON.parse(localStorage.getItem(EXAM_PAPER_TITLE_KEY) || '{}') as Record<string, unknown>
+      const v = map[session.id]
+      if (typeof v === 'string' && v.trim()) return { title: v.trim() }
+      if (v && typeof v === 'object') {
+        const o = v as StoredExamMeta
+        const title = typeof o.title === 'string' && o.title.trim() ? o.title.trim() : ''
+        const sections = Array.isArray(o.sections) ? o.sections : []
+        if (title || sections.length) return { title, sections }
+      }
+    } catch { /* localStorage 不可用 */ }
+    return null
+  }, [session])
+  const paperTitle = examMeta?.title ?? ''
+
+  // 用存储的分区快照还原轻量模板, 让回顾卷的「题型得分框/大题名」与当时考试一致
+  const reviewTemplate = useMemo<ExamTemplate | null>(() => {
+    const secs = examMeta?.sections
+    if (!secs || secs.length === 0) return null
+    return {
+      id: '__stored__',
+      user_id: null,
+      name: examMeta?.title ?? '',
+      subject: null,
+      duration_min: 0,
+      order_mode: 'section',
+      sample_mode: 'random',
+      sections: secs,
+      sort_order: 0,
+      created_at: '',
+      updated_at: '',
+    }
+  }, [examMeta])
+
+  // 加载“老师批改”手写字体(本地 ScoreHand 子集, 无则回退系统行楷/楷体); 无需外链
+  useEffect(() => {
+    // 触发 @font-face 预加载, 避免首次渲染时回退字体闪烁
+    if (document.fonts && typeof document.fonts.load === 'function') {
+      void document.fonts.load('16px ScoreHand')
+    }
+  }, [])
+
   const subjectStats = useMemo(() => {
     const map = new Map<string, { total: number; correct: number }>()
     for (const a of answers) {
@@ -127,12 +170,6 @@ export function ExamResultCard({ sessionId }: Props) {
   const avgSec = session.total_questions > 0
     ? Math.round(session.duration_ms / session.total_questions / 1000)
     : 0
-  const rateColor =
-    score >= 90
-      ? 'text-emerald-600 dark:text-emerald-400'
-      : score >= 60
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-red-600 dark:text-red-400'
 
   return (
     <div className="space-y-6">
@@ -140,13 +177,21 @@ export function ExamResultCard({ sessionId }: Props) {
       <Card className="border-0 shadow-none">
         <CardContent className="p-6">
           <div className="flex flex-wrap items-start gap-x-10 gap-y-6">
-            <div className="min-w-[160px]">
+            <div className="min-w-[170px]">
               <p className="text-sm text-muted-foreground">{t('exam.score')}</p>
-              <p className={cn('text-5xl font-bold tabular-nums leading-tight', rateColor)}>
-                {score}
-                <span className="ml-0.5 text-2xl font-semibold text-muted-foreground">%</span>
+              {/* 老师批改红笔手写风格 */}
+              <p
+                className="mt-1 flex items-baseline gap-1 leading-none"
+                style={{
+                  fontFamily: "'ScoreHand','Ma Shan Zheng','ZCOOL KuaiLe','KaiTi','楷体',cursive",
+                  color: '#e11d48',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                <span className="text-6xl sm:text-7xl">{score}</span>
+                <span className="text-2xl">分</span>
               </p>
-              <p className="mt-1.5 text-sm text-muted-foreground">
+              <p className="mt-2 text-sm text-muted-foreground">
                 {t('exam.correct')} {correct} · {t('exam.wrong')} {wrong}
               </p>
             </div>
@@ -200,55 +245,43 @@ export function ExamResultCard({ sessionId }: Props) {
           <div className="ml-auto flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setView('paper')}
-              className={viewBtnClass(view === 'paper')}
-              title={t('examTemplate.paperMode')}
+              onClick={() => setView('sheet')}
+              className={viewBtnClass(view === 'sheet')}
+              title={t('examTemplate.singlePage')}
             >
               <FileText className="h-3 w-3" />
-              {t('examTemplate.paperMode')}
+              {t('examTemplate.singlePage')}
             </button>
             <button
               type="button"
-              onClick={() => setView('card')}
-              className={viewBtnClass(view === 'card')}
-              title={t('examTemplate.cardMode')}
+              onClick={() => setView('spread')}
+              className={viewBtnClass(view === 'spread')}
+              title={t('examTemplate.spreadPage')}
             >
-              <LayoutGrid className="h-3 w-3" />
-              {t('examTemplate.cardMode')}
+              <Columns2 className="h-3 w-3" />
+              {t('examTemplate.spreadPage')}
             </button>
           </div>
         </div>
 
-        {view === 'paper' ? (
-          paperLoading ? (
-            <div className="flex justify-center py-12">
-              <Spinner />
-            </div>
-          ) : (
-            <div className="rounded-lg bg-muted/30">
-              <ExamPaperReview
-                title={t('exam.reviewPaperTitle')}
-                meta={[
-                  session.completed_at ? new Date(session.completed_at).toLocaleString() : '',
-                  `${t('exam.score')} ${session.score ?? 0}%`,
-                ].filter(Boolean).join(' · ')}
-                questions={paperList}
-                answers={answersMap}
-                results={resultsMap}
-              />
-            </div>
-          )
+        {paperLoading ? (
+          <div className="flex justify-center py-12">
+            <Spinner />
+          </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {answers.map((ans) => (
-              <QuestionCard
-                key={ans.id}
-                question={ans.questions}
-                selectedAnswer={ans.selected_answer}
-                showResult
-                showEditLink={isAdmin}
-              />
-            ))}
+          <div className="rounded-lg bg-muted/30">
+            <ExamPaperReview
+              title={paperTitle || t('exam.reviewPaperTitle')}
+              meta={[
+                session.completed_at ? new Date(session.completed_at).toLocaleString() : '',
+                `${t('exam.score')} ${session.score ?? 0}%`,
+              ].filter(Boolean).join(' · ')}
+              questions={paperList}
+              answers={answersMap}
+              results={resultsMap}
+              layout={view}
+              template={reviewTemplate}
+            />
           </div>
         )}
       </div>

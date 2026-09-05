@@ -235,6 +235,8 @@ export interface ExamSession {
   duration_ms: number
   started_at: string
   completed_at: string | null
+  /** 开考时的模板快照(名称/封面/排版/分区分值); 刷新续考时还原卷首与工具栏, 模板后续被改/删不影响本场 */
+  template?: ExamTemplate | null
 }
 
 /** 整卷排序: section=按分区顺序拼接, shuffle=全卷打散 */

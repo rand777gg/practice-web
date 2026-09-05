@@ -88,19 +88,26 @@ export const useExamStore = create<ExamState>((set, get) => ({
     // 总题数按「小题」展开: 案例分析题 = 小题数, 其余 = 1
     const totalItems = orderedQuestions.reduce((sum, q) => sum + questionItemCount(q), 0)
 
-    const { data: session, error: sError } = await supabase
+    // 模板快照随会话入库: 刷新/续考后可还原封面、工具栏名称与排版(与模板本体解耦)
+    const baseSessionRow = {
+      user_id: userId,
+      total_questions: totalItems,
+      duration_ms: durationMs,
+      question_ids: questionIds,
+      current_index: 0,
+      status: 'in_progress',
+      correct_count: 0,
+    }
+    const withTpl = await supabase
       .from('exam_sessions')
-      .insert({
-        user_id: userId,
-        total_questions: totalItems,
-        duration_ms: durationMs,
-        question_ids: questionIds,
-        current_index: 0,
-        status: 'in_progress',
-        correct_count: 0,
-      })
+      .insert({ ...baseSessionRow, template: template ?? null })
       .select()
       .single()
+    // DB 尚未执行加列迁移(缺 template 列, PGRST204)时降级为旧插入, 不阻塞开考
+    const tplColumnMissing = template != null && withTpl.error?.message?.includes('template')
+    const { data: session, error: sError } = tplColumnMissing
+      ? await supabase.from('exam_sessions').insert(baseSessionRow).select().single()
+      : withTpl
 
     if (sError || !session) {
       set({ isLoading: false, error: sError?.message ?? 'Failed to create session' })
@@ -188,15 +195,18 @@ export const useExamStore = create<ExamState>((set, get) => ({
     if (session) {
       const q = questions.find(x => x.id === questionId)
       const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions) : false
-      supabase.from('user_answers').upsert({
-        user_id: session.user_id,
-        question_id: questionId,
-        selected_answer: answer as any,
-        is_correct: isC,
-        mode: 'exam',
-        exam_session_id: session.id,
-        answered_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,question_id,exam_session_id' }).then()
+      void (async () => {
+        const { error: saveErr } = await supabase.from('user_answers').upsert({
+          user_id: session.user_id,
+          question_id: questionId,
+          selected_answer: answer as any,
+          is_correct: isC,
+          mode: 'exam',
+          exam_session_id: session.id,
+          answered_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,question_id,exam_session_id' })
+        if (saveErr) console.error('[exam] auto-save answer failed:', saveErr)
+      })()
     }
   },
 
@@ -276,7 +286,10 @@ export const useExamStore = create<ExamState>((set, get) => ({
     const score = totalItems > 0 ? Math.round((correctItems / totalItems) * 100) : 0
 
     if (answerRecords.length > 0) {
-      const { error: aError } = await supabase.from('user_answers').insert(answerRecords)
+      // upsert(而非 insert): 作答中的自动保存可能已写过同键行, 交卷时覆盖为最终判定, 避免重复键
+      const { error: aError } = await supabase
+        .from('user_answers')
+        .upsert(answerRecords, { onConflict: 'user_id,question_id,exam_session_id' })
       if (aError) {
         set({ isSubmitting: false, error: aError.message })
         return

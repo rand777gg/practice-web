@@ -2435,3 +2435,24 @@ ALTER TABLE public.profiles
   CHECK (goal_type IN ('kaoyan', 'gongkao', 'final', 'other') OR goal_type IS NULL);
 
 COMMENT ON COLUMN public.profiles.goal_type IS 'kaoyan=考研,gongkao=考公,final=期末考,other=其他考试;NULL=未设定';
+
+
+-- ============================================================================
+-- Section 30: user_answers 考试作答自动保存唯一键 —— 修复「考试中刷新丢答题记录」
+--   作答中每选一题 exam-store 都会 upsert(onConflict: user_id,question_id,exam_session_id);
+--   缺该唯一索引时 upsert 恒报 21000,答案从未落库,刷新续考便读不到。
+--   练习行 exam_session_id 为 NULL,PostgreSQL 唯一约束将 NULL 视作互异,不影响重复练习。
+-- ============================================================================
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_answers_session
+  ON public.user_answers (user_id, question_id, exam_session_id);
+
+
+-- ============================================================================
+-- Section 31: exam_sessions.template —— 开考模板快照,修复「刷新后封面/工具栏模板名消失」
+--   存 JSON 快照(name/cover/layout/sections),与模板本体解耦(后续改/删模板不影响本场)。
+--   前端在列缺失时自动降级插入,故先部署代码后执行本迁移也不会开考失败。
+-- ============================================================================
+ALTER TABLE public.exam_sessions
+  ADD COLUMN IF NOT EXISTS template JSONB;
+
+COMMENT ON COLUMN public.exam_sessions.template IS '开考时模板快照(name/cover/layout/sections);刷新续考时还原卷首与工具栏名称,缺列时前端降级不落快照';

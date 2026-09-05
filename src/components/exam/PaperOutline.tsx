@@ -14,6 +14,7 @@ import {
   type PaperTextEditReq,
 } from '@/lib/paper-layout'
 import { useT } from '@/i18n/use-t'
+import { ScoreValue } from './paper-view-parts'
 import type { ExamTemplateSection, QuestionType } from '@/types'
 
 interface Props {
@@ -211,7 +212,7 @@ export function PaperOutline({ title, meta, sections, className, compact, cover,
                     </span>
                   </h2>
                   <span className="shrink-0 border border-foreground/35 px-3 text-[10px] leading-5 text-muted-foreground">
-                    {t('paperPreview.scoreBox')}
+                    <ScoreValue score={g.section.score} />
                   </span>
                 </div>
 

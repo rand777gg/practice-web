@@ -4,6 +4,8 @@ export const EXAM_MAX_COUNT = 200
 export const EXAM_DEFAULT_DURATION_MIN = 60
 export const EXAM_MIN_DURATION_MIN = 5
 export const EXAM_MAX_DURATION_MIN = 300
+/** localStorage: { sessionId: { title, sections } } —— 开考时记录模板标题与分区分值, 供历史/成绩页回顾时显示卷首标题与得分框 */
+export const EXAM_PAPER_TITLE_KEY = 'exam_paper_title_map'
 export const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 export const QUESTION_TYPE_OPTIONS = [

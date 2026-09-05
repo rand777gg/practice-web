@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Hand, Maximize, Minimize, Minus, Plus } from 'lucide-react'
+import { Hand, Maximize, Minimize, Minus, Plus, Crosshair } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -36,6 +36,7 @@ import {
   PageFooterBar,
   PaperLayoutOverlays,
   QuestionBody,
+  ScoreValue,
   type PaperGrade,
 } from './paper-view-parts'
 import { CN_NUM } from './paper-view-core'
@@ -81,6 +82,12 @@ interface Props {
    * 该元素内(如考试卷面的「模板名」顶栏), 不再以浮层盖在页面上; 不传则回退为左上角浮层。
    */
   toolbarAnchor?: HTMLElement | null
+  /** 自动定位当前题目(答题卡点题号之外的 currentQuestionId 变化是否跟随滚动) */
+  autoLocate?: boolean
+  /** 显式跳题请求令牌(答题卡点题号); 变化时无论 autoLocate 都强制滚动定位当前题目 */
+  locateNonce?: number
+  /** 工具栏「自动定位」开关回调; 不传则不显示该按钮 */
+  onToggleAutoLocate?: () => void
 }
 
 /* ---------------- 分页数据模型 ---------------- */
@@ -121,6 +128,9 @@ export function PaperSpreadView({
   cover,
   paperLayout,
   toolbarAnchor = null,
+  autoLocate = false,
+  locateNonce = 0,
+  onToggleAutoLocate,
 }: Props) {
   const { t } = useT()
 
@@ -294,14 +304,16 @@ export function PaperSpreadView({
                 ）
               </span>
             </h2>
-            <span
-              className={cn(
-                'shrink-0',
-                scoreBoxClass ?? 'border border-foreground/35 px-3 text-[10px] leading-5 text-muted-foreground',
-              )}
-            >
-              {t('paperPreview.scoreBox')}
-            </span>
+            {readOnly && (
+              <span
+                className={cn(
+                  'shrink-0',
+                  scoreBoxClass ?? 'border border-foreground/35 px-3 text-[10px] leading-5 text-muted-foreground',
+                )}
+              >
+                <ScoreValue score={sec.scorePerQuestion} />
+              </span>
+            )}
           </div>
         )
       }
@@ -462,7 +474,8 @@ export function PaperSpreadView({
       case 'qTail':
         return 'mb-3'
       case 'secHead':
-        return 'mb-2'
+        // 题型分区标题: 顶部 1rem 上边距(与上一个小题底部 12px margin 合并后净间隔约 1rem), 题型之间更疏朗
+        return 'mt-4 mb-2'
       default:
         return 'mb-5'
     }
@@ -481,7 +494,10 @@ export function PaperSpreadView({
     const children = Array.from(root.children) as HTMLElement[]
     if (children.length === 0) return
     const rects = children.map((c) => c.getBoundingClientRect())
-    const advances: number[] = rects.map((r, i) => (i === 0 ? r.height : r.top - rects[i - 1].top))
+    // 每个原子块的“占位高度”= 本块顶部到下一块顶部的距离(含本块底部间距), 逐块累加即真实占用;
+    // 最后一个块没有后继, 取自身高度。此前误用「与上一块的差值」, 会把前一块的高度记到当前块头上,
+    // 导致矮块(如分区头)后面紧跟的超高材料块被低估高度而合页 + 被 overflow:hidden 裁掉下半部分。
+    const advances: number[] = rects.map((r, i) => (i < rects.length - 1 ? rects[i + 1].top - r.top : r.height))
     const contentH = geom.contentH - 0.5
 
     const out: PageData[] = []
@@ -644,13 +660,22 @@ export function PaperSpreadView({
     return () => document.removeEventListener('fullscreenchange', h)
   }, [])
 
-  /* ---------------- 答题卡跳题: 定位到题目所在行并闪烁 ---------------- */
+  /* ---------------- 定位当前题目: 显式跳题(答题卡)始终滚动; 其它题目变化仅在 autoLocate 开启时跟随 ---------------- */
   const rowEls = useRef<Map<number, HTMLElement>>(new Map())
   const [flashQid, setFlashQid] = useState<string | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const prevLocateRef = useRef(locateNonce)
+  const prevQidRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (readOnly || !currentQuestionId || !pages) return
+    const explicit = locateNonce !== prevLocateRef.current
+    prevLocateRef.current = locateNonce
+    const sameQid = currentQuestionId === prevQidRef.current
+    prevQidRef.current = currentQuestionId
+    // 默认不自动跟随: 仅显式跳题(如答题卡点题号)或开启「自动定位」时滚动到该题
+    if (!explicit && !autoLocate) return
+    if (!explicit && sameQid) return
     let pageIdx = -1
     for (let p = 0; p < pages.length; p++) {
       for (const i of pages[p].indexes) {
@@ -689,7 +714,7 @@ export function PaperSpreadView({
       const timer = setTimeout(() => setFlashQid(null), 1200)
       return () => clearTimeout(timer)
     }
-  }, [currentQuestionId, pages, items, readOnly, listPadTop])
+  }, [currentQuestionId, pages, items, readOnly, listPadTop, autoLocate, locateNonce])
 
   /* ---------------- 渲染 ---------------- */
   const rows = useMemo(() => {
@@ -805,6 +830,21 @@ export function PaperSpreadView({
       >
         {isFs ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
       </button>
+      {/* 自动定位当前题目: 点击启用/关闭(默认关闭); 开启后题目变化自动跟随滚动定位 */}
+      {onToggleAutoLocate && (
+        <button
+          type="button"
+          aria-pressed={autoLocate}
+          onClick={onToggleAutoLocate}
+          title={t('paperPreview.autoLocate')}
+          className={cn(
+            'flex h-7 w-7 items-center justify-center rounded hover:bg-muted',
+            autoLocate && 'bg-muted text-primary',
+          )}
+        >
+          <Crosshair className="h-3.5 w-3.5" />
+        </button>
+      )}
     </>
   )
 

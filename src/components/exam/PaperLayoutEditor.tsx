@@ -457,6 +457,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
           />
           {t('examTemplate.layout.showPaperMeta')}
         </label>
+        <label className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+          <Checkbox
+            checked={layout.formalExam}
+            onCheckedChange={(v) => patch({ formalExam: v === true })}
+          />
+          {t('examTemplate.layout.formalExam')}
+        </label>
+        <p className="pl-4 text-[10px] text-muted-foreground">{t('examTemplate.layout.formalExamHint')}</p>
       </section>
 
       {/* 各区块字体样式表 */}

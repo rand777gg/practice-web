@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,6 +40,22 @@ export function ExamTemplatePanel({ userId, subjects, categories, value, onChang
 
   const questions = value ? totalQuestions(value.sections) : 0
   const score = value ? totalScore(value.sections) : 0
+
+  // 模板涵盖的学科/分类信息: 整卷学科 + 各分区学科并集, 各分区分类并集
+  const scopeSubjects = useMemo(() => {
+    if (!value) return [] as string[]
+    const set = new Set<string>()
+    for (const s of value.subject ?? []) if (s) set.add(s)
+    for (const sec of value.sections) for (const s of sec.subject ?? []) if (s) set.add(s)
+    return [...set]
+  }, [value])
+  const scopeCategories = useMemo(() => {
+    if (!value) return [] as string[]
+    const set = new Set<string>()
+    for (const sec of value.sections) for (const c of sec.categories ?? []) if (c) set.add(c)
+    return [...set]
+  }, [value])
+  const SCOPE_SHOW_MAX = 6
 
   return (
     <div className="space-y-2">
@@ -115,6 +131,33 @@ export function ExamTemplatePanel({ userId, subjects, categories, value, onChang
           <span className="rounded bg-muted px-1.5 py-0.5">{t(`examTemplate.sample_${value.sample_mode}`)}</span>
           {isBuiltinTemplate(value.id) && (
             <span className="rounded bg-muted px-1.5 py-0.5">{t('examTemplate.builtin')}</span>
+          )}
+        </div>
+      )}
+
+      {value && (scopeSubjects.length > 0 || scopeCategories.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+          {scopeSubjects.length > 0 && (
+            <>
+              <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground/80">{t('examTemplate.scopeSubjects')}</span>
+              {scopeSubjects.slice(0, SCOPE_SHOW_MAX).map((s) => (
+                <span key={s} className="rounded bg-muted/70 px-1.5 py-0.5">{s}</span>
+              ))}
+              {scopeSubjects.length > SCOPE_SHOW_MAX && (
+                <span className="rounded bg-muted/70 px-1.5 py-0.5">+{scopeSubjects.length - SCOPE_SHOW_MAX}</span>
+              )}
+            </>
+          )}
+          {scopeCategories.length > 0 && (
+            <>
+              <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground/80">{t('examTemplate.scopeCategories')}</span>
+              {scopeCategories.slice(0, SCOPE_SHOW_MAX).map((c) => (
+                <span key={c} className="rounded bg-muted/70 px-1.5 py-0.5">{c}</span>
+              ))}
+              {scopeCategories.length > SCOPE_SHOW_MAX && (
+                <span className="rounded bg-muted/70 px-1.5 py-0.5">+{scopeCategories.length - SCOPE_SHOW_MAX}</span>
+              )}
+            </>
           )}
         </div>
       )}

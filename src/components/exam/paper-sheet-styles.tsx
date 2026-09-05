@@ -180,7 +180,7 @@ export function PaperSheetStyles() {
       /* ===== 页脚 (footer) + 页码 ===== */
       .paper-footer {
         margin-top: 6mm;
-        padding-top: 2mm;
+        padding-top: 4mm; /* 与上方分隔线拉开距离(页码/页脚文字不再贴着线) */
         border-top: 1px solid hsl(var(--border));
         display: flex;
         align-items: center;

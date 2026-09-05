@@ -23,6 +23,17 @@ const LIGHT_CODE_THEME_KEY = 'light_code_theme'
 const FONT_FAMILY_KEY = 'font_family'
 const FONT_SIZE_KEY = 'font_size'
 const FONT_WEIGHT_KEY = 'font_weight'
+const EXAM_VIEW_MODE_KEY = 'exam_view_mode'
+
+/** 考试界面的呈现模式: card=卡片模式 / sheet=卷面·单页摊开 / spread=卷面·双页摊开 */
+export type ExamViewMode = 'card' | 'sheet' | 'spread'
+
+export const EXAM_VIEW_MODES: ExamViewMode[] = ['card', 'sheet', 'spread']
+
+function loadExamViewMode(): ExamViewMode {
+  const v = localStorage.getItem(EXAM_VIEW_MODE_KEY)
+  return v === 'sheet' || v === 'spread' || v === 'card' ? v : 'card'
+}
 
 export const FONT_OPTIONS = [
   { value: 'Noto Sans SC',       label: '思源黑体',   google: 'Noto+Sans+SC',       weights: '300;400;500;700' },
@@ -163,6 +174,7 @@ interface SettingsState {
   bottomNavHideDelay: number
   practiceShortcuts: ShortcutConfig
   defaultPage: string
+  examViewMode: ExamViewMode
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -176,6 +188,7 @@ interface SettingsState {
   setBottomNavHideDelay: (value: number) => void
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   setDefaultPage: (page: string) => void
+  setExamViewMode: (value: ExamViewMode) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -206,6 +219,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   bottomNavHideDelay: loadBottomNavHideDelay(),
   practiceShortcuts: loadPracticeShortcuts(),
   defaultPage: loadDefaultPage(),
+  examViewMode: loadExamViewMode(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -270,6 +284,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setDefaultPage: (page) => {
     localStorage.setItem(DEFAULT_PAGE_KEY, page)
     set({ defaultPage: page })
+  },
+  setExamViewMode: (value) => {
+    localStorage.setItem(EXAM_VIEW_MODE_KEY, value)
+    set({ examViewMode: value })
   },
   isEnabled: (key) => get().flags[key],
 }))

@@ -157,6 +157,11 @@ export interface ExamTemplateLayout {
   /** 卷首是否显示 meta 行 (学科·时长·总分, 默认 false) */
   showPaperMeta: boolean
   /**
+   * 正式考试样式(真实考卷感): true 时在考试作答里, 封面「考生填涂信息表」的每一行
+   * 都要求填写完整后才允许交卷(仅考试交互; 不影响版式渲染)。
+   */
+  formalExam: boolean
+  /**
    * 是否允许题目/内容跨栏、跨页断开 (默认 false = 整题保持不跨页)。
    * 作用于多栏摊开与打印/导出时的 CSS break 规则; 双页分页视图的固定页分页不受此开关影响。
    */
@@ -192,6 +197,7 @@ export const DEFAULT_LAYOUT: ExamTemplateLayout = {
   coverOwnPage: true,
   showPaperTitle: false,
   showPaperMeta: false,
+  formalExam: false,
   allowFlowBreak: false,
   fontFamily: null,
   textBlocks: {},
@@ -350,6 +356,7 @@ export function normalizeLayout(raw: unknown): ExamTemplateLayout {
     coverOwnPage: pickBool(o, 'coverOwnPage', true),
     showPaperTitle: pickBool(o, 'showPaperTitle', false),
     showPaperMeta: pickBool(o, 'showPaperMeta', false),
+    formalExam: pickBool(o, 'formalExam', false),
     allowFlowBreak: pickBool(o, 'allowFlowBreak', false),
     fontFamily: pickStr(o, 'fontFamily') ?? null,
     textBlocks: pickTextBlocks(o),

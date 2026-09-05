@@ -3,6 +3,15 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* 卷面得分手写字体: 方正硬笔行书简体子集(public/fonts/score.woff2) */
+@font-face {
+  font-family: 'ScoreHand';
+  src: url('/fonts/score.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
