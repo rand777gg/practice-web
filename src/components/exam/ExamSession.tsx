@@ -30,12 +30,12 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
 import { PaperPreview } from './PaperPreview'
-import { buildPaperSections, composeExamIds, fetchQuestionsByIds, type PaperSection } from '@/lib/exam-compose'
+import { buildPaperSections, buildPlaceholderPaperSections, type PaperSection } from '@/lib/exam-compose'
 
 import {
   EXAM_DEFAULT_COUNT,
@@ -100,10 +100,11 @@ export function ExamSession() {
   const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
   const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>('sheet') // 卷面 单页摊开/双页摊开
   const [tab, setTab] = useState<'settings' | 'history'>('settings')
-  const [previewNonce, setPreviewNonce] = useState(0)
-  const [previewSections, setPreviewSections] = useState<PaperSection[]>([])
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewError, setPreviewError] = useState('')
+  // 选中模板后的「占位卷面」: 由本地占位题合成(不抽取题库、无网络请求)
+  const previewSections = useMemo<PaperSection[]>(
+    () => (template ? buildPlaceholderPaperSections(template) : []),
+    [template],
+  )
   const [paperNotice, setPaperNotice] = useState('')
   // 双页视图查看工具栏(缩放/平移/全屏)锚点: 桌面端挂在顶栏模板名右侧; 移动端回退浮层
   const [spreadToolbarEl, setSpreadToolbarEl] = useState<HTMLElement | null>(null)
@@ -208,48 +209,6 @@ export function ExamSession() {
     setSidebarCollapsed(true)
     setShowStart(false)
     setHasStarted(true)
-  }
-
-  // ── 实时卷面预览: 「设置」页下配置/模板变化(防抖)后自动组卷渲染, 无需再点「试卷预览」 ──
-  useEffect(() => {
-    if (!showStart || tab !== 'settings' || checkingSession || pendingSession) return
-    let cancelled = false
-    const count = Math.max(EXAM_MIN_COUNT, Math.min(EXAM_MAX_COUNT, questionCount || EXAM_DEFAULT_COUNT))
-    const timer = setTimeout(async () => {
-      setPreviewLoading(true)
-      setPreviewError('')
-      try {
-        const { questionIds } = await composeExamIds({
-          template,
-          questionCount: count,
-          subjects: selectedSubjects.length ? selectedSubjects : undefined,
-          categories: selectedCategories.length ? selectedCategories : undefined,
-          questionTypes: selectedTypes.length ? selectedTypes : undefined,
-        })
-        if (cancelled) return
-        if (questionIds.length === 0) {
-          setPreviewSections([])
-          setPreviewError(t('examTemplate.previewEmpty'))
-          return
-        }
-        setPreviewSections(buildPaperSections(await fetchQuestionsByIds(questionIds), template))
-      } catch (e) {
-        if (!cancelled) {
-          setPreviewSections([])
-          setPreviewError((e as Error).message || String(e))
-        }
-      } finally {
-        if (!cancelled) setPreviewLoading(false)
-      }
-    }, 500)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [showStart, tab, checkingSession, pendingSession, template, questionCount, selectedSubjects, selectedCategories, selectedTypes, previewNonce, t])
-
-  const rerollPreview = () => {
-    setPreviewNonce((n) => n + 1)
   }
 
   const handleResume = async () => {
@@ -569,45 +528,23 @@ export function ExamSession() {
                 </CardContent>
               </Card>
 
-              {/* ── 右侧: 实时卷面预览(选中模板/调整条件自动出卷) ── */}
+              {/* ── 右侧: 卷面占位预览(仅选中模板后显示; 题目为本地占位, 不抽取题库) ── */}
               <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card/30">
                 <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-background/70 px-3 py-2">
                   <FileText className="h-4 w-4 text-primary" />
                   <h2 className="text-sm font-semibold">{t('examTemplate.preview')}</h2>
                   <span className="hidden text-[10px] text-muted-foreground lg:inline">{t('exam.previewPaneHint')}</span>
-                  <button
-                    type="button"
-                    onClick={rerollPreview}
-                    disabled={previewLoading}
-                    className="ml-auto flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
-                  >
-                    <RefreshCw className={cn('h-3 w-3', previewLoading && 'animate-spin')} />
-                    {t('exam.refreshPreview')}
-                  </button>
                 </header>
                 <div className="flex-1 overflow-auto bg-neutral-200/40 p-3 dark:bg-neutral-950/40">
-                  {previewLoading ? (
-                    <div className="flex min-h-[380px] items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <Spinner />
-                      {t('exam.generatingPreview')}
-                    </div>
-                  ) : previewError ? (
-                    <div className="flex min-h-[380px] flex-col items-center justify-center gap-3 text-center">
-                      <p className="max-w-sm text-sm text-muted-foreground">{previewError}</p>
-                      <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={rerollPreview}>
-                        <RefreshCw className="h-3 w-3" />
-                        {t('exam.refreshPreview')}
-                      </Button>
+                  {!template ? (
+                    <div className="flex min-h-[380px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                      {t('exam.previewRequiresTemplate')}
                     </div>
                   ) : previewSections.length > 0 ? (
                     <PaperPreview
                       title={template?.name ?? t('exam.title')}
                       meta={[
-                        template?.subject?.length
-                          ? template.subject.join('、')
-                          : selectedSubjects.length
-                            ? selectedSubjects.join('、')
-                            : '',
+                        template?.subject?.length ? template.subject.join('、') : '',
                         `${durationMin} ${t('exam.minutes')}`,
                       ].filter(Boolean).join(' · ')}
                       sections={previewSections}
