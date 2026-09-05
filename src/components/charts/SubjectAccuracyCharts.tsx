@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
-import { useThemeStore } from '@/stores/theme-store'
+import { useChartPalette, mixHex } from '@/lib/chart-theme'
 
 const TYPE_LABELS: Record<string, string> = {
   single_choice: '单选', multi_select: '多选', true_false: '判断',
@@ -15,10 +15,16 @@ interface Props {
   heatmapData: { subject: string; questionType: string; correctRate: number; total: number }[]
 }
 
+/** 正确率 0→100 映射:红 → 琥珀 → 绿 的三段插值 */
+function accuracyRamp(a: string, b: string, c: string, t: number): string {
+  const k = Math.min(Math.max(t, 0), 1)
+  if (k < 0.5) return mixHex(a, b, k * 2)
+  return mixHex(b, c, (k - 0.5) * 2)
+}
+
 export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
-  const textColor = isDark ? '#d1d5db' : '#374151'
+  const pal = useChartPalette()
+  const textColor = pal.ink
 
   const barOption = useMemo(() => {
     const sorted = [...subjectAccuracy]
@@ -33,8 +39,8 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
     return {
       tooltip: {
         trigger: 'axis' as const,
-        backgroundColor: isDark ? '#1e293b' : '#fff',
-        borderColor: isDark ? '#334155' : '#e2e8f0',
+        backgroundColor: pal.panel,
+        borderColor: pal.panelLine,
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { name: string; value: number }[]) => {
           const d = p[0]
@@ -47,7 +53,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
         type: 'value' as const,
         max: 100,
         axisLabel: { color: textColor, fontSize: 10, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#f1f5f9', type: 'dashed' as const } },
+        splitLine: { lineStyle: { color: pal.line, type: 'dashed' as const } },
       },
       yAxis: {
         type: 'category' as const,
@@ -57,19 +63,13 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
       },
       series: [{
         type: 'bar' as const,
-        data: data.map((d) => {
-          const rate = d.value / 100
-          const r = Math.round(239 - rate * 200)
-          const g = Math.round(68 + rate * 130)
-          const b = Math.round(68)
-          return {
-            value: d.value,
-            itemStyle: {
-              color: `rgb(${r},${g},${b})`,
-              borderRadius: [0, 4, 4, 0],
-            },
-          }
-        }),
+        data: data.map((d) => ({
+          value: d.value,
+          itemStyle: {
+            color: accuracyRamp(pal.wrong, pal.warn, pal.correct, d.value / 100),
+            borderRadius: [0, 4, 4, 0],
+          },
+        })),
         barMaxWidth: 28,
         label: {
           show: true,
@@ -80,7 +80,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
         },
       }],
     }
-  }, [subjectAccuracy, isDark, textColor])
+  }, [subjectAccuracy, pal, textColor])
 
   const heatmapOption = useMemo(() => {
     const subjects = [...new Set(heatmapData.map((d) => d.subject))]
@@ -94,10 +94,12 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
         Math.round(d.correctRate * 100),
       ])
 
+    const heatColors = [0, 0.25, 0.5, 0.75, 1].map((t) => accuracyRamp(pal.wrong, pal.warn, pal.correct, t))
+
     return {
       tooltip: {
-        backgroundColor: isDark ? '#1e293b' : '#fff',
-        borderColor: isDark ? '#334155' : '#e2e8f0',
+        backgroundColor: pal.panel,
+        borderColor: pal.panelLine,
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { value: number[] }) => {
           const [typeIdx, subjIdx, rate] = p.value
@@ -122,7 +124,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
       visualMap: {
         min: 0,
         max: 100,
-        inRange: { color: isDark ? ['#7f1d1d', '#dc2626', '#f59e0b', '#22c55e'] : ['#fef2f2', '#fecaca', '#fde68a', '#bbf7d0'] },
+        inRange: { color: heatColors },
         textStyle: { color: textColor, fontSize: 9 },
         orient: 'horizontal' as const,
         left: 'center',
@@ -133,8 +135,10 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
         data,
         label: {
           show: true,
-          color: isDark ? '#e2e8f0' : '#1e293b',
+          color: '#ffffff',
           fontSize: 9,
+          textBorderColor: 'rgba(15,23,42,0.35)',
+          textBorderWidth: 1,
           formatter: (p: { value: number[] }) => `${p.value[2]}%`,
         },
         emphasis: {
@@ -142,7 +146,7 @@ export function SubjectAccuracyCharts({ subjectAccuracy, heatmapData }: Props) {
         },
       }],
     }
-  }, [heatmapData, isDark, textColor])
+  }, [heatmapData, pal, textColor])
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

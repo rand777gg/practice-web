@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
-import { useThemeStore } from '@/stores/theme-store'
+import { useChartPalette } from '@/lib/chart-theme'
 
-// zhongguose.com
+// zhongguose.com 学科辨识色(与明暗无关的身份色)
 const SUBJECT_COLORS = [
   '#1781B5', // 碧青
   '#CB3A56', // 茜色
@@ -27,8 +27,7 @@ interface Props {
 }
 
 export function SubjectTreemap({ data }: Props) {
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
+  const pal = useChartPalette()
 
   const option = useMemo(() => {
     const subjectMap = new Map<string, Map<string, number>>()
@@ -57,9 +56,9 @@ export function SubjectTreemap({ data }: Props) {
     return {
       backgroundColor: 'transparent',
       tooltip: {
-        backgroundColor: isDark ? '#1e293b' : '#fff',
-        borderColor: isDark ? '#334155' : '#e2e8f0',
-        textStyle: { color: isDark ? '#d1d5db' : '#374151', fontSize: 12 },
+        backgroundColor: pal.panel,
+        borderColor: pal.panelLine,
+        textStyle: { color: pal.ink, fontSize: 12 },
         formatter: (info: { name: string; value: number; treePathInfo?: { name: string }[] }) => {
           const path = info.treePathInfo?.map((n) => n.name).join(' > ') ?? info.name
           return `${path}<br/>题目数: ${info.value}`
@@ -76,21 +75,21 @@ export function SubjectTreemap({ data }: Props) {
           height: 22,
           bottom: 2,
           itemStyle: {
-            color: isDark ? '#334155' : '#f1f5f9',
-            borderColor: isDark ? '#475569' : '#cbd5e1',
-            textStyle: { color: isDark ? '#cbd5e1' : '#475569', fontSize: 11 },
+            color: pal.panel,
+            borderColor: pal.panelLine,
+            textStyle: { color: pal.label, fontSize: 11 },
           },
         },
-        label: { show: true, fontSize: 11, color: isDark ? '#e2e8f0' : '#1e293b', formatter: '{b}' },
-        upperLabel: { show: true, height: 18, color: isDark ? '#94a3b8' : '#64748b', fontSize: 10 },
-        itemStyle: { borderColor: isDark ? '#0f172a' : '#fff', borderWidth: 2, gapWidth: 2 },
+        label: { show: true, fontSize: 11, color: '#ffffff', textBorderColor: 'rgba(15,23,42,0.35)', textBorderWidth: 1, formatter: '{b}' },
+        upperLabel: { show: true, height: 18, color: pal.label, fontSize: 10 },
+        itemStyle: { borderColor: pal.panel, borderWidth: 2, gapWidth: 2 },
         levels: [{
           itemStyle: { borderWidth: 3, gapWidth: 3 },
         }],
         data: children,
       }],
     }
-  }, [data, isDark])
+  }, [data, pal])
 
   return (
     <div className="w-full">

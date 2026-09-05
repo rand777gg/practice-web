@@ -4,34 +4,51 @@ import { supabase } from "@/lib/supabase"
 import { useAuthStore } from "@/stores/auth-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { useChartPalette } from "@/lib/chart-theme"
+
+interface RpcAccRow {
+  subject: string
+  today_total: number
+  yesterday_total: number
+  today_correct: number
+  yesterday_correct: number
+}
+
+interface AccRow {
+  subject: string
+  today: number
+  up: number
+  down: number
+}
 
 export function SubjectAccuracyBar() {
   const user = useAuthStore((s) => s.user)
-  const [data, setData] = useState<any[]>([])
+  const pal = useChartPalette()
+  const [data, setData] = useState<AccRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
     supabase.rpc('get_accuracy_change', { p_user_id: user.id }).then(({ data: rows }) => {
-      const list = ((rows ?? []) as any[])
-        .filter((r: any) => Number(r.today_total) + Number(r.yesterday_total) >= 3)
-        .map((r: any) => {
+      const list = ((rows ?? []) as RpcAccRow[])
+        .filter((r) => Number(r.today_total) + Number(r.yesterday_total) >= 3)
+        .map((r) => {
           const tPct = Number(r.today_total) > 0 ? Math.round((Number(r.today_correct) / Number(r.today_total)) * 100) : 0
           const yPct = Number(r.yesterday_total) > 0 ? Math.round((Number(r.yesterday_correct) / Number(r.yesterday_total)) * 100) : 0
           const isUp = tPct >= yPct
           const delta = Math.abs(tPct - yPct)
           return { subject: r.subject, today: tPct, up: isUp ? delta : 0, down: isUp ? 0 : delta }
         })
-        .sort((a: any, b: any) => b.today - a.today)
+        .sort((a, b) => b.today - a.today)
       setData(list)
       setLoading(false)
     }, () => setLoading(false))
   }, [user])
 
   const chartConfig = {
-    today: { label: "今日正确率", color: "#3b82f6" },
-    up: { label: "上升", color: "#22c55e" },
-    down: { label: "下降", color: "#ef4444" },
+    today: { label: "今日正确率", color: pal.brand },
+    up: { label: "上升", color: pal.correct },
+    down: { label: "下降", color: pal.wrong },
   } satisfies ChartConfig
 
   if (loading) return <div className="h-[300px] rounded-lg bg-muted/30 animate-pulse" />
@@ -49,9 +66,9 @@ export function SubjectAccuracyBar() {
               tickFormatter={(v: string) => v.length > 6 ? v.slice(0, 6) + '…' : v} />
             <XAxis type="number" domain={[0, 'dataMax + 5']} tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} tickMargin={4} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-            <Bar dataKey="today" stackId="a" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={18} />
-            <Bar dataKey="up" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} barSize={18} />
-            <Bar dataKey="down" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} barSize={18} />
+            <Bar dataKey="today" stackId="a" fill={pal.brand} radius={[4, 4, 0, 0]} barSize={18} />
+            <Bar dataKey="up" stackId="a" fill={pal.correct} radius={[0, 0, 0, 0]} barSize={18} />
+            <Bar dataKey="down" stackId="a" fill={pal.wrong} radius={[0, 0, 0, 0]} barSize={18} />
           </BarChart>
         </ChartContainer>
       </CardContent>

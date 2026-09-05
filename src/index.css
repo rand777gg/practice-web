@@ -580,3 +580,95 @@
 .animate-flash {
   animation: flash 0.9s ease-in-out 2;
 }
+
+/* ============================================================
+   Chart / 数据可视化语义色 —— 供 echarts/svg 组件经 chart-theme.ts 读取
+   让图表跟随 浅色 / 深色 / 护眼(绢色·青瓷·藕荷·茶白·竹青) 自适应
+   ============================================================ */
+:root {
+  --chart-brand: #2563eb;          /* 主色/进行中 */
+  --chart-correct: #16a34a;        /* 正确/上升 */
+  --chart-wrong: #dc2626;          /* 错误/下降 */
+  --chart-warn: #d97706;           /* 警示/目标线 */
+  --chart-ink: #0f172a;            /* 主文字 */
+  --chart-label: #64748b;          /* 轴/次文字 */
+  --chart-line: rgba(15, 23, 42, 0.1);        /* 网格/分隔 */
+  --chart-panel: #ffffff;          /* tooltip 面板 */
+  --chart-panel-line: #e2e8f0;
+}
+.dark {
+  --chart-brand: #60a5fa;
+  --chart-correct: #4ade80;
+  --chart-wrong: #f87171;
+  --chart-warn: #fbbf24;
+  --chart-ink: #e2e8f0;
+  --chart-label: #94a3b8;
+  --chart-line: rgba(148, 163, 184, 0.16);
+  --chart-panel: #1e293b;
+  --chart-panel-line: #334155;
+}
+:root.eye-care-silk {
+  --chart-brand: #4f7485;
+  --chart-correct: #6f8f4e;
+  --chart-wrong: #b0604f;
+  --chart-warn: #a9842f;
+  --chart-ink: #433d33;
+  --chart-label: #7f7566;
+  --chart-line: rgba(67, 61, 51, 0.15);
+  --chart-panel: #faf5ea;
+  --chart-panel-line: #dcd3c0;
+}
+:root.eye-care-celadon {
+  --chart-brand: #4f7d6e;
+  --chart-correct: #5c8a5a;
+  --chart-wrong: #b05f58;
+  --chart-warn: #a1823a;
+  --chart-ink: #3c4a3d;
+  --chart-label: #75826f;
+  --chart-line: rgba(60, 74, 61, 0.14);
+  --chart-panel: #f4f7ef;
+  --chart-panel-line: #cfdac4;
+}
+:root.eye-care-lotus {
+  --chart-brand: #8a6f96;
+  --chart-correct: #7f9a63;
+  --chart-wrong: #c07672;
+  --chart-warn: #bb9138;
+  --chart-ink: #463c44;
+  --chart-label: #8b7d86;
+  --chart-line: rgba(70, 60, 68, 0.14);
+  --chart-panel: #faf4f7;
+  --chart-panel-line: #dccfd6;
+}
+:root.eye-care-tea {
+  --chart-brand: #7a6a52;
+  --chart-correct: #709a55;
+  --chart-wrong: #bd6f5c;
+  --chart-warn: #a98635;
+  --chart-ink: #4a4336;
+  --chart-label: #8a8271;
+  --chart-line: rgba(74, 67, 54, 0.15);
+  --chart-panel: #f7f3ec;
+  --chart-panel-line: #d8d0bf;
+}
+:root.eye-care-bamboo {
+  --chart-brand: #3e8f72;
+  --chart-correct: #5d9a55;
+  --chart-wrong: #bd6a52;
+  --chart-warn: #b38b2c;
+  --chart-ink: #3c4a36;
+  --chart-label: #7a8572;
+  --chart-line: rgba(60, 74, 54, 0.14);
+  --chart-panel: #f4f8ee;
+  --chart-panel-line: #cfdcc2;
+}
+
+/* 驾驶舱作用域:把 border-0 图表卡还原为细边框面板,形成 preview 的分块感 */
+.dash-shell .border-0 {
+  border-width: 1px;
+  border-style: solid;
+  border-color: hsl(var(--border));
+}
+.dash-shell .shadow-none {
+  box-shadow: none;
+}

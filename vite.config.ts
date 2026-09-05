@@ -39,52 +39,17 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      // 自定义 Service Worker(src/sw.ts): 在保留原缓存策略基础上监听 Web Push
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        clientsClaim: true,
-        skipWaiting: false,
-        manifestTransforms: [
-          (manifest) => ({
-            manifest: manifest.filter((entry) => {
-              if (!entry.url.endsWith('.js')) return true
-              if (!entry.size || entry.size < 100_000) return true
-              if (/\/index-/.test(entry.url)) return true
-              return false
-            }),
-            warnings: [],
-          }),
-        ],
-        runtimeCaching: [
-          {
-            // Supabase API — network first, stale-while-revalidate cache
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
-              networkTimeoutSeconds: 5,
-            },
-          },
-          {
-            // Static assets (JS/CSS chunks) — CacheFirst for instant repeat loads
-            urlPattern: /\.(?:js|css)$/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'static-assets',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
-            },
-          },
-          {
-            // Fonts and images — stale-while-revalidate
-            urlPattern: /\.(?:woff2?|png|svg|jpg|jpeg|gif|ico)$/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'static-media',
-              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 90 },
-            },
-          },
-        ],
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
       },
     }),
     // Bundle analyzer — open stats.html after build

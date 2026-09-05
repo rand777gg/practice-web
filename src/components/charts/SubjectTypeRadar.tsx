@@ -5,23 +5,25 @@ import { useAuthStore } from "@/stores/auth-store"
 import { QUESTION_TYPE_OPTIONS } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { CATEGORY_COLORS } from "@/lib/chart-theme"
 
 interface Props { planSubjects: string[] }
 
 const ALL_TYPES = QUESTION_TYPE_OPTIONS.map(o => o.value)
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(QUESTION_TYPE_OPTIONS.map(o => [o.value, o.label]))
-const COLORS = ["#3b82f6","#ec4899","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4"]
+
+interface TypeAccuracyRow { subject: string; question_type: string; correct: number; total: number }
 
 export function SubjectTypeRadar({ planSubjects }: Props) {
   const user = useAuthStore((s) => s.user)
   const [loading, setLoading] = useState(true)
-  const [chartData, setChartData] = useState<any[]>([])
+  const [chartData, setChartData] = useState<Record<string, number | string>[]>([])
   const [chartConfig, setChartConfig] = useState<ChartConfig>({})
 
   useEffect(() => {
-    if (!user || !planSubjects.length) { setLoading(false); return }
+    if (!user || !planSubjects.length) return
     supabase.rpc('get_type_accuracy', { p_user_id: user.id, p_subjects: planSubjects }).then(({ data: rows }) => {
-      const list = (rows ?? []) as any[]
+      const list = (rows ?? []) as TypeAccuracyRow[]
 
       const subjMap = new Map<string, Map<string, number>>()
       for (const r of list) {
@@ -33,11 +35,11 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
 
       const subjs = [...new Set([...subjMap.keys(), ...planSubjects])]
       const cfg: ChartConfig = {}
-      subjs.forEach((s, i) => { cfg[s] = { label: s, color: COLORS[i % COLORS.length] } })
+      subjs.forEach((s, i) => { cfg[s] = { label: s, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] } })
       setChartConfig(cfg)
 
       const radarData = ALL_TYPES.map(t => {
-        const entry: any = { type: TYPE_LABELS[t] || t }
+        const entry: Record<string, number | string> = { type: TYPE_LABELS[t] || t }
         for (const s of subjs) entry[s] = subjMap.get(s)?.get(t) ?? 100
         return entry
       })
@@ -48,6 +50,8 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
 
   if (!planSubjects.length) return null
   if (loading) return <div className="aspect-square max-h-[300px] rounded-lg bg-muted/30 animate-pulse mx-auto" />
+
+  const colors = CATEGORY_COLORS
 
   return (
     <Card className="border-0 shadow-none">
@@ -61,7 +65,7 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
             <PolarAngleAxis dataKey="type" tick={{ fontSize: 11 }} />
             <PolarGrid />
             {Object.keys(chartConfig).map((s, i) => (
-              <Radar key={s} dataKey={s} stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.15} strokeWidth={2} />
+              <Radar key={s} dataKey={s} stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.15} strokeWidth={2} />
             ))}
             <ChartLegend className="mt-6" content={<ChartLegendContent />} />
           </RadarChart>

@@ -2,14 +2,14 @@ import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
-import { useThemeStore } from '@/stores/theme-store'
+import { useChartPalette, CATEGORY_COLORS } from '@/lib/chart-theme'
 
 interface Props {
   data: { subject: string; category: string }[]
 }
 
 export function SubjectCategorySunburst({ data }: Props) {
-  const theme = useThemeStore((s) => s.theme)
+  const pal = useChartPalette()
 
   const option = useMemo(() => {
     const pairCounts = new Map<string, number>()
@@ -42,13 +42,13 @@ export function SubjectCategorySunburst({ data }: Props) {
       links.push({ source: subj, target: rightName, value })
     }
 
-    const isDark = theme === 'dark'
-    const textColor = isDark ? '#d1d5db' : '#374151'
-
     return {
       tooltip: {
         trigger: 'item' as const,
         triggerOn: 'mousemove' as const,
+        backgroundColor: pal.panel,
+        borderColor: pal.panelLine,
+        textStyle: { color: pal.ink, fontSize: 11 },
       },
       series: [{
         type: 'sankey',
@@ -56,16 +56,17 @@ export function SubjectCategorySunburst({ data }: Props) {
         emphasis: { focus: 'adjacency' as const },
         nodeAlign: 'left' as const,
         layoutIterations: 0,
+        color: CATEGORY_COLORS,
         data: nodes,
         links,
         label: {
           fontSize: 10,
-          color: textColor,
+          color: pal.ink,
         },
-        lineStyle: { color: 'gradient', curveness: 0.5 },
+        lineStyle: { color: 'gradient', curveness: 0.5, opacity: 0.32 },
       }],
     }
-  }, [data, theme])
+  }, [data, pal])
 
   return (
     <ScrollArea scrollbars="horizontal">

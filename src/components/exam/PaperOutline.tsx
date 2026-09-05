@@ -38,6 +38,8 @@ interface Props {
   onEditText?: (req: PaperTextEditReq, el: HTMLElement) => void
   /** 边距热区拖拽回调 (direct 时): 手指在纸上直接拉边距 */
   onMarginDrag?: (side: PaperMarginSide, mm: number) => void
+  /** 封面自定义块上下拖动换序 (direct 时): 放下回调可视槽位 from → to */
+  onReorderCoverBlocks?: (from: number, to: number) => void
 }
 
 /** 直调命中: 返回一组 data-* 字面量属性 (direct=false 时不挂) */
@@ -62,7 +64,7 @@ function width(no: number, k: number): string {
  * 试卷骨架: 用真实卷面版式呈现模板的分区结构(题型/题数/分值/分类), 题目本身是占位行。
  * 与 PaperPreview 共用纸张样式, 让编辑模板时看到的就是将来发到手上的那张纸。
  */
-export function PaperOutline({ title, meta, sections, className, compact, cover, paperLayout, direct = false, pick = null, onPick, onEditText, onMarginDrag }: Props) {
+export function PaperOutline({ title, meta, sections, className, compact, cover, paperLayout, direct = false, pick = null, onPick, onEditText, onMarginDrag, onReorderCoverBlocks }: Props) {
   const { t } = useT()
   const [expanded, setExpanded] = useState(false)
   // direct(直调编辑) = 真实纸张(不缩排、不分栏), 由外层缩放包装
@@ -138,7 +140,7 @@ export function PaperOutline({ title, meta, sections, className, compact, cover,
         onDoubleClick={direct && onEditText ? handlePaperDblClick : undefined}
       >
         {hasCoverContent(cover) && (
-          <PaperCover cover={cover!} layout={sheetLayout} compact={compact} paperLayout={paperLayout} direct={direct} pick={pick} />
+          <PaperCover cover={cover!} layout={sheetLayout} compact={compact} paperLayout={paperLayout} direct={direct} pick={pick} onReorderBlocks={direct ? onReorderCoverBlocks : undefined} />
         )}
 
         <header className={cn('text-center', compact ? 'mb-3' : 'mb-5')}>

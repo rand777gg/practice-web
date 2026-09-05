@@ -8,11 +8,16 @@ import { useDashboardStore } from '@/stores/dashboard-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
 import { hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, Target, BookOpen, ListChecks } from 'lucide-react'
+import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, ListChecks } from 'lucide-react'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { DashboardEbbinghaus } from '@/components/layout/DashboardEbbinghaus'
+import { SubjectAccuracyTodayList } from '@/components/charts/SubjectAccuracyTodayList'
+import { SubjectCompositionDonut, TypeRadarChart, WeekHourHeat } from '@/components/dashboard/DashPreviewTop'
+import { YearHeatPreview, MilestonesCard } from '@/components/dashboard/DashJourneyTop'
+import { ExamGoalPicker } from '@/components/dashboard/ExamGoalPicker'
+import { examGoalLabel } from '@/lib/exam-goals'
+import { normalizeDailyTargets } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { LazyChart } from '@/components/layout/LazyChart'
@@ -29,17 +34,19 @@ const SubjectTreemap = lazy(() => import('@/components/charts/SubjectTreemap').t
 const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDistributionHistogram').then(m => ({ default: m.TimeDistributionHistogram })))
 
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
+const SubjectDailyStack = lazy(() => import('@/components/charts/SubjectDailyStack').then(m => ({ default: m.SubjectDailyStack })))
+const DailyTrendBars = lazy(() => import('@/components/charts/DailyTrendBars').then(m => ({ default: m.DailyTrendBars })))
 const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').then(m => ({ default: m.AiChartInsight })))
 
 const ChartSkeleton = ({ h = 360 }: { h?: number }) => (
   <div className="animate-pulse space-y-3 p-4" style={{ height: h }}>
     <div className="h-4 w-1/3 bg-muted rounded" />
-    <div className="flex gap-4 flex-1" style={{ height: h - 48 }}>
-      <div className="flex-1 space-y-2">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-8 bg-muted rounded" style={{ width: `${60 + Math.random() * 35}%` }} />
-        ))}
-      </div>
+      <div className="flex gap-4 flex-1" style={{ height: h - 48 }}>
+        <div className="flex-1 space-y-2">
+          {['72%', '62%', '80%', '58%', '66%'].map((w, i) => (
+            <div key={i} className="h-8 bg-muted rounded" style={{ width: w }} />
+          ))}
+        </div>
       <div className="flex-1">
         <div className="h-full w-full bg-muted rounded-xl" />
       </div>
@@ -65,24 +72,131 @@ interface ChartData {
 
 interface QMeta { id: string; subject: string; category: string; categories: string[]; question_type: string }
 
+type InsightTone = 'green' | 'amber' | 'blue' | 'red'
+interface Insight { tone: InsightTone; title: string; body: string }
+
+function toneBg(tone: InsightTone): string {
+  return tone === 'green' ? 'var(--chart-correct)'
+    : tone === 'amber' ? 'var(--chart-warn)'
+      : tone === 'red' ? 'var(--chart-wrong)'
+        : 'var(--chart-brand)'
+}
+
+function buildInsights(d: ChartData): Insight[] {
+  const out: Insight[] = []
+  const rate = d.totalAnswered > 0 ? Math.round((d.correctCount / d.totalAnswered) * 100) : 0
+  out.push({
+    tone: rate >= 80 ? 'green' : rate >= 60 ? 'amber' : 'red',
+    title: rate >= 80 ? '整体状态不错' : rate >= 60 ? '正确率有提升空间' : '正确率偏低',
+    body: `整体正确率 ${rate}%(累计 ${d.totalAnswered} 次答题),${rate >= 80 ? '保持当前节奏即可' : '建议放慢刷题、把解析看透再继续'}`,
+  })
+
+  const recent = d.barData.slice(-7).filter((b) => b.correct + b.wrong > 0)
+  if (recent.length >= 2) {
+    const rc = Math.round(
+      recent.reduce((s, b) => s + b.correct, 0) / Math.max(recent.reduce((s, b) => s + b.correct + b.wrong, 0), 1) * 100,
+    )
+    out.push({
+      tone: 'blue',
+      title: '近 7 日走势',
+      body: `近 ${recent.length} 天正确率 ${rc}%,${rc >= rate ? '稳中有升' : '略低于整体水平,多关注错题分布'}`,
+    })
+  }
+
+  const hourSum = new Array(24).fill(0)
+  for (const row of d.hourlyDistribution) row.forEach((v, h) => { hourSum[h] += v })
+  const peak = Math.max(...hourSum)
+  if (peak > 0) {
+    const best = hourSum.indexOf(peak)
+    out.push({
+      tone: 'blue',
+      title: '状态时段',
+      body: `周平均 ${String(best).padStart(2, '0')}:00 前后刷题最多,可以把难点章节安排在这个时段`,
+    })
+  }
+
+  if (d.dailyGoal > 0) {
+    const todayCount = d.barData.length > 0 ? d.barData[d.barData.length - 1].correct + d.barData[d.barData.length - 1].wrong : 0
+    out.push({
+      tone: todayCount >= d.dailyGoal ? 'green' : 'amber',
+      title: '今日目标',
+      body: `今日已做 ${todayCount} / 目标 ${d.dailyGoal} 题,${todayCount >= d.dailyGoal ? '已完成,很棒' : '还差一点点,加油'}`,
+    })
+  }
+  return out
+}
+
 export function Component() {
   const { t } = useT()
-  const { user, profile } = useAuthStore()
+  const { user, profile, setProfile, refreshProfile } = useAuthStore()
   const navigate = useNavigate()
   const { isEnabled, defaultPage } = useSettingsStore()
   const showAiInsight = hasAiConfig() && isEnabled('analysis')
   const dashboardStore = useDashboardStore()
+
+  const applyGoal = async (v: string) => {
+    if (!user || !profile) return
+    const next = v || null
+    setProfile({ ...profile, goal_type: next })
+    const { error } = await supabase.from('profiles').update({ goal_type: next }).eq('id', user.id)
+    if (error) {
+      console.error('set goal_type failed:', error.message)
+      await refreshProfile()
+    } else {
+      await refreshProfile()
+    }
+  }
+
+  const applyDeadline = async (date: string) => {
+    if (!user || !profile) return
+    const next = date || null
+    setProfile({ ...profile, deadline: next })
+    const { error } = await supabase.from('profiles').update({ deadline: next }).eq('id', user.id)
+    if (error) {
+      console.error('set deadline failed:', error.message)
+      await refreshProfile()
+    } else {
+      await refreshProfile()
+    }
+  }
+
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const hour = new Date().getHours()
+  const greeting = hour < 5 ? '夜深了' : hour < 9 ? '早上好' : hour < 12 ? '上午好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : hour < 23 ? '晚上好' : '夜深了'
+  const goalName = examGoalLabel(profile?.goal_type)
+
+  const daysLeft = profile?.deadline
+    ? Math.max(Math.ceil((new Date(profile.deadline).getTime() - nowMs) / 86400000), 0)
+    : null
+
+  const planSubjectList = (() => {
+    try {
+      const raw = JSON.parse(profile?.plan_subjects || '[]')
+      return Array.isArray(raw) ? (raw as string[]) : []
+    } catch { return [] }
+  })()
+  const targetSubjectList = (() => {
+    try {
+      return normalizeDailyTargets(JSON.parse(profile?.daily_targets || '[]')).flatMap((x) => x.subjects.map((s) => s.subject))
+    } catch { return [] }
+  })()
+  const subjectUnion = [...new Set([...planSubjectList, ...targetSubjectList])]
+  const hasPlanOrTarget = subjectUnion.length > 0
 
   const cacheKey = `${user?.id}|${profile?.deadline}|${profile?.plan_subjects}`
   const hasCache = !!(dashboardStore.getChartCache(cacheKey))
 
   const [chartData, setChartData] = useState<ChartData | null>(hasCache ? dashboardStore.chartData : null)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [expandedBtn, setExpandedBtn] = useState<number | null>(null)
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['plan']))
-  const [chartsRequested, setChartsRequested] = useState(false)
-  const needsCharts = chartsRequested || visitedTabs.has('stats') || visitedTabs.has('subjects') || visitedTabs.has('journey')
-  const btnRowRef = useRef<HTMLDivElement>(null)
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['overview']))
+  const [todayText] = useState(() =>
+    new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }),
+  )
   const loadGenRef = useRef(0)
 
   useEffect(() => {
@@ -90,23 +204,10 @@ export function Component() {
   }, [defaultPage, navigate])
 
   useEffect(() => {
-    if (expandedBtn === null) return
-    const handler = (e: MouseEvent) => {
-      if (btnRowRef.current && !btnRowRef.current.contains(e.target as Node)) {
-        setExpandedBtn(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [expandedBtn])
-
-  useEffect(() => {
     if (!user) return
     let cancelled = false
     const isStale = (gen: number) => loadGenRef.current !== gen || cancelled
     async function load() {
-      // ponytail: skip heavy chart queries until user visits a chart tab
-      if (!needsCharts) return
       loadGenRef.current++
       const myGen = loadGenRef.current
 
@@ -331,10 +432,10 @@ export function Component() {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, profile?.deadline, profile?.plan_subjects, needsCharts])
+  }, [user?.id, profile?.deadline, profile?.plan_subjects])
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="dash-shell space-y-6 w-full">
       {isRefreshing && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground pb-1">
           <Spinner className="size-3" />
@@ -343,119 +444,213 @@ export function Component() {
       )}
 
       <Tabs
-        defaultValue="plan"
+        defaultValue="overview"
         className="w-full"
-        onValueChange={(v) => {
-          setVisitedTabs((prev) => new Set(prev).add(v))
-          if (v !== 'plan') setChartsRequested(true)
-        }}
+        onValueChange={(v) => setVisitedTabs((prev) => new Set(prev).add(v))}
       >
         <ScrollArea scrollbars="horizontal">
           <TabsList className="justify-center">
-            <TabsTrigger value="plan" className="gap-1.5">
+            <TabsTrigger value="overview" className="gap-1.5">
               <ListChecks className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{t('dashboard.tabPlan')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="stats" className="gap-1.5">
-              <Target className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{t('dashboard.tabStats')}</span>
+              <span className="hidden md:inline">总览</span>
             </TabsTrigger>
             <TabsTrigger value="subjects" className="gap-1.5">
               <PieChart className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{t('dashboard.tabSubjects')}</span>
+              <span className="hidden md:inline">学科分析</span>
             </TabsTrigger>
             <TabsTrigger value="journey" className="gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{t('dashboard.tabJourney')}</span>
+              <span className="hidden md:inline">学习足迹</span>
             </TabsTrigger>
           </TabsList>
         </ScrollArea>
 
-          <TabsContent value="plan">
+          <TabsContent value="overview">
             <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                    {greeting}
+                    {profile?.nickname ? `，${profile.nickname}` : ''}
+                    {goalName && (
+                      <span className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                        {goalName}冲刺中
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {todayText} ·
+                    {goalName
+                      ? daysLeft != null
+                        ? `距${goalName}还有 ${daysLeft} 天,按计划推进、稳扎稳打`
+                        : `已选定「${goalName}」目标,点右侧「考试日期」设定时间后开始冲刺`
+                      : '可以先设定备考目标(考研 / 考公 / 期末考),再制定冲刺计划'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ExamGoalPicker value={profile?.goal_type ?? ''} onChange={(v) => applyGoal(v)} compact />
+                  {goalName && (
+                    <>
+                      <label className="relative inline-flex h-8 items-center overflow-hidden rounded-lg border bg-card pr-2">
+                        <span className="pl-2.5 text-xs text-muted-foreground">考试</span>
+                        <input
+                          type="date"
+                          aria-label="考试日期"
+                          value={profile?.deadline ? String(profile.deadline).slice(0, 10) : ''}
+                          onChange={(e) => applyDeadline(e.target.value)}
+                          className="h-8 bg-transparent px-1.5 text-xs text-foreground outline-none"
+                        />
+                      </label>
+                      {daysLeft != null && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${daysLeft <= 0 ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
+                          {daysLeft <= 0 ? '今天开考' : `${daysLeft} 天`}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
               <DashboardPlanCards />
-              <DashboardEbbinghaus />
-              <div className="xl:hidden flex items-center gap-2 overflow-x-auto" ref={btnRowRef}>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {([
-                  { icon: Pencil, label: t('dashboard.startPractice'), to: '/practice', variant: 'default' as const },
-                  { icon: Clock, label: t('dashboard.takeExam'), to: '/exam', variant: 'default' as const },
-                  { icon: Star, label: t('nav.favorites'), to: '/favorites', variant: 'outline' as const },
-                  { icon: RotateCcw, label: t('dashboard.reviewMistakes'), to: '/review', variant: 'outline' as const },
-                  { icon: BookOpen, label: t('nav.publicNotes'), to: '/notes', variant: 'outline' as const },
-                ]).map((btn, i) => {
-                  const isExpanded = expandedBtn === i
+                  { icon: Pencil, label: '继续练习', sub: '保持手感 · 每日打卡', to: '/practice', bg: 'var(--chart-brand)', iconColor: 'var(--chart-brand)' },
+                  { icon: Clock, label: '模拟考试', sub: '限时实战 · 检验水平', to: '/exam', bg: 'var(--chart-warn)', iconColor: 'var(--chart-warn)' },
+                  { icon: RotateCcw, label: '错题攻坚', sub: '重做错题 · 消灭盲点', to: '/review', bg: 'var(--chart-wrong)', iconColor: 'var(--chart-wrong)' },
+                  { icon: Star, label: '我的收藏', sub: '收藏回看 · 重点强化', to: '/favorites', bg: 'var(--chart-correct)', iconColor: 'var(--chart-correct)' },
+                ]).map((btn) => {
                   const Icon = btn.icon
                   return (
-                    <Button
+                    <button
                       key={btn.to}
-                      variant={btn.variant}
-                      size="sm"
-                      className={`shrink-0 gap-0 transition-all duration-300 ease-out sm:px-3 sm:gap-2 ${isExpanded ? 'px-3 gap-2' : 'px-1.5'}`}
-                      onClick={() => {
-                        if (window.innerWidth >= 640) {
-                          navigate(btn.to)
-                        } else if (isExpanded) {
-                          setExpandedBtn(null)
-                          navigate(btn.to)
-                        } else {
-                          setExpandedBtn(i)
-                        }
-                      }}
+                      type="button"
+                      onClick={() => navigate(btn.to)}
+                      className="group flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left transition-colors cursor-pointer hover:bg-accent/40"
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[120px] sm:opacity-100 sm:pl-0 ${isExpanded ? 'max-w-[120px] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`}>
-                        {btn.label}
+                      <span
+                        className="grid h-9 w-9 flex-none place-items-center rounded-[10px]"
+                        style={{ background: `color-mix(in srgb, ${btn.bg} 15%, transparent)`, color: btn.iconColor }}
+                      >
+                        <Icon className="h-4 w-4" />
                       </span>
-                    </Button>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13.5px] font-semibold text-foreground">{btn.label}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{btn.sub}</span>
+                      </span>
+                      <span className="flex-none text-lg text-muted-foreground transition-transform group-hover:translate-x-0.5">›</span>
+                    </button>
                   )
                 })}
               </div>
+
+              {hasPlanOrTarget && (
+                <LazyChart rootMargin="260px">
+                  <PlanCompletionChart planSubjects={planSubjectList} targetSubjects={targetSubjectList} />
+                </LazyChart>
+              )}
+
+              {chartData ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                  <Card className="border-0 shadow-none flex flex-col">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="text-sm text-muted-foreground">近 15 天对错趋势</CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex-1">
+                      <Suspense fallback={<ChartSkeleton h={300} />}>
+                        <DailyTrendBars data={chartData.barData} />
+                      </Suspense>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-0 shadow-none flex flex-col">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="text-sm text-muted-foreground">科目正确率</CardTitle>
+                      <p className="text-xs text-muted-foreground/70">今日正确率 · 与昨日对比</p>
+                    </CardHeader>
+                    <CardContent className="flex-1">
+                      <SubjectAccuracyTodayList />
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </div>
+              )}
+
+              {chartData ? (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
+                  <DashboardEbbinghaus />
+                  <Card className="border-0 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm text-muted-foreground flex items-center gap-1.5">
+                        AI 智能诊断
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground/70">基于近期答题数据生成,点击可查看 AI 深度总结</p>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-col gap-3.5">
+                        {buildInsights(chartData).map((ins) => (
+                          <div key={ins.title} className="flex items-start gap-2.5 text-[13px]">
+                            <span
+                              className="block w-1 self-stretch flex-none rounded-full"
+                              style={{ background: toneBg(ins.tone) }}
+                            />
+                            <span className="min-w-0">
+                              <b className="font-semibold text-foreground">{ins.title}</b>
+                              <span className="ml-1.5 text-muted-foreground">{ins.body}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="h-[260px] rounded-lg bg-muted/30 animate-pulse" />
+                  <div className="h-[260px] rounded-lg bg-muted/30 animate-pulse" />
+                </div>
+              )}
             </div>
           </TabsContent>
-
-          <TabsContent value="stats">
-            {visitedTabs.has('stats') && chartData ? (
-              <div className="space-y-4">
-                {(() => {
-                  const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
-                  const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
-                  return (pts.length > 0 || tts.length > 0) ? <PlanCompletionChart planSubjects={pts} targetSubjects={tts} /> : null
-                })()}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <SubjectAccuracyBar />
-                  {(() => {
-                    const pts = (() => { try { return JSON.parse(profile?.plan_subjects || '[]') as string[] } catch { return [] } })()
-                    const tts = (() => { try { const raw = JSON.parse(profile?.daily_targets || '[]') as any[]; return [...new Set(raw.flatMap((t: any) => (t.subjects || []).map((s: any) => s.subject)))] } catch { return [] } })()
-                    return <SubjectTypeRadar planSubjects={[...new Set([...pts, ...tts])]} />
-                  })()}
-                  {[
-                    { title: '时段分布', desc: '24小时答题时段热力' },
-                    { title: '科目趋势', desc: '近30天各科正确率走势' },
-                  ].map((c) => (
-                    <Card key={c.title} className="border-0 shadow-none">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-muted-foreground">{c.title}</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="h-[300px] rounded-lg bg-muted/30 flex items-center justify-center text-sm text-muted-foreground/50 border border-dashed">
-                          {c.desc}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <SkeletonCard />
-                <SkeletonCard />
-              </div>
-            )}
-          </TabsContent>
-
           <TabsContent value="subjects">
             {visitedTabs.has('subjects') && chartData ? (
               <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm text-muted-foreground">题库构成</CardTitle>
+                      <p className="text-xs text-muted-foreground/70">按学科题量占比</p>
+                    </CardHeader>
+                    <CardContent>
+                      <SubjectCompositionDonut rows={chartData.sunburstData} />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm text-muted-foreground">题型能力雷达</CardTitle>
+                      <p className="text-xs text-muted-foreground/70">单选 · 多选 · 判断 · 填空 · 简答 正确率</p>
+                    </CardHeader>
+                    <CardContent>
+                      <TypeRadarChart cells={chartData.heatmapData} />
+                    </CardContent>
+                  </Card>
+                </div>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">各科正确率与趋势</CardTitle>
+                    <p className="text-xs text-muted-foreground/70">今日正确率 · 与昨日对比</p>
+                  </CardHeader>
+                  <CardContent>
+                    <SubjectAccuracyTodayList />
+                  </CardContent>
+                </Card>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <SubjectAccuracyBar />
+                  {hasPlanOrTarget ? <SubjectTypeRadar planSubjects={subjectUnion} /> : null}
+                </div>
                 <LazyChart>
                   <Card className="border-0 shadow-none">
                     <CardHeader className="pb-2">
@@ -507,6 +702,19 @@ export function Component() {
                     </CardContent>
                   </Card>
                 </LazyChart>
+                <LazyChart rootMargin="400px">
+                  <Card className="border-0 shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm text-muted-foreground">科目每日答题量趋势</CardTitle>
+                      <p className="text-xs text-muted-foreground/70">近 15 天各科答题量堆叠</p>
+                    </CardHeader>
+                    <CardContent>
+                      <Suspense fallback={<ChartSkeleton />}>
+                        <SubjectDailyStack data={chartData.dailySubjectData} />
+                      </Suspense>
+                    </CardContent>
+                  </Card>
+                </LazyChart>
               </div>
             ) : (
               <div className="space-y-4">
@@ -519,6 +727,62 @@ export function Component() {
           <TabsContent value="journey">
             {visitedTabs.has('journey') && chartData ? (
               <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                  <div className="rounded-xl border bg-card px-4 py-3">
+                    <p className="text-xs text-muted-foreground">累计答题</p>
+                    <p className="mt-0.5 text-xl font-semibold tabular-nums">{chartData.totalAnswered.toLocaleString()}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">一路刷过来的证据</p>
+                  </div>
+                  <div className="rounded-xl border bg-card px-4 py-3">
+                    <p className="text-xs text-muted-foreground">已打卡</p>
+                    <p className="mt-0.5 text-xl font-semibold tabular-nums">{chartData.checkinDays}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">近 12 周内有记录的天数</p>
+                  </div>
+                  <div className="rounded-xl border bg-card px-4 py-3">
+                    <p className="text-xs text-muted-foreground">累计正确率</p>
+                    <p className="mt-0.5 text-xl font-semibold tabular-nums">{chartData.totalAnswered > 0 ? Math.round((chartData.correctCount / chartData.totalAnswered) * 100) : 0}%</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">正确 {chartData.correctCount} / 总 {chartData.totalAnswered}</p>
+                  </div>
+                  <div className="rounded-xl border bg-card px-4 py-3">
+                    <p className="text-xs text-muted-foreground">累计错题</p>
+                    <p className="mt-0.5 text-xl font-semibold tabular-nums">{chartData.wrongCount.toLocaleString()}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">都在错题本里等你翻篇</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 items-start">
+                  <div className="lg:col-span-2">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-muted-foreground">2026 学习热力图</CardTitle>
+                        <p className="text-xs text-muted-foreground/70">每日答题量 · 目标 {chartData.dailyGoal} 题/天</p>
+                      </CardHeader>
+                      <CardContent>
+                        <YearHeatPreview data={chartData.dailyAnswers} />
+                      </CardContent>
+                    </Card>
+                  </div>
+                  <div className="space-y-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-muted-foreground">一周 × 24 时段热力</CardTitle>
+                        <p className="text-xs text-muted-foreground/70">颜色越深刷题越多</p>
+                      </CardHeader>
+                      <CardContent>
+                        <WeekHourHeat data={chartData.hourlyDistribution} />
+                        <p className="mt-3 text-[11px] text-muted-foreground">把难点章节安排在深色时段,效率更高</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-muted-foreground">本月里程碑</CardTitle>
+                        <p className="text-xs text-muted-foreground/70">按真实进度计算</p>
+                      </CardHeader>
+                      <CardContent>
+                        <MilestonesCard dailyAnswers={chartData.dailyAnswers} totalAnswered={chartData.totalAnswered} />
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="rounded-lg border bg-card px-4 py-3 text-center min-w-[100px]">
                     <p className="text-xs text-muted-foreground">已打卡</p>

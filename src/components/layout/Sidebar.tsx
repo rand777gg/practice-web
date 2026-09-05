@@ -2,8 +2,9 @@ import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   LayoutDashboard, Pencil, Clock, RotateCcw, FileQuestion, Users,
-  GraduationCap, Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose, X, GitMerge,
+  Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose, X, GitMerge,
 } from 'lucide-react'
+import { BrandLogo } from './BrandLogo'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
@@ -118,7 +119,7 @@ export function Sidebar({ className, overlay, isOpen, onClose, collapsed, onTogg
         ) : (
           <>
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <GraduationCap className="h-6 w-6 text-sidebar-primary shrink-0" />
+              <BrandLogo size={22} />
               <span className="font-semibold text-sidebar-foreground truncate">{t('app.shortTitle')}</span>
             </div>
             {overlay ? (

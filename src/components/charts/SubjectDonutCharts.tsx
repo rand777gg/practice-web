@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
-import { useThemeStore } from '@/stores/theme-store'
+import { useChartPalette } from '@/lib/chart-theme'
 
 interface Props {
   data: { subject: string; category: string; questionType: string }[]
@@ -23,9 +23,8 @@ const MIDDLE_COLORS = [
 const OUTER_COLORS = ['#729f6a', '#8cb882', '#5f8b55', '#a0cc96', '#78a870', '#94bf8a']
 
 export function SubjectDonutCharts({ data }: Props) {
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
-  const textColor = isDark ? '#d1d5db' : '#374151'
+  const pal = useChartPalette()
+  const textColor = pal.ink
 
   const option = useMemo(() => {
     // Category (inner)
@@ -75,8 +74,8 @@ export function SubjectDonutCharts({ data }: Props) {
     return {
       tooltip: {
         trigger: 'item' as const,
-        backgroundColor: isDark ? '#1e293b' : '#fff',
-        borderColor: isDark ? '#334155' : '#e2e8f0',
+        backgroundColor: pal.panel,
+        borderColor: pal.panelLine,
         textStyle: { color: textColor, fontSize: 11 },
         formatter: (p: { seriesName: string; name: string; value: number; percent: number }) =>
           `<b>${p.name}</b><br/>${p.seriesName}: ${p.value} 题 (${p.percent}%)`,
@@ -92,8 +91,8 @@ export function SubjectDonutCharts({ data }: Props) {
           type: 'pie' as const,
           radius: ['18%', '34%'],
           center: ['50%', '48%'],
-          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 2 },
-          label: { show: true, position: 'inside' as const, fontSize: 9, color: isDark ? '#e2e8f0' : '#1e293b' },
+          itemStyle: { borderRadius: 3, borderColor: pal.panel, borderWidth: 2 },
+          label: { show: true, position: 'inside' as const, fontSize: 9, color: '#ffffff' },
           data: catEntries.map(([name, value], i) => ({
             name, value,
             itemStyle: { color: INNER_COLORS[i % INNER_COLORS.length] },
@@ -104,9 +103,9 @@ export function SubjectDonutCharts({ data }: Props) {
           type: 'pie' as const,
           radius: ['37%', '55%'],
           center: ['50%', '48%'],
-          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 1.5 },
+          itemStyle: { borderRadius: 3, borderColor: pal.panel, borderWidth: 1.5 },
           label: { show: false },
-          emphasis: { label: { show: true, fontSize: 12, fontWeight: 'bold' } },
+          emphasis: { label: { show: true, fontSize: 12, fontWeight: 'bold', color: pal.ink } },
           data: middleData,
         },
         {
@@ -114,7 +113,7 @@ export function SubjectDonutCharts({ data }: Props) {
           type: 'pie' as const,
           radius: ['58%', '75%'],
           center: ['50%', '48%'],
-          itemStyle: { borderRadius: 3, borderColor: isDark ? '#1f2937' : '#fff', borderWidth: 1.5 },
+          itemStyle: { borderRadius: 3, borderColor: pal.panel, borderWidth: 1.5 },
           label: {
             show: true,
             position: 'outside' as const,
@@ -123,12 +122,12 @@ export function SubjectDonutCharts({ data }: Props) {
             color: textColor,
             distanceToLabelLine: 4,
           },
-          labelLine: { length: 16, length2: 12, lineStyle: { color: textColor } },
+          labelLine: { length: 16, length2: 12, lineStyle: { color: pal.label } },
           data: outerData,
         },
       ],
     }
-  }, [data, isDark, textColor])
+  }, [data, pal, textColor])
 
   return <ReactECharts echarts={echarts} option={option} style={{ height: 480 }} />
 }

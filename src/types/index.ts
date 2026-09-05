@@ -161,6 +161,8 @@ export interface Profile {
   plan_subjects: string | null
   daily_targets: string | null
   daily_deadline: string | null
+  /** 备考目标类型:kaoyan 考研 / gongkao 考公 / final 期末考 / other 其他考试 */
+  goal_type?: string | null
   plan_reset_at: string | null
   /** 计划学科 -> 认领知识点数组的映射。如 {"数学":["一元二次方程"]}。NULL 或缺省=该学科全部知识点 */
   plan_scope: PlanScope | null
@@ -321,6 +323,28 @@ export interface ExamComposeStat {
 
 /** 内置预设在前端定义, 未落库时的占位值 */
 export const BUILTIN_TEMPLATE_ORIGIN = '__builtin__'
+
+/** 周期预约考试: 到点(设备本地时间)按模板快照自动组卷开考 */
+export interface ExamSchedule {
+  id: string
+  user_id: string
+  name: string
+  /** 0=周日 .. 6=周六 (与 Date#getDay 一致) */
+  days_of_week: number[]
+  /** 开考时刻 = 当日 0 点起算分钟数 0..1439 */
+  fire_time: number
+  /** 组卷模板快照(建约时复制, 之后改/删模板不影响已建预约) */
+  template: ExamTemplate
+  enabled: boolean
+  /** IANA 时区, 服务端 cron 按它换算到点时刻(建约时写入) */
+  tz: string
+  /** 最近一次已开考的业务日 YYYY-MM-DD(客户端本地日) */
+  last_fire_date: string | null
+  /** 最近一次已推送提醒的业务日 YYYY-MM-DD(服务端 cron 维护) */
+  last_notify_date: string | null
+  created_at: string
+  updated_at: string
+}
 
 export interface UserAnswer {
   id: string

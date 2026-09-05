@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { MobileBottomNav } from './MobileBottomNav'
 import { OnlinePresenceTracker } from './OnlinePresenceTracker'
+import { ExamScheduleWatcher } from '@/components/exam/ExamScheduleWatcher'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useExamStore } from '@/stores/exam-store'
 
@@ -20,6 +21,7 @@ export function AppLayout() {
   return (
     <div className="min-h-screen flex">
       <OnlinePresenceTracker />
+      <ExamScheduleWatcher />
       <Sidebar className="hidden lg:flex" collapsed={sidebarCollapsed} onToggleCollapse={handleToggle} />
       <Sidebar
         className="flex lg:hidden"

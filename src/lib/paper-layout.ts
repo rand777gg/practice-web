@@ -156,6 +156,11 @@ export interface ExamTemplateLayout {
   showPaperTitle: boolean
   /** 卷首是否显示 meta 行 (学科·时长·总分, 默认 false) */
   showPaperMeta: boolean
+  /**
+   * 是否允许题目/内容跨栏、跨页断开 (默认 false = 整题保持不跨页)。
+   * 作用于多栏摊开与打印/导出时的 CSS break 规则; 双页分页视图的固定页分页不受此开关影响。
+   */
+  allowFlowBreak: boolean
   /** 整卷字族 (CSS font-family 栈); 空=跟随 app 默认 */
   fontFamily?: string | null
   /** 各文本块样式覆写 (可选字段, 全空=不覆写) */
@@ -187,6 +192,7 @@ export const DEFAULT_LAYOUT: ExamTemplateLayout = {
   coverOwnPage: true,
   showPaperTitle: false,
   showPaperMeta: false,
+  allowFlowBreak: false,
   fontFamily: null,
   textBlocks: {},
 }
@@ -344,6 +350,7 @@ export function normalizeLayout(raw: unknown): ExamTemplateLayout {
     coverOwnPage: pickBool(o, 'coverOwnPage', true),
     showPaperTitle: pickBool(o, 'showPaperTitle', false),
     showPaperMeta: pickBool(o, 'showPaperMeta', false),
+    allowFlowBreak: pickBool(o, 'allowFlowBreak', false),
     fontFamily: pickStr(o, 'fontFamily') ?? null,
     textBlocks: pickTextBlocks(o),
   }
@@ -399,6 +406,8 @@ export function layoutToCssVars(layout: ExamTemplateLayout, mode: 'sheet' | 'spr
     '--paper-seal-position': layout.sealBand.position,
     '--paper-seal-height': `${layout.sealBand.heightMm}mm`,
     '--paper-seal-font-size': `${layout.sealBand.fontSizePt}pt`,
+    // 允许跨行/跨页断开时 break 规则取 auto, 否则整题不跨栏/跨页 (见 paper-sheet-styles)
+    '--paper-flow-break': layout.allowFlowBreak ? 'auto' : 'avoid',
   }
 
   // 整卷字族

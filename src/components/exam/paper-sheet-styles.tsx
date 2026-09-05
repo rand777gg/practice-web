@@ -33,7 +33,7 @@ export function PaperSheetStyles() {
         line-height: var(--paper-line-height, 1.8);
       }
       .paper-sheet .paper-md > * { margin: 0; }
-      .paper-q { break-inside: avoid; page-break-inside: avoid; }
+      .paper-q { break-inside: var(--paper-flow-break, avoid); page-break-inside: var(--paper-flow-break, avoid); }
       .paper-sec { break-after: auto; }
       .paper-sec-head { break-after: avoid; }
       /* 多栏摊开: 栏数来自 --paper-columns; 窄屏回落单栏 */
@@ -43,7 +43,7 @@ export function PaperSheetStyles() {
         column-fill: balance;
       }
       .paper-columns .paper-sec { break-inside: avoid; }
-      .paper-columns .paper-q { break-inside: avoid; }
+      .paper-columns .paper-q { break-inside: var(--paper-flow-break, avoid); }
       @media (max-width: 1023px) {
         .paper-columns { columns: 1 !important; }
       }
@@ -355,6 +355,9 @@ export function PaperSheetStyles() {
       .paper-sheet-direct .pe-margin { position: absolute; background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
       .paper-sheet-direct .pe-margin:hover { background: hsl(var(--primary) / 0.12); }
       .paper-sheet-direct .pe-margin.pe-sel { background: hsl(var(--primary) / 0.18); box-shadow: none; }
+      /* 封面自定义块: 拖动换序 (与题型分区一致的让位过渡) */
+      .paper-cover-custom.pe-reorder > * { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; transition: transform 150ms ease-out; }
+      .paper-cover-custom.pe-reorder.pe-dragging > * { cursor: grabbing; }
       .paper-sheet-direct .pe-margin-top { top: 0; left: 0; right: 0; height: var(--paper-padding-top, 16mm); cursor: ns-resize; }
       .paper-sheet-direct .pe-margin-bottom { bottom: 0; left: 0; right: 0; height: var(--paper-padding-bottom, 16mm); cursor: ns-resize; }
       .paper-sheet-direct .pe-margin-left { top: 0; left: 0; bottom: 0; width: var(--paper-padding-left, 15mm); cursor: ew-resize; }

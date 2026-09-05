@@ -2350,3 +2350,88 @@ ALTER TABLE public.exam_templates
   USING CASE WHEN subject IS NULL OR subject = '' THEN NULL ELSE ARRAY[subject] END;
 
 CREATE INDEX IF NOT EXISTS idx_exam_templates_subject ON public.exam_templates USING GIN (subject);
+
+-- ============================================================================
+-- Section 28: 预约考试 (exam_schedules) —— 周期定时考试
+--   到点在周几(days_of_week, 0=周日..6=周六, 与 JS Date#getDay 一致)的
+--   fire_time(当日分钟 0..1439) 触发一场考试。
+--   组卷所需内容以「模板快照」整份存进 template JSONB(与 cover/layout 同级,
+--   来自用户模板或内置预设)。存快照而非外键: 之后模板被改/删, 已预约的
+--   周期考试仍按建约时的卷面配置开考, 语义与 exam_templates.parent_id 一致。
+--   last_fire_date: 该预约最近一次"已开考"的业务日(YYYY-MM-DD, 客户端本地日期),
+--   用于同一天内去重与「今日待考」判断; 错过到点后当天补开考会就地更新。
+--   到点触发 = 前端定时器(应用打开期间, 弹窗+系统通知) + 服务端 cron(见 28.1
+--   notify-exam Edge Function, 关屏/关浏览器也能推 Web Push)。tz: 建约时写入的
+--   IANA 时区, 服务端按它换算到点时刻; last_notify_date: 最近一次已推送提醒的
+--   业务日, 用于 cron 侧"每场每天只推一次"。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.exam_schedules (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL,
+  days_of_week   SMALLINT[] NOT NULL DEFAULT ARRAY[6,0]::SMALLINT[],
+  fire_time      SMALLINT NOT NULL DEFAULT 1200
+                   CHECK (fire_time >= 0 AND fire_time < 1440),
+  template       JSONB NOT NULL,
+  enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+  last_fire_date DATE,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT exam_schedules_weekdays_valid
+    CHECK (days_of_week <@ ARRAY[0,1,2,3,4,5,6]::SMALLINT[]),
+  CONSTRAINT exam_schedules_weekdays_nonempty
+    CHECK (cardinality(days_of_week) >= 1)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exam_schedules_user ON public.exam_schedules(user_id);
+
+ALTER TABLE public.exam_schedules ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS exam_schedules_own_rw ON public.exam_schedules;
+CREATE POLICY exam_schedules_own_rw ON public.exam_schedules FOR ALL
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+DROP TRIGGER IF EXISTS trg_exam_schedules_updated_at ON public.exam_schedules;
+CREATE TRIGGER trg_exam_schedules_updated_at BEFORE UPDATE ON public.exam_schedules
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 28.1 预约考试 Web Push 支持
+--   exam_schedules 增列: tz(IANA 时区, 服务端 cron 据此判断到点) /
+--   last_notify_date(最近一次已推送提醒的业务日, 保证每场每天只推一次)。
+ALTER TABLE public.exam_schedules
+  ADD COLUMN IF NOT EXISTS tz TEXT NOT NULL DEFAULT 'Asia/Shanghai';
+ALTER TABLE public.exam_schedules
+  ADD COLUMN IF NOT EXISTS last_notify_date DATE;
+
+-- push_subscriptions: 每个用户每台设备一条浏览器推送订阅(Web Push 协议三要素)。
+--   由前端在用户授权通知后 upsert; notify-exam 函数向它推送并清理失效项。
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  endpoint     TEXT NOT NULL UNIQUE,
+  p256dh       TEXT NOT NULL,
+  auth         TEXT NOT NULL,
+  user_agent   TEXT,
+  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON public.push_subscriptions(user_id);
+
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS push_subscriptions_own_rw ON public.push_subscriptions;
+CREATE POLICY push_subscriptions_own_rw ON public.push_subscriptions FOR ALL
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+
+-- ============================================================================
+-- Section 29: 备考目标类型 (profiles.goal_type) —— 考研/考公/期末考等,首页仪表盘个性化
+-- ============================================================================
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS goal_type TEXT
+  CHECK (goal_type IN ('kaoyan', 'gongkao', 'final', 'other') OR goal_type IS NULL);
+
+COMMENT ON COLUMN public.profiles.goal_type IS 'kaoyan=考研,gongkao=考公,final=期末考,other=其他考试;NULL=未设定';

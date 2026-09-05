@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
 import { ScrollArea } from '@radix-ui/themes'
-import { useThemeStore } from '@/stores/theme-store'
+import { useChartPalette, CATEGORY_COLORS } from '@/lib/chart-theme'
 
 interface Props {
   dates: string[]
@@ -11,17 +11,10 @@ interface Props {
   barData: { date: string; correct: number; wrong: number }[]
 }
 
-const SUBJECT_COLORS = [
-  '#3b82f6', '#8b5cf6', '#22c55e', '#f59e0b', '#ef4444',
-  '#06b6d4', '#10b981', '#6366f1', '#ec4899', '#14b8a6',
-  '#f97316', '#a855f7', '#84cc16', '#64748b',
-]
-
 export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: Props) {
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
-  const textColor = isDark ? '#d1d5db' : '#374151'
-  const mutedColor = isDark ? '#9ca3af' : '#6b7280'
+  const pal = useChartPalette()
+  const textColor = pal.ink
+  const mutedColor = pal.label
 
   const option = useMemo(() => {
     const dateLabels = dates.map((d) => {
@@ -36,8 +29,8 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
     return {
       tooltip: {
         trigger: 'axis' as const,
-        backgroundColor: isDark ? '#1e293b' : '#fff',
-        borderColor: isDark ? '#334155' : '#e2e8f0',
+        backgroundColor: pal.panel,
+        borderColor: pal.panelLine,
         textStyle: { color: textColor, fontSize: 11 },
       },
       legend: {
@@ -67,7 +60,7 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
         {
           type: 'value' as const,
           axisLabel: { color: textColor, fontSize: 10 },
-          splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#f1f5f9', type: 'dashed' as const } },
+          splitLine: { lineStyle: { color: pal.line, type: 'dashed' as const } },
           name: '答题数',
           nameTextStyle: { color: mutedColor, fontSize: 10 },
         },
@@ -91,7 +84,7 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
           emphasis: { focus: 'series' as const },
           data: data.map((d) => d[subject] ?? 0),
           itemStyle: {
-            color: SUBJECT_COLORS[i % SUBJECT_COLORS.length],
+            color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
           },
         })),
         {
@@ -100,8 +93,8 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
           yAxisIndex: 1,
           smooth: true,
           symbol: 'none',
-          lineStyle: { color: '#06b6d4', width: 2 },
-          itemStyle: { color: '#06b6d4' },
+          lineStyle: { color: pal.brand, width: 2 },
+          itemStyle: { color: pal.brand },
           emphasis: { focus: 'series' as const },
           data: dates.map((d) => {
             const b = barData.find((x) => x.date === d)
@@ -115,14 +108,14 @@ export function AnswerTimeScatterHistogram({ dates, subjects, data, barData }: P
           name: '日均',
           type: 'line' as const,
           symbol: 'none',
-          lineStyle: { color: isDark ? '#fbbf24' : '#d97706', width: 1.5, type: 'dashed' as const },
+          lineStyle: { color: pal.warn, width: 1.5, type: 'dashed' as const },
           emphasis: { focus: 'series' as const },
           data: dates.map(() => avgDaily),
           z: 5,
         },
       ],
     }
-  }, [dates, subjects, data, barData, isDark, textColor, mutedColor])
+  }, [dates, subjects, data, barData, pal, textColor, mutedColor])
 
   return (
     <ScrollArea scrollbars="horizontal">

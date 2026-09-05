@@ -11,6 +11,7 @@ import { Check, TrendingUp, TrendingDown } from 'lucide-react'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets } from '@/types'
 import { useT } from '@/i18n/use-t'
+import { cn } from '@/lib/utils'
 
 function todayStart(): string {
   const now = new Date()
@@ -51,7 +52,48 @@ export function DashboardPlanCards() {
   const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
   const [customTargetTotal, setCustomTargetTotal] = useState(0)
   const [customTargetDone, setCustomTargetDone] = useState(0)
-  const [customTargetTodayDone, setCustomTargetTodayDone] = useState(0)
+  const [, setCustomTargetTodayDone] = useState(0)
+
+  const [acc, setAcc] = useState<{ today: number; pct: number; delta: number | null } | null>(null)
+  const [streak, setStreak] = useState<number | null>(null)
+
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    let live = true
+    supabase.rpc('get_accuracy_change', { p_user_id: user.id }).then(({ data: rows }) => {
+      if (!live) return
+      const list = ((rows ?? []) as {
+        today_correct: number; today_total: number; yesterday_correct: number; yesterday_total: number
+      }[])
+      let tc = 0, tt = 0, yc = 0, yt = 0
+      for (const r of list) {
+        tc += Number(r.today_correct); tt += Number(r.today_total)
+        yc += Number(r.yesterday_correct); yt += Number(r.yesterday_total)
+      }
+      const pct = tt > 0 ? Math.round((tc / tt) * 100) : 0
+      const yp = yt > 0 ? Math.round((yc / yt) * 100) : 0
+      setAcc({ today: tt, pct, delta: tt > 0 && yt > 0 ? pct - yp : null })
+    }, () => { /* noop */ })
+    supabase.from('user_daily_stats').select('date,total').eq('user_id', user.id).order('date', { ascending: false }).limit(400)
+      .then(({ data: rows }) => {
+        if (!live) return
+        const days = new Set(((rows ?? []) as { date: string; total: number }[]).filter((r) => Number(r.total) > 0).map((r) => r.date))
+        let n = 0
+        const t = new Date()
+        while (days.has(t.toISOString().slice(0, 10))) {
+          n++
+          t.setTime(t.getTime() - 86400000)
+        }
+        setStreak(n)
+      }, () => { /* noop */ })
+    return () => { live = false }
+  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -87,7 +129,7 @@ export function DashboardPlanCards() {
           p_today_since: today,
           p_subjects: targetSubjects,
           p_subject_resets: subjectResetAt,
-        }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
+        }) as { data: { subject: string; total: number; done_all: number; done_today: number; missing_kp?: number }[] | null }
         if (cancelled) return
 
         const subjTotal = new Map<string, number>()
@@ -99,7 +141,7 @@ export function DashboardPlanCards() {
           subjTotal.set(r.subject, Number(r.total))
           subjDoneAll.set(r.subject, Number(r.done_all))
           subjDoneToday.set(r.subject, Number(r.done_today))
-          subjMissingKp.set(r.subject, Number((r as any).missing_kp ?? 0))
+          subjMissingKp.set(r.subject, Number(r.missing_kp ?? 0))
           totalAll += Number(r.total)
         }
         const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
@@ -156,11 +198,21 @@ export function DashboardPlanCards() {
 
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
 
+  const useTodayGoal = dailyTargetGoal > 0
+  const todayGoal = useTodayGoal ? dailyTargetGoal : customTargetTotal
+  const todayDone = useTodayGoal ? doneDaily : customTargetDone
+  const todayDoneLabel = useTodayGoal ? '今日' : '累计'
+  const todayPct = todayGoal > 0 ? Math.min(100, Math.round((todayDone / todayGoal) * 100)) : 0
+  const dayLeft = deadline ? Math.max(Math.ceil((new Date(deadline).getTime() - nowMs) / 86400000), 0) : null
+  const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
+  const yestSegPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
+  const todaySegPct = totalScope > 0 ? ((totalDone - yesterdayDone) / totalScope) * 100 : 0
+
   const nearestDeadline = dailyTargets.filter(t => t.deadline)
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
 
   const deadlineText = nearestDeadline ? (() => {
-    const diff = new Date(nearestDeadline.deadline!).getTime() - Date.now()
+    const diff = new Date(nearestDeadline.deadline!).getTime() - nowMs
     if (diff <= 0) return t('plan.deadlinePassed')
     const d = Math.floor(diff / 86400000)
     const h = Math.floor((diff % 86400000) / 3600000)
@@ -174,91 +226,138 @@ export function DashboardPlanCards() {
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className={cn('grid gap-4', deadline && dailyTargets.length > 0 ? 'lg:grid-cols-5' : '')}>
         {deadline && (
-          <Card className="flex-1 min-w-0 border-0 shadow-none cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => setDialogOpen(true)}>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-blue-600 dark:text-blue-400">{t('plan.longTerm')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
-                  {(() => {
-                    const yesterdayPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
-                    const todayPct = totalScope > 0 ? ((totalDone - yesterdayDone) / totalScope) * 100 : 0
-                    return (
-                      <>
-                        {yesterdayPct > 0 && <div className="h-full bg-blue-500 transition-all" style={{ width: `${yesterdayPct}%` }} />}
-                        {todayPct > 0 && <div className="h-full bg-green-500 transition-all" style={{ width: `${todayPct}%` }} />}
-                      </>
-                    )
-                  })()}
-                </div>
-                <span className="text-[11px] font-medium tabular-nums">{totalDone}/{totalScope}</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground truncate">
-                {t('plan.doneCount')}: {totalDone}
+          <Card
+            className={cn(
+              'min-w-0 border-0 shadow-none cursor-pointer hover:bg-accent/30 transition-colors group',
+              dailyTargets.length > 0 ? 'lg:col-span-3' : 'lg:col-span-5',
+            )}
+            onClick={() => setDialogOpen(true)}
+          >
+            <CardHeader className="pb-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-sm text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                  {t('plan.longTerm')}
+                  <span className="text-[10px] text-muted-foreground font-normal">点击调整</span>
+                </CardTitle>
                 {changePct != null && changePct > 0 && (
-                  <span className={isUp ? 'text-green-500' : 'text-red-500'}>
-                    {' '}{t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />} {changePct.toFixed(1)}%
+                  <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${isUp ? 'text-green-500' : 'text-red-500'}`}>
+                    {t('plan.vsYesterday')} {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />} {changePct.toFixed(1)}%
                   </span>
                 )}
-              </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3.5">
+              <div className="flex items-end gap-2.5 flex-wrap">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-5xl font-bold tabular-nums tracking-tight leading-none">{dayLeft}</span>
+                  <span className="text-sm text-muted-foreground">天</span>
+                </div>
+                <div className="pb-0.5">
+                  <p className="text-xs text-muted-foreground">距考试还有</p>
+                  <p className="text-[11px] text-muted-foreground/70">总题量 {totalScope} 题 · 待刷 {Math.max(totalScope - totalDone, 0)} 题</p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                  {yestSegPct > 0 && <div className="h-full bg-blue-500 transition-all duration-700" style={{ width: `${yestSegPct}%` }} />}
+                  {todaySegPct > 0 && <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${todaySegPct}%` }} />}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                  <span>
+                    已完成 <b className="tabular-nums text-foreground font-semibold">{totalDone}</b>/{totalScope} · 总体 <b className="tabular-nums text-foreground font-semibold">{overallPct}%</b>
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[3px] bg-blue-500" />昨日 {Math.round(yestSegPct)}%</span>
+                    <span className="inline-flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-[3px] bg-green-500" />今日 {Math.round(todaySegPct)}%</span>
+                  </span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
 
         {dailyTargets.length > 0 && (
-          <Card className="flex-1 min-w-0 border-0 shadow-none cursor-pointer hover:bg-accent/30 transition-colors" onClick={() => setDialogOpen(true)}>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-pink-600 dark:text-pink-400">{t('plan.dailyTarget')}</CardTitle>
+          <Card
+            className={cn(
+              'min-w-0 border-0 shadow-none cursor-pointer hover:bg-accent/30 transition-colors',
+              deadline ? 'lg:col-span-2' : 'lg:col-span-5',
+            )}
+            onClick={() => setDialogOpen(true)}
+          >
+            <CardHeader className="pb-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-sm text-pink-600 dark:text-pink-400 flex items-center gap-1.5">
+                  {t('plan.dailyTarget')}
+                  <span className="text-[10px] text-muted-foreground font-normal">点击调整</span>
+                </CardTitle>
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  {todayDoneLabel} <b className="text-foreground font-semibold">{todayDone}</b>/{todayGoal}
+                </span>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
-                  {(() => {
-                    const yesterday = customTargetDone - customTargetTodayDone
-                    const yPct = customTargetTotal > 0 ? (yesterday / customTargetTotal) * 100 : 0
-                    const tPct = customTargetTotal > 0 ? (customTargetTodayDone / customTargetTotal) * 100 : 0
-                    return (
-                      <>
-                        {yPct > 0 && <div className="h-full bg-pink-300 dark:bg-pink-800 transition-all" style={{ width: `${yPct}%` }} />}
-                        {tPct > 0 && <div className="h-full bg-pink-500 transition-all" style={{ width: `${tPct}%` }} />}
-                      </>
-                    )
-                  })()}
+            <CardContent className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-pink-500 transition-all duration-700" style={{ width: `${todayPct}%` }} />
                 </div>
-                <span className="text-[11px] font-medium tabular-nums">{customTargetDone}/{customTargetTotal}</span>
+                <span className="text-[11px] font-medium tabular-nums text-foreground w-8 text-right">{todayPct}%</span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
-                {t('plan.doneCount')}: {customTargetDone}
-                {deadlineText && (
-                  <span className="text-muted-foreground"> — {deadlineText}</span>
-                )}
-              </p>
               <div className="space-y-1">
-                {targetProgress.map((tp, i) => {
-                  return (
-                    <div key={i} className="space-y-0.5">
-                      {tp.subjects.map((subj) => {
-                        const subjDone = subj.done >= subj.count
-                        return (
-                          <div key={subj.subject} className="flex items-center gap-1 text-xs">
-                            <span className={subjDone ? 'text-green-500' : 'text-muted-foreground'}>
-                              {subjDone ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border" />}
-                            </span>
-                            <span className={subjDone ? 'line-through text-muted-foreground' : ''}>{subj.subject}</span>
-                            <span className="ml-auto text-muted-foreground tabular-nums">{subj.done}/{subj.count}{subj.missingKp > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp=__none__`} className="ml-1 text-amber-500 hover:text-amber-600 underline text-[10px]">{subj.missingKp}题缺知识点</Link>}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
+                {targetProgress.map((tp, i) => (
+                  <div key={i} className="space-y-0.5">
+                    {tp.subjects.map((subj) => {
+                      const subjDone = subj.done >= subj.count
+                      return (
+                        <div key={subj.subject} className="flex items-center gap-1.5 text-xs">
+                          <span className={subjDone ? 'text-green-500' : 'text-muted-foreground'}>
+                            {subjDone ? <Check className="h-3 w-3" /> : <span className="inline-block w-3 h-3 rounded-full border border-current" />}
+                          </span>
+                          <span className={cn('truncate', subjDone && 'line-through text-muted-foreground')}>{subj.subject}</span>
+                          <span className="ml-auto flex-none text-muted-foreground tabular-nums">
+                            {subj.done}/{subj.count}
+                            {subj.missingKp > 0 && (
+                              <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp=__none__`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline text-[10px]">
+                                {subj.missingKp}题缺知识点
+                              </Link>
+                            )}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
               </div>
+              {deadlineText && <p className="pt-0.5 text-[11px] text-muted-foreground truncate">— {deadlineText}</p>}
             </CardContent>
           </Card>
         )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">今日目标</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{todayGoal > 0 ? `${todayDone}/${todayGoal}` : '—'}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{todayGoal > 0 ? `已完成 ${todayPct}%` : '未设置每日目标'}</p>
+        </div>
+        <div className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">今日正确率</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{acc ? `${acc.pct}%` : '—'}</p>
+          <p className={cn('mt-0.5 text-[11px]', acc?.delta != null && (acc.delta >= 0 ? 'text-green-500' : 'text-red-500'))}>
+            {acc == null ? '统计中…' : acc.delta == null ? '数据不足' : `${acc.delta >= 0 ? '↑' : '↓'} ${Math.abs(acc.delta)}% vs 昨日`}
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">连续打卡</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{streak != null ? `${streak} 天` : '—'}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">今天也要保持节奏</p>
+        </div>
+        <div className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">冲刺总进度</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums">{totalScope > 0 ? `${totalDone}/${totalScope}` : '—'}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{totalScope > 0 ? `总体完成 ${overallPct}%` : '先设定长期计划'}</p>
+        </div>
       </div>
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>

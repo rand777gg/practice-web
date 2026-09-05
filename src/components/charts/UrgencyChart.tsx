@@ -1,22 +1,22 @@
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
-import { useThemeStore } from '@/stores/theme-store'
+import { useChartPalette } from '@/lib/chart-theme'
 import type { SubjectUrgency } from '@/lib/ai/ebbinghaus'
 
 interface Props {
   urgency: SubjectUrgency[]
 }
 
+// 紧急度三档色(低→高):青 → 靛 → 紫,超阈值回落红色警示
 const URGENCY_COLORS = [
-  { lt: 30, color: '#06b6d4' },
+  { lt: 30, color: '#22d3ee' },
   { lt: 60, color: '#6366f1' },
   { lt: 100, color: '#8b5cf6' },
 ]
 
 export function UrgencyChart({ urgency }: Props) {
-  const theme = useThemeStore((s) => s.theme)
-  const isDark = theme === 'dark'
-  const textColor = isDark ? '#d1d5db' : '#374151'
+  const pal = useChartPalette()
+  const textColor = pal.ink
 
   if (!urgency.length) return null
 
@@ -26,14 +26,14 @@ export function UrgencyChart({ urgency }: Props) {
     for (const { lt, color } of URGENCY_COLORS) {
       if (score <= lt) return color
     }
-    return '#ef4444'
+    return '#f87171'
   }
 
   const option = {
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: isDark ? '#1e293b' : '#fff',
-      borderColor: isDark ? '#334155' : '#e2e8f0',
+      backgroundColor: pal.panel,
+      borderColor: pal.panelLine,
       textStyle: { color: textColor, fontSize: 11 },
       formatter: (params: { name: string; value: number }[]) => {
         const name = params[0]?.name
@@ -50,14 +50,14 @@ export function UrgencyChart({ urgency }: Props) {
       text: '学科紧急度',
       left: 'center',
       top: 0,
-      textStyle: { color: '#22d3ee', fontSize: 12, fontWeight: 'normal' },
+      textStyle: { color: pal.brand, fontSize: 12, fontWeight: 'normal' },
     },
     grid: { top: 24, right: 30, bottom: 20, left: 8 },
     xAxis: {
       type: 'value' as const,
       max: 100,
       axisLabel: { fontSize: 10, color: textColor, formatter: '{value}' },
-      splitLine: { lineStyle: { color: isDark ? '#374151' : '#e5e7eb' } },
+      splitLine: { lineStyle: { color: pal.line } },
     },
     yAxis: {
       type: 'category' as const,

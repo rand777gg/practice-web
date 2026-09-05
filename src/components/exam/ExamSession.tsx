@@ -34,8 +34,10 @@ import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Spa
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
+import { ExamSchedulePanel } from './ExamSchedulePanel'
 import { PaperPreview } from './PaperPreview'
-import { buildPaperSections, buildPlaceholderPaperSections, type PaperSection } from '@/lib/exam-compose'
+import { PaperOutline } from './PaperOutline'
+import { buildPaperSections } from '@/lib/exam-compose'
 
 import {
   EXAM_DEFAULT_COUNT,
@@ -100,11 +102,6 @@ export function ExamSession() {
   const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
   const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>('sheet') // 卷面 单页摊开/双页摊开
   const [tab, setTab] = useState<'settings' | 'history'>('settings')
-  // 选中模板后的「占位卷面」: 由本地占位题合成(不抽取题库、无网络请求)
-  const previewSections = useMemo<PaperSection[]>(
-    () => (template ? buildPlaceholderPaperSections(template) : []),
-    [template],
-  )
   const [paperNotice, setPaperNotice] = useState('')
   // 双页视图查看工具栏(缩放/平移/全屏)锚点: 桌面端挂在顶栏模板名右侧; 移动端回退浮层
   const [spreadToolbarEl, setSpreadToolbarEl] = useState<HTMLElement | null>(null)
@@ -528,7 +525,7 @@ export function ExamSession() {
                 </CardContent>
               </Card>
 
-              {/* ── 右侧: 卷面占位预览(仅选中模板后显示; 题目为本地占位, 不抽取题库) ── */}
+              {/* ── 右侧: 卷面占位预览(仅选中模板后显示; 复用模板编辑的骨架占位, 不抽取题库) ── */}
               <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card/30">
                 <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-background/70 px-3 py-2">
                   <FileText className="h-4 w-4 text-primary" />
@@ -540,27 +537,30 @@ export function ExamSession() {
                     <div className="flex min-h-[380px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
                       {t('exam.previewRequiresTemplate')}
                     </div>
-                  ) : previewSections.length > 0 ? (
-                    <PaperPreview
-                      title={template?.name ?? t('exam.title')}
-                      meta={[
-                        template?.subject?.length ? template.subject.join('、') : '',
-                        `${durationMin} ${t('exam.minutes')}`,
-                      ].filter(Boolean).join(' · ')}
-                      sections={previewSections}
-                      answers={new Map()}
-                      readOnly
-                      cover={template?.cover ?? null}
-                      paperLayout={template?.layout ?? null}
-                    />
                   ) : (
-                    <div className="flex min-h-[380px] items-center justify-center text-sm text-muted-foreground">
-                      {t('examTemplate.previewEmpty')}
+                    <div className="flex min-h-[380px] justify-center">
+                      <PaperOutline
+                        compact
+                        title={template.name}
+                        meta={[
+                          template.subject?.length ? template.subject.join('、') : '',
+                          `${durationMin} ${t('exam.minutes')}`,
+                        ].filter(Boolean).join(' · ')}
+                        sections={template.sections}
+                        cover={template.cover ?? null}
+                        paperLayout={template.layout ?? null}
+                      />
                     </div>
                   )}
                 </div>
               </section>
             </div>
+
+            {user && (
+              <div className="mt-5">
+                <ExamSchedulePanel userId={user.id} />
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="history" className="mt-4">

@@ -19,7 +19,7 @@ import {
   type PaperTextBlockStyle,
   type PaperTextEditReq,
 } from '@/lib/paper-layout'
-import { setCoverFieldText, type ExamTemplateCover, type ExamTemplateCoverBlock } from '@/lib/paper-cover'
+import { moveCoverCustomBlocks, setCoverFieldText, type ExamTemplateCover, type ExamTemplateCoverBlock } from '@/lib/paper-cover'
 import type { ExamTemplateSection } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PaperOutline } from './PaperOutline'
@@ -207,6 +207,12 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
     onPick(null)
   }
   const dragMargin = (side: PaperMarginSide, mm: number) => onLayoutChange(patchMargin(eff, side, mm))
+
+  /** 封面自定义块拖动换序: from/to 为封面内可视槽位 (header/footer 块不参与) */
+  const reorderCoverBlocks = (from: number, to: number) => {
+    if (!cover || !onCoverChange) return
+    onCoverChange({ ...cover, customBlocks: moveCoverCustomBlocks(cover.customBlocks, from, to) })
+  }
 
   /** 当前待编辑文字 (读自 props 里的实时数据) */
   const readCurrent = (req: PaperTextEditReq): string => {
@@ -463,6 +469,7 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
               onPick={onPick}
               onEditText={openInlineEdit}
               onMarginDrag={dragMargin}
+              onReorderCoverBlocks={cover && onCoverChange ? reorderCoverBlocks : undefined}
             />
 
             {editing && (

@@ -89,6 +89,33 @@ export function setCoverFieldText(
   return out as unknown as ExamTemplateCover
 }
 
+/**
+ * 把封面自定义块数组中「封面内可视」的第 from 个块移到第 to 个槽位(0 基, 均可视槽位)。
+ * placement 为 header/footer 的块不渲染在封面上, 保持原位; 可视块的相对顺序按新槽位重排。
+ * from === to 或无块可移时原样返回。
+ */
+export function moveCoverCustomBlocks(
+  blocks: ExamTemplateCoverBlock[] | null | undefined,
+  from: number,
+  to: number,
+): ExamTemplateCoverBlock[] {
+  const src = blocks ?? []
+  const visSlots: number[] = []
+  src.forEach((b, i) => {
+    if (b.placement === 'header' || b.placement === 'footer') return
+    visSlots.push(i)
+  })
+  if (visSlots.length < 2) return src
+  if (from < 0 || from >= visSlots.length || from === to) return src
+  const t = Math.min(visSlots.length - 1, Math.max(0, to))
+  const order = [...visSlots]
+  const [moved] = order.splice(from, 1)
+  order.splice(t, 0, moved)
+  const slotOf = new Map<number, number>()
+  visSlots.forEach((slot, k) => slotOf.set(slot, order[k]))
+  return src.map((b, i) => (slotOf.has(i) ? src[slotOf.get(i)!] : b))
+}
+
 /* -------------------- 题型名 → QuestionType 映射 -------------------- */
 
 const TYPE_NAME_MAP: Array<{ re: RegExp; type: QuestionType }> = [

@@ -229,6 +229,14 @@ export function PaperLayoutEditor({ value, onChange, activePick }: Props) {
             </Select>
           </div>
         </div>
+        <label className="flex items-center gap-1.5 pt-0.5 text-xs">
+          <Checkbox
+            checked={layout.allowFlowBreak}
+            onCheckedChange={(v) => patch({ allowFlowBreak: v === true })}
+          />
+          {t('examTemplate.layout.allowFlowBreak')}
+        </label>
+        <p className="pl-4 text-[10px] text-muted-foreground">{t('examTemplate.layout.allowFlowBreakHint')}</p>
       </section>
 
       {/* 装订线 */}
