@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
@@ -124,9 +123,9 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
               <div className="space-y-4">
                 <div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400">简单</Badge>
-                    {question.subject && <Badge variant="secondary">{question.subject}</Badge>}
-                    {question.category && <Badge variant="secondary">{question.category}</Badge>}
+                    <span className="inline-flex items-center rounded-full border border-emerald-500/50 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">简单</span>
+                    {question.subject && <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">{question.subject}</span>}
+                    {question.category && <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">{question.category}</span>}
                   </div>
                 </div>
                 <MarkdownRenderer content={question.question_text} />
@@ -162,9 +161,9 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
         </div>
 
         {/* 右:编辑器 + 判题 */}
-        <div className="min-w-0 flex-1 flex flex-col bg-zinc-950">
-          <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5 shrink-0">
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400"><Terminal className="h-3.5 w-3.5" />代码</span>
+        <div className="min-w-0 flex-1 flex flex-col bg-muted/30">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 shrink-0">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><Terminal className="h-3.5 w-3.5" />代码</span>
             <Select value={language} onValueChange={setLanguage}>
               <SelectTrigger size="sm" className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>{LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}</SelectContent>
@@ -181,13 +180,13 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
             </div>
           </div>
           {/* 判题通道 + 运行 + 结果 */}
-          <div className="border-t border-zinc-800 p-2 space-y-1.5 shrink-0">
+          <div className="border-t border-border p-2 space-y-1.5 shrink-0">
             <div className="flex items-center gap-2 flex-wrap text-xs">
               <span className="text-muted-foreground">判题通道:</span>
-              <button type="button" onClick={() => selectChannel('local')} className={cn('rounded-full border px-2 py-0.5', channel === 'local' ? 'border-teal-500/50 bg-teal-500/10 text-teal-400' : 'border-zinc-700 text-muted-foreground hover:bg-zinc-900')}>本地自测</button>
-              <button type="button" onClick={() => selectChannel('central')} className={cn('rounded-full border px-2 py-0.5', channel === 'central' ? 'border-primary/60 bg-primary/10 text-primary' : 'border-zinc-700 text-muted-foreground hover:bg-zinc-900')}>平台判题</button>
-              {channel === 'central' && (platformChecking ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />探测延迟…</span> : platformLatency != null ? <span className="text-emerald-400">延迟 {platformLatency}ms</span> : <span className="text-red-400">平台节点不可达</span>)}
-              {channel === 'local' && localReachable === false && <span className="text-red-400">{t('localJudge.offline') ?? '本地 Judge0 未启动'}</span>}
+              <button type="button" onClick={() => selectChannel('local')} className={cn('rounded-full border px-2 py-0.5 transition-colors', channel === 'local' ? 'border-teal-500/60 bg-teal-500/10 text-teal-600 dark:text-teal-400' : 'border-border text-muted-foreground hover:bg-muted')}>本地自测</button>
+              <button type="button" onClick={() => selectChannel('central')} className={cn('rounded-full border px-2 py-0.5 transition-colors', channel === 'central' ? 'border-primary/60 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}>平台判题</button>
+              {channel === 'central' && (platformChecking ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />探测延迟…</span> : platformLatency != null ? <span className="text-emerald-600 dark:text-emerald-400">延迟 {platformLatency}ms</span> : <span className="text-red-500">平台节点不可达</span>)}
+              {channel === 'local' && localReachable === false && <span className="text-red-500">{t('localJudge.offline') ?? '本地 Judge0 未启动'}</span>}
             </div>
             <div className="flex items-center gap-2">
               <Button onClick={run} disabled={loading || !code.trim()} className="gap-1.5">
@@ -202,13 +201,13 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
                     onChange={(e) => setCustomInput(e.target.value)}
                     placeholder="输入自定义 stdin(多行用回车)"
                     rows={2}
-                    className="font-mono text-xs min-h-[2rem] resize-y bg-zinc-900 text-zinc-100 border-zinc-700"
+                    className="font-mono text-xs min-h-[2rem] resize-y border-input"
                     spellCheck={false}
                   />
                   <Button variant="outline" size="sm" onClick={runCustom} disabled={loading} className="shrink-0 h-auto">自测</Button>
                 </div>
               </details>
-              {notice && <span className="flex items-center gap-1 text-xs text-red-400"><TriangleAlert className="h-3 w-3" />{notice}</span>}
+              {notice && <span className="flex items-center gap-1 text-xs text-red-500"><TriangleAlert className="h-3 w-3" />{notice}</span>}
             </div>
             <CodeResult results={results} status={judgeStatus} testCasesCount={testCases.length} />
             {testCases.length > 0 && (
@@ -216,9 +215,9 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
                 <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{t('practice.codeEditor.testCases') ?? '测试点'}({testCases.length})</summary>
                 <div className="mt-1.5 space-y-1">
                   {testCases.map((tc, i) => (
-                    <div key={i} className="rounded border border-zinc-800 bg-zinc-900/40 p-1.5">
-                      <div className="flex gap-1.5"><span className="text-muted-foreground w-4 shrink-0">#{i + 1}</span><span className="text-muted-foreground shrink-0">输入</span><WhitespaceBlock text={tc.input || '(空)'} className="text-zinc-300" dim={false} /></div>
-                      <div className="flex gap-1.5 pl-5"><span className="text-muted-foreground shrink-0">期望</span><WhitespaceBlock text={tc.expected || '(空)'} className="text-emerald-400" dim={false} /></div>
+                    <div key={i} className="rounded border border-border bg-muted/40 p-1.5">
+                      <div className="flex gap-1.5"><span className="text-muted-foreground w-4 shrink-0">#{i + 1}</span><span className="text-muted-foreground shrink-0">输入</span><WhitespaceBlock text={tc.input || '(空)'} className="text-foreground" dim={false} /></div>
+                      <div className="flex gap-1.5 pl-5"><span className="text-muted-foreground shrink-0">期望</span><WhitespaceBlock text={tc.expected || '(空)'} className="text-emerald-600 dark:text-emerald-400" dim={false} /></div>
                     </div>
                   ))}
                 </div>

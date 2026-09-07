@@ -353,7 +353,9 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       )}
 
       <div {...row(100)}>
-        <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
+        {!(isCoding && judgePanelOn) && (
+          <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
+        )}
       </div>
       <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
         <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
