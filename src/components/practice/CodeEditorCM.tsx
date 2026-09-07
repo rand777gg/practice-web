@@ -6,6 +6,7 @@ import { python } from '@codemirror/lang-python'
 import { cpp } from '@codemirror/lang-cpp'
 import { java } from '@codemirror/lang-java'
 import type { ViewUpdate } from '@uiw/react-codemirror'
+import { useThemeStore } from '@/stores/theme-store'
 import { cn } from '@/lib/utils'
 
 /** 语言 key -> CodeMirror 语言扩展 */
@@ -37,6 +38,7 @@ function posToLineCol(docText: string, pos: number): [number, number] {
 }
 
 export function CodeEditorCM({ value, onChange, language = 'javascript', readOnly, className, minHeight = '320px', onCursor }: Props) {
+  const themeMode = useThemeStore((s) => s.theme)
   const ext = useMemo(() => [langExt[language] || langExt.javascript], [language])
   const handleUpdate = (vu: ViewUpdate) => {
     if (!onCursor) return
@@ -50,7 +52,7 @@ export function CodeEditorCM({ value, onChange, language = 'javascript', readOnl
       value={value}
       onChange={onChange}
       onUpdate={handleUpdate}
-      theme={oneDark}
+      theme={themeMode === 'dark' ? oneDark : undefined}
       extensions={ext}
       readOnly={readOnly}
       height="auto"
@@ -65,7 +67,13 @@ export function CodeEditorCM({ value, onChange, language = 'javascript', readOnl
         closeBrackets: true,
         indentOnInput: true,
       }}
-      className={cn('text-sm overflow-hidden rounded-md border border-zinc-800', className)}
+      className={cn(
+        'text-sm overflow-hidden rounded-md border',
+        themeMode === 'dark'
+          ? 'border-zinc-800 bg-zinc-950 text-zinc-100'
+          : 'border-border bg-transparent text-foreground',
+        className,
+      )}
     />
   )
 }

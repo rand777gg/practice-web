@@ -681,3 +681,20 @@
 .dash-shell .shadow-none {
   box-shadow: none;
 }
+
+/* CodeMirror:使用项目的等宽字体(JetBrains Mono)并让配色贴合主题 */
+.cm-editor,
+.cm-content,
+.cm-line,
+.cm-gutters,
+.cm-activeLine,
+.cm-cursor {
+  font-family: var(--font-mono) !important;
+}
+/* 浅色下 CodeMirror 默认浅底;深色交给 oneDark */
+.cm-editor {
+  font-size: 13px;
+}
+html.dark .cm-editor {
+  color-scheme: dark;
+}
