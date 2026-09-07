@@ -8,6 +8,7 @@ import { BrandLogo } from './BrandLogo'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
 import { useT } from '@/i18n/use-t'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -55,6 +56,11 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
   const isAdmin = profile?.role === 'admin'
   const { t } = useT()
   const handleClick = () => onClose?.()
+  const betaBadge = (
+    <Badge variant="secondary" className="ml-auto shrink-0 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-[9px] px-1 py-0 leading-none">
+      {t('nav.beta')}
+    </Badge>
+  )
 
   return (
     <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'p-2 space-y-1' : 'p-3 space-y-1')}>
@@ -65,7 +71,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       <NavItem to="/review" icon={<RotateCcw className="h-4 w-4" />} label={t('nav.wrongReview')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/question-bank" icon={<Library className="h-4 w-4" />} label={t('nav.questionBank')} collapsed={collapsed} onClick={handleClick} />
-      <NavItem to="/judge-local" icon={<Server className="h-4 w-4" />} label={t('nav.localJudge')} collapsed={collapsed} onClick={handleClick} />
+      <NavItem to="/judge-local" icon={<Server className="h-4 w-4" />} label={t('nav.localJudge')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />
 
       {isAdmin && (
         <>
@@ -74,7 +80,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
           <NavItem to="/admin/questions" icon={<FileQuestion className="h-4 w-4" />} label={t('nav.questions')} collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/duplicates" icon={<GitMerge className="h-4 w-4" />} label="题目查重" collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/users" icon={<Users className="h-4 w-4" />} label={t('nav.users')} collapsed={collapsed} onClick={handleClick} />
-          <NavItem to="/admin/ai" icon={<Sparkles className="h-4 w-4" />} label={t('nav.ai')} collapsed={collapsed} onClick={handleClick} />
+          <NavItem to="/admin/ai" icon={<Sparkles className="h-4 w-4" />} label={t('nav.ai')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />
         </>
       )}
     </nav>

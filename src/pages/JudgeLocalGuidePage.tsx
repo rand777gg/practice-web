@@ -38,7 +38,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 export function Component() {
-  const { lang } = useT()
+  const { lang, t } = useT()
   const [state, setState] = useState<'checking' | 'ok' | 'fail'>('checking')
 
   const probe = useCallback(async () => {
@@ -58,6 +58,10 @@ export function Component() {
 
   return (
     <div className="max-w-3xl mx-auto">
+      <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>{t('localJudge.previewNotice')}</span>
+      </div>
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold flex-1 min-w-0">{zh ? '本地 Judge0 判题环境' : 'Local Judge0 Environment'}</h1>
         <Badge variant="secondary">{zh ? '本地自测' : 'Local self-test'}</Badge>

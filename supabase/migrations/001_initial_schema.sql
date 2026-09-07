@@ -2504,8 +2504,8 @@ INSERT INTO public.questions (
     {"input":"4 9\\n2 7 11 15","expected":"0 1"},
     {"input":"3 6\\n3 2 4","expected":"1 2"},
     {"input":"2 0\\n0 0","expected":"0 1"},
-    {"input":"5 10\\n1 5 3 7 2","expected":"1 3"},
-    {"input":"6 20\\n2 4 6 8 10 12","expected":"4 5"}
+    {"input":"5 10\\n1 5 3 7 2","expected":"2 3"},
+    {"input":"6 20\\n2 4 6 8 10 12","expected":"3 5"}
   ]'::jsonb,
   '{"timeout_ms":1000,"memory_mb":128}'::jsonb
 );

@@ -14,7 +14,7 @@ const JUDGE0_URL = Deno.env.get('JUDGE0_URL') || ''
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-client-info',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
 }
 
 // 前端语言 key -> Judge0 CE 语言 id(与 src/lib/judge0.ts 保持一致)
@@ -69,17 +69,18 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
 
   const cpuMs = runtime_config?.timeout_ms ?? 2000
   const memMb = runtime_config?.memory_mb ?? 128
-  const wallSec = Math.max(1, Math.round((cpuMs / 1000) * 1.5))
-  const memKb = Math.max(32768, Math.round(memMb * 1024))
+  // 为避开 422,钳制到 Judge0 服务端上限内;不传 wall/stack(服务端默认天然不超限)
+  const MAX_CPU_S = 15
+  const MAX_MEM_KB = 512000
+  const cpuSec = Math.min(MAX_CPU_S, Math.max(1, Math.round(cpuMs / 1000)))
+  const memKb = Math.min(MAX_MEM_KB, Math.max(32768, Math.round(memMb * 1024)))
 
   const submissions = test_cases.map((tc) => ({
     source_code: code,
     language_id: languageId,
     stdin: tc.input,
-    cpu_time_limit: wallSec,
-    wall_time_limit: Math.max(1, Math.round(wallSec * 1.5)),
+    cpu_time_limit: cpuSec,
     memory_limit: memKb,
-    enable_network: false,
   }))
 
   // 1) 批量创建
@@ -96,7 +97,7 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
   if (tokens.length !== test_cases.length) return json({ error: 'Judge0 提交 token 数量不符' }, 502)
 
   // 2) 轮询至全部出结果
-  type Run = { status_id: number; stdout?: string; stderr?: string; compile_output?: string; time?: unknown; memory?: unknown }
+  type Run = { status?: { id: number; description?: string }; stdout?: string; stderr?: string; compile_output?: string; time?: unknown; memory?: unknown }
   const fields = 'token,stdout,stderr,compile_output,status,time,memory'
   const all = new Array<Run | null>(tokens.length).fill(null)
   const deadline = Date.now() + Math.max(20000, cpuMs * tokens.length + 10000)
@@ -105,10 +106,12 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
     const pending = tokens.map((tk, i) => ({ tk, i })).filter(({ i }) => all[i] === null)
     const poll = await fetch(`${JUDGE0_URL}/submissions/batch?tokens=${pending.map((p) => p.tk).join(',')}&fields=${fields}`)
     if (!poll.ok) return json({ error: `Judge0 查询失败:HTTP ${poll.status}` }, 502)
-    const data = (await poll.json()) as Run[]
+    // Judge0 batch 返回外壳 { submissions:[...] }
+    const raw = (await poll.json()) as { submissions?: Run[] } | Run[]
+    const data = Array.isArray(raw) ? raw : (raw.submissions ?? [])
     for (let k = 0; k < pending.length; k++) {
       const rec = data[k]
-      if (rec && rec.status_id >= 3) all[pending[k].i] = rec
+      if (rec && Number(rec.status?.id) >= 3) all[pending[k].i] = rec
     }
     await new Promise((r) => setTimeout(r, 400))
   }
@@ -116,7 +119,7 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
   // 3) 整理判定
   const results = test_cases.map((tc, i) => {
     const run = all[i]!
-    const st = j0Status(run.status_id)
+    const st = j0Status(run.status?.id ?? 13)
     const actualOut = j0Trim(run.stdout)
     const expOut = tc.expected.trim()
     const outputOk = st === 'accepted' && j0Match(actualOut, expOut)

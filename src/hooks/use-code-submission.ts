@@ -19,6 +19,8 @@ export interface SubmissionOptions {
   localJudgeUrl?: string
   /** 是否仅自测、不因失败抛错打断流程(local 自测用 true) */
   tolerant?: boolean
+  /** 判题过程中每个测试点完成的即时回调(用于逐点回显,不入成绩) */
+  onProgress?: (partial: SubmissionResult[]) => void
 }
 
 export function useCodeSubmission(questionId: string) {
@@ -75,6 +77,9 @@ export function useCodeSubmission(questionId: string) {
       setResults(null)
       setJudgeStatus('running')
 
+      // 逐点完成即回显(仅刷新结果视图,不落库)
+      const handleProgress = (partial: SubmissionResult[]) => { setResults([...partial]) }
+
       try {
         let verdict: JudgeResponse
 
@@ -91,6 +96,7 @@ export function useCodeSubmission(questionId: string) {
             baseUrl: localJudgeUrl,
             timeoutMs: runtimeConfig?.timeout_ms ?? 2000,
             memoryMb: runtimeConfig?.memory_mb ?? 128,
+            onProgress: handleProgress, // 本地判题默认逐点即时回显
           })
           verdict = { status: local.status, results: local.results, execution_time_ms: local.execution_time_ms }
         } else {

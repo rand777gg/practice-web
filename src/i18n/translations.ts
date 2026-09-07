@@ -10,6 +10,7 @@ export const zh = {
     publicNotes: '笔记',
     questionBank: '试题库',
     localJudge: '本地判题',
+    beta: 'BETA',
     admin: '管理',
     questions: '题目管理',
     users: '用户管理',
@@ -702,6 +703,7 @@ export const zh = {
     central: '平台判题',
     centralDisabled: '平台中心判题暂未开放(未配置中心 Judge0),请先用本地自测',
     functionNotice: 'function 模板题不适用本地 Judge0 判题(需先在题目设置里改为 stdio 模式)',
+    previewNotice: '此功能处于预览/开发阶段，界面与行为可能随时调整。',
     centralDefault: '当前使用平台判题',
   },
   tips: [
@@ -729,9 +731,9 @@ export const zh = {
     providerId: 'Provider ID',
     models: '可用模型',
     disclaimer: '内容由 AI 生成，请仔细甄别',
+    previewNotice: '此功能处于预览/开发阶段，界面与行为可能随时调整。',
   },
   examTemplate: {
-    noTemplate: '不使用模板',
     builtinGroup: '内置预设',
     myGroup: '我的模板',
     noCustom: '还没有自定义模板',
@@ -1027,6 +1029,7 @@ export const en = {
     publicNotes: 'Notes',
     questionBank: 'Question Bank',
     localJudge: 'Local Judge',
+    beta: 'BETA',
     admin: 'Admin',
     questions: 'Questions',
     users: 'Users',
@@ -1720,6 +1723,7 @@ export const en = {
     central: 'Platform judge',
     centralDisabled: 'Platform judge is not available yet (center Judge0 not configured) — use local self-test',
     functionNotice: 'Function-style template questions cannot be judged by local Judge0 (switch the question to stdio mode first)',
+    previewNotice: 'This feature is in preview / development — UI and behavior may change.',
     centralDefault: 'Using platform judge',
   },
   tips: [
@@ -1738,6 +1742,7 @@ export const en = {
   ],
   ai: {
     disclaimer: 'AI-generated content. Please verify.',
+    previewNotice: 'This feature is in preview / development — UI and behavior may change.',
     title: 'AI Model Management',
     description: 'Enable and configure AI providers, select models to use.',
     official: 'Official',
