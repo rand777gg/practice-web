@@ -1184,7 +1184,9 @@ export function PracticeSession() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      // 跳过输入目标(含 CodeMirror/.cm-editor 等编辑器),避免快捷键与打字冲突
+      const t = e.target as HTMLElement | null
+      if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable || t.closest('.cm-editor') || t.closest('[contenteditable]'))) return
       if (isLoading || showSkeleton) return
       const sc = shortcutsRef.current
       if (matchShortcut(e, sc.prev)) { e.preventDefault(); prevRef.current() }
@@ -1264,6 +1266,8 @@ export function PracticeSession() {
   useEffect(() => {
     if (!tooEasyOpen) return
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable || t.closest('.cm-editor'))) return
       if (e.key === 'w' || e.key === 'W') { e.preventDefault(); setTooEasyOpen(false); handleMarkTooEasy() }
       if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setTooEasyOpen(false) }
       if (e.key === 'Escape') { e.preventDefault(); setTooEasyOpen(false) }
@@ -1747,7 +1751,7 @@ export function PracticeSession() {
             <>
               <div className="space-y-4">
                   <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} allowLocalJudge attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
                   </div>
                   {availableKpEntries.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">

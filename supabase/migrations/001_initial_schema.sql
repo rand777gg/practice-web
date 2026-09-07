@@ -2456,3 +2456,56 @@ ALTER TABLE public.exam_sessions
   ADD COLUMN IF NOT EXISTS template JSONB;
 
 COMMENT ON COLUMN public.exam_sessions.template IS '开考时模板快照(name/cover/layout/sections);刷新续考时还原卷首与工具栏名称,缺列时前端降级不落快照';
+
+
+-- ============================================================================
+-- Section 32: 本地判题来源 (submissions.judge_source) —— 自部署 Judge0 自测,不进入公共成绩
+--   中心判题(平台 Judge0)落 'central' ;用户自部署本地判题落 'local'。
+--   排行榜/竞赛/认证等公共可信成绩查询一律 WHERE judge_source='central' 过滤;
+--   本地结果只服务个人历史与跨设备同步。默认 'central' 兼容老数据。
+-- ============================================================================
+ALTER TABLE public.submissions
+  ADD COLUMN IF NOT EXISTS judge_source TEXT DEFAULT 'central'
+  CHECK (judge_source IN ('central', 'local'));
+
+CREATE INDEX IF NOT EXISTS idx_submissions_source
+  ON public.submissions(judge_source, created_at DESC);
+
+COMMENT ON COLUMN public.submissions.judge_source IS 'central=平台中心判题(Judge0),local=用户本地自部署 Judge0 自测(不计入公共成绩)';
+
+
+-- ============================================================================
+-- Section 33: 测试题目 —— 编程题(stdio)OJ 判题示例:两数之和 Two Sum
+--   由本地 Judge0 / 中心判题均可评测;stdin 读入,stdout 输出两个下标。
+-- ============================================================================
+INSERT INTO public.questions (
+  question_type, question_text, options, correct_answer, category,
+  categories, subject, analysis, key_points, answer_explanation,
+  verified, import_mode, execution_mode, examples, test_cases, runtime_config
+) VALUES (
+  'coding',
+  '## 两数之和(Two Sum)\n\n给定一个整数数组 `nums` 和目标值 `target`,请找出和为 `target` 的两个数的下标,并以空格分隔输出。\n\n- 输入(第一行两个整数 n target,第二行 n 个整数,空格分隔)\n- 输出:两个下标 i、j(0 起),满足 `nums[i] + nums[j] == target`,保证恰好存在一组解。\n\n### 输入\n```\n4 9\n2 7 11 15\n```\n\n### 输出\n```\n0 1\n```',
+  '[]'::jsonb,
+  '{"code":"","language":"python","allPassed":false}'::jsonb,
+  '本地判题测试',
+  '["本地判题测试","OJ示例"]'::jsonb,
+  '算法',
+  '用哈希表记录已遍历元素,一次遍历即可 O(n) 求解。',
+  '哈希表,双指针',
+  '建立「数值->下标」的哈希表;遍历每个 nums[i] 时查 target-nums[i] 是否已存在,存在则输出其下标与 i。',
+  false,
+  'manual',
+  'stdio',
+  '[
+    {"input":"4 9\\n2 7 11 15","expected":"0 1","explanation":"nums[0]+nums[1]=2+7=9"},
+    {"input":"3 6\\n3 2 4","expected":"1 2","explanation":"nums[1]+nums[2]=2+4=6"}
+  ]'::jsonb,
+  '[
+    {"input":"4 9\\n2 7 11 15","expected":"0 1"},
+    {"input":"3 6\\n3 2 4","expected":"1 2"},
+    {"input":"2 0\\n0 0","expected":"0 1"},
+    {"input":"5 10\\n1 5 3 7 2","expected":"2 3"},
+    {"input":"6 20\\n2 4 6 8 10 12","expected":"3 5"}
+  ]'::jsonb,
+  '{"timeout_ms":1000,"memory_mb":128}'::jsonb
+);

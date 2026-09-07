@@ -2,21 +2,22 @@ import { memo, useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
-import { OPTION_LABELS, QUESTION_TYPE_LABELS, TYPE_COLORS, POINT_COLORS } from '@/lib/constants'
+import { OPTION_LABELS } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer, CodingAnswer, CaseAnswer, CaseQuestion, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert } from 'lucide-react'
+import { Check, Pencil, Star, ThumbsDown, HelpCircle, TriangleAlert, Loader2 } from 'lucide-react'
 import { CodeEditor } from '@/components/practice/CodeEditor'
 import { CodeResult } from '@/components/practice/CodeResult'
+import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
+import { CodingIdeView } from '@/components/practice/CodingIdeView'
+import { QuestionTags } from '@/components/questions/QuestionTags'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
-
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
 
@@ -186,30 +187,6 @@ function CaseSubBlock({ sub, index, value, showResult, disabled, onChange }: {
   )
 }
 
-function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        <span
-          className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
-          onClick={() => setOpen(!open)}
-        >
-          {yearCats.length}年真题
-        </span>
-      </HoverCardTrigger>
-      <HoverCardContent side="bottom" align="start" className="w-auto max-w-[calc(100vw-2rem)] px-3 py-2 text-xs">
-        <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
-        <div className="flex flex-wrap gap-1">
-          {yearCats.map((y) => (
-            <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
-          ))}
-        </div>
-      </HoverCardContent>
-    </HoverCard>
-  )
-}
-
 interface Props {
   question: Question
   selectedAnswer?: CorrectAnswer | null
@@ -230,10 +207,12 @@ interface Props {
   favoriteKbd?: string
   tooEasyKbd?: string
   flagIssueKbd?: string
+  /** 练习模式下是否允许使用本地自部署 Judge0 自测(考试/结果回顾一律 false) */
+  allowLocalJudge?: boolean
 
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd, allowLocalJudge }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
   // 底部操作按钮(收藏/太简单/不确定/标记问题): <sm 折叠成纯图标,点击后展开图标+文字; ≥sm 恒展开。与题目管理顶部按钮同款动画。
@@ -273,7 +252,6 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
     `whitespace-nowrap overflow-hidden transition-all duration-300 ease-out sm:max-w-[12rem] sm:opacity-100 sm:pl-2 ${isOpen ? 'max-w-[12rem] opacity-100 pl-2' : 'max-w-0 opacity-0 pl-0'}`
 
   const { submit, loading: codingLoading, results: codingResults, judgeStatus } = useCodeSubmission(question.id)
-  const [editableTestCases, setEditableTestCases] = useState<TestCase[]>([])
   const codingAnswer = selectedAnswer && typeof selectedAnswer === 'object' && 'code' in (selectedAnswer as unknown as Record<string, unknown>) ? selectedAnswer as CodingAnswer : null
   const type = question.question_type
   const isSingle = type === 'single_choice'
@@ -285,12 +263,36 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isJudgeCorrect = type === 'judge_correct'
   const isCoding = type === 'coding'
   const isCase = type === 'case_analysis'
-
+  const isLocalJudgeable = isCoding && (question.execution_mode ?? 'stdio') !== 'function'
+  // 判题通道面板:练习/测试页里 coding 题展示「中心(置灰)/本地自测」选择。
+  // 中心判题尚未就绪(未配中心 Judge0),故本地自测为当前唯一可用通道。
+  const judgePanelOn = !!allowLocalJudge && isCoding && !showResult
+  const [judgeChannel, setJudgeChannel] = useState<'local' | 'central'>('local')
+  const [platformLatency, setPlatformLatency] = useState<number | null>(null)
+  const [platformChecking, setPlatformChecking] = useState(false)
+  const [localReachable, setLocalReachable] = useState<boolean | null>(null) // null=检测中
+  const [judgeNotice, setJudgeNotice] = useState<string | null>(null)
   useEffect(() => {
-    if (isCoding && question.test_cases?.length) {
-      setEditableTestCases([...question.test_cases])
+    if (!judgePanelOn || !isLocalJudgeable) return
+    let cancelled = false
+    isJudge0Reachable(JUDGE0_DEFAULT_URL).then((ok) => { if (!cancelled) setLocalReachable(ok) })
+    return () => { cancelled = true }
+  }, [judgePanelOn, isLocalJudgeable])
+
+  // 切换到平台判题时探测一次"浏览器→平台"延迟(事件驱动;集群化后可遍历多节点取最近)
+  const selectChannel = (c: 'local' | 'central') => {
+    setJudgeChannel(c)
+    setJudgeNotice(null)
+    if (c === 'central') {
+      setPlatformChecking(true)
+      setPlatformLatency(null)
+      measureJudge0Latency(JUDGE0_PLATFORM_URL).then((ms) => {
+        setPlatformLatency(ms)
+        setPlatformChecking(false)
+      })
     }
-  }, [question.id, isCoding, question.test_cases])
+  }
+
   const isTextInput = isFillBlank || isShort || isAnalysis
   const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered, question.unordered_blanks, question.case_questions)
   const caseSubs = question.case_questions ?? []
@@ -306,7 +308,6 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       }))
     : []
   const caseCorrectCount = caseResults.filter((r) => r.ok).length
-  const typeLabel = QUESTION_TYPE_LABELS[type]
   const row = (delay: number) => ({ className: cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'), style: { transitionDelay: `${delay}ms` } })
 
   return (
@@ -326,83 +327,16 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       )}
 
       <div {...row(100)}>
-        <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
-      </div>
-      <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
-        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
-        {question.verified ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
-            <Check className="h-3 w-3" />已验证
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
-            待验证
-          </span>
-        )}
-        {question.subject && (
-          <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-            {question.subject}
-          </span>
-        )}
-        {(() => {
-          const cats = question.categories?.length ? question.categories : question.category ? [question.category] : []
-          const yearPattern = /^\d{4}年真题$/
-          const yearCats = cats.filter((c) => yearPattern.test(c))
-          // Multiple year categories → show "N年真题" badge, tap/hover to see details
-          if (yearCats.length >= 2) {
-            const otherCats = cats.filter((c) => !yearPattern.test(c))
-            return (
-              <>
-                <MultiYearBadge yearCats={yearCats} />
-                {otherCats.map((cat) =>
-                  cat === 'AI生成' ? (
-                    <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
-                      <HoverCardTrigger asChild>
-                        <span className="ai-badge ai-badge-dark">
-                          <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
-                          <span className="badge-text">AI生成</span>
-                        </span>
-                      </HoverCardTrigger>
-                      <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                        <p>{t('ai.disclaimer')}</p>
-                      </HoverCardContent>
-                    </HoverCard>
-                  ) : (
-                    <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
-                  )
-                )}
-              </>
-            )
-          }
-          // Default: show all categories as individual badges
-          return cats.map((cat) =>
-            cat === 'AI生成' ? (
-              <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
-                <HoverCardTrigger asChild>
-                  <span className="ai-badge ai-badge-dark">
-                    <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
-                    <span className="badge-text">AI生成</span>
-                  </span>
-                </HoverCardTrigger>
-                <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                  <p>{t('ai.disclaimer')}</p>
-                </HoverCardContent>
-              </HoverCard>
-            ) : (
-              <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
-            )
-          )
-        })()}
-        {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
-          <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
-        ))}
-        {attemptCount != null && (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span>{t('practice.attempts')}: {attemptCount}</span>
-            {wrongCount != null && wrongCount > 0 && <span className="text-red-500">({t('practice.wrong')}: {wrongCount})</span>}
-          </span>
+        {!(isCoding && judgePanelOn) && (
+          <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
         )}
       </div>
+      {/* 标签行:练习模式 IDE 下移入 CodingIdeView 描述页内,其余题型/场景保留在题干下方 */}
+      {!(isCoding && judgePanelOn) && (
+        <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
+          <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} />
+        </div>
+      )}
 
       {/* Choice options (single / multi) */}
       <div {...row(300)}>
@@ -564,44 +498,165 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       )}
 
       {/* Coding — LeetCode-style examples */}
-      {isCoding && question.examples?.length! > 0 && (
+      {isCoding && judgePanelOn && (
+        <CodingIdeView
+          question={question}
+          attemptCount={attemptCount}
+          wrongCount={wrongCount}
+          onSaveResult={(ans) => onSelect?.({ code: ans.code, language: ans.language, allPassed: ans.allPassed } as CodingAnswer)}
+        />
+      )}
+      {isCoding && !judgePanelOn && question.examples?.length! > 0 && (
         <div className="space-y-2">
           {((question.examples ?? []) as ExampleCase[]).map((ex, i) => (
             <div key={i} className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
-              <p className="font-medium text-xs text-muted-foreground">示例 {i + 1}</p>
-              <p><span className="font-medium">输入：</span><code className="text-xs bg-muted px-1 rounded">{ex.input}</code></p>
-              <p><span className="font-medium">输出：</span><code className="text-xs bg-muted px-1 rounded">{ex.expected}</code></p>
-              {ex.explanation && <p><span className="font-medium">解释：</span>{ex.explanation}</p>}
+              <p className="font-medium text-xs text-muted-foreground">{(t('codeEditor.example') ?? '示例')} {i + 1}</p>
+              <p><span className="font-medium">{(t('codeEditor.input') ?? '输入')}：</span><code className="text-xs bg-muted px-1 rounded">{ex.input}</code></p>
+              <p><span className="font-medium">{(t('codeEditor.output') ?? '输出')}：</span><code className="text-xs bg-muted px-1 rounded">{ex.expected}</code></p>
+              {ex.explanation && <p><span className="font-medium">{(t('codeEditor.explanation') ?? '解释')}：</span>{ex.explanation}</p>}
             </div>
           ))}
         </div>
       )}
 
       {/* Coding editor */}
-      {isCoding && (
+      {isCoding && !judgePanelOn && (
         <div className="space-y-3">
+          {/* 判题通道:中心(置灰/暂不可用) + 本地自测(当前可用)。仅练习/测试页展示。 */}
+          {judgePanelOn && (
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground mr-1">判题通道:</span>
+                {/* 本地自测 */}
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => selectChannel('local')}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors',
+                    judgeChannel === 'local'
+                      ? 'border-teal-500/40 bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:text-teal-300'
+                      : 'border-border text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  <span className={cn('h-1.5 w-1.5 rounded-full', judgeChannel === 'local' ? 'bg-teal-500' : 'bg-muted-foreground/40')} />
+                  {t('localJudge.label') ?? '本地自测'}
+                </button>
+                {/* 平台判题(中心) */}
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => selectChannel('central')}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors',
+                    judgeChannel === 'central'
+                      ? 'border-primary/50 bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  {t('localJudge.central') ?? '平台判题'}
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {judgeChannel === 'local' ? (
+                  !isLocalJudgeable ? (
+                    <span className="text-amber-600 dark:text-amber-400">
+                      {t('localJudge.functionNotice') ?? 'function 模板题不适用本地 Judge0 判题(需先改为 stdio 模式)'}
+                    </span>
+                  ) : localReachable === null ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3 w-3 animate-spin" /> {t('localJudge.connecting') ?? '检测中'}
+                    </span>
+                  ) : localReachable ? (
+                    <span className="text-emerald-600 dark:text-emerald-400">{t('localJudge.online') ?? '已连接'}</span>
+                  ) : (
+                    <span className="text-red-600 dark:text-red-400">
+                      <TriangleAlert className="mr-1 inline h-3 w-3" />
+                      {t('localJudge.offline') ?? '未连接本地 Judge0,请先启动'}
+                    </span>
+                  )
+                ) : platformChecking ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" /> 平台判题 · 探测延迟…
+                  </span>
+                ) : platformLatency != null ? (
+                  <span className={cn('inline-flex items-center gap-1', platformLatency < 200 ? 'text-emerald-600 dark:text-emerald-400' : platformLatency < 600 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400')}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    平台判题 · 延迟 {platformLatency}ms
+                  </span>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400">平台判题节点不可达</span>
+                )}
+                <Link to="/judge-local" className="text-primary underline underline-offset-2 hover:opacity-80 ml-auto">
+                  {t('localJudge.howToSetup') ?? '如何运行'}
+                </Link>
+              </div>
+              {judgeChannel === 'local' && (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">{t('localJudge.riskBody') ?? ''}</p>
+              )}
+            </div>
+          )}
+          {/* 只读测试点预览:每个测试点分块列出输入 / 期望输出;行尾空白以 · 显示 */}
+          {((question.test_cases ?? []) as TestCase[]).length > 0 && (
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-2 space-y-1.5">
+              <p className="px-1 text-xs font-semibold text-muted-foreground">
+                {(t('codeEditor.testCases') ?? '测试点')}({((question.test_cases ?? []) as TestCase[]).length})
+              </p>
+              {((question.test_cases ?? []) as TestCase[]).map((tc, i) => (
+                <div key={i} className="rounded-md border border-border/60 bg-background/70 p-2 text-xs">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="font-mono text-muted-foreground">#{i + 1}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('codeEditor.input') ?? '输入'}</span>
+                  </div>
+                  <WhitespaceBlock text={tc.input || (t('codeEditor.emptyMark') ?? '(空)')} className="pl-4 text-zinc-700 dark:text-zinc-200" dim={false} />
+                  <div className="flex items-center gap-1.5 mt-1.5 mb-0.5">
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('codeEditor.expectedOut') ?? '期望输出'}</span>
+                  </div>
+                  <WhitespaceBlock text={tc.expected || (t('codeEditor.emptyMark') ?? '(空)')} className="pl-4 text-emerald-700 dark:text-emerald-300" dim={false} />
+                </div>
+              ))}
+            </div>
+          )}
+
           <CodeEditor
             initialCode={codingAnswer?.code ?? ''}
             initialLanguage={codingAnswer?.language ?? 'javascript'}
             executionMode={question.execution_mode ?? 'stdio'}
             loading={codingLoading}
             disabled={showResult}
-            testCases={editableTestCases.length > 0 ? editableTestCases : (question.test_cases ?? []) as TestCase[]}
-            onTestCasesChange={showResult ? undefined : setEditableTestCases}
+            testCases={(question.test_cases ?? []) as TestCase[]}
             onSubmit={async (code, language) => {
-              const testCases = editableTestCases.length > 0 ? editableTestCases : (question.test_cases ?? []) as TestCase[]
+              const testCases = (question.test_cases ?? []) as TestCase[]
+              setJudgeNotice(null)
+              const useLocal = judgePanelOn && judgeChannel === 'local'
+              // 本地:function 模板题或 Judge0 未启动时阻止提交并提示
+              if (useLocal && !isLocalJudgeable) {
+                setJudgeNotice(t('localJudge.functionNotice') ?? 'function 模板题不适用本地 Judge0 判题')
+                return
+              }
+              if (useLocal && localReachable === false) {
+                setJudgeNotice(t('localJudge.offline') ?? '未连接本地 Judge0,请先启动')
+                return
+              }
               const result = await submit(
                 code, language,
                 testCases,
                 question.runtime_config,
                 (question.execution_mode as 'stdio' | 'function') ?? 'stdio',
+                { judgeSource: judgePanelOn ? judgeChannel : 'central', tolerant: useLocal },
               )
               if (result) {
                 onSelect?.({ code, language, allPassed: result.allPassed } as CodingAnswer)
               }
             }}
           />
-          <CodeResult results={codingResults} status={judgeStatus} />
+          {judgeNotice && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{judgeNotice}</span>
+            </div>
+          )}
+          <CodeResult results={codingResults} status={judgeStatus} testCasesCount={((question.test_cases ?? []) as TestCase[]).length} />
         </div>
       )}
 
@@ -675,7 +730,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
           {isCoding && codingAnswer != null && (
             <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
-              <p className="font-medium">{correct ? (t('practice.codeEditor.passed') ?? '全部通过') : (t('practice.codeEditor.failed') ?? '未通过')}</p>
+              <p className="font-medium">{correct ? (t('codeEditor.passed') ?? '全部通过') : (t('codeEditor.failed') ?? '未通过')}</p>
               {codingAnswer.code && (
                 <pre className="mt-2 p-2 rounded bg-black/10 dark:bg-white/10 text-xs font-mono overflow-x-auto max-h-32">{codingAnswer.code}</pre>
               )}

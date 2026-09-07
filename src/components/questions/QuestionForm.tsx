@@ -946,25 +946,29 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
                   <div key={i} className="flex gap-2 items-start">
                     <span className="text-xs text-muted-foreground w-5 pt-2.5">#{i + 1}</span>
                     <div className="flex-1 space-y-1.5">
-                      <Input
+                      <Textarea
                         value={tc.input}
                         onChange={(e) => {
                           const next = [...testCases]
                           next[i] = { ...next[i], input: e.target.value }
                           setTestCases(next)
                         }}
-                        placeholder="输入 (stdin)"
-                        className="text-xs font-mono"
+                        placeholder="输入 (stdin，多行用回车分隔)"
+                        rows={2}
+                        className="text-xs font-mono min-h-[2rem] resize-y"
+                        spellCheck={false}
                       />
-                      <Input
+                      <Textarea
                         value={tc.expected}
                         onChange={(e) => {
                           const next = [...testCases]
                           next[i] = { ...next[i], expected: e.target.value }
                           setTestCases(next)
                         }}
-                        placeholder="期望输出 (stdout)"
-                        className="text-xs font-mono"
+                        placeholder="期望输出 (stdout，多行用回车分隔)"
+                        rows={2}
+                        className="text-xs font-mono min-h-[2rem] resize-y"
+                        spellCheck={false}
                       />
                     </div>
                     <Button

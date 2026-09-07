@@ -100,6 +100,10 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/SettingsPage'),
               },
               {
+                path: 'judge-local',
+                lazy: () => import('@/pages/JudgeLocalGuidePage'),
+              },
+              {
                 path: 'admin',
                 element: <ProtectedRoute requiredRole="admin" />,
                 children: [

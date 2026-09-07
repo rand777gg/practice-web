@@ -95,7 +95,7 @@ export function CodeEditor({
           ) : (
             <Play className="size-3.5" />
           )}
-          {loading ? (t('practice.codeEditor.running') ?? '运行中...') : (t('practice.codeEditor.run') ?? '运行代码')}
+          {loading ? (t('codeEditor.running') ?? '运行中...') : (t('codeEditor.run') ?? '运行代码')}
         </Button>
       </div>
 
@@ -105,7 +105,7 @@ export function CodeEditor({
         placeholder={
           executionMode === 'function'
             ? 'function solution(...) { ... }'
-            : (t('practice.codeEditor.placeholder') ?? '在此编写代码...')
+            : (t('codeEditor.placeholder') ?? '在此编写代码...')
         }
         disabled={disabled || loading}
         rows={executionMode === 'function' ? 8 : 10}
