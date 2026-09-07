@@ -109,7 +109,7 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
   )
 
   return (
-    <div ref={rootRef} className="rounded-xl border bg-card overflow-hidden" style={{ height: 640 }}>
+    <div ref={rootRef} className="overflow-hidden" style={{ height: 640 }}>
       <div className="flex h-full w-full select-none">
         {/* 左:题目面板 */}
         <div className="min-w-0 flex flex-col border-r" style={{ width: `${leftPct}%` }}>
@@ -121,13 +121,6 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
           <div className="flex-1 overflow-y-auto p-4">
             {tab === 'desc' ? (
               <div className="space-y-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center rounded-full border border-emerald-500/50 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">简单</span>
-                    {question.subject && <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">{question.subject}</span>}
-                    {question.category && <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">{question.category}</span>}
-                  </div>
-                </div>
                 <MarkdownRenderer content={question.question_text} />
                 {examples.length > 0 && (
                   <div className="space-y-2">
@@ -135,8 +128,8 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
                     {examples.map((ex, i) => (
                       <div key={i} className="rounded-lg border bg-muted/20 p-3 text-xs space-y-1.5">
                         <p className="font-semibold text-muted-foreground">示例 {i + 1}</p>
-                        <p className="text-muted-foreground font-medium">输入：<code className="ml-1 text-zinc-200">{ex.input}</code></p>
-                        <p className="text-muted-foreground font-medium">输出：<code className="ml-1 text-emerald-400">{ex.expected}</code></p>
+                        <p className="text-muted-foreground font-medium">输入：<code className="ml-1 text-foreground">{ex.input}</code></p>
+                        <p className="text-muted-foreground font-medium">输出：<code className="ml-1 text-emerald-600 dark:text-emerald-400">{ex.expected}</code></p>
                         {ex.explanation && <p className="text-muted-foreground">解释：{ex.explanation}</p>}
                       </div>
                     ))}
@@ -211,8 +204,8 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
             </div>
             <CodeResult results={results} status={judgeStatus} testCasesCount={testCases.length} />
             {testCases.length > 0 && (
-              <details className="text-xs">
-                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{t('practice.codeEditor.testCases') ?? '测试点'}({testCases.length})</summary>
+              <details open className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{t('practice.codeEditor.testCases') ?? '测试用例'}({testCases.length})</summary>
                 <div className="mt-1.5 space-y-1">
                   {testCases.map((tc, i) => (
                     <div key={i} className="rounded border border-border bg-muted/40 p-1.5">
