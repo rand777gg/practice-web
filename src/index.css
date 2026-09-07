@@ -698,3 +698,9 @@
 html.dark .cm-editor {
   color-scheme: dark;
 }
+
+/* 判题运行光带动画 */
+@keyframes ideprog {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}

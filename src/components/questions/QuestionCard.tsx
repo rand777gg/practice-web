@@ -2,23 +2,22 @@ import { memo, useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
-import { OPTION_LABELS, QUESTION_TYPE_LABELS, TYPE_COLORS, POINT_COLORS } from '@/lib/constants'
+import { OPTION_LABELS } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer, CodingAnswer, CaseAnswer, CaseQuestion, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert, Loader2 } from 'lucide-react'
+import { Check, Pencil, Star, ThumbsDown, HelpCircle, TriangleAlert, Loader2 } from 'lucide-react'
 import { CodeEditor } from '@/components/practice/CodeEditor'
 import { CodeResult } from '@/components/practice/CodeResult'
 import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
 import { CodingIdeView } from '@/components/practice/CodingIdeView'
+import { QuestionTags } from '@/components/questions/QuestionTags'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
 import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
 
@@ -188,30 +187,6 @@ function CaseSubBlock({ sub, index, value, showResult, disabled, onChange }: {
   )
 }
 
-function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        <span
-          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
-          onClick={() => setOpen(!open)}
-        >
-          {yearCats.length}年真题
-        </span>
-      </HoverCardTrigger>
-      <HoverCardContent side="bottom" align="start" className="w-auto max-w-[calc(100vw-2rem)] px-3 py-2 text-xs">
-        <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
-        <div className="flex flex-wrap gap-1">
-          {yearCats.map((y) => (
-            <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
-          ))}
-        </div>
-      </HoverCardContent>
-    </HoverCard>
-  )
-}
-
 interface Props {
   question: Question
   selectedAnswer?: CorrectAnswer | null
@@ -333,7 +308,6 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       }))
     : []
   const caseCorrectCount = caseResults.filter((r) => r.ok).length
-  const typeLabel = QUESTION_TYPE_LABELS[type]
   const row = (delay: number) => ({ className: cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'), style: { transitionDelay: `${delay}ms` } })
 
   return (
@@ -357,81 +331,12 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           <MarkdownRenderer content={question.question_text} className="font-medium text-base lg:text-lg" />
         )}
       </div>
-      <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
-        <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
-        {question.verified ? (
-          <span className="inline-flex items-center gap-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
-            <Check className="h-3 w-3" />已验证
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
-            待验证
-          </span>
-        )}
-        {question.subject && (
-          <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary">
-            {question.subject}
-          </span>
-        )}
-        {(() => {
-          const cats = question.categories?.length ? question.categories : question.category ? [question.category] : []
-          const yearPattern = /^\d{4}年真题$/
-          const yearCats = cats.filter((c) => yearPattern.test(c))
-          // Multiple year categories → show "N年真题" badge, tap/hover to see details
-          if (yearCats.length >= 2) {
-            const otherCats = cats.filter((c) => !yearPattern.test(c))
-            return (
-              <>
-                <MultiYearBadge yearCats={yearCats} />
-                {otherCats.map((cat) =>
-                  cat === 'AI生成' ? (
-                    <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
-                      <HoverCardTrigger asChild>
-                        <span className="ai-badge ai-badge-dark">
-                          <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
-                          <span className="badge-text">AI生成</span>
-                        </span>
-                      </HoverCardTrigger>
-                      <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                        <p>{t('ai.disclaimer')}</p>
-                      </HoverCardContent>
-                    </HoverCard>
-                  ) : (
-                    <span key={cat} className="inline-block rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
-                  )
-                )}
-              </>
-            )
-          }
-          // Default: show all categories as individual badges
-          return cats.map((cat) =>
-            cat === 'AI生成' ? (
-              <HoverCard key="AI生成" openDelay={200} closeDelay={100}>
-                <HoverCardTrigger asChild>
-                  <span className="ai-badge ai-badge-dark">
-                    <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
-                    <span className="badge-text">AI生成</span>
-                  </span>
-                </HoverCardTrigger>
-                <HoverCardContent side="bottom" className="w-auto px-3 py-2 text-xs">
-                  <p>{t('ai.disclaimer')}</p>
-                </HoverCardContent>
-              </HoverCard>
-            ) : (
-              <span key={cat} className="inline-block rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
-            )
-          )
-        })()}
-        {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
-          <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
-        ))}
-        {attemptCount != null && (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span>{t('practice.attempts')}: {attemptCount}</span>
-            {wrongCount != null && wrongCount > 0 && <span className="text-red-500">({t('practice.wrong')}: {wrongCount})</span>}
-          </span>
-        )}
-      </div>
+      {/* 标签行:练习模式 IDE 下移入 CodingIdeView 描述页内,其余题型/场景保留在题干下方 */}
+      {!(isCoding && judgePanelOn) && (
+        <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
+          <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} />
+        </div>
+      )}
 
       {/* Choice options (single / multi) */}
       <div {...row(300)}>
@@ -596,6 +501,8 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       {isCoding && judgePanelOn && (
         <CodingIdeView
           question={question}
+          attemptCount={attemptCount}
+          wrongCount={wrongCount}
           onSaveResult={(ans) => onSelect?.({ code: ans.code, language: ans.language, allPassed: ans.allPassed } as CodingAnswer)}
         />
       )}
@@ -603,10 +510,10 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
         <div className="space-y-2">
           {((question.examples ?? []) as ExampleCase[]).map((ex, i) => (
             <div key={i} className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
-              <p className="font-medium text-xs text-muted-foreground">示例 {i + 1}</p>
-              <p><span className="font-medium">输入：</span><code className="text-xs bg-muted px-1 rounded">{ex.input}</code></p>
-              <p><span className="font-medium">输出：</span><code className="text-xs bg-muted px-1 rounded">{ex.expected}</code></p>
-              {ex.explanation && <p><span className="font-medium">解释：</span>{ex.explanation}</p>}
+              <p className="font-medium text-xs text-muted-foreground">{(t('codeEditor.example') ?? '示例')} {i + 1}</p>
+              <p><span className="font-medium">{(t('codeEditor.input') ?? '输入')}：</span><code className="text-xs bg-muted px-1 rounded">{ex.input}</code></p>
+              <p><span className="font-medium">{(t('codeEditor.output') ?? '输出')}：</span><code className="text-xs bg-muted px-1 rounded">{ex.expected}</code></p>
+              {ex.explanation && <p><span className="font-medium">{(t('codeEditor.explanation') ?? '解释')}：</span>{ex.explanation}</p>}
             </div>
           ))}
         </div>
@@ -693,19 +600,19 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           {((question.test_cases ?? []) as TestCase[]).length > 0 && (
             <div className="rounded-lg border border-border/70 bg-muted/20 p-2 space-y-1.5">
               <p className="px-1 text-xs font-semibold text-muted-foreground">
-                {(t('practice.codeEditor.testCases') ?? '测试点')}({((question.test_cases ?? []) as TestCase[]).length})
+                {(t('codeEditor.testCases') ?? '测试点')}({((question.test_cases ?? []) as TestCase[]).length})
               </p>
               {((question.test_cases ?? []) as TestCase[]).map((tc, i) => (
                 <div key={i} className="rounded-md border border-border/60 bg-background/70 p-2 text-xs">
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="font-mono text-muted-foreground">#{i + 1}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">输入</span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('codeEditor.input') ?? '输入'}</span>
                   </div>
-                  <WhitespaceBlock text={tc.input || '(空)'} className="pl-4 text-zinc-700 dark:text-zinc-200" dim={false} />
+                  <WhitespaceBlock text={tc.input || (t('codeEditor.emptyMark') ?? '(空)')} className="pl-4 text-zinc-700 dark:text-zinc-200" dim={false} />
                   <div className="flex items-center gap-1.5 mt-1.5 mb-0.5">
-                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">期望输出</span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('codeEditor.expectedOut') ?? '期望输出'}</span>
                   </div>
-                  <WhitespaceBlock text={tc.expected || '(空)'} className="pl-4 text-emerald-700 dark:text-emerald-300" dim={false} />
+                  <WhitespaceBlock text={tc.expected || (t('codeEditor.emptyMark') ?? '(空)')} className="pl-4 text-emerald-700 dark:text-emerald-300" dim={false} />
                 </div>
               ))}
             </div>
@@ -823,7 +730,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           )}
           {isCoding && codingAnswer != null && (
             <div className={cn('rounded-lg p-3 text-sm', correct ? 'bg-green-50 dark:bg-green-950 text-green-700' : 'bg-red-50 dark:bg-red-950 text-red-700')}>
-              <p className="font-medium">{correct ? (t('practice.codeEditor.passed') ?? '全部通过') : (t('practice.codeEditor.failed') ?? '未通过')}</p>
+              <p className="font-medium">{correct ? (t('codeEditor.passed') ?? '全部通过') : (t('codeEditor.failed') ?? '未通过')}</p>
               {codingAnswer.code && (
                 <pre className="mt-2 p-2 rounded bg-black/10 dark:bg-white/10 text-xs font-mono overflow-x-auto max-h-32">{codingAnswer.code}</pre>
               )}

@@ -8,29 +8,36 @@ interface Props {
   results: SubmissionResult[] | null
   status: string | null
   testCasesCount?: number
+  /** 单测模式:仅回显本次单个用例,标题显示 Case n 的判定 */
+  singleCaseIndex?: number
 }
 
 const statusLabel = (st: string | undefined, t: ReturnType<typeof useT>['t']): string => {
   switch (st) {
-    case 'accepted': return t('practice.codeEditor.passed') ?? '通过'
+    case 'accepted': return t('codeEditor.passed') ?? '通过'
     case 'wrong_answer': return t('localJudge.status_wrong_answer') ?? '答案错误'
     case 'timeout': return t('localJudge.status_timeout') ?? '超时'
     case 'compile_error': return t('localJudge.status_compile_error') ?? '编译错误'
     case 'runtime_error': return t('localJudge.status_runtime_error') ?? '运行错误'
-    case 'pending': return '进行中'
-    default: return t('practice.codeEditor.failed') ?? '失败'
+    default: return t('codeEditor.failed') ?? '失败'
   }
 }
 
-export function CodeResult({ results, status, testCasesCount }: Props) {
+export function CodeResult({ results, status, testCasesCount, singleCaseIndex }: Props) {
   const { t } = useT()
   if (!results || results.length === 0) return null
 
-  const total = testCasesCount ?? results.length
+  const isSingle = singleCaseIndex != null
+  const total = isSingle ? 1 : (testCasesCount ?? results.length)
   const doneCount = results.filter((r) => r.status !== 'pending' && r.status !== 'running').length
   const passedCount = results.filter((r) => r.passed).length
   const running = status === 'running' || doneCount < total
   const allPassed = !running && passedCount === total
+  const verdict = running
+    ? (t('codeEditor.judging') ?? '判题中…')
+    : allPassed
+      ? (t('codeEditor.passed') ?? '通过')
+      : (t('codeEditor.failed') ?? '失败')
 
   return (
     <div className="space-y-2">
@@ -53,11 +60,11 @@ export function CodeResult({ results, status, testCasesCount }: Props) {
           <XCircle className="size-4" />
         )}
         <span>
-          {running
-            ? `${t('practice.codeEditor.testCases') ?? '测试点'}：${doneCount}/${total} 判题中…`
-            : `${t('practice.codeEditor.testCases') ?? '测试点'}：${passedCount}/${total} ${
-                allPassed ? (t('practice.codeEditor.passed') ?? '通过') : (t('practice.codeEditor.failed') ?? '未通过')
-              }`}
+          {isSingle
+            ? `Case ${singleCaseIndex + 1}：${verdict}`
+            : running
+              ? `${t('codeEditor.testCases') ?? '测试点'}：${doneCount}/${total} ${verdict}`
+              : `${t('codeEditor.testCases') ?? '测试点'}：${passedCount}/${total} ${verdict}`}
         </span>
       </div>
 
@@ -91,7 +98,7 @@ export function CodeResult({ results, status, testCasesCount }: Props) {
                   ) : (
                     <XCircle className="size-2.5" />
                   )}
-                  {pending ? '判题中' : statusLabel(r.status, t)}
+                  {pending ? (t('codeEditor.judgingShort') ?? '判题中') : statusLabel(r.status, t)}
                 </span>
                 {(r.time_ms != null || r.memory_kb != null) && (
                   <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
@@ -104,19 +111,19 @@ export function CodeResult({ results, status, testCasesCount }: Props) {
               {/* 输入 | 期望/实际 */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 <div className="rounded border border-border/60 bg-background/60 p-1.5 min-w-0">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">输入</p>
-                  <WhitespaceBlock text={r.input || '(空)'} className="text-zinc-700 dark:text-zinc-200" dim={false} />
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{t('codeEditor.input') ?? '输入'}</p>
+                  <WhitespaceBlock text={r.input || (t('codeEditor.emptyMark') ?? '(空)')} className="text-zinc-700 dark:text-zinc-200" dim={false} />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">期望输出</p>
-                    <WhitespaceBlock text={r.expected || '(空)'} className="text-emerald-700 dark:text-emerald-300" dim={false} />
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{t('codeEditor.expectedOut') ?? '期望输出'}</p>
+                    <WhitespaceBlock text={r.expected || (t('codeEditor.emptyMark') ?? '(空)')} className="text-emerald-700 dark:text-emerald-300" dim={false} />
                   </div>
                   {!pending && (
                     <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">实际输出</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{t('codeEditor.actualOut') ?? '实际输出'}</p>
                       <WhitespaceBlock
-                        text={r.actual || (r.error ? '(无输出)' : '(空)')}
+                        text={r.actual || (r.error ? (t('codeEditor.noOutput') ?? '(无输出)') : (t('codeEditor.emptyMark') ?? '(空)'))}
                         className={r.passed ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}
                         dim={false}
                       />
