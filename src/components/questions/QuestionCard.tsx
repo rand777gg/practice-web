@@ -15,6 +15,7 @@ import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert, L
 import { CodeEditor } from '@/components/practice/CodeEditor'
 import { CodeResult } from '@/components/practice/CodeResult'
 import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
+import { CodingIdeView } from '@/components/practice/CodingIdeView'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
 import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
@@ -590,7 +591,13 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       )}
 
       {/* Coding — LeetCode-style examples */}
-      {isCoding && question.examples?.length! > 0 && (
+      {isCoding && judgePanelOn && (
+        <CodingIdeView
+          question={question}
+          onSaveResult={(ans) => onSelect?.({ code: ans.code, language: ans.language, allPassed: ans.allPassed } as CodingAnswer)}
+        />
+      )}
+      {isCoding && !judgePanelOn && question.examples?.length! > 0 && (
         <div className="space-y-2">
           {((question.examples ?? []) as ExampleCase[]).map((ex, i) => (
             <div key={i} className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
@@ -604,7 +611,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       )}
 
       {/* Coding editor */}
-      {isCoding && (
+      {isCoding && !judgePanelOn && (
         <div className="space-y-3">
           {/* 判题通道:中心(置灰/暂不可用) + 本地自测(当前可用)。仅练习/测试页展示。 */}
           {judgePanelOn && (
