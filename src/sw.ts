@@ -11,6 +11,11 @@ declare const self: ServiceWorkerGlobalScope & {
 // 开发态立即激活便于调试推送; 生产保留 registerType=prompt 的更新提示语义
 if (import.meta.env.DEV) {
   self.skipWaiting()
+} else {
+  // 响应页面"立即刷新"消息, 否则 waiting 的 SW 永远不激活, 刷新按钮无反应
+  self.addEventListener('message', (event: MessageEvent) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
+  })
 }
 clientsClaim()
 
