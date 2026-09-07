@@ -9,6 +9,8 @@ import { CodeEditorCM } from '@/components/practice/CodeEditorCM'
 import { CodeResult } from '@/components/practice/CodeResult'
 import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
+import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth-store'
 import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
 import { Play, Loader2, TriangleAlert, Terminal, BookOpen, History, RotateCcw, GripVertical } from 'lucide-react'
 import type { Question, TestCase, ExampleCase, CodingAnswer } from '@/types'
@@ -22,6 +24,15 @@ const LANGUAGES = [
 ]
 
 type Tab = 'desc' | 'solution' | 'records'
+
+interface Record {
+  id: string
+  status: string
+  language: string
+  execution_time_ms: number | null
+  created_at: string
+  judge_source?: string | null
+}
 
 interface Props {
   question: Question
@@ -41,6 +52,7 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
   const [notice, setNotice] = useState<string | null>(null)
   const [cursor, setCursor] = useState({ line: 1, col: 1 })
   const [customInput, setCustomInput] = useState('')
+  const [records, setRecords] = useState<Record[] | null>(null)
   // 左栏宽度(百分比),支持拖拽
   const [leftPct, setLeftPct] = useState(46)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -49,6 +61,22 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
   const isLocalJudgeable = (question.execution_mode ?? 'stdio') !== 'function'
   const testCases = (question.test_cases ?? []) as TestCase[]
   const examples = (question.examples ?? []) as ExampleCase[]
+  const user = useAuthStore((s) => s.user)
+
+  // 加载该题的提交历史(切到提交记录或每次判题后刷新)
+  const loadRecords = useCallback(async () => {
+    if (!user) return
+    try {
+      const { data } = await supabase
+        .from('submissions')
+        .select('id,status,language,execution_time_ms,created_at,judge_source')
+        .eq('user_id', user.id)
+        .eq('question_id', question.id)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      setRecords((data ?? []) as Record[])
+    } catch { /* noop */ }
+  }, [user, question.id])
 
   useEffect(() => {
     if (!isLocalJudgeable) return
@@ -93,7 +121,7 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
     const res = await submit(code, language, cases, question.runtime_config, 'stdio', {
       judgeSource: useLocal ? 'local' : 'central', tolerant: useLocal,
     })
-    if (res) onSaveResult?.({ code, language, allPassed: res.allPassed })
+    if (res) { onSaveResult?.({ code, language, allPassed: res.allPassed }); loadRecords() }
   }
   const run = () => doRun(testCases)
   const runCustom = () => {
@@ -101,8 +129,12 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
     doRun([{ input: customInput, expected: '' }])
   }
 
+  const switchTab = (v: Tab) => {
+    setTab(v)
+    if (v === 'records') loadRecords()
+  }
   const tabBtn = (v: Tab, label: string, icon: React.ReactNode) => (
-    <button key={v} type="button" onClick={() => setTab(v)} className={cn(
+    <button key={v} type="button" onClick={() => switchTab(v)} className={cn(
       'flex items-center gap-1.5 px-3 h-10 text-sm font-medium border-b-2 transition-colors',
       tab === v ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
     )}>{icon}{label}</button>
@@ -137,9 +169,36 @@ export function CodingIdeView({ question, onSaveResult }: Props) {
                 )}
               </div>
             ) : tab === 'solution' ? (
-              <p className="text-sm text-muted-foreground">题解解析待补充。</p>
+              question.analysis || question.answer_explanation ? (
+                <div className="space-y-3">
+                  {question.analysis && <MarkdownRenderer content={question.analysis} />}
+                  {question.answer_explanation && question.analysis !== question.answer_explanation && <MarkdownRenderer content={question.answer_explanation} />}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">本题暂无题解解析。</p>
+              )
             ) : (
-              <p className="text-sm text-muted-foreground">提交记录功能规划中(Phase 4)。</p>
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">提交记录</p>
+                {!records || records.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">还没有提交记录,点「运行」试试。</p>
+                ) : (
+                  records.map((r) => {
+                    const ok = r.status === 'accepted'
+                    const color = ok ? 'text-emerald-600 dark:text-emerald-400' : r.status === 'runtime_error' || r.status === 'timeout' || r.status === 'compile_error' ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'
+                    const label = ok ? '通过' : r.status === 'wrong_answer' ? '答案错误' : r.status === 'timeout' ? '超时' : r.status === 'compile_error' ? '编译错误' : r.status === 'runtime_error' ? '运行错误' : r.status
+                    const date = r.created_at ? new Date(r.created_at).toLocaleString() : ''
+                    return (
+                      <div key={r.id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs">
+                        <span className={cn('font-medium', color)}>{label}</span>
+                        <span className="text-muted-foreground">{r.language}</span>
+                        {r.execution_time_ms != null && <span className="ml-auto text-muted-foreground tabular-nums">{r.execution_time_ms}ms</span>}
+                        <span className="text-muted-foreground/70">{date}</span>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
             )}
           </div>
         </div>
