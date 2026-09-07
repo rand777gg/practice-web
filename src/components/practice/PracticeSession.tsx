@@ -1184,7 +1184,9 @@ export function PracticeSession() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      // 跳过输入目标(含 CodeMirror/.cm-editor 等编辑器),避免快捷键与打字冲突
+      const t = e.target as HTMLElement | null
+      if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable || t.closest('.cm-editor') || t.closest('[contenteditable]'))) return
       if (isLoading || showSkeleton) return
       const sc = shortcutsRef.current
       if (matchShortcut(e, sc.prev)) { e.preventDefault(); prevRef.current() }
@@ -1264,6 +1266,8 @@ export function PracticeSession() {
   useEffect(() => {
     if (!tooEasyOpen) return
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable || t.closest('.cm-editor'))) return
       if (e.key === 'w' || e.key === 'W') { e.preventDefault(); setTooEasyOpen(false); handleMarkTooEasy() }
       if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setTooEasyOpen(false) }
       if (e.key === 'Escape') { e.preventDefault(); setTooEasyOpen(false) }
