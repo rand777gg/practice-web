@@ -82,6 +82,19 @@ npm run dev
 
 访问 `http://localhost:5173`，注册账号 — 首位用户自动成为管理员。
 
+### 本地判题（Judge0，可选）
+
+编程/算法题默认走平台中心判题。若想在高峰期用**自己电脑**跑判题（结果仅供个人练习、不计成绩），本仓库已内置一键编排：
+
+```bash
+cd judge0
+docker compose up -d     # 首次会自动拉取 Judge0 + 反代镜像
+```
+
+启动后在应用里点侧边栏「本地判题」验证连通，再到编程题编辑器顶部打开「本地自测」。
+
+> 新手请看 [docs/judge0-local-setup.md](docs/judge0-local-setup.md)（安装 Docker → 一条命令 → 验证，全程零基础）。
+
 ## 功能
 
 ### 练习

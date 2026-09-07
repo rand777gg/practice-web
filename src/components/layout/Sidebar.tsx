@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   LayoutDashboard, Pencil, Clock, RotateCcw, FileQuestion, Users,
-  Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose, X, GitMerge,
+  Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose, X, GitMerge, Server,
 } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import { useState, useEffect } from 'react'
@@ -65,6 +65,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       <NavItem to="/review" icon={<RotateCcw className="h-4 w-4" />} label={t('nav.wrongReview')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/question-bank" icon={<Library className="h-4 w-4" />} label={t('nav.questionBank')} collapsed={collapsed} onClick={handleClick} />
+      <NavItem to="/judge-local" icon={<Server className="h-4 w-4" />} label={t('nav.localJudge')} collapsed={collapsed} onClick={handleClick} />
 
       {isAdmin && (
         <>

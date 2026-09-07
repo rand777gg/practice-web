@@ -11,6 +11,17 @@ interface Props {
 export function CodeResult({ results, status }: Props) {
   const { t } = useT()
 
+  const statusText = (st?: string): string | null => {
+    switch (st) {
+      case 'accepted': return null
+      case 'wrong_answer': return t('localJudge.status_wrong_answer') ?? '答案错误'
+      case 'timeout': return t('localJudge.status_timeout') ?? '超时'
+      case 'compile_error': return t('localJudge.status_compile_error') ?? '编译错误'
+      case 'runtime_error': return t('localJudge.status_runtime_error') ?? '运行错误'
+      default: return null
+    }
+  }
+
   if (!results) return null
 
   const passedCount = results.filter((r) => r.passed).length
@@ -57,8 +68,13 @@ export function CodeResult({ results, status }: Props) {
                 #{r.testCaseIndex + 1}
                 {r.passed
                   ? ` ${t('practice.codeEditor.passed') ?? '通过'}`
-                  : ` ${t('practice.codeEditor.failed') ?? '失败'}`}
+                  : statusText(r.status) ? ` ${statusText(r.status)}` : ` ${t('practice.codeEditor.failed') ?? '失败'}`}
               </span>
+              {r.time_ms != null && (
+                <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+                  {r.time_ms}ms{r.memory_kb != null ? ` · ${Math.round(r.memory_kb / 1024)}MB` : ''}
+                </span>
+              )}
             </div>
             {r.input && (
               <div className="text-muted-foreground mb-0.5">
@@ -70,9 +86,11 @@ export function CodeResult({ results, status }: Props) {
                 <div className="text-emerald-600 dark:text-emerald-400">
                   {t('practice.codeEditor.expectedOut') ?? '期望输出'}: <code>{r.expected || (t('practice.codeEditor.noOutput') ?? '(无输出)')}</code>
                 </div>
-                <div className="text-red-600 dark:text-red-400">
-                  {t('practice.codeEditor.actualOut') ?? '实际输出'}: <code>{r.actual || (t('practice.codeEditor.noOutput') ?? '(无输出)')}</code>
-                </div>
+                {r.status !== 'compile_error' && r.status !== 'runtime_error' && r.status !== 'timeout' && (
+                  <div className="text-red-600 dark:text-red-400">
+                    {t('practice.codeEditor.actualOut') ?? '实际输出'}: <code>{r.actual || (t('practice.codeEditor.noOutput') ?? '(无输出)')}</code>
+                  </div>
+                )}
               </>
             )}
             {r.error && (

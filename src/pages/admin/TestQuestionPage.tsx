@@ -188,6 +188,7 @@ export function Component() {
             showResult={isSubmitted}
             onSelect={isSubmitted ? undefined : setSelectedAnswer}
             disabled={isSubmitted}
+            allowLocalJudge
           />
 
           {/* Result banner */}

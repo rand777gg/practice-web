@@ -37,6 +37,12 @@ export interface SubmissionResult {
   expected: string
   actual: string
   error?: string
+  /** OJ 语义单测结果:accepted | wrong_answer | timeout | compile_error | runtime_error(仅 Judge0 判定时存在) */
+  status?: string
+  /** 单测运行耗时(ms) */
+  time_ms?: number | null
+  /** 单测峰值内存(KB) */
+  memory_kb?: number | null
 }
 
 export interface Submission {
@@ -49,6 +55,8 @@ export interface Submission {
   results: SubmissionResult[] | null
   error: string | null
   execution_time_ms: number | null
+  /** 判题来源:central=平台中心(计入公共成绩);local=本地自测(不计入公共成绩) */
+  judge_source?: 'central' | 'local' | null
   created_at: string
 }
 

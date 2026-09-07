@@ -11,11 +11,11 @@ import { Textarea } from '@/components/ui/textarea'
 import type { Question, CorrectAnswer, CodingAnswer, CaseAnswer, CaseQuestion, TestCase, ExampleCase } from '@/types'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { useT } from '@/i18n/use-t'
-import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert } from 'lucide-react'
+import { Check, Pencil, Star, Sparkles, ThumbsDown, HelpCircle, TriangleAlert, Lock, Loader2 } from 'lucide-react'
 import { CodeEditor } from '@/components/practice/CodeEditor'
 import { CodeResult } from '@/components/practice/CodeResult'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
-
+import { isJudge0Reachable, JUDGE0_DEFAULT_URL } from '@/lib/judge0'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
@@ -230,10 +230,12 @@ interface Props {
   favoriteKbd?: string
   tooEasyKbd?: string
   flagIssueKbd?: string
+  /** 练习模式下是否允许使用本地自部署 Judge0 自测(考试/结果回顾一律 false) */
+  allowLocalJudge?: boolean
 
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd, allowLocalJudge }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
   // 底部操作按钮(收藏/太简单/不确定/标记问题): <sm 折叠成纯图标,点击后展开图标+文字; ≥sm 恒展开。与题目管理顶部按钮同款动画。
@@ -285,6 +287,18 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isJudgeCorrect = type === 'judge_correct'
   const isCoding = type === 'coding'
   const isCase = type === 'case_analysis'
+  const isLocalJudgeable = isCoding && (question.execution_mode ?? 'stdio') !== 'function'
+  // 判题通道面板:练习/测试页里 coding 题展示「中心(置灰)/本地自测」选择。
+  // 中心判题尚未就绪(未配中心 Judge0),故本地自测为当前唯一可用通道。
+  const judgePanelOn = !!allowLocalJudge && isCoding && !showResult
+  const [localReachable, setLocalReachable] = useState<boolean | null>(null) // null=检测中
+  const [judgeNotice, setJudgeNotice] = useState<string | null>(null)
+  useEffect(() => {
+    if (!judgePanelOn || !isLocalJudgeable) return
+    let cancelled = false
+    isJudge0Reachable(JUDGE0_DEFAULT_URL).then((ok) => { if (!cancelled) setLocalReachable(ok) })
+    return () => { cancelled = true }
+  }, [judgePanelOn, isLocalJudgeable])
 
   useEffect(() => {
     if (isCoding && question.test_cases?.length) {
@@ -580,6 +594,51 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       {/* Coding editor */}
       {isCoding && (
         <div className="space-y-3">
+          {/* 判题通道:中心(置灰/暂不可用) + 本地自测(当前可用)。仅练习/测试页展示。 */}
+          {judgePanelOn && (
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground mr-1">判题通道:</span>
+                {/* 本地自测 —— 可用(选中) */}
+                <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+                  'border-teal-500/40 bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:text-teal-300')}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+                  {t('localJudge.label') ?? '本地自测'}
+                </span>
+                {/* 中心判题 —— 置灰禁用 */}
+                <span title={t('localJudge.centralDisabled') ?? '中心判题暂未开放'} className={cn(
+                  'inline-flex cursor-not-allowed items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground/60',
+                  'line-through decoration-muted-foreground/50',
+                )}>
+                  <Lock className="h-3 w-3" />
+                  {t('localJudge.central') ?? '平台判题'}
+                  <span className="text-[10px] normal-case no-underline">(暂不可用)</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {!isLocalJudgeable ? (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    {t('localJudge.functionNotice') ?? 'function 模板题不适用本地 Judge0 判题(需先改为 stdio 模式)'}
+                  </span>
+                ) : localReachable === null ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" /> {t('localJudge.connecting') ?? '检测中'}
+                  </span>
+                ) : localReachable ? (
+                  <span className="text-emerald-600 dark:text-emerald-400">{t('localJudge.online') ?? '已连接'}</span>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400">
+                    <TriangleAlert className="mr-1 inline h-3 w-3" />
+                    {t('localJudge.offline') ?? '未连接本地 Judge0,请先启动'}
+                  </span>
+                )}
+                <Link to="/judge-local" className="text-primary underline underline-offset-2 hover:opacity-80 ml-auto">
+                  {t('localJudge.howToSetup') ?? '如何运行'}
+                </Link>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">{t('localJudge.riskBody') ?? ''}</p>
+            </div>
+          )}
           <CodeEditor
             initialCode={codingAnswer?.code ?? ''}
             initialLanguage={codingAnswer?.language ?? 'javascript'}
@@ -590,17 +649,34 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
             onTestCasesChange={showResult ? undefined : setEditableTestCases}
             onSubmit={async (code, language) => {
               const testCases = editableTestCases.length > 0 ? editableTestCases : (question.test_cases ?? []) as TestCase[]
+              setJudgeNotice(null)
+              // 中心判题暂不可用;且本地 Judge0 未启动时阻止提交并提示
+              if (judgePanelOn && !isLocalJudgeable) {
+                setJudgeNotice(t('localJudge.functionNotice') ?? 'function 模板题不适用本地 Judge0 判题')
+                return
+              }
+              if (judgePanelOn && localReachable === false) {
+                setJudgeNotice(t('localJudge.offline') ?? '未连接本地 Judge0,请先启动')
+                return
+              }
               const result = await submit(
                 code, language,
                 testCases,
                 question.runtime_config,
                 (question.execution_mode as 'stdio' | 'function') ?? 'stdio',
+                { judgeSource: judgePanelOn ? 'local' : 'central', tolerant: judgePanelOn },
               )
               if (result) {
                 onSelect?.({ code, language, allPassed: result.allPassed } as CodingAnswer)
               }
             }}
           />
+          {judgeNotice && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{judgeNotice}</span>
+            </div>
+          )}
           <CodeResult results={codingResults} status={judgeStatus} />
         </div>
       )}
