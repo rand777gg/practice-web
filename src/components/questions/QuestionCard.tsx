@@ -194,7 +194,7 @@ function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
     <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
       <HoverCardTrigger asChild>
         <span
-          className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
+          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
           onClick={() => setOpen(!open)}
         >
           {yearCats.length}年真题
@@ -358,18 +358,18 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
         )}
       </div>
       <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
-        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
+        <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>{typeLabel}</span>
         {question.verified ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
+          <span className="inline-flex items-center gap-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
             <Check className="h-3 w-3" />已验证
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
             待验证
           </span>
         )}
         {question.subject && (
-          <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+          <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary">
             {question.subject}
           </span>
         )}
@@ -397,7 +397,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
                       </HoverCardContent>
                     </HoverCard>
                   ) : (
-                    <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
+                    <span key={cat} className="inline-block rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
                   )
                 )}
               </>
@@ -418,7 +418,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
                 </HoverCardContent>
               </HoverCard>
             ) : (
-              <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
+              <span key={cat} className="inline-block rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
             )
           )
         })()}
