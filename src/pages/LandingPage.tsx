@@ -274,12 +274,12 @@ export function LandingPage() {
                 AI 驱动的全题型刷题平台
               </Badge>
               <div className="space-y-3">
-                <h1 className="text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
+                <h1 className="font-mono text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
                   Because the mountain just
                   <br />
                   <span className="inline-block bg-foreground px-2 text-background">stands there.</span>
                 </h1>
-                <p className="max-w-md text-sm text-muted-foreground sm:text-base">
+                <p className="font-mono max-w-md text-sm text-muted-foreground sm:text-base">
                   Open-source, online practice system for humans with AI abilities.
                 </p>
               </div>
@@ -299,8 +299,16 @@ export function LandingPage() {
               </p>
             </div>
             <div className="mx-auto w-full max-w-xl lg:mx-0">
-              <div className="animate-float">
-                <PracticeSessionMock />
+              <div className="relative">
+                <div className="animate-float">
+                  <PracticeSessionMock />
+                </div>
+                <img
+                  src="https://r2-rpw.pguide.dev/nailong.webp"
+                  alt="奶龙"
+                  loading="lazy"
+                  className="pointer-events-none absolute -bottom-5 -right-3 w-20 sm:w-28 drop-shadow-xl"
+                />
               </div>
             </div>
           </div>
