@@ -209,21 +209,23 @@ const heroSlides: { Mock: () => ReactNode; label: string }[] = [
   { Mock: RouteStudyMock, label: '学习路线与自习室' },
 ]
 
-function HeroCarousel() {
-  const [index, setIndex] = useState(0)
-  const [paused, setPaused] = useState(false)
-
-  useEffect(() => {
-    if (paused) return
-    const t = setInterval(() => setIndex((i) => (i + 1) % heroSlides.length), 5000)
-    return () => clearInterval(t)
-  }, [paused])
-
+function HeroCarousel({
+  index,
+  onIndex,
+  onPause,
+}: {
+  index: number
+  onIndex: (i: number) => void
+  onPause: (p: boolean) => void
+}) {
   const { Mock, label } = heroSlides[index]
   return (
-    <div className="w-full" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+    <div className="w-full" onMouseEnter={() => onPause(true)} onMouseLeave={() => onPause(false)}>
       <div className="h-[560px] overflow-hidden">
-        <div key={index} className="animate-in fade-in-0 slide-in-from-right-4 duration-500 ease-out">
+        <div
+          key={index}
+          className="h-full [&>*]:min-h-full animate-in fade-in-0 slide-in-from-right-4 duration-500 ease-out"
+        >
           <Mock />
         </div>
       </div>
@@ -232,7 +234,7 @@ function HeroCarousel() {
           <button
             key={s.label}
             type="button"
-            onClick={() => setIndex(idx)}
+            onClick={() => onIndex(idx)}
             aria-label={s.label}
             className={cn(
               'h-1.5 rounded-full transition-all',
@@ -249,13 +251,18 @@ function HeroCarousel() {
 export function LandingPage() {
   const { theme, toggle } = useThemeStore()
   const heroBgRef = useRef<HTMLDivElement>(null)
+  const [heroIndex, setHeroIndex] = useState(0)
   const [headlineEn, setHeadlineEn] = useState(true)
+  const [carouselPaused, setCarouselPaused] = useState(false)
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const t = setInterval(() => setHeadlineEn((v) => !v), 4500)
+    if (carouselPaused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = setInterval(() => {
+      setHeroIndex((i) => (i + 1) % heroSlides.length)
+      setHeadlineEn((v) => !v)
+    }, 4500)
     return () => clearInterval(t)
-  }, [])
+  }, [carouselPaused])
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -332,22 +339,25 @@ export function LandingPage() {
               <div className="space-y-3">
                 <h1
                   className={cn(
-                    'font-bold leading-[1.1] tracking-tight',
-                    headlineEn
-                      ? 'font-mono text-3xl sm:text-4xl lg:text-4xl'
-                      : 'font-sans text-4xl sm:text-5xl lg:text-6xl',
+                    'font-bold leading-[1.12] tracking-tight text-4xl sm:text-5xl lg:text-6xl',
+                    headlineEn ? 'font-mono' : 'font-sans',
                   )}
                 >
                   {headlineEn ? (
                     <>
-                      Because the mountain just
+                      Because the
+                      <br />
+                      mountain just
                       <br />
                       <span className="inline-block bg-foreground px-2 text-background">stands there.</span>
                     </>
                   ) : (
                     <>
                       因为山
-                      <span className="inline-block bg-foreground px-2 text-background">就在那里。</span>
+                      <br />
+                      就在
+                      <br />
+                      <span className="inline-block bg-foreground px-2 text-background">那里。</span>
                     </>
                   )}
                 </h1>
@@ -371,7 +381,7 @@ export function LandingPage() {
               </p>
             </div>
             <div className="mx-auto w-full max-w-xl lg:mx-0">
-              <HeroCarousel />
+              <HeroCarousel index={heroIndex} onIndex={setHeroIndex} onPause={setCarouselPaused} />
             </div>
           </div>
         </section>

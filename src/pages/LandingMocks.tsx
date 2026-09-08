@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   BarChart3,
@@ -44,13 +44,14 @@ import { cn } from '@/lib/utils'
 
 const mockBar = 'flex items-center justify-between border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground'
 
-function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={cn('overflow-hidden rounded-2xl border bg-card shadow-xl shadow-primary/5', className)}>
+const Panel = forwardRef<HTMLDivElement, { children: ReactNode; className?: string }>(
+  ({ children, className }, ref) => (
+    <div ref={ref} className={cn('overflow-hidden rounded-2xl border bg-card shadow-xl shadow-primary/5', className)}>
       {children}
     </div>
-  )
-}
+  ),
+)
+Panel.displayName = 'Panel'
 
 function useInView<T extends HTMLElement>(threshold = 0.35) {
   const ref = useRef<T>(null)
@@ -212,9 +213,8 @@ export function IdeRunMock() {
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
   const cases = ['示例 1', '示例 2', '边界 0']
   return (
-    <div ref={ref}>
-      <Panel>
-        <div className={mockBar}>
+    <Panel ref={ref}>
+      <div className={mockBar}>
           <span className="inline-flex items-center gap-1.5">
             <FileCode2 className="h-3.5 w-3.5 text-primary" />
             编程判题 · two_sum
@@ -343,8 +343,7 @@ export function IdeRunMock() {
             </div>
           </div>
         </div>
-      </Panel>
-    </div>
+    </Panel>
   )
 }
 
@@ -403,10 +402,9 @@ export function AiChatMock() {
   }, [inView])
 
   return (
-    <div ref={ref}>
-      <Panel>
-        <div className={mockBar}>
-          <span>AI 讲解 · 学习助手</span>
+    <Panel ref={ref}>
+      <div className={mockBar}>
+        <span>AI 讲解 · 学习助手</span>
           <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
             <CheckCircle2 className="h-3 w-3" /> 今日已总结
           </span>
@@ -453,8 +451,7 @@ export function AiChatMock() {
             </div>
           )}
         </div>
-      </Panel>
-    </div>
+    </Panel>
   )
 }
 
@@ -585,9 +582,8 @@ const PHASES = [
 export function RouteStudyMock() {
   const { ref, inView } = useInView<HTMLDivElement>()
   return (
-    <div ref={ref}>
-      <Panel>
-        <div className="p-5">
+    <Panel ref={ref}>
+      <div className="p-5">
           <div className="flex items-center justify-between">
             <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
               <Route className="h-4 w-4 text-primary" />
@@ -676,8 +672,7 @@ export function RouteStudyMock() {
             今日 12 人打卡 · 连续 7 天 · 每日 20:00 开始
           </p>
         </div>
-      </Panel>
-    </div>
+    </Panel>
   )
 }
 
