@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Spinner } from '@/components/ui/spinner'
+import { Input } from '@/components/ui/input'
 import { generateSecret, generateURI, verify } from 'otplib'
 import { toDataURL } from 'qrcode'
 import { supabase } from '@/lib/supabase'
@@ -29,17 +30,20 @@ const APP_NAME = 'PracticeWeb'
 
 interface Props {
   open: boolean
+  hasCurrentTotp?: boolean
   onSetupComplete: () => void
   onCancel?: () => void
 }
 
-export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
+export function OtpSetupDialog({ open, hasCurrentTotp = false, onSetupComplete, onCancel }: Props) {
   const { t } = useT()
   const { user } = useAuthStore()
   const [step, setStep] = useState<'setup' | 'verify' | 'recovery'>('setup')
   const [secret, setSecret] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [code, setCode] = useState('')
+  const [currentCode, setCurrentCode] = useState('')
+  const [recoveryCode, setRecoveryCode] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [autoSubmit, setAutoSubmit] = useState(true)
@@ -56,6 +60,8 @@ export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
         .then(setQrDataUrl)
         .catch(() => setError('Failed to generate QR code'))
       setCode('')
+      setCurrentCode('')
+      setRecoveryCode('')
       setError('')
       setStep('setup')
       setRecoveryCodes([])
@@ -65,12 +71,13 @@ export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
 
   const handleVerify = useCallback(async () => {
     if (code.length !== 6 || !user || isSubmitting) return
+    if (hasCurrentTotp && currentCode.length !== 6 && recoveryCode.length !== 14) return
     setError('')
     setIsSubmitting(true)
 
     try {
       // Client-side verify first to confirm the setup
-      const result = await verify({ secret, token: code })
+      const result = await verify({ secret, token: code, epochTolerance: 30 })
       if (!result.valid) {
         setAutoSubmit(false)
         setError(t('auth.otpInvalidCode'))
@@ -82,19 +89,28 @@ export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token || ''
       const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`
+      const body: Record<string, unknown> = { action: 'setup', secret, code }
+      if (hasCurrentTotp) {
+        body.currentCode = currentCode || undefined
+        body.recoveryCode = recoveryCode || undefined
+      }
       const res = await fetch(fnUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ action: 'setup', secret, code }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (data.valid) {
         setRecoveryCodes(data.recoveryCodes || [])
         setStep('recovery')
+      } else if (data.error === 'current-factor-required') {
+        setAutoSubmit(false)
+        setError(t('auth.otpReplaceInvalid'))
       } else {
+        setAutoSubmit(false)
         setError(t('auth.otpVerifyError'))
       }
     } catch {
@@ -102,12 +118,13 @@ export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
     } finally {
       setIsSubmitting(false)
     }
-  }, [code, user, secret, isSubmitting, t])
+  }, [code, currentCode, recoveryCode, hasCurrentTotp, user, secret, isSubmitting, t])
 
-  // Auto-submit once all 6 digits are entered (turns off after one wrong attempt)
+  // Auto-submit once all 6 digits are entered (turns off after one wrong attempt);
+  // when replacing an existing authenticator the current-factor fields are required too.
   useEffect(() => {
-    if (step === 'verify' && autoSubmit && code.length === 6 && !isSubmitting) handleVerify()
-  }, [step, code, isSubmitting, handleVerify, autoSubmit])
+    if (step === 'verify' && autoSubmit && !hasCurrentTotp && code.length === 6 && !isSubmitting) handleVerify()
+  }, [step, code, isSubmitting, handleVerify, autoSubmit, hasCurrentTotp])
 
   const handleCopyCode = useCallback(async (code: string, index: number) => {
     await navigator.clipboard.writeText(code)
@@ -157,21 +174,45 @@ export function OtpSetupDialog({ open, onSetupComplete, onCancel }: Props) {
           <>
             <DialogHeader>
               <DialogTitle>{t('auth.otpVerifyTitle')}</DialogTitle>
-              <DialogDescription>{t('auth.otpVerifyDesc')}</DialogDescription>
+              <DialogDescription>{hasCurrentTotp ? t('auth.otpReplaceDesc') : t('auth.otpVerifyDesc')}</DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col items-center gap-4 py-4">
+            <div className="flex flex-col items-center gap-4 py-4 w-full">
               <InputOtp value={code} onChange={setCode} length={6} disabled={isSubmitting} />
+              {hasCurrentTotp && (
+                <>
+                  <div className="w-full space-y-1.5 text-left">
+                    <label className="text-xs text-muted-foreground">{t('auth.otpCurrentCodeLabel')}</label>
+                    <InputOtp value={currentCode} onChange={setCurrentCode} length={6} disabled={isSubmitting} />
+                  </div>
+                  <div className="flex w-full items-center gap-2 text-xs text-muted-foreground">
+                    <div className="h-px flex-1 bg-border" />
+                    {t('auth.otpOr')}
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                  <div className="w-full space-y-1.5 text-left">
+                    <label className="text-xs text-muted-foreground">{t('auth.otpRecoveryCodeLabel')}</label>
+                    <Input
+                      value={recoveryCode}
+                      onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
+                      placeholder="XXXX-XXXX-XXXX"
+                      maxLength={14}
+                      disabled={isSubmitting}
+                      className="font-mono text-center tracking-widest"
+                    />
+                  </div>
+                </>
+              )}
               {error && (
                 <p className="text-sm text-destructive">{error}</p>
               )}
               <Button
                 onClick={handleVerify}
-                disabled={code.length !== 6 || isSubmitting}
+                disabled={code.length !== 6 || isSubmitting || (hasCurrentTotp && currentCode.length !== 6 && recoveryCode.length !== 14)}
                 className="w-full"
               >
                 {isSubmitting ? t('auth.otpVerifying') : t('auth.otpVerify')}
               </Button>
-              <Button variant="link" size="sm" onClick={() => { setStep('setup'); setCode(''); setError(''); setAutoSubmit(true) }}>
+              <Button variant="link" size="sm" onClick={() => { setStep('setup'); setCode(''); setCurrentCode(''); setRecoveryCode(''); setError(''); setAutoSubmit(true) }}>
                 {t('common.cancel')}
               </Button>
             </div>

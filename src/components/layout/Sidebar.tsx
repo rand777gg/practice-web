@@ -62,6 +62,11 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       {t('nav.beta')}
     </Badge>
   )
+  const testBadge = (
+    <Badge variant="secondary" className="ml-auto shrink-0 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 text-[9px] px-1 py-0 leading-none">
+      {t('nav.test')}
+    </Badge>
+  )
 
   return (
     <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'p-2 space-y-1' : 'p-3 space-y-1')}>
@@ -83,7 +88,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
           <NavItem to="/admin/questions" icon={<FileQuestion className="h-4 w-4" />} label={t('nav.questions')} collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/learning-routes" icon={<Route className="h-4 w-4" />} label={t('nav.learningRoutes')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />
           <NavItem to="/admin/duplicates" icon={<GitMerge className="h-4 w-4" />} label="题目查重" collapsed={collapsed} onClick={handleClick} />
-          <NavItem to="/admin/users" icon={<Users className="h-4 w-4" />} label={t('nav.users')} collapsed={collapsed} onClick={handleClick} />
+          <NavItem to="/admin/users" icon={<Users className="h-4 w-4" />} label={t('nav.users')} collapsed={collapsed} onClick={handleClick} badge={testBadge} />
           <NavItem to="/admin/ai" icon={<Sparkles className="h-4 w-4" />} label={t('nav.ai')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />
         </>
       )}

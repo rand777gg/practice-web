@@ -1064,6 +1064,7 @@ export function Component() {
    <PasskeySetupDialog open={passkeySetupOpen} onOpenChange={setPasskeySetupOpen} onRegistered={() => refreshProfile()} />
    <OtpSetupDialog
     open={otpSetupOpen}
+    hasCurrentTotp={hasTotp}
     onSetupComplete={() => { setOtpSetupOpen(false); refreshProfile() }}
     onCancel={() => setOtpSetupOpen(false)}
    />

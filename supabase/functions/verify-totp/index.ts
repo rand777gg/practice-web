@@ -123,7 +123,7 @@ serve(async (req: Request) => {
     // Supabase JWT exposes the session id as "session_id" (not "sid")
     const payload = decodeJwtPayload(token)
     const sid = (payload.session_id || payload.sid) as string || ""
-    const { action, code, secret, remember, deviceToken, deviceName } = await req.json()
+    const { action, code, secret, currentCode, recoveryCode, remember, deviceToken, deviceName } = await req.json()
 
     if (!action) {
       return new Response(JSON.stringify({ error: "missing action" }), {
@@ -171,7 +171,9 @@ serve(async (req: Request) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
-    // --- SETUP: verify code against provided secret, then store
+    // --- SETUP: verify code against provided secret, then store.
+    // Re-enabling over an existing secret requires proof of the current factor,
+    // otherwise any verified session could silently replace the enrolled secret.
     if (action === "setup") {
       if (!secret || !code) {
         return new Response(JSON.stringify({ error: "missing secret or code" }), {
@@ -180,7 +182,37 @@ serve(async (req: Request) => {
         })
       }
 
-      const result = await verify({ token: code, secret })
+      const [existing, rcRow, prof] = await Promise.all([
+        supabaseAdmin.from("user_totp").select("totp_secret").eq("user_id", userId).maybeSingle(),
+        supabaseAdmin.from("user_recovery_codes").select("codes").eq("user_id", userId).maybeSingle(),
+        supabaseAdmin.from("profiles").select("totp_enabled").eq("id", userId).maybeSingle(),
+      ])
+      const factorEnabled = !!existing?.totp_secret || !!rcRow?.codes?.length || prof?.totp_enabled === true
+      if (factorEnabled) {
+        let proven = false
+        if (currentCode && existing?.totp_secret) {
+          const oldCheck = await verify({ token: currentCode, secret: existing.totp_secret, epochTolerance: 30 })
+          proven = oldCheck.valid
+        }
+        if (!proven && recoveryCode && rcRow?.codes?.length) {
+          const submittedHash = await hashCode(recoveryCode)
+          const idx = rcRow.codes.indexOf(submittedHash)
+          if (idx !== -1) {
+            const remaining = [...rcRow.codes]
+            remaining.splice(idx, 1)
+            await supabaseAdmin.from("user_recovery_codes").upsert({ user_id: userId, codes: remaining })
+            proven = true
+          }
+        }
+        if (!proven) {
+          return new Response(JSON.stringify({ valid: false, error: "current-factor-required" }), {
+            status: 200,
+            headers: corsHeaders,
+          })
+        }
+      }
+
+      const result = await verify({ token: code, secret, epochTolerance: 30 })
       if (!result.valid) {
         return new Response(JSON.stringify({ valid: false, error: "invalid code" }), {
           status: 200,
@@ -312,7 +344,8 @@ serve(async (req: Request) => {
         })
       }
 
-      const result = await verify({ token: code, secret: totp.totp_secret })
+      // epochTolerance 30s (~1 step) absorbs clock drift / boundary typing races
+      const result = await verify({ token: code, secret: totp.totp_secret, epochTolerance: 30 })
       if (!result.valid) {
         return new Response(JSON.stringify({ valid: false }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -5,16 +5,27 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+ AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription,
+ AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
+import { Trash2, Loader2 } from 'lucide-react'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import type { Profile } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { useOnlineStore } from '@/stores/online-store'
+
+type UserRow = Profile & { email?: string; providers?: string[]; lastSignIn?: string }
 
 export function Component() {
  const { t } = useT()
  const onlineIds = useOnlineStore((s) => s.onlineIds)
  const { user: currentUser, profile: myProfile } = useAuthStore()
- const [profiles, setProfiles] = useState<(Profile & { email?: string; providers?: string[]; lastSignIn?: string })[]>([])
+ const [profiles, setProfiles] = useState<UserRow[]>([])
  const [isLoading, setIsLoading] = useState(true)
+ const [pendingDelete, setPendingDelete] = useState<UserRow | null>(null)
+ const [deleting, setDeleting] = useState(false)
+ const [deleteError, setDeleteError] = useState<string | null>(null)
 
  useEffect(() => {
   async function load() {
@@ -23,8 +34,7 @@ export function Component() {
     .select('*')
     .order('created_at', { ascending: true })
 
-   const list = (data ?? []) as (Profile & { email?: string; providers?: string[]; lastSignIn?: string })[]
-
+   const list = (data ?? []) as UserRow[]
    const [emails, providers, signIns] = await Promise.all([
     Promise.all(list.map(async (p) => {
      const { data } = await supabase.rpc('get_user_email', { user_id: p.id })
@@ -63,6 +73,31 @@ export function Component() {
   )
  }
 
+ const handleDeleteUser = async (target: UserRow) => {
+  if (!target || deleting) return
+  setDeleting(true)
+  setDeleteError(null)
+  try {
+   const { error } = await supabase.functions.invoke('admin-delete-user', {
+    body: { user_id: target.id },
+   })
+   if (error) throw error
+   setProfiles((prev) => prev.filter((p) => p.id !== target.id))
+   setPendingDelete(null)
+  } catch (e) {
+   let msg = t('users.deleteFailed')
+   if (e instanceof FunctionsHttpError) {
+    const ctx = await e.context.json().catch(() => null) as { error?: string } | null
+    msg += ctx?.error ?? ''
+   } else if (e instanceof Error && e.message) {
+    msg += e.message
+   }
+   setDeleteError(msg)
+  } finally {
+   setDeleting(false)
+  }
+ }
+
  if (isLoading) {
   return (
    <div className="space-y-4">
@@ -99,7 +134,7 @@ export function Component() {
        <TableHead>{t('users.role')}</TableHead>
        <TableHead>{t('users.joined')}</TableHead>
        <TableHead className="min-w-[160px]">上次登录</TableHead>
-       <TableHead className="w-20">{t('users.action')}</TableHead>
+       <TableHead className="min-w-[150px]">{t('users.action')}</TableHead>
       </TableRow>
      </TableHeader>
      <TableBody>
@@ -127,21 +162,57 @@ export function Component() {
          {p.lastSignIn ? new Date(p.lastSignIn).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '从未登录'}
         </TableCell>
         <TableCell>
-         <Button
-          variant="outline"
-          size="sm"
-          disabled={p.id === currentUser?.id}
-          onClick={() => toggleRole(p)}
-          className="text-xs h-8"
-         >
-          {p.role === 'admin' ? t('users.demote') : t('users.promote')}
-         </Button>
+         <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <Button
+           variant="outline"
+           size="sm"
+           disabled={p.id === currentUser?.id}
+           onClick={() => toggleRole(p)}
+           className="text-xs h-8"
+          >
+           {p.role === 'admin' ? t('users.demote') : t('users.promote')}
+          </Button>
+          <Button
+           variant="outline"
+           size="sm"
+           disabled={p.id === currentUser?.id}
+           onClick={() => { setDeleteError(null); setPendingDelete(p) }}
+           title={t('users.delete')}
+           className="text-xs h-8 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+          >
+           <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+         </div>
         </TableCell>
        </TableRow>
       ))}
      </TableBody>
     </Table>
    </div>
+
+   <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => {
+    if (!open && deleting) return
+    if (!open) { setPendingDelete(null); setDeleteError(null) }
+   }}>
+    <AlertDialogContent className="max-w-md">
+     <AlertDialogTitle>{t('users.deleteConfirmTitle')}</AlertDialogTitle>
+     <AlertDialogDescription className="space-y-2">
+      <p className="font-mono text-xs break-all text-foreground/80">{pendingDelete?.email || pendingDelete?.id || ''}</p>
+      <p>{t('users.deleteConfirmDesc')}</p>
+     </AlertDialogDescription>
+     {deleteError && <p className="text-xs text-red-500 break-all">{deleteError}</p>}
+     <div className="flex gap-3 justify-end mt-2">
+      <AlertDialogCancel asChild>
+       <Button variant="outline" size="sm" disabled={deleting}>{t('plan.cancel')}</Button>
+      </AlertDialogCancel>
+      <Button variant="destructive" size="sm" disabled={deleting}
+       onClick={() => { if (pendingDelete) handleDeleteUser(pendingDelete) }}>
+       {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+       {deleting ? t('users.deleting') : t('users.delete')}
+      </Button>
+     </div>
+    </AlertDialogContent>
+   </AlertDialog>
   </div>
  )
 }
