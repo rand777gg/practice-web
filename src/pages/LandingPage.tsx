@@ -32,7 +32,6 @@ import {
   PracticeSetupMock,
   QuestionTypes,
   RouteStudyMock,
-  StatsGrid,
   StatsMock,
 } from './LandingMocks'
 import { cn } from '@/lib/utils'
@@ -361,7 +360,6 @@ export function LandingPage() {
         <section className="border-t bg-muted/30 py-16 sm:py-20">
           <div className={cn(containerCls, 'space-y-14')}>
             <FeaturedLogos />
-            <StatsGrid />
           </div>
         </section>
       </main>

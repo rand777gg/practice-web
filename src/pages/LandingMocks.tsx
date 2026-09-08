@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   BarChart3,
@@ -11,7 +11,11 @@ import {
   CircleDot,
   Cpu,
   Database,
+  File,
+  FileCode,
   FileCode2,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   Flag,
   Flame,
@@ -23,6 +27,7 @@ import {
   Network,
   NotebookPen,
   PenLine,
+  Play,
   Route,
   Server,
   Sigma,
@@ -44,6 +49,25 @@ function Panel({ children, className }: { children: ReactNode; className?: strin
       {children}
     </div>
   )
+}
+
+function useInView<T extends HTMLElement>(threshold = 0.35) {
+  const ref = useRef<T>(null)
+  const [inView, setInView] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true)
+      return
+    }
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => setInView(e.isIntersecting)),
+      { threshold },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [threshold])
+  return { ref, inView }
 }
 
 function Tag({ active, children }: { active?: boolean; children: ReactNode }) {
@@ -176,84 +200,231 @@ export function ExamGridMock() {
 }
 
 export function IdeRunMock() {
+  const { ref, inView } = useInView<HTMLDivElement>()
+  const cases = [
+    { name: '示例 1', passed: true },
+    { name: '示例 2', passed: true },
+    { name: '边界 0', passed: true },
+  ]
   return (
-    <Panel>
-      <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2 text-xs">
-        <span className="rounded-t bg-background px-2 py-1 font-medium text-foreground shadow-sm">
-          two_sum.py
-        </span>
-        <span className="rounded px-2 py-1 text-muted-foreground">用例</span>
-        <span className="ml-auto rounded-md border px-1.5 py-0.5 text-muted-foreground">Python 3</span>
-      </div>
-      <div className="bg-slate-950 px-5 py-4 font-mono text-xs leading-6 text-slate-300">
-        <div>
-          <span className="text-purple-400">def</span> <span className="text-sky-300">two_sum</span>(
-          <span className="text-orange-300">nums</span>, <span className="text-orange-300">target</span>):
+    <div ref={ref}>
+      <Panel>
+        <div className={mockBar}>
+          <span className="inline-flex items-center gap-1.5">
+            <FileCode2 className="h-3.5 w-3.5 text-primary" />
+            编程判题 · two_sum
+          </span>
+          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
+            <CheckCircle2 className="h-3 w-3" /> 3 / 3 用例通过
+          </span>
         </div>
-        <div className="pl-4">
-          seen = {}
-        </div>
-        <div className="pl-4">
-          <span className="text-purple-400">for</span> i, n <span className="text-purple-400">in</span>{' '}
-          <span className="text-purple-400">enumerate</span>(nums):
-        </div>
-        <div className="pl-8">
-          <span className="text-purple-400">if</span> target - n <span className="text-purple-400">in</span> seen:
-        </div>
-        <div className="pl-12">
-          <span className="text-purple-400">return</span> [seen[target - n], i]
-        </div>
-        <div className="pl-8">seen[n] = i</div>
-        <div className="pl-4">
-          <span className="text-purple-400">return</span> []
-        </div>
-      </div>
-      <div className="flex items-center justify-between border-t px-4 py-2.5 text-xs">
-        <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-500">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Accepted · 通过 3 / 3 个用例
-        </span>
-        <span className="text-muted-foreground">耗时 12 ms · 内存 3.2 MB</span>
-      </div>
-    </Panel>
-  )
-}
-
-export function AiChatMock() {
-  return (
-    <Panel>
-      <div className={mockBar}>
-        <span>AI 讲解 · 学习助手</span>
-        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
-          <CheckCircle2 className="h-3 w-3" /> 今日已总结
-        </span>
-      </div>
-      <div className="space-y-4 p-5">
-        <div className="flex justify-end">
-          <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
-            快速排序为什么不稳定？能给我一个记忆口诀吗
+        <div className="grid sm:grid-cols-[1fr_168px]">
+          <div className="space-y-3 border-b p-4 sm:border-b-0 sm:border-r">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary">编程题</span>
+              <span className="rounded-md border px-1.5 py-0.5 text-muted-foreground">数组</span>
+              <span className="rounded-md border px-1.5 py-0.5 text-muted-foreground">简单</span>
+            </div>
+            <p className="text-sm font-medium">给定整数数组 nums 和整数 target，返回两数之和的下标。</p>
+            <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-[11px] leading-6 text-slate-300">
+              <div>
+                <span className="text-purple-400">def</span> <span className="text-sky-300">two_sum</span>(
+                <span className="text-orange-300">nums</span>, <span className="text-orange-300">target</span>):
+              </div>
+              <div className="pl-4">
+                seen = {}
+              </div>
+              <div className="pl-4">
+                <span className="text-purple-400">for</span> i, n <span className="text-purple-400">in</span>{' '}
+                <span className="text-purple-400">enumerate</span>(nums):
+              </div>
+              <div className="pl-8">
+                <span className="text-purple-400">if</span> target - n <span className="text-purple-400">in</span> seen:
+              </div>
+              <div className="pl-12">
+                <span className="text-purple-400">return</span> [seen[target - n], i]
+              </div>
+              <div className="pl-8">seen[n] = i</div>
+              <div className="pl-4">
+                <span className="text-purple-400">return</span> []
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t pt-3">
+              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-500">
+                <svg
+                  className={cn('h-4 w-4', inView && 'animate-[passkey-success-pop_0.6s_ease-out]')}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    strokeDasharray="113"
+                    strokeDashoffset="113"
+                    className={cn(inView && 'animate-[passkey-check-circle_0.6s_ease-out_0.2s_forwards]')}
+                  />
+                  <path
+                    d="M8 12l3 3 5-5"
+                    strokeDasharray="48"
+                    strokeDashoffset="48"
+                    className={cn(inView && 'animate-[passkey-check-path_0.5s_ease-out_0.8s_forwards]')}
+                  />
+                </svg>
+                Accepted · 通过 3 / 3 个用例
+              </span>
+              <Button size="sm" className="gap-1">
+                <Play className="h-3.5 w-3.5" />
+                运行
+              </Button>
+            </div>
           </div>
-        </div>
-        <div className="flex items-start gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
-            <p className="text-sm">
-              分区交换时，等值元素可能<span className="font-medium text-foreground">互换位置</span>，所以不稳定。
-              记口诀：<span className="font-medium text-foreground">「一换顺序就乱」</span>。
-            </p>
-            <p className="text-xs text-muted-foreground">
-              建议重做「数组中的第 K 个最大元素」，巩固对分区的理解。
-            </p>
-            <div className="flex gap-1.5 pt-0.5">
-              <Tag>再看一遍解析</Tag>
-              <Tag active>加入错题本</Tag>
+          <div className="p-4">
+            <p className="text-xs font-medium text-muted-foreground">用例</p>
+            <ul className="mt-3 space-y-2">
+              {cases.map((c) => (
+                <li key={c.name} className="flex items-center gap-2 text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    <Check className="h-3 w-3" />
+                  </span>
+                  {c.name}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 space-y-1.5">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>耗时</span>
+                <span>12 ms</span>
+              </div>
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>内存</span>
+                <span>3.2 MB</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </Panel>
+      </Panel>
+    </div>
+  )
+}
+
+type ChatTurn = { role: 'user' | 'ai'; text: string; sub?: string; tags?: string[] }
+
+const CHAT_SCRIPT: ChatTurn[] = [
+  { role: 'user', text: '快速排序为什么不稳定？能给我一个记忆口诀吗' },
+  {
+    role: 'ai',
+    text: '分区交换时，等值元素可能互换位置，所以不稳定。',
+    sub: '记口诀：「一换顺序就乱」。建议重做「数组中的第 K 个最大元素」巩固理解。',
+    tags: ['再看一遍解析', '加入错题本'],
+  },
+  { role: 'user', text: '那稳定的排序有哪些？' },
+  { role: 'ai', text: '冒泡、插入、归并、计数排序都稳定；快排、堆排、选择排序不稳定。' },
+]
+
+export function AiChatMock() {
+  const { ref, inView } = useInView<HTMLDivElement>()
+  const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [typing, setTyping] = useState(false)
+
+  useEffect(() => {
+    if (!inView) {
+      setTurns([])
+      setTyping(false)
+      return
+    }
+    let cancelled = false
+    const timers: number[] = []
+    const ping = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const t = window.setTimeout(resolve, ms)
+        timers.push(t)
+      })
+    const run = async () => {
+      while (!cancelled) {
+        await ping(300)
+        for (const turn of CHAT_SCRIPT) {
+          if (cancelled) return
+          if (turn.role === 'user') {
+            setTurns((prev) => [...prev, turn])
+            await ping(650)
+          } else {
+            setTyping(true)
+            await ping(850)
+            if (cancelled) return
+            setTyping(false)
+            setTurns((prev) => [...prev, turn])
+            await ping(550)
+          }
+        }
+        await ping(2400)
+        setTurns([])
+      }
+    }
+    run()
+    return () => {
+      cancelled = true
+      timers.forEach((t) => clearTimeout(t))
+    }
+  }, [inView])
+
+  return (
+    <div ref={ref}>
+      <Panel>
+        <div className={mockBar}>
+          <span>AI 讲解 · 学习助手</span>
+          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
+            <CheckCircle2 className="h-3 w-3" /> 今日已总结
+          </span>
+        </div>
+        <div className="space-y-4 p-5">
+          {turns.map((t, i) =>
+            t.role === 'user' ? (
+              <div key={i} className="animate-in fade-in-0 slide-in-from-bottom-2 duration-300 flex justify-end">
+                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+                  {t.text}
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="animate-in fade-in-0 slide-in-from-bottom-2 duration-300 flex items-start gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
+                  <p className="text-sm">{t.text}</p>
+                  {t.sub && <p className="text-xs text-muted-foreground">{t.sub}</p>}
+                  {t.tags && (
+                    <div className="flex gap-1.5 pt-0.5">
+                      {t.tags.map((tag) => (
+                        <Tag key={tag} active={tag === '加入错题本'}>
+                          {tag}
+                        </Tag>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ),
+          )}
+          {typing && (
+            <div className="animate-in fade-in-0 duration-300 flex items-start gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
+                <span className="h-1.5 w-1.5 animate-[thinking_1.4s_ease-in-out_infinite] rounded-full bg-muted-foreground" />
+                <span className="h-1.5 w-1.5 animate-[thinking_1.4s_ease-in-out_0.2s_infinite] rounded-full bg-muted-foreground" />
+                <span className="h-1.5 w-1.5 animate-[thinking_1.4s_ease-in-out_0.4s_infinite] rounded-full bg-muted-foreground" />
+              </div>
+            </div>
+          )}
+        </div>
+      </Panel>
+    </div>
   )
 }
 
@@ -317,83 +488,101 @@ const PHASES = [
 ] as const
 
 export function RouteStudyMock() {
+  const { ref, inView } = useInView<HTMLDivElement>()
   return (
-    <Panel>
-      <div className="p-5">
-        <div className="flex items-center justify-between">
-          <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
-            <Route className="h-4 w-4 text-primary" />
-            学习路线
-          </p>
-          <span className="text-xs text-muted-foreground">已完成 2 / 3 阶段</span>
-        </div>
-        <div className="mt-5 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center">
-          {PHASES.map((phase, i) => (
-            <Fragment key={phase.name}>
-              <div className="flex justify-center">
-                <div
-                  className={cn(
-                    'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold',
-                    phase.state === 'done' && 'bg-emerald-500 text-white',
-                    phase.state === 'active' && 'bg-primary text-primary-foreground ring-4 ring-primary/20',
-                    phase.state === 'todo' && 'border border-dashed bg-background text-muted-foreground',
-                  )}
-                >
-                  {phase.state === 'done' ? <Check className="h-4 w-4" /> : i + 1}
+    <div ref={ref}>
+      <Panel>
+        <div className="p-5">
+          <div className="flex items-center justify-between">
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
+              <Route className="h-4 w-4 text-primary" />
+              学习路线
+            </p>
+            <span className="text-xs text-muted-foreground">已完成 2 / 3 阶段</span>
+          </div>
+          <div className="mt-5 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center">
+            {PHASES.map((phase, i) => (
+              <Fragment key={phase.name}>
+                <div className="flex justify-center">
+                  <div className="relative">
+                    {phase.state === 'active' && (
+                      <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-primary/30" />
+                    )}
+                    <div
+                      className={cn(
+                        'relative flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold',
+                        phase.state === 'done' && 'bg-emerald-500 text-white',
+                        phase.state === 'active' && 'bg-primary text-primary-foreground ring-4 ring-primary/20',
+                        phase.state === 'todo' && 'border border-dashed bg-background text-muted-foreground',
+                      )}
+                    >
+                      {phase.state === 'done' ? <Check className="h-4 w-4" /> : i + 1}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              {i < PHASES.length - 1 && (
-                <div
-                  className={cn(
-                    'mx-1 h-1 w-8 rounded-full sm:w-14',
-                    phase.state === 'done' ? 'bg-emerald-500' : 'bg-border',
-                  )}
-                />
-              )}
-            </Fragment>
-          ))}
-        </div>
-        <div className="mt-2 grid grid-cols-[1fr_auto_1fr_auto_1fr]">
-          {PHASES.map((phase, i) => (
-            <Fragment key={phase.name}>
-              <span className="text-center text-[11px] text-muted-foreground">{phase.name}</span>
-              {i < PHASES.length - 1 && <span aria-hidden className="mx-1 w-8 sm:w-14" />}
-            </Fragment>
-          ))}
-        </div>
-      </div>
-      <div className="border-t p-5">
-        <div className="flex items-center justify-between">
-          <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
-            <Users className="h-4 w-4 text-primary" />
-            星空自习室
-          </p>
-          <Button size="sm" className="gap-1">
-            <Flame className="h-3.5 w-3.5" />
-            已打卡
-          </Button>
-        </div>
-        <div className="mt-4 flex items-center gap-1.5">
-          {['早', '然', '木', '星'].map((name, i) => (
-            <span
-              key={name}
+                {i < PHASES.length - 1 && (
+                  <div
+                    className={cn(
+                      'mx-1 h-1 w-8 rounded-full sm:w-14',
+                      phase.state === 'done' ? 'bg-emerald-500' : 'bg-border',
+                    )}
+                  />
+                )}
+              </Fragment>
+            ))}
+          </div>
+          <div className="mt-3 h-1 overflow-hidden rounded-full bg-border">
+            <div
               className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-medium text-white ring-2 ring-card',
-                ['bg-sky-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-400'][i],
+                'h-full rounded-full bg-emerald-500 transition-[width] duration-1000 ease-out',
+                inView ? 'w-2/3' : 'w-0',
               )}
-            >
-              {name}
-            </span>
-          ))}
-          <span className="flex h-7 items-center rounded-full bg-muted px-2 text-[10px] font-medium text-muted-foreground">
-            +2 在线
-          </span>
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-[1fr_auto_1fr_auto_1fr]">
+            {PHASES.map((phase, i) => (
+              <Fragment key={phase.name}>
+                <span className="text-center text-[11px] text-muted-foreground">{phase.name}</span>
+                {i < PHASES.length - 1 && <span aria-hidden className="mx-1 w-8 sm:w-14" />}
+              </Fragment>
+            ))}
+          </div>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          今日 12 人打卡 · 连续 7 天 · 每日 20:00 开始
-        </p>
-      </div>
-    </Panel>
+        <div className="border-t p-5">
+          <div className="flex items-center justify-between">
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
+              <Users className="h-4 w-4 text-primary" />
+              星空自习室
+            </p>
+            <Button size="sm" className={cn('gap-1', inView && 'animate-[passkey-success-pop_0.5s_ease-out]')}>
+              <Flame className="h-3.5 w-3.5" />
+              已打卡
+            </Button>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5">
+            {['早', '然', '木', '星'].map((name, i) => (
+              <span
+                key={name}
+                style={{ transitionDelay: `${i * 120}ms` }}
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-medium text-white ring-2 ring-card transition-all duration-500',
+                  inView ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
+                  ['bg-sky-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-400'][i],
+                )}
+              >
+                {name}
+              </span>
+            ))}
+            <span className="flex h-7 items-center rounded-full bg-muted px-2 text-[10px] font-medium text-muted-foreground">
+              +2 在线
+            </span>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            今日 12 人打卡 · 连续 7 天 · 每日 20:00 开始
+          </p>
+        </div>
+      </Panel>
+    </div>
   )
 }
 
@@ -451,9 +640,6 @@ export function ExamPaperMock() {
           </div>
           <div className="mt-4 flex items-center justify-between border-t pt-3 text-[10px] text-muted-foreground">
             <span>第 1 页 · 通用模板封面</span>
-            <span className="inline-flex items-center gap-1 text-primary">
-              预览完整试卷 <ArrowRight className="h-3 w-3" />
-            </span>
           </div>
         </div>
       </div>
@@ -515,25 +701,6 @@ export function FeaturedLogos() {
           <LogoRow key={i} items={row} reverse={i % 2 === 1} />
         ))}
       </div>
-    </div>
-  )
-}
-
-export function StatsGrid() {
-  const stats = [
-    { value: '846', label: '408 真题' },
-    { value: '1833', label: '知识点巩固题' },
-    { value: '247', label: '交互可视化' },
-    { value: '100%', label: '完全免费' },
-  ]
-  return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-      {stats.map((s) => (
-        <div key={s.label} className="rounded-2xl border bg-card px-6 py-8 text-center shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-md">
-          <p className="text-3xl font-bold text-blue-600 sm:text-4xl dark:text-blue-400">{s.value}</p>
-          <p className="mt-2 text-sm text-muted-foreground">{s.label}</p>
-        </div>
-      ))}
     </div>
   )
 }
@@ -659,8 +826,16 @@ export function PracticeSessionMock() {
   )
 }
 
+const AI_FORMATS: { label: string; Icon: typeof FileText; color: string }[] = [
+  { label: 'PDF', Icon: FileText, color: 'text-red-500' },
+  { label: 'Word', Icon: FileText, color: 'text-blue-500' },
+  { label: 'PPT', Icon: File, color: 'text-orange-500' },
+  { label: 'Excel', Icon: FileSpreadsheet, color: 'text-green-500' },
+  { label: '图片', Icon: FileImage, color: 'text-purple-500' },
+  { label: 'HTML', Icon: FileCode, color: 'text-yellow-500' },
+]
+
 export function AiAnalysisMock() {
-  const formats = ['PDF', 'Word', '图片']
   return (
     <Panel>
       <div className={mockBar}>
@@ -689,9 +864,13 @@ export function AiAnalysisMock() {
             <div className="h-2 w-[62%] rounded bg-muted" />
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {formats.map((f) => (
-              <span key={f} className="rounded-md border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {f}
+            {AI_FORMATS.map((f) => (
+              <span
+                key={f.label}
+                className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                <f.Icon className={cn('h-3 w-3', f.color)} />
+                {f.label}
               </span>
             ))}
           </div>
