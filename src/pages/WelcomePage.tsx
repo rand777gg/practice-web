@@ -18,7 +18,7 @@ export function Component() {
     if (!isInitialized) return
     if (!user && !hasRedirected.current) {
       hasRedirected.current = true
-      navigate('/login', { replace: true })
+      navigate('/', { replace: true })
       return
     }
     const t1 = setTimeout(() => setVisible(true), 100)

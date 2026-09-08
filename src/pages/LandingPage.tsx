@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  ArrowLeft,
   ArrowRight,
   BarChart3,
   Brain,
@@ -21,6 +22,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { BrandLogo } from '@/components/layout/BrandLogo'
+import { LoginForm } from '@/components/login-form'
+import { RegisterForm } from '@/components/register-form'
 import { useThemeStore } from '@/stores/theme-store'
 import {
   AiAnalysisMock,
@@ -200,6 +203,23 @@ function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }
 export function LandingPage() {
   const { theme, toggle } = useThemeStore()
   const heroBgRef = useRef<HTMLDivElement>(null)
+  const [authView, setAuthView] = useState<'hero' | 'login' | 'register'>('hero')
+  const [formVisible, setFormVisible] = useState(false)
+  const [loginStep, setLoginStep] = useState<'credentials' | 'mfa'>('credentials')
+
+  const openAuth = (mode: 'login' | 'register') => {
+    if (authView !== mode) {
+      setAuthView(mode)
+      setFormVisible(false)
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (authView === 'hero') return
+    const t = setTimeout(() => setFormVisible(true), 60)
+    return () => clearTimeout(t)
+  }, [authView])
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -243,15 +263,17 @@ export function LandingPage() {
                 <Sun className="h-[18px] w-[18px]" />
               )}
             </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/login">登录</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link to="/register">
-                免费注册
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
+            {!(authView === 'login' && loginStep === 'mfa') && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => openAuth('login')}>
+                  登录
+                </Button>
+                <Button size="sm" onClick={() => openAuth('register')}>
+                  免费注册
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -268,36 +290,54 @@ export function LandingPage() {
             <div className="animate-aurora-slow absolute right-0 top-10 h-80 w-80 rounded-full bg-violet-500/10 blur-3xl" />
           </div>
           <div className={cn(containerCls, 'grid items-center gap-12 pb-20 pt-16 sm:pb-24 sm:pt-20 lg:grid-cols-2 lg:gap-16')}>
-            <div className="space-y-7 text-left">
-              <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1 text-xs font-normal">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                AI 驱动的全题型刷题平台
-              </Badge>
-              <div className="space-y-3">
-                <h1 className="font-mono text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
-                  Because the mountain just
-                  <br />
-                  <span className="inline-block bg-foreground px-2 text-background">stands there.</span>
-                </h1>
-                <p className="font-mono max-w-md text-sm text-muted-foreground sm:text-base">
-                  Open-source, online practice system for humans with AI abilities.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button asChild size="lg" className="gap-2">
-                  <Link to="/register">
+            {authView === 'hero' ? (
+              <div className="space-y-7 text-left">
+                <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1 text-xs font-normal">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  AI 驱动的全题型刷题平台
+                </Badge>
+                <div className="space-y-3">
+                  <h1 className="font-mono text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
+                    Because the mountain just
+                    <br />
+                    <span className="inline-block bg-foreground px-2 text-background">stands there.</span>
+                  </h1>
+                  <p className="font-mono max-w-md text-sm text-muted-foreground sm:text-base">
+                    Open-source, online practice system for humans with AI abilities.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button size="lg" className="gap-2" onClick={() => openAuth('register')}>
                     免费开始刷题
                     <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="outline">
-                  <Link to="/login">已有账号，直接登录</Link>
-                </Button>
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={() => openAuth('login')}>
+                    已有账号，直接登录
+                  </Button>
+                </div>
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  免下载 · 免费使用 · 手机与桌面端皆可 · 进度自动同步
+                </p>
               </div>
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                免下载 · 免费使用 · 手机与桌面端皆可 · 进度自动同步
-              </p>
-            </div>
+            ) : (
+              <div className="mx-auto w-full max-w-sm">
+                {!(authView === 'login' && loginStep === 'mfa') && (
+                  <button
+                    type="button"
+                    onClick={() => setAuthView('hero')}
+                    className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    返回
+                  </button>
+                )}
+                {authView === 'login' ? (
+                  <LoginForm visible={formVisible} onSwitchMode={openAuth} onStepChange={setLoginStep} />
+                ) : (
+                  <RegisterForm visible={formVisible} onSwitchMode={openAuth} />
+                )}
+              </div>
+            )}
             <div className="mx-auto w-full max-w-xl lg:mx-0">
               <div className="relative">
                 <div className="animate-float">
@@ -382,8 +422,8 @@ export function LandingPage() {
             <p className="text-xs text-muted-foreground">坚持每天练习，用数据看见进步。</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-            <Link to="/login" className="hover:text-foreground">登录</Link>
-            <Link to="/register" className="hover:text-foreground">注册</Link>
+            <button type="button" onClick={() => openAuth('login')} className="hover:text-foreground">登录</button>
+            <button type="button" onClick={() => openAuth('register')} className="hover:text-foreground">注册</button>
             <Link to="/terms" className="hover:text-foreground">服务条款</Link>
             <Link to="/privacy" className="hover:text-foreground">隐私政策</Link>
           </div>

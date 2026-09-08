@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,15 @@ const rowBase = 'transition-[opacity,transform] duration-500 ease-out'
 const rowIn = 'opacity-100 translate-y-0'
 const rowOut = 'opacity-0 translate-y-2'
 
-export function RegisterForm({ className, visible, ...props }: React.ComponentProps<'div'> & { visible?: boolean }) {
+export function RegisterForm({
+  className,
+  visible,
+  onSwitchMode,
+  ...props
+}: React.ComponentProps<'div'> & {
+  visible?: boolean
+  onSwitchMode: (mode: 'login' | 'register') => void
+}) {
   const { t } = useT()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -50,17 +58,20 @@ export function RegisterForm({ className, visible, ...props }: React.ComponentPr
         return
       }
 
+      // Signed in — keep the landing page mounted while we decide on the onboarding guide.
+      sessionStorage.setItem('mfa_pending', '1')
+
       // New accounts have no MFA and are not onboarded → straight to /guide
       let st: MfaStatus | null = null
       try { st = await getMfaStatus() } catch { /* fall through */ }
       if (st) {
         const hasAnyMfa = st.availableMethods.passkey || st.availableMethods.totp
         if (!hasAnyMfa && (!st.onboarded || st.role === 'admin')) {
-          sessionStorage.setItem('mfa_pending', '1')
           navigate('/guide')
           return
         }
       }
+      sessionStorage.removeItem('mfa_pending')
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : '验证失败')
@@ -128,7 +139,7 @@ export function RegisterForm({ className, visible, ...props }: React.ComponentPr
                 <div className={cn(rowBase, v)} style={{ transitionDelay: '700ms' }}>
                   <div className="text-center text-sm mt-4">
                     <span className="text-gray-500 dark:text-white/50">{t('auth.hasAccount')} </span>
-                    <Link to="/login" className="text-gray-800 underline underline-offset-4 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">{t('auth.login')}</Link>
+                    <button type="button" onClick={() => onSwitchMode('login')} className="text-gray-800 underline underline-offset-4 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">{t('auth.login')}</button>
                   </div>
                 </div>
               </div>
@@ -137,7 +148,7 @@ export function RegisterForm({ className, visible, ...props }: React.ComponentPr
         </Card>
       </div>
       <div className={cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2')} style={{ transitionDelay: '800ms' }}>
-        <div className="text-balance text-center text-xs text-white/70 dark:text-white/40 [&_a]:underline [&_a]:underline-offset-4 [&_a]:hover:text-white dark:[&_a]:hover:text-white/70">
+        <div className="text-balance text-center text-xs text-muted-foreground [&_a]:underline [&_a]:underline-offset-4 [&_a]:hover:text-foreground">
           点击继续即表示同意我们的 <a href="/terms?from=register">服务条款</a> 和 <a href="/privacy?from=register">隐私政策</a>
         </div>
       </div>

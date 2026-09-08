@@ -30,7 +30,7 @@ export function Component() {
     return () => clearTimeout(timer)
   }, [token, user])
 
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/" replace />
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-background p-6">

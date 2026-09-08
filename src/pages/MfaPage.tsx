@@ -23,7 +23,7 @@ export function Component() {
   const [defaultMethod, setDefaultMethod] = useState<'webauthn' | 'app'>('app')
 
   useEffect(() => {
-    if (user === null) navigate('/login', { replace: true })
+    if (user === null) navigate('/', { replace: true })
   }, [user, navigate])
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export function Component() {
 
   const handleLogout = async () => {
     await signOut()
-    navigate('/login', { replace: true })
+    navigate('/', { replace: true })
   }
 
   return (

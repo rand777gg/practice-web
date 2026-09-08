@@ -12,7 +12,7 @@ export function Component() {
 
   // Signed out (e.g. 退出 in the TOTP setup dialog) → back to login
   useEffect(() => {
-    if (user === null) navigate('/login', { replace: true })
+    if (user === null) navigate('/', { replace: true })
   }, [user, navigate])
 
   useEffect(() => {

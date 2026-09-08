@@ -4,8 +4,6 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { OtpGuard } from '@/components/auth/OtpGuard'
 import { RootGate } from '@/router/RootGate'
 import { LoadingTips } from '@/components/layout/LoadingTips'
-import { Component as LoginPage } from '@/pages/LoginPage'
-import { Component as RegisterPage } from '@/pages/RegisterPage'
 import { Component as TermsPage } from '@/pages/TermsPage'
 import { Component as PrivacyPage } from '@/pages/PrivacyPage'
 
@@ -13,14 +11,6 @@ export const router = createBrowserRouter([
   {
     HydrateFallback: () => <LoadingTips className="h-screen" />,
     children: [
-      {
-        path: '/login',
-        Component: LoginPage,
-      },
-      {
-        path: '/register',
-        Component: RegisterPage,
-      },
       {
         path: '/terms',
         Component: TermsPage,

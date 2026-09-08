@@ -25,7 +25,7 @@ export function Component() {
     const t3 = setTimeout(() => {
       if (!hasRedirected.current) {
         hasRedirected.current = true
-        navigate('/login', { replace: true })
+        navigate('/', { replace: true })
       }
     }, 4000)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
@@ -34,7 +34,7 @@ export function Component() {
   const handleGo = () => {
     if (hasRedirected.current) return
     hasRedirected.current = true
-    navigate('/login', { replace: true })
+    navigate('/', { replace: true })
   }
 
   return (

@@ -1,16 +1,12 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 export function Component() {
-  const [params] = useSearchParams()
-  const from = params.get('from')
-  const backTo = from === 'register' ? '/register' : '/login'
-
   return (
     <div className="min-h-screen bg-background p-6 md:p-10 max-w-4xl mx-auto">
-      <Link to={backTo} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4">
+      <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="h-4 w-4" />
-        {from === 'register' ? '返回注册' : '返回登录'}
+        返回首页
       </Link>
       <h1 className="text-2xl font-bold mb-6">隐私政策</h1>
       <div className="prose prose-base dark:prose-invert space-y-4">

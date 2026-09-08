@@ -8,7 +8,8 @@ export function RootGate() {
   const { pathname } = useLocation()
 
   if (isLoading) return <LoadingTips className="h-screen" />
-  if (user) return <Outlet />
+  // While MFA is pending (inline verification on the landing page) keep showing the landing page
+  if (user && !sessionStorage.getItem('mfa_pending')) return <Outlet />
   if (pathname === '/') return <LandingPage />
-  return <Navigate to="/login" replace />
+  return <Navigate to="/" replace />
 }

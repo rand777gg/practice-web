@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -7,16 +7,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useT } from '@/i18n/use-t'
-import { QrCode } from 'lucide-react'
+import { QrCode, ShieldCheck } from 'lucide-react'
 import { QrLoginDialog } from '@/components/auth/QrLoginDialog'
 import { getMfaStatus, type MfaStatus } from '@/lib/mfa'
+import { useAuthStore } from '@/stores/auth-store'
+import { MfaPanels, type MfaPanel } from '@/components/auth/MfaPanels'
 
 const rowBase = 'transition-[opacity,transform] duration-500 ease-out'
 const rowIn = 'opacity-100 translate-y-0'
 const rowOut = 'opacity-0 translate-y-2'
 
-export function LoginForm({ className, visible, ...props }: React.ComponentProps<'div'> & { visible?: boolean }) {
+export function LoginForm({
+  className,
+  visible,
+  onSwitchMode,
+  onStepChange,
+  ...props
+}: React.ComponentProps<'div'> & {
+  visible?: boolean
+  onSwitchMode: (mode: 'login' | 'register') => void
+  onStepChange?: (step: 'credentials' | 'mfa') => void
+}) {
   const { t } = useT()
+  const { profile } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -24,7 +37,14 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
   const [githubLoggingIn, setGithubLoggingIn] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
   const [graceLoggingIn, setGraceLoggingIn] = useState(false)
+  const [step, setStep] = useState<'credentials' | 'mfa'>('credentials')
+  const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null)
+  const [mfaPanel, setMfaPanel] = useState<MfaPanel>('totp')
   const navigate = useNavigate()
+
+  useEffect(() => {
+    onStepChange?.(step)
+  }, [step, onStepChange])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -34,29 +54,36 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
       if (authError) { setError(authError.message); setIsSubmitting(false); return }
 
-      // Signed in — ask the server what this user needs
+      // Signed in — keep the landing page mounted (RootGate skips the dashboard while pending)
+      // until we know whether this user needs MFA / onboarding, so the inline flow isn't interrupted.
+      sessionStorage.setItem('mfa_pending', '1')
+
       let st: MfaStatus | null = null
       try { st = await getMfaStatus() } catch { /* fall through to app */ }
       if (st) {
         const hasAnyMfa = st.availableMethods.passkey || st.availableMethods.totp
         if (!hasAnyMfa && (!st.onboarded || st.role === 'admin')) {
           // New user or admin without MFA → dedicated /guide page (admin cannot skip 2FA)
-          sessionStorage.setItem('mfa_pending', '1')
           navigate('/guide')
           return
         }
         if (st.needsMfa) {
-          sessionStorage.setItem('mfa_pending', '1')
-          navigate('/mfa')
+          // Default method strictly follows the user's setting (falls back to app if passkey isn't registered)
+          let def: 'webauthn' | 'app' = 'app'
+          if (profile?.preferred_2fa === 'passkey' && st.availableMethods.passkey) def = 'webauthn'
+          setMfaStatus(st)
+          setMfaPanel(def === 'webauthn' ? 'passkey' : 'totp')
+          setStep('mfa')
           return
         }
         // Within grace period (or session already verified) → brief transition like Tencent Cloud
         if (st.graceUntil || st.sessionVerified) {
           setGraceLoggingIn(true)
-          setTimeout(() => navigate('/'), 1200)
+          setTimeout(() => { sessionStorage.removeItem('mfa_pending'); navigate('/') }, 1200)
           return
         }
       }
+      sessionStorage.removeItem('mfa_pending')
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : '验证失败')
@@ -80,7 +107,19 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
     setQrOpen(true)
   }
 
+  const handleMfaVerified = () => {
+    sessionStorage.removeItem('mfa_pending')
+    navigate('/', { replace: true })
+  }
+
   const v = visible ? rowIn : rowOut
+
+  const mfaDescription =
+    mfaPanel === 'passkey'
+      ? t('auth.mfaAuthenticatePasskey')
+      : mfaPanel === 'totp'
+        ? t('auth.mfaAuthenticateTotp')
+        : t('auth.otpRecoveryDialogDesc')
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
@@ -89,17 +128,29 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
           <CardHeader className="text-center pb-4">
             <div className={cn(rowBase, v)} style={{ transitionDelay: '200ms' }}>
               <CardTitle className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('auth.welcomeBack')}
+                {step === 'mfa' ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-primary" />
+                    {t('auth.mfaTitle')}
+                  </span>
+                ) : t('auth.welcomeBack')}
               </CardTitle>
             </div>
             <div className={cn(rowBase, v)} style={{ transitionDelay: '300ms' }}>
               <CardDescription className="text-gray-600 dark:text-white/60">
-                {t('auth.signInDesc')}
+                {step === 'mfa' ? mfaDescription : t('auth.signInDesc')}
               </CardDescription>
             </div>
           </CardHeader>
           <CardContent className="px-4 sm:px-6">
-            {graceLoggingIn ? (
+            {step === 'mfa' && mfaStatus ? (
+              <MfaPanels
+                status={mfaStatus}
+                panel={mfaPanel}
+                onPanelChange={setMfaPanel}
+                onVerified={handleMfaVerified}
+              />
+            ) : graceLoggingIn ? (
               <div className="py-10 text-center animate-in fade-in-0 duration-300">
                 <svg className="mx-auto h-8 w-8 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56" />
@@ -155,7 +206,7 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
                     <div className={cn(rowBase, v)} style={{ transitionDelay: '700ms' }}>
                       <div className="text-center text-sm mt-4">
                         <span className="text-gray-500 dark:text-white/50">{t('auth.noAccount')} </span>
-                        <Link to="/register" className="text-gray-800 underline underline-offset-4 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">{t('auth.register')}</Link>
+                        <button type="button" onClick={() => onSwitchMode('register')} className="text-gray-800 underline underline-offset-4 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">{t('auth.register')}</button>
                       </div>
                     </div>
                   </div>
@@ -165,11 +216,13 @@ export function LoginForm({ className, visible, ...props }: React.ComponentProps
           </CardContent>
         </Card>
       </div>
-      <div className={cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2')} style={{ transitionDelay: '800ms' }}>
-        <div className="text-balance text-center text-xs text-white/70 dark:text-white/40 [&_a]:underline [&_a]:underline-offset-4 [&_a]:hover:text-white dark:[&_a]:hover:text-white/70">
-          点击继续即表示同意我们的 <a href="/terms?from=login">服务条款</a> 和 <a href="/privacy?from=login">隐私政策</a>
+      {step !== 'mfa' && (
+        <div className={cn(rowBase, visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2')} style={{ transitionDelay: '800ms' }}>
+          <div className="text-balance text-center text-xs text-muted-foreground [&_a]:underline [&_a]:underline-offset-4 [&_a]:hover:text-foreground">
+            点击继续即表示同意我们的 <a href="/terms?from=login">服务条款</a> 和 <a href="/privacy?from=login">隐私政策</a>
+          </div>
         </div>
-      </div>
+      )}
       <QrLoginDialog open={qrOpen} onOpenChange={setQrOpen} />
     </div>
   )
