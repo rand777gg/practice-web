@@ -15,7 +15,7 @@ import type { Profile } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { useOnlineStore } from '@/stores/online-store'
 
-type UserRow = Profile & { email?: string; providers?: string[]; lastSignIn?: string }
+type UserRow = Profile & { email?: string; providers?: string[]; lastSignIn?: string; emailConfirmed?: boolean }
 
 export function Component() {
  const { t } = useT()
@@ -35,7 +35,7 @@ export function Component() {
     .order('created_at', { ascending: true })
 
    const list = (data ?? []) as UserRow[]
-   const [emails, providers, signIns] = await Promise.all([
+   const [emails, providers, signIns, confirmeds] = await Promise.all([
     Promise.all(list.map(async (p) => {
      const { data } = await supabase.rpc('get_user_email', { user_id: p.id })
      return { id: p.id, email: (data as string) ?? '' }
@@ -48,14 +48,20 @@ export function Component() {
      const { data } = await supabase.rpc('get_user_last_online', { user_id: p.id })
      return { id: p.id, lastSignIn: data as string | null }
     })),
+    Promise.all(list.map(async (p) => {
+     const { data } = await supabase.rpc('get_user_email_confirmed', { user_id: p.id })
+     return { id: p.id, emailConfirmed: data === true }
+    })),
    ])
    const emailMap = new Map(emails.map((e) => [e.id, e.email]))
    const providerMap = new Map(providers.map((p) => [p.id, p.providers]))
    const signInMap = new Map(signIns.map((s) => [s.id, s.lastSignIn]))
+   const confirmedMap = new Map(confirmeds.map((c) => [c.id, c.emailConfirmed]))
    for (const p of list) {
     p.email = emailMap.get(p.id) ?? ''
     p.providers = providerMap.get(p.id) ?? []
     p.lastSignIn = signInMap.get(p.id) ?? undefined
+    p.emailConfirmed = confirmedMap.get(p.id)
    }
 
    setProfiles(list)
@@ -106,13 +112,13 @@ export function Component() {
      <Table>
       <TableHeader>
        <TableRow>
-        {[...Array(7)].map((_, i) => <TableHead key={i}><Skeleton className="h-4 w-12" /></TableHead>)}
+        {[...Array(8)].map((_, i) => <TableHead key={i}><Skeleton className="h-4 w-12" /></TableHead>)}
        </TableRow>
       </TableHeader>
       <TableBody>
        {[...Array(8)].map((_, i) => (
         <TableRow key={i}>
-         {[...Array(6)].map((_, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}
+         {[...Array(8)].map((_, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}
         </TableRow>
        ))}
       </TableBody>
@@ -131,6 +137,7 @@ export function Component() {
        <TableHead className="w-12">{t('users.status')}</TableHead>
        <TableHead className="min-w-[120px]">ID</TableHead>
        <TableHead className="min-w-[160px]">{t('users.email')}</TableHead>
+       <TableHead>{t('users.emailConfirmed')}</TableHead>
        <TableHead>{t('users.role')}</TableHead>
        <TableHead>{t('users.joined')}</TableHead>
        <TableHead className="min-w-[160px]">上次登录</TableHead>
@@ -150,6 +157,14 @@ export function Component() {
          {p.id.slice(0, 8)}
         </TableCell>
         <TableCell className="font-mono text-xs whitespace-nowrap">{p.email || '-'}</TableCell>
+        <TableCell>
+         <Badge
+          variant="secondary"
+          className={`whitespace-nowrap ${p.emailConfirmed ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}
+         >
+          {p.emailConfirmed ? t('users.emailConfirmedYes') : t('users.emailConfirmedNo')}
+         </Badge>
+        </TableCell>
         <TableCell>
          <Badge variant={p.role === 'admin' ? 'default' : 'secondary'} className="whitespace-nowrap">
           {p.role === 'admin' ? t('users.admin') : t('users.user')}

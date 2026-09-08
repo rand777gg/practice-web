@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
+import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import { getMfaStatus, getDeviceTokenSync, type MfaStatus } from '@/lib/mfa'
@@ -52,11 +52,13 @@ export function OtpGuard({ children }: Props) {
   const navigate = useNavigate()
   const [showReminder, setShowReminder] = useState(false)
   const [otpCleared, setOtpCleared] = useState(false)
-  const checkedRef = useRef(false)
 
+  // No checkedRef dedup here: under React StrictMode (dev) the effect is
+  // setup→cleanup→setup, so a ref set on the first run would cancel the
+  // second run and the guard would never act. Rely on per-run `cancelled`
+  // cleanup instead — the stale StrictMode run aborts, the live one proceeds.
   useEffect(() => {
-    if (!user || !isInitialized || checkedRef.current) return
-    checkedRef.current = true
+    if (!user || !isInitialized) return
 
     let cancelled = false
 

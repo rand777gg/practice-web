@@ -35,7 +35,7 @@ export const zh = {
     noAccount: '还没有账号？',
     hasAccount: '已有账号？',
     logout: '退出',
-    checkEmail: '注册成功！请查收来自 Supabase Auth <noreply@mail.app.supabase.io> 的验证邮件，点击链接完成注册。若无此邮件，请检查垃圾箱。',
+    checkEmail: '注册成功！请查收来自 register@mail.pguide.dev 的验证邮件，点击链接完成注册。若无此邮件，请检查垃圾箱。',
     welcome: {
       title: '欢迎来到刷题网！',
       subtitle: '邮箱验证成功，你的账号已创建完成。开始你的刷题之旅吧！',
@@ -583,6 +583,9 @@ export const zh = {
   users: {
     title: '用户管理',
     email: '邮箱',
+    emailConfirmed: '邮箱确认',
+    emailConfirmedYes: '已确认',
+    emailConfirmedNo: '未确认',
     role: '角色',
     status: '状态',
     joined: '注册时间',
@@ -1131,7 +1134,7 @@ export const en = {
     noAccount: "Don't have an account?",
     hasAccount: 'Already have an account?',
     logout: 'Logout',
-    checkEmail: 'Registration successful! Please check your email from Supabase Auth <noreply@mail.app.supabase.io> and click the confirmation link. Check your spam folder if not found.',
+    checkEmail: 'Registration successful! Please check your email from register@mail.pguide.dev and click the confirmation link. Check your spam folder if not found.',
     welcome: {
       title: 'Welcome to Practice Web!',
       subtitle: 'Email verified — your account is ready. Start your practice journey!',
@@ -1681,6 +1684,9 @@ export const en = {
   users: {
     title: 'User Management',
     email: 'Email',
+    emailConfirmed: 'Email Confirmed',
+    emailConfirmedYes: 'Yes',
+    emailConfirmedNo: 'No',
     role: 'Role',
     status: 'Status',
     joined: 'Joined',

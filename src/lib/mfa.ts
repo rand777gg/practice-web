@@ -56,6 +56,7 @@ async function getToken(): Promise<string> {
 /** Server-authoritative MFA gate decision — device trust is validated server-side. */
 export async function getMfaStatus(): Promise<MfaStatus> {
   const token = await getToken()
+  if (!token) throw new Error('not authenticated')
   const res = await fetch(FN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -82,6 +83,7 @@ export async function getMfaStatus(): Promise<MfaStatus> {
 /** Verify a TOTP code; on success the server marks this session (L1) and optionally trusts this device. */
 export async function verifyTotp(code: string, remember: boolean): Promise<{ valid: boolean; deviceExpiresAt: string | null }> {
   const token = await getToken()
+  if (!token) throw new Error('not authenticated')
   const deviceName = remember ? getDeviceInfoSync().displayName : undefined
   const res = await fetch(FN_URL, {
     method: 'POST',
@@ -94,6 +96,7 @@ export async function verifyTotp(code: string, remember: boolean): Promise<{ val
 /** Verify a recovery code and disable TOTP. */
 export async function recoverWithCode(code: string): Promise<{ valid: boolean }> {
   const token = await getToken()
+  if (!token) throw new Error('not authenticated')
   const res = await fetch(FN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

@@ -18,12 +18,14 @@ export function RegisterForm({ className, visible, ...props }: React.ComponentPr
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setIsSubmitting(true)
     try {
       const { data, error: authError } = await supabase.auth.signUp({
@@ -37,6 +39,13 @@ export function RegisterForm({ className, visible, ...props }: React.ComponentPr
       }
       if (data.user?.identities?.length === 0) {
         setError(t('auth.alreadyRegistered'))
+        setIsSubmitting(false)
+        return
+      }
+
+      // Email confirmation required → no session yet; stay and tell the user instead of bouncing to /login
+      if (!data.session) {
+        setSuccess(t('auth.checkEmail'))
         setIsSubmitting(false)
         return
       }
@@ -91,6 +100,7 @@ export function RegisterForm({ className, visible, ...props }: React.ComponentPr
                   </div>
                 </div>
                 {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive dark:bg-destructive/20 dark:text-red-300 backdrop-blur-md">{error}</div>}
+                {success && <div className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 backdrop-blur-md">{success}</div>}
                 <div className={cn(rowBase, v)} style={{ transitionDelay: '600ms' }}>
                   <div className="grid gap-4 max-w-[300px] mx-auto w-full">
                     <div className="grid gap-2">

@@ -2742,3 +2742,12 @@ DROP POLICY IF EXISTS lrq_update ON public.learning_route_questions;
 CREATE POLICY lrq_update ON public.learning_route_questions FOR UPDATE USING (public.is_admin());
 DROP POLICY IF EXISTS lrq_delete ON public.learning_route_questions;
 CREATE POLICY lrq_delete ON public.learning_route_questions FOR DELETE USING (public.is_admin());
+
+-- ============================================================================
+-- Section 37: 管理员用户列表 —— 邮箱是否已确认 (email confirmed flag)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_user_email_confirmed(user_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = ''
+AS $$ SELECT email_confirmed_at IS NOT NULL FROM auth.users WHERE id = $1; $$;
+REVOKE EXECUTE ON FUNCTION public.get_user_email_confirmed(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_user_email_confirmed TO authenticated;
