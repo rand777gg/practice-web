@@ -2648,13 +2648,17 @@ GRANT EXECUTE ON FUNCTION public.join_study_room(TEXT) TO authenticated;
 
 -- ============================================================================
 -- Section 35: 预约考试「定时邮件通知」
---   在 28.1 Web Push 之外新增邮件通道: email_time(当天分钟)到达后向用户注册
---   邮箱发提醒; last_email_date 保证每个业务日只发一次(由 notify-exam cron 维护)。
+--   在 28.1 Web Push 之外新增邮件通道: 用户自选「发送日期(email_send_date)+
+--   发送时刻(email_time)」, 到点后向用户注册邮箱发提醒。
+--   email_send_date 为空时兼容旧行为(按每周重复日发); last_email_date 保证
+--   每个业务日只发一次(由 notify-exam cron 维护)。
 -- ============================================================================
 ALTER TABLE public.exam_schedules
   ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE public.exam_schedules
   ADD COLUMN IF NOT EXISTS email_time SMALLINT
     CHECK (email_time IS NULL OR (email_time >= 0 AND email_time < 1440));
+ALTER TABLE public.exam_schedules
+  ADD COLUMN IF NOT EXISTS email_send_date DATE;
 ALTER TABLE public.exam_schedules
   ADD COLUMN IF NOT EXISTS last_email_date DATE;

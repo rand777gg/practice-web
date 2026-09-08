@@ -98,6 +98,7 @@ export function rowToSchedule(row: Record<string, unknown>): ExamSchedule {
     last_notify_date: row.last_notify_date == null ? null : String(row.last_notify_date),
     email_enabled: row.email_enabled === true,
     email_time: row.email_time == null ? null : Number(row.email_time),
+    email_send_date: row.email_send_date == null ? null : String(row.email_send_date),
     last_email_date: row.last_email_date == null ? null : String(row.last_email_date),
     created_at: String(row.created_at ?? ''),
     updated_at: String(row.updated_at ?? ''),

@@ -56,6 +56,7 @@ type ScheduleRow = {
   template: { name?: string }
   email_enabled: boolean
   email_time: number | null
+  email_send_date: string | null
   last_email_date: string | null
 }
 
@@ -130,15 +131,69 @@ async function sendPush(
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok")
 
-  const expected = Deno.env.get("CRON_SECRET")
-  if (!expected || req.headers.get("x-cron-secret") !== expected) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })
-  }
-
   const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   )
+  const corsHeaders = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" }
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), { status, headers: corsHeaders })
+
+  // ---- 测试动作: 登录用户给自己发一封测试邮件(与正式提醒同款排版) ----
+  const body = await req.json().catch(() => ({})) as {
+    action?: string
+    name?: string
+    sendDate?: string
+    sendTime?: string
+    startTime?: string
+  }
+  if (body.action === "test_email") {
+    const auth = req.headers.get("authorization") ?? ""
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : ""
+    const { data: userData } = token
+      ? await supabaseAdmin.auth.getUser(token)
+      : { data: null }
+    const email = userData?.user?.email
+    if (!email) return json({ error: "unauthorized" }, 401)
+
+    const apiKey = Deno.env.get("RESEND_API_KEY")
+    const from = Deno.env.get("RESEND_FROM")
+    if (!apiKey || !from) return json({ error: "resend_not_configured" }, 500)
+
+    const name = body.name || "预约考试"
+    const whenLabel = body.sendDate
+      ? `${body.sendDate} ${body.sendTime || "--:--"}`
+      : `每周重复日 ${body.sendTime || "--:--"}`
+    const subject = `【预约考试·测试】${name}`
+    const text =
+      `这是一封测试邮件, 用于确认预约考试的邮件提醒能正常送达。\n\n` +
+      `考试: ${name}\n` +
+      `计划发送时间: ${whenLabel}\n` +
+      `开考时间: ${body.startTime || "--:--"}\n\n` +
+      `收到即表示发信链路正常, 正式到点提醒将按此格式自动发送。`
+
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to: [email], subject, text }),
+      })
+      const txt = await res.text()
+      if (!res.ok) {
+        console.error("exam email test failed", res.status, txt)
+        return json({ ok: false, error: "resend_error", detail: txt }, 500)
+      }
+      return json({ ok: true })
+    } catch (e) {
+      console.error("exam email test error", String(e))
+      return json({ ok: false, error: String(e) }, 500)
+    }
+  }
+
+  const expected = Deno.env.get("CRON_SECRET")
+  if (!expected || req.headers.get("x-cron-secret") !== expected) {
+    return json({ error: "unauthorized" }, 401)
+  }
 
   webpush.setVapidDetails(
     Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@example.com",
@@ -149,7 +204,7 @@ serve(async (req: Request) => {
   const now = new Date()
   const { data: schedules } = await supabaseAdmin
     .from("exam_schedules")
-    .select("id, user_id, name, days_of_week, fire_time, tz, last_notify_date, template, email_enabled, email_time, last_email_date")
+    .select("id, user_id, name, days_of_week, fire_time, tz, last_notify_date, template, email_enabled, email_time, email_send_date, last_email_date")
     .eq("enabled", true)
     .limit(200)
 
@@ -159,11 +214,19 @@ serve(async (req: Request) => {
   for (const raw of (schedules ?? []) as unknown as ScheduleRow[]) {
     const wall = wallClock(raw.tz || "Asia/Shanghai", now)
     const dueDay = (raw.days_of_week ?? []).includes(wall.weekday)
-    if (!dueDay) continue
+    const emailEnabled = raw.email_enabled && raw.email_time != null
+    // 邮件触发日: 用户选了发送日期 → 只在那天发; 没选 → 兼容旧行为(每周重复日)
+    const emailDay =
+      emailEnabled && (raw.email_send_date ? wall.dateKey === raw.email_send_date : dueDay)
+    const pushDue =
+      dueDay && wall.minutes >= raw.fire_time && raw.last_notify_date !== wall.dateKey
+    const emailDue =
+      emailDay && wall.minutes >= raw.email_time! && raw.last_email_date !== wall.dateKey
+    if (!pushDue && !emailDue) continue
     scanned++
 
     // ---- 到点 Web Push(开考时刻 fire_time) ----
-    if (wall.minutes >= raw.fire_time && raw.last_notify_date !== wall.dateKey) {
+    if (pushDue) {
       // 原子认领: 只有更新成功(=今天还没推过)的这一方才真正发送, 避免多实例重复
       const { data: claimed } = await supabaseAdmin
         .from("exam_schedules")
@@ -183,13 +246,8 @@ serve(async (req: Request) => {
       }
     }
 
-    // ---- 定时邮件通知(email_time 由用户自选, 与开考时刻相互独立; 各自每天只发一次) ----
-    if (
-      raw.email_enabled &&
-      raw.email_time != null &&
-      wall.minutes >= raw.email_time &&
-      raw.last_email_date !== wall.dateKey
-    ) {
+    // ---- 定时邮件通知(发送日期/时间由用户自选; 每个业务日只发一次) ----
+    if (emailDue) {
       const { data: claimedMail } = await supabaseAdmin
         .from("exam_schedules")
         .update({ last_email_date: wall.dateKey })
@@ -210,10 +268,14 @@ serve(async (req: Request) => {
       if (!user?.email) continue
       const appUrl = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || ""
       const startAt = minutesToTime(raw.fire_time)
-      const subject = `【预约考试】${raw.name || "考试"} 今天 ${startAt}`
+      const whenLabel = raw.email_send_date
+        ? `${raw.email_send_date} ${minutesToTime(raw.email_time ?? raw.fire_time)}`
+        : `每周重复日 ${minutesToTime(raw.email_time ?? raw.fire_time)}`
+      const subject = `【预约考试提醒】${raw.name || "考试"}`
       const text =
         `你好!\n\n` +
-        `你预约的考试「${raw.name || "考试"}」(${raw.template?.name ?? ""}) 今天 ${startAt} 开始。\n` +
+        `你预约的考试「${raw.name || "考试"}」(${raw.template?.name ?? ""}) 将于 ${startAt} 开始。\n` +
+        `本条为定时邮件提醒(计划发送时间: ${whenLabel})。\n` +
         `到点后应用会为你自动组卷并计时, 别错过这场练习。\n\n` +
         `前往考试: ${appUrl ? `${appUrl}/exam` : "/exam"}\n\n` +
         `如果已经考完, 请忽略这封邮件。`

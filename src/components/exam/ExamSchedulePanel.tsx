@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useT } from '@/i18n/use-t'
+import { supabase } from '@/lib/supabase'
 import { useExamScheduleStore, type ExamScheduleDraft } from '@/stores/exam-schedule-store'
 import { useExamTemplateStore, selectAllTemplates } from '@/stores/exam-template-store'
 import {
@@ -59,6 +60,21 @@ import {
 import type { ExamSchedule, ExamTemplate } from '@/types'
 
 const WEEKDAY_UI_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+/** 未来(含今天)第一个命中已选星期几的日期 YYYY-MM-DD */
+function nextDateForDays(days: number[], base = new Date()): string {
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate())
+  for (let i = 0; i < 8; i++) {
+    const c = new Date(d)
+    c.setDate(d.getDate() + i)
+    if (days.includes(c.getDay())) {
+      const m = String(c.getMonth() + 1).padStart(2, '0')
+      const day = String(c.getDate()).padStart(2, '0')
+      return `${c.getFullYear()}-${m}-${day}`
+    }
+  }
+  return ''
+}
 
 /** 模板选择按钮(复用考试设置里 ExamTemplatePanel 的视觉) */
 function TemplateSelect({
@@ -138,9 +154,14 @@ function ScheduleFormDialog({
   const [time, setTime] = useState(editing ? minutesToTime(editing.fire_time) : '20:00')
   const [notify, setNotify] = useState(true)
   const [emailNotify, setEmailNotify] = useState(editing ? editing.email_enabled : false)
+  const [emailDate, setEmailDate] = useState(
+    editing && editing.email_send_date ? editing.email_send_date : '',
+  )
   const [emailTime, setEmailTime] = useState(
     editing && editing.email_time != null ? minutesToTime(editing.email_time) : '',
   )
+  const [testing, setTesting] = useState(false)
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -159,6 +180,10 @@ function ScheduleFormDialog({
       setFormError(t('examSched.dayRequired'))
       return
     }
+    if (emailNotify && !emailDate) {
+      setFormError(t('examSched.emailDateRequired'))
+      return
+    }
     if (emailNotify && !emailTime) {
       setFormError(t('examSched.emailTimeRequired'))
       return
@@ -172,6 +197,7 @@ function ScheduleFormDialog({
       tz: editing ? editing.tz || localTimezone() : localTimezone(),
       email_enabled: emailNotify,
       email_time: emailNotify ? timeToMinutes(emailTime || '') : null,
+      email_send_date: emailNotify ? emailDate || null : null,
     }
     setSaving(true)
     try {
@@ -193,6 +219,46 @@ function ScheduleFormDialog({
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleTestEmail = async () => {
+    if (!emailNotify) return
+    if (!emailDate) {
+      setFormError(t('examSched.emailDateRequired'))
+      return
+    }
+    if (!emailTime) {
+      setFormError(t('examSched.emailTimeRequired'))
+      return
+    }
+    setTesting(true)
+    setTestMsg(null)
+    const { error } = await supabase.functions.invoke('notify-exam', {
+      body: {
+        action: 'test_email',
+        name: name.trim() || template?.name || '',
+        sendDate: emailDate,
+        sendTime: emailTime,
+        startTime: time,
+      },
+    })
+    setTesting(false)
+    if (error) {
+      let reason = ''
+      try {
+        const res = (error as unknown as { context?: Response }).context
+        if (res) {
+          const j = (await res.clone().json()) as { error?: string }
+          reason = j?.error ?? ''
+        }
+      } catch {
+        // ignore
+      }
+      const extra = reason === 'resend_not_configured' ? '（邮件服务尚未配置：RESEND_API_KEY / RESEND_FROM）' : ''
+      setTestMsg({ ok: false, text: `${t('examSched.emailTestErr')}${extra}` })
+      return
+    }
+    setTestMsg({ ok: true, text: t('examSched.emailTestOk') })
   }
 
   return (
@@ -255,20 +321,51 @@ function ScheduleFormDialog({
                 checked={emailNotify}
                 onCheckedChange={(v) => {
                   setEmailNotify(v)
-                  if (v && !emailTime) setEmailTime(minutesToTime(Math.max(0, timeToMinutes(time) - 30)))
+                  if (v) {
+                    if (!emailDate) setEmailDate(nextDateForDays(days))
+                    if (!emailTime) setEmailTime(minutesToTime(Math.max(0, timeToMinutes(time) - 30)))
+                  }
                 }}
               />
             </div>
             {emailNotify && (
-              <div className="flex items-center gap-2 pt-1">
-                <Label className="shrink-0 text-xs">{t('examSched.emailTime')}</Label>
-                <Input
-                  type="time"
-                  value={emailTime}
-                  onChange={(e) => setEmailTime(e.target.value || '')}
-                  className="w-40"
-                />
-              </div>
+              <>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Label className="shrink-0 text-xs">{t('examSched.emailDate')}</Label>
+                  <Input
+                    type="date"
+                    value={emailDate}
+                    min={nextDateForDays([0, 1, 2, 3, 4, 5, 6])}
+                    onChange={(e) => setEmailDate(e.target.value || '')}
+                    className="w-40"
+                  />
+                  <Label className="shrink-0 text-xs">{t('examSched.emailTime')}</Label>
+                  <Input
+                    type="time"
+                    value={emailTime}
+                    onChange={(e) => setEmailTime(e.target.value || '')}
+                    className="w-36"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    disabled={testing}
+                    onClick={handleTestEmail}
+                  >
+                    {testing ? <Spinner className="h-3 w-3" /> : null}
+                    {testing ? t('examSched.emailTesting') : t('examSched.emailTest')}
+                  </Button>
+                  {testMsg && (
+                    <span className={cn('text-[10px]', testMsg.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive')}>
+                      {testMsg.text}
+                    </span>
+                  )}
+                </div>
+              </>
             )}
           </div>
           {denyNotice && <p className="text-[10px] text-amber-600 dark:text-amber-500">{t('examSched.notifyDenied')}</p>}

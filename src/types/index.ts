@@ -352,10 +352,12 @@ export interface ExamSchedule {
   last_fire_date: string | null
   /** 最近一次已推送提醒的业务日 YYYY-MM-DD(服务端 cron 维护) */
   last_notify_date: string | null
-  /** 定时邮件通知开关(用户自选时间 email_time, 到点发提醒邮件) */
+  /** 定时邮件通知开关(用户自选发送日期/时间 email_send_date + email_time) */
   email_enabled: boolean
   /** 提醒邮件发送时刻 = 当日 0 点起算分钟数 0..1439 */
   email_time: number | null
+  /** 提醒邮件发送日期 YYYY-MM-DD(空 = 兼容旧行为按每周重复日发) */
+  email_send_date: string | null
   /** 最近一次已发提醒邮件的业务日 YYYY-MM-DD(服务端 cron 维护) */
   last_email_date: string | null
   created_at: string
