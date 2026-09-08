@@ -2617,7 +2617,7 @@ BEGIN
     SELECT * FROM ins;
 
   INSERT INTO public.study_room_members (room_id, user_id)
-  SELECT id, owner_id FROM public.study_rooms WHERE invite_code = v_code;
+  SELECT id, owner_id FROM public.study_rooms WHERE public.study_rooms.invite_code = v_code;
 END;
 $$;
 
