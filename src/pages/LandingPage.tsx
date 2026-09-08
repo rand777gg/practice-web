@@ -134,13 +134,15 @@ const extraFeatures: { icon: ReactNode; label: string }[] = [
 function FeatureBlock({
   row,
   Mock,
+  flip,
 }: {
   row: (typeof featureRows)[number]
   Mock: () => ReactNode
+  flip: boolean
 }) {
   return (
     <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-      <div className="space-y-4">
+      <div className={cn('space-y-4', flip && 'lg:order-2')}>
         <div className="flex items-center gap-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             {row.icon}
@@ -157,7 +159,7 @@ function FeatureBlock({
           ))}
         </ul>
       </div>
-      <div className="h-[420px] overflow-y-auto">
+      <div className={cn('h-[420px] overflow-y-auto', flip && 'lg:order-1')}>
         <Mock />
       </div>
     </div>
@@ -289,7 +291,7 @@ export function LandingPage() {
             <div className="space-y-16 sm:space-y-20">
               {featureRows.map((row, i) => (
                 <Reveal key={row.title}>
-                  <FeatureBlock row={row} Mock={featureMocks[i]} />
+                  <FeatureBlock row={row} Mock={featureMocks[i]} flip={i % 2 === 1} />
                 </Reveal>
               ))}
             </div>
