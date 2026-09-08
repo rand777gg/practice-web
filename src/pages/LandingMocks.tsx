@@ -529,7 +529,7 @@ export function StatsGrid() {
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {stats.map((s) => (
-        <div key={s.label} className="rounded-2xl border bg-card px-6 py-8 text-center shadow-sm">
+        <div key={s.label} className="rounded-2xl border bg-card px-6 py-8 text-center shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-md">
           <p className="text-3xl font-bold text-blue-600 sm:text-4xl dark:text-blue-400">{s.value}</p>
           <p className="mt-2 text-sm text-muted-foreground">{s.label}</p>
         </div>

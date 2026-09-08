@@ -719,3 +719,23 @@ html.dark .cm-editor {
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee-left, .animate-marquee-right { animation: none; }
 }
+
+/* 落地页：首屏卡片缓浮动 */
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float { animation: float-y 6s ease-in-out infinite; }
+
+/* 落地页：背景氛围光斑漂移 */
+@keyframes aurora-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(30px, -24px, 0) scale(1.08); }
+  66% { transform: translate3d(-24px, 18px, 0) scale(0.96); }
+}
+.animate-aurora { animation: aurora-drift 18s ease-in-out infinite; }
+.animate-aurora-slow { animation: aurora-drift 26s ease-in-out infinite reverse; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float, .animate-aurora, .animate-aurora-slow { animation: none; }
+}

@@ -159,14 +159,14 @@ function FeatureBlock({
           ))}
         </ul>
       </div>
-      <div className={cn(flip && 'lg:order-1')}>
+      <div className={cn('transition-transform duration-300 hover:-translate-y-1', flip && 'lg:order-1')}>
         <Mock />
       </div>
     </div>
   )
 }
 
-function Reveal({ children }: { children: ReactNode }) {
+function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState(() => typeof IntersectionObserver === 'undefined')
   useEffect(() => {
@@ -187,6 +187,7 @@ function Reveal({ children }: { children: ReactNode }) {
   return (
     <div
       ref={ref}
+      style={delay ? { transitionDelay: `${delay}ms` } : undefined}
       className={cn(
         'transition-all duration-700 ease-out',
         shown ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-[0.98]',
@@ -199,6 +200,28 @@ function Reveal({ children }: { children: ReactNode }) {
 
 export function LandingPage() {
   const { theme, toggle } = useThemeStore()
+  const heroBgRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const el = heroBgRef.current
+    if (!el) return
+    let raf = 0
+    const update = () => {
+      el.style.transform = `translate3d(0, ${window.scrollY * 0.35}px, 0)`
+    }
+    const onScroll = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(update)
+    }
+    update()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', onScroll)
+    }
+  }, [])
+
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
@@ -238,8 +261,13 @@ export function LandingPage() {
         <section className="relative overflow-hidden">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px] bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.10),transparent_65%)]"
-          />
+            ref={heroBgRef}
+            className="pointer-events-none absolute inset-0 -z-10 will-change-transform"
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.10),transparent_65%)]" />
+            <div className="animate-aurora absolute -left-16 top-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+            <div className="animate-aurora-slow absolute right-0 top-10 h-80 w-80 rounded-full bg-violet-500/10 blur-3xl" />
+          </div>
           <div className={cn(containerCls, 'grid items-center gap-12 pb-20 pt-16 sm:pb-24 sm:pt-20 lg:grid-cols-2 lg:gap-16')}>
             <div className="space-y-7 text-left">
               <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1 text-xs font-normal">
@@ -272,12 +300,18 @@ export function LandingPage() {
               </p>
             </div>
             <div className="mx-auto w-full max-w-xl lg:mx-0">
-              <PracticeSessionMock />
+              <div className="animate-float">
+                <PracticeSessionMock />
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="border-t bg-muted/30">
+        <section className="relative overflow-hidden border-t bg-muted/30">
+          <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+            <div className="animate-aurora absolute right-[-4rem] top-28 h-80 w-80 rounded-full bg-blue-500/5 blur-3xl" />
+            <div className="animate-aurora-slow absolute left-[-4rem] bottom-16 h-72 w-72 rounded-full bg-primary/5 blur-3xl" />
+          </div>
           <div className={cn(containerCls, 'pt-16 sm:pt-20')}>
             <div className="mx-auto max-w-2xl space-y-3 pb-12 text-center sm:pb-16">
               <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
@@ -290,7 +324,7 @@ export function LandingPage() {
 
             <div className="space-y-16 sm:space-y-20">
               {featureRows.map((row, i) => (
-                <Reveal key={row.title}>
+                <Reveal key={row.title} delay={i * 90}>
                   <FeatureBlock row={row} Mock={featureMocks[i]} flip={i % 2 === 1} />
                 </Reveal>
               ))}
