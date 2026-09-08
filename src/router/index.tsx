@@ -96,6 +96,10 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/QuestionBankPage'),
               },
               {
+                path: 'study-rooms',
+                lazy: () => import('@/pages/StudyRoomsPage'),
+              },
+              {
                 path: 'settings',
                 lazy: () => import('@/pages/SettingsPage'),
               },
