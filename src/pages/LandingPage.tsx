@@ -141,7 +141,7 @@ function FeatureBlock({
   flip: boolean
 }) {
   return (
-    <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+    <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-16">
       <div className={cn('space-y-4', flip && 'lg:order-2')}>
         <div className="flex items-center gap-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -159,7 +159,7 @@ function FeatureBlock({
           ))}
         </ul>
       </div>
-      <div className={cn('h-[420px] overflow-y-auto', flip && 'lg:order-1')}>
+      <div className={cn(flip && 'lg:order-1')}>
         <Mock />
       </div>
     </div>
