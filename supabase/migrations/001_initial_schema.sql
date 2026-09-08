@@ -2605,19 +2605,19 @@ BEGIN
     FOR v_i IN 1..6 LOOP
       v_code := v_code || substr(v_chars, 1 + floor(random() * length(v_chars))::INTEGER, 1);
     END LOOP;
-    EXIT WHEN NOT EXISTS (SELECT 1 FROM public.study_rooms WHERE invite_code = v_code);
+    EXIT WHEN NOT EXISTS (SELECT 1 FROM public.study_rooms r WHERE r.invite_code = v_code);
   END LOOP;
 
   RETURN QUERY
     WITH ins AS (
       INSERT INTO public.study_rooms (owner_id, name, description, invite_code)
       VALUES (auth.uid(), btrim(p_name), coalesce(p_description, ''), v_code)
-      RETURNING id, owner_id, name, description, invite_code, created_at
+      RETURNING *
     )
     SELECT * FROM ins;
 
   INSERT INTO public.study_room_members (room_id, user_id)
-  SELECT id, owner_id FROM public.study_rooms WHERE public.study_rooms.invite_code = v_code;
+  SELECT r.id, r.owner_id FROM public.study_rooms r WHERE r.invite_code = v_code;
 END;
 $$;
 
