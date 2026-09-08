@@ -172,10 +172,16 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | `/notes` | Public Notes | Authenticated |
 | `/review` | Wrong Answer Review | Authenticated |
 | `/question-bank` | Question Banks | Authenticated |
+| `/learning-routes` | Learning Routes | Authenticated |
+| `/learning-routes/:routeId` | Learning Route Detail (stages + archify route map) | Authenticated |
+| `/learning-routes/:routeId/practice` | Route Practice | Authenticated |
 | `/settings` | Settings | Authenticated |
 | `/admin/questions` | Question List | Admin |
 | `/admin/questions/new` | New Question | Admin |
 | `/admin/questions/:questionId/edit` | Edit Question | Admin |
+| `/admin/learning-routes` | Learning Route Management | Admin |
+| `/admin/learning-routes/new` | New Learning Route | Admin |
+| `/admin/learning-routes/:routeId/edit` | Edit Learning Route | Admin |
 | `/admin/users` | User Management | Admin |
 | `/admin/ai` | AI Config | Admin |
 | `/admin/ai-import` | AI Import | Admin |

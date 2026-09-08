@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   LayoutDashboard, Pencil, Clock, RotateCcw, FileQuestion, Users,
   Star, BookOpen, Sparkles, Library, PanelLeftOpen, PanelLeftClose, X, GitMerge, Server,
-  UsersRound,
+  UsersRound, Route,
 } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import { useState, useEffect } from 'react'
@@ -72,6 +72,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       <NavItem to="/review" icon={<RotateCcw className="h-4 w-4" />} label={t('nav.wrongReview')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/question-bank" icon={<Library className="h-4 w-4" />} label={t('nav.questionBank')} collapsed={collapsed} onClick={handleClick} />
+      <NavItem to="/learning-routes" icon={<Route className="h-4 w-4" />} label={t('nav.learningRoutes')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/study-rooms" icon={<UsersRound className="h-4 w-4" />} label={t('nav.studyRooms')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/judge-local" icon={<Server className="h-4 w-4" />} label={t('nav.localJudge')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />
 
@@ -80,6 +81,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
           <Separator className="my-2" />
           {!collapsed && <p className="px-3 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">{t('nav.admin')}</p>}
           <NavItem to="/admin/questions" icon={<FileQuestion className="h-4 w-4" />} label={t('nav.questions')} collapsed={collapsed} onClick={handleClick} />
+          <NavItem to="/admin/learning-routes" icon={<Route className="h-4 w-4" />} label={t('nav.learningRoutes')} collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/duplicates" icon={<GitMerge className="h-4 w-4" />} label="题目查重" collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/users" icon={<Users className="h-4 w-4" />} label={t('nav.users')} collapsed={collapsed} onClick={handleClick} />
           <NavItem to="/admin/ai" icon={<Sparkles className="h-4 w-4" />} label={t('nav.ai')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />

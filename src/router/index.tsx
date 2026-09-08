@@ -96,6 +96,18 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/QuestionBankPage'),
               },
               {
+                path: 'learning-routes',
+                lazy: () => import('@/pages/LearningRoutesPage'),
+              },
+              {
+                path: 'learning-routes/:routeId',
+                lazy: () => import('@/pages/LearningRouteDetailPage'),
+              },
+              {
+                path: 'learning-routes/:routeId/practice',
+                lazy: () => import('@/pages/LearningRoutePracticePage'),
+              },
+              {
                 path: 'study-rooms',
                 lazy: () => import('@/pages/StudyRoomsPage'),
               },
@@ -142,6 +154,18 @@ export const router = createBrowserRouter([
                   {
                     path: 'ai',
                     lazy: () => import('@/pages/admin/AiManagePage'),
+                  },
+                  {
+                    path: 'learning-routes',
+                    lazy: () => import('@/pages/admin/LearningRoutesManagePage'),
+                  },
+                  {
+                    path: 'learning-routes/new',
+                    lazy: () => import('@/pages/admin/LearningRouteEditPage'),
+                  },
+                  {
+                    path: 'learning-routes/:routeId/edit',
+                    lazy: () => import('@/pages/admin/LearningRouteEditPage'),
                   },
                 ],
               },

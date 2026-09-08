@@ -16,6 +16,7 @@ export const zh = {
     users: '用户管理',
     ai: 'AI 管理',
     studyRooms: '自习室',
+    learningRoutes: '学习路线',
   },
   auth: {
     login: '登录',
@@ -1101,6 +1102,7 @@ export const en = {
     users: 'Users',
     ai: 'AI Manage',
     studyRooms: 'Study Rooms',
+    learningRoutes: 'Learning Routes',
   },
   auth: {
     login: 'Login',
