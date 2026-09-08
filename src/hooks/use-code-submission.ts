@@ -92,7 +92,7 @@ export function useCodeSubmission(questionId: string) {
           }
           const reachable = await isJudge0Reachable(localJudgeUrl)
           if (!reachable) {
-            throw new Error(`无法连接本地 Judge0(${localJudgeUrl})。请先启动 Docker 中的 Judge0,或关闭「本地自测」改走平台判题。`)
+            throw new Error(`无法连接本地 Judge0(${localJudgeUrl})。请先按「本地判题」指引在 VirtualBox Ubuntu 中启动 Judge0,或关闭「本地自测」改走平台判题。`)
           }
           const local = await judgeOnJudge0(code, language, testCases, {
             baseUrl: localJudgeUrl,

@@ -84,16 +84,11 @@ npm run dev
 
 ### 本地判题（Judge0，可选）
 
-编程/算法题默认走平台中心判题。若想在高峰期用**自己电脑**跑判题（结果仅供个人练习、不计成绩），本仓库已内置一键编排：
+编程/算法题默认走平台中心判题。若想在高峰期用**自己电脑**跑判题（结果仅供个人练习、不计成绩），需要在一台 **VirtualBox 的 Ubuntu 22.04**（cgroup v1）上跑 Judge0——Windows 的 Docker Desktop / WSL2 只有 cgroup v2，运行不了 Judge0 的 isolate 沙箱（提交恒报 status 13）。
 
-```bash
-cd judge0
-docker compose up -d     # 首次会自动拉取 Judge0 + 反代镜像
-```
+简要步骤：VirtualBox 装 Ubuntu 22.04 → NAT 端口转发（主机 2358 → 客户机 2358）→ GRUB 加 `systemd.unified_cgroup_hierarchy=0` 后重启 → `apt install docker.io docker-compose-v2` → 在 `judge0/` 目录 `docker compose up -d` → 应用侧边栏「本地判题」变绿，即可在编程题里开「本地自测」。
 
-启动后在应用里点侧边栏「本地判题」验证连通，再到编程题编辑器顶部打开「本地自测」。
-
-> 新手请看 [docs/judge0-local-setup.md](docs/judge0-local-setup.md)（安装 Docker → 一条命令 → 验证，全程零基础）。
+> 新手请看 [docs/judge0-local-setup.md](docs/judge0-local-setup.md)（VirtualBox Ubuntu 22.04 → cgroup v1 → 一条命令，全程零基础）。
 
 ## 功能
 
