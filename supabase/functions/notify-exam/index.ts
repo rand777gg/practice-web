@@ -274,8 +274,8 @@ serve(async (req: Request) => {
         console.error("exam email skipped: RESEND_API_KEY / RESEND_FROM not configured")
         continue
       }
-      const { data: user } = await supabaseAdmin.auth.admin.getUserById(raw.user_id)
-      if (!user?.email) continue
+      const { data: userData } = await supabaseAdmin.auth.admin.getUserById(raw.user_id)
+      if (!userData?.user?.email) continue
       const appUrl = Deno.env.get("APP_URL") || Deno.env.get("SITE_URL") || ""
       const startAt = minutesToTime(raw.fire_time)
       const whenLabel = raw.email_send_date
@@ -296,7 +296,7 @@ serve(async (req: Request) => {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ from, to: [user.email], subject, text }),
+          body: JSON.stringify({ from, to: [userData.user.email], subject, text }),
         })
         if (res.ok) {
           emailed++

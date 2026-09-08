@@ -453,8 +453,8 @@ serve(async (req: Request) => {
         skipped.push({ user_id: m.user_id, reason: "throttled" })
         continue
       }
-      const { data: user } = await supabaseAdmin.auth.admin.getUserById(m.user_id)
-      const email = user?.email
+      const { data: userData } = await supabaseAdmin.auth.admin.getUserById(m.user_id)
+      const email = userData?.user?.email
       if (!email) {
         skipped.push({ user_id: m.user_id, reason: "no_email" })
         continue
