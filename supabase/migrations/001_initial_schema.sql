@@ -2662,3 +2662,83 @@ ALTER TABLE public.exam_schedules
   ADD COLUMN IF NOT EXISTS email_send_date DATE;
 ALTER TABLE public.exam_schedules
   ADD COLUMN IF NOT EXISTS last_email_date DATE;
+
+-- ============================================================================
+-- Section 36: 学习路线 (Learning Routes)
+--   管理员把「知识点 / 题集」编排成带阶段顺序的学习路线; 用户沿路线自由刷题
+--   (不做强制解锁), 每道题“通过” = user_answers 中存在一次答对, 路线/阶段
+--   进度由客户端按 user_answers 现算, 无需额外用户进度表。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.learning_routes (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title        TEXT NOT NULL,
+  description  TEXT NOT NULL DEFAULT '',
+  is_published BOOLEAN NOT NULL DEFAULT FALSE,
+  route_order  INTEGER NOT NULL DEFAULT 0,
+  created_by   UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_learning_routes_published ON public.learning_routes(route_order) WHERE is_published;
+CREATE INDEX IF NOT EXISTS idx_learning_routes_created_by ON public.learning_routes(created_by);
+
+CREATE TABLE IF NOT EXISTS public.learning_route_stages (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  route_id    UUID NOT NULL REFERENCES public.learning_routes(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL DEFAULT 0,
+  title       TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (route_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_learning_route_stages_route ON public.learning_route_stages(route_id, position);
+
+CREATE TABLE IF NOT EXISTS public.learning_route_questions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stage_id    UUID NOT NULL REFERENCES public.learning_route_stages(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (stage_id, question_id),
+  UNIQUE (stage_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_learning_route_questions_stage ON public.learning_route_questions(stage_id, position);
+
+ALTER TABLE public.learning_routes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.learning_route_stages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.learning_route_questions ENABLE ROW LEVEL SECURITY;
+
+-- 已发布路线对登录用户可见; 草稿/内容仅管理员可见可写。
+DROP POLICY IF EXISTS lr_select ON public.learning_routes;
+CREATE POLICY lr_select ON public.learning_routes FOR SELECT
+  USING (auth.role() = 'authenticated' AND (is_published OR public.is_admin()));
+DROP POLICY IF EXISTS lr_insert ON public.learning_routes;
+CREATE POLICY lr_insert ON public.learning_routes FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS lr_update ON public.learning_routes;
+CREATE POLICY lr_update ON public.learning_routes FOR UPDATE USING (public.is_admin());
+DROP POLICY IF EXISTS lr_delete ON public.learning_routes;
+CREATE POLICY lr_delete ON public.learning_routes FOR DELETE USING (public.is_admin());
+
+DROP POLICY IF EXISTS lrs_select ON public.learning_route_stages;
+CREATE POLICY lrs_select ON public.learning_route_stages FOR SELECT
+  USING (auth.role() = 'authenticated' AND (public.is_admin()
+    OR EXISTS (SELECT 1 FROM public.learning_routes r WHERE r.id = route_id AND r.is_published)));
+DROP POLICY IF EXISTS lrs_insert ON public.learning_route_stages;
+CREATE POLICY lrs_insert ON public.learning_route_stages FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS lrs_update ON public.learning_route_stages;
+CREATE POLICY lrs_update ON public.learning_route_stages FOR UPDATE USING (public.is_admin());
+DROP POLICY IF EXISTS lrs_delete ON public.learning_route_stages;
+CREATE POLICY lrs_delete ON public.learning_route_stages FOR DELETE USING (public.is_admin());
+
+DROP POLICY IF EXISTS lrq_select ON public.learning_route_questions;
+CREATE POLICY lrq_select ON public.learning_route_questions FOR SELECT
+  USING (auth.role() = 'authenticated' AND (public.is_admin()
+    OR EXISTS (SELECT 1 FROM public.learning_route_stages s
+               JOIN public.learning_routes r ON r.id = s.route_id
+               WHERE s.id = stage_id AND r.is_published)));
+DROP POLICY IF EXISTS lrq_insert ON public.learning_route_questions;
+CREATE POLICY lrq_insert ON public.learning_route_questions FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS lrq_update ON public.learning_route_questions;
+CREATE POLICY lrq_update ON public.learning_route_questions FOR UPDATE USING (public.is_admin());
+DROP POLICY IF EXISTS lrq_delete ON public.learning_route_questions;
+CREATE POLICY lrq_delete ON public.learning_route_questions FOR DELETE USING (public.is_admin());

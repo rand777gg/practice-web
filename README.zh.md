@@ -104,6 +104,7 @@ npm run dev
 | 滑动切题 | 触屏左右滑动切换题目 |
 | 笔记 | 富文本笔记，公开/私有切换 |
 | 题库 | 精选合集管理，详情查看，练习/考试选题器 |
+| 学习路线 | 管理员按阶段编排的精选题集路线，自由刷题 + 逐题通过统计，archify 阶段路线图实时着色进度 |
 
 ### 考试
 
@@ -180,10 +181,16 @@ npm run dev
 | `/notes` | 公开笔记 | 需登录 |
 | `/review` | 错题回顾 | 需登录 |
 | `/question-bank` | 题库 | 需登录 |
+| `/learning-routes` | 学习路线列表 | 需登录 |
+| `/learning-routes/:routeId` | 学习路线详情（阶段 + archify 路线图） | 需登录 |
+| `/learning-routes/:routeId/practice` | 路线练习 | 需登录 |
 | `/settings` | 设置 | 需登录 |
 | `/admin/questions` | 题目列表 | 管理员 |
 | `/admin/questions/new` | 新建题目 | 管理员 |
 | `/admin/questions/:questionId/edit` | 编辑题目 | 管理员 |
+| `/admin/learning-routes` | 学习路线管理 | 管理员 |
+| `/admin/learning-routes/new` | 新建学习路线 | 管理员 |
+| `/admin/learning-routes/:routeId/edit` | 编辑学习路线 | 管理员 |
 | `/admin/users` | 用户管理 | 管理员 |
 | `/admin/ai` | AI 配置 | 管理员 |
 | `/admin/ai-import` | AI 导入 | 管理员 |
