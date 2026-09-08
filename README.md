@@ -19,21 +19,26 @@
 
 # Practice Web
 
-A modern, AI-powered question practice platform. Supports six question types across practice and exam modes, with rich dashboard analytics, dual study plan system, question banks, and full PWA offline support.
+A modern, AI-powered question practice platform built with React + Supabase. Multi-type practice and exam modes, coding questions with dual-channel judging, learning routes, study rooms, exam templates with scheduled delivery, dashboard analytics, dual study plans, question banks, QR login, 2FA security, full PWA offline support, and built-in zh/en switching.
 
 ## Highlights
 
 - **Dashboard** — ECharts-powered analytics: calendar heatmap, time distribution, stacked bar charts, scatter plots, accuracy bars, heatmaps, treemaps, sunburst, Sankey diagrams, nested donuts, Ebbinghaus curve, urgency chart
 - **AI-Powered** — smart question parsing, knowledge point generation, personalized study summaries, Ebbinghaus learning plan, intelligent exam configuration, AI chart insights
 - **Dual Study Plan** — long-term plan with deadline-based daily goals, custom daily targets with per-subject progress tracking
-- **Question Banks** — curated question collections with detail view and session picker, reusable across practice and exam
+- **Question Banks** — curated question collections with detail view and session picker, reusable across practice, exam and learning routes
 - **Sequential Practice** — subject-aware ordered question flow with cross-device progress sync and knowledge-point batched sessions
-- **2FA Security** — TOTP authenticator + Passkey (WebAuthn) with trusted device management and login notifications via Feishu
+- **Learning Routes** — admin-curated stage-by-stage question paths with pass statistics and an archify route map colored by progress
+- **Coding Judge** — LeetCode-style split-pane IDE with both platform-central and local Judge0 judging channels
+- **Exam Templates & Scheduling** — WYSIWYG paper composer, multi-view preview, scheduled delivery with Web Push / email reminders
+- **Study Rooms** — join by invite code, daily check-in, email reminders for check-ins and scheduled exams
+- **2FA Security** — TOTP authenticator + Passkey (WebAuthn) + recovery codes, session/device-level grace, trusted device management, login notifications via Feishu
 - **Cross-Device Sync** — bidirectional settings sync with conflict detection (sidebar collapsed, theme, language, sequential progress)
 - **QR Code Login** — desktop QR → mobile scan → instant login, no password needed
 - **Mobile First** — iOS-style bottom tab bar, swipe navigation, collapsible sidebar, responsive charts
 - **PWA** — offline caching, installable on mobile and desktop
 - **Dark & Eye-care Modes** — system-aware dark mode plus six traditional Chinese color themes
+- **zh / en** — in-app language switching (Settings / onboarding guide)
 
 ## Tech Stack
 
@@ -47,7 +52,8 @@ A modern, AI-powered question practice platform. Supports six question types acr
 | Backend | Supabase (PostgreSQL, Auth, RLS, Edge Functions) |
 | AI | Vercel AI SDK + DeepSeek / OpenAI |
 | Markdown | react-markdown, Shiki, remark-math, rehype-raw |
-| Auth | @simplewebauthn/browser, otplib, qrcode, FingerprintJS |
+| Auth | @simplewebauthn/browser, otplib, qrcode |
+| Judging | Judge0 (platform-central / local self-test channels) |
 | I18n | Built-in zh / en |
 | PWA | vite-plugin-pwa + Workbox |
 
@@ -80,7 +86,15 @@ Initialize the database: open your Supabase project → **SQL Editor**, paste an
 npm run dev
 ```
 
-Visit `http://localhost:5173`, register — the first user automatically becomes admin.
+Visit `http://localhost:5173`, register — the first user automatically becomes admin. When email confirmation is enabled, click the verification link in the email first (sender is configured via Supabase SMTP, e.g. `register@mail.pguide.dev`), then the new-user onboarding guide opens.
+
+### Local Judge0 (optional)
+
+Coding questions use the platform-central judge by default. To run judging on your **own machine** during peak hours (results for personal practice only, not scored), run Judge0 inside a **VirtualBox Ubuntu 22.04** (cgroup v1) — Docker Desktop / WSL2 on Windows only support cgroup v2, which cannot run Judge0's isolate sandbox (submissions always fail with status 13).
+
+Quick steps: VirtualBox Ubuntu 22.04 → NAT port forward (host 2358 → guest 2358) → add `systemd.unified_cgroup_hierarchy=0` to GRUB and reboot → `apt install docker.io docker-compose-v2` → `docker compose up -d` in `judge0/` → the "Local Judge" item in the sidebar turns green and "local self-test" becomes available on coding questions.
+
+> Beginners: see [docs/judge0-local-setup.md](docs/judge0-local-setup.md) (VirtualBox Ubuntu 22.04 → cgroup v1 → one command).
 
 ## Features
 
@@ -92,8 +106,10 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | Priority Modes | Mixed / new-first / wrong-first / sequential |
 | Multi-Filter | Subject, category, question type, knowledge point |
 | Sequential Mode | KP-batched subject blocks, directory navigation, exclude & restore questions, auto-saved progress with resume prompt, cross-device sync |
+| Learning Routes | Admin-curated staged paths, free practice + pass statistics, archify map colored by progress |
 | Subject Explanations | Admin-managed per-subject Markdown explanations shown during practice |
 | Swipe Navigation | Touch swipe to move between questions |
+| Shortcuts | Prev/next question, favorite, too-easy, flag issue, etc. via keyboard |
 | Notes | Rich-text notes with public/private toggle |
 | Question Banks | Curated collections, detail view, picker for practice/exam sessions |
 
@@ -102,23 +118,41 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 | Feature | Description |
 |---|---|
 | Configurable | Question count, time limit, subject/category/type filters |
+| Paper Templates | WYSIWYG custom cover/body, draggable page margins, template canvas composition |
+| Scheduled Exams | Pick send time and exam window; Web Push / email reminder when it starts |
 | Grid Navigator | Jump to any question, see answered/skipped status at a glance |
 | Resume | Auto-detects interrupted sessions |
 | Auto-Submit | Submits on timeout |
-| Score Report | ECharts gauge + donut + bar chart with breakdown |
-| History | Past exam sessions list with result review |
+| Score Report | ECharts gauge + donut + bar chart with breakdown, multiple view modes |
+| History | Past exam sessions list with result review and template reuse |
+
+### Coding Judge
+
+| Feature | Description |
+|---|---|
+| Split-pane IDE | LeetCode-style problem + CodeMirror editor, Python / JS / TS / C / C++ / Java |
+| Run Cases | Sample cases / custom input run instantly, per-case verdict coloring |
+| Dual Channels | Platform-central Judge0 counts toward results; local Judge0 self-test does not |
+| Submission History | Per-submission language, status, runtime and history list |
 
 ### AI
 
 | Feature | Description |
 |---|---|
 | Document Import | Upload PDF/Word/image → auto-extract questions via OCR + LLM (lightweight or MinerU precision parse) |
-| Parse History | Browse the full parse history with pagination, edit parsed questions, and re-parse |
+| Parse History | Browse full parse history with pagination, edit parsed questions, re-parse |
 | Knowledge Points | One-click generate KPs with animated reveal |
 | Study Summary | Friend-style daily recap with typewriter animation |
 | Smart Exam | Analyzes practice history, recommends exam config |
 | Learning Plan | Ebbinghaus forgetting curve + subject urgency scoring |
 | Chart Insights | AI-generated natural-language takeaways from dashboard data |
+
+### Study Rooms & Reminders
+
+| Feature | Description |
+|---|---|
+| Study Rooms | Join/leave via invite code, member presence and daily check-in |
+| Reminders | Email reminders for check-ins; Web Push + email when a scheduled exam starts |
 
 ### Dashboard
 
@@ -133,25 +167,27 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 - **Ebbinghaus Curve** — forgetting curve with review schedule
 - **Urgency Chart** — subject urgency scoring for study prioritization
 
-### Question Management (Admin)
+### Admin
 
-- Full CRUD with dynamic option counts
-- Bulk import: CSV, JSON, AI document parsing
-- Filter by subject, category, type, import mode, verification status
-- Bulk edit, delete, and verification toggle
+- Questions: full CRUD, dynamic options, bulk import (CSV / JSON / AI parsing), bulk edit / delete / verification toggle, filter by subject/category/type/source
+- Duplicate Check: group-scan similar questions, keep one or operate on the whole group
+- Coding: local-judge test page (direct Judge0 self-test)
+- AI Import: parse-history management, PDF/image scan into the bank
+- User Management: role toggle (admin/user), **delete account (cascades all related data)**, **email-confirmed status column**, online / last-online display
+- Learning Routes: stage editing, question mounting, publish control
 
 ### Account & Security
 
-- Email + OAuth (GitHub) login
+- Registration: email sign-up with confirmation mail (custom SMTP / bilingual template) + GitHub OAuth
+- Onboarding (`/guide`): welcome → recommended Passkey / authenticator app → start; admins are required to set up 2FA
 - QR code login with session-based polling
-- TOTP 2FA with authenticator app setup and device trust
+- TOTP 2FA: authenticator app enrollment; **replacing the authenticator requires the current code or a recovery code** to prevent silent re-keying
 - Passkey (WebAuthn) as alternative 2FA with platform-native biometrics
-- Trusted device management — name devices, set trust expiration, revoke remotely
-- Login notifications via Feishu bot
-- Account deletion with identity unlink support
-- Row-Level Security on all tables
-- Admin / User role separation
-- First registered user auto-admin via DB trigger
+- 2FA recovery codes: one-time codes generated at setup (stored as SHA-256 hashes)
+- MFA validity: per-session grace (every sign-in / 7 / 14 / 30 days) with trusted-device management (name, trust expiry, remote revoke)
+- Email-confirm sign-ups + login notifications via Feishu bot
+- Account deletion with cascading cleanup and OAuth identity unlink support
+- Row-Level Security on all tables, admin/user role separation; first registered user auto-admin via DB trigger
 
 ## Routes
 
@@ -159,32 +195,38 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 |---|---|---|
 | `/login` | Login | Public |
 | `/register` | Register | Public |
-| `/welcome` | Welcome | Public |
+| `/guide` | Onboarding guide | Post-login, on demand |
+| `/mfa`, `/mfa/:method` | MFA verify page (passkey / app / recovery) | Post-login, on demand |
+| `/welcome` | Welcome (email-confirm landing) | Public |
 | `/farewell` | Farewell (account deleted) | Public |
-| `/terms` | Terms of Service | Public |
-| `/privacy` | Privacy Policy | Public |
+| `/terms`, `/privacy` | Terms / Privacy | Public |
 | `/qr-confirm` | QR Login Confirm | Public |
 | `/` | Dashboard | Authenticated |
 | `/practice` | Practice | Authenticated |
 | `/exam` | Exam | Authenticated |
+| `/exam/templates` | Exam Templates & Scheduling | Authenticated |
 | `/exam/result/:sessionId` | Exam Results | Authenticated |
 | `/favorites` | Favorites | Authenticated |
-| `/notes` | Public Notes | Authenticated |
 | `/review` | Wrong Answer Review | Authenticated |
+| `/notes` | Public Notes | Authenticated |
 | `/question-bank` | Question Banks | Authenticated |
 | `/learning-routes` | Learning Routes | Authenticated |
-| `/learning-routes/:routeId` | Learning Route Detail (stages + archify route map) | Authenticated |
+| `/learning-routes/:routeId` | Learning Route Detail (stages + archify map) | Authenticated |
 | `/learning-routes/:routeId/practice` | Route Practice | Authenticated |
+| `/study-rooms` | Study Rooms | Authenticated |
 | `/settings` | Settings | Authenticated |
+| `/judge-local` | Local Judge (Judge0) setup guide | Authenticated |
 | `/admin/questions` | Question List | Admin |
 | `/admin/questions/new` | New Question | Admin |
 | `/admin/questions/:questionId/edit` | Edit Question | Admin |
+| `/admin/questions/test` | Coding Local-Judge Test | Admin |
+| `/admin/duplicates` | Duplicate Check | Admin |
+| `/admin/users` | User Management (roles, delete, email confirmed) | Admin |
+| `/admin/ai` | AI Config | Admin |
+| `/admin/ai-import` | AI Import | Admin |
 | `/admin/learning-routes` | Learning Route Management | Admin |
 | `/admin/learning-routes/new` | New Learning Route | Admin |
 | `/admin/learning-routes/:routeId/edit` | Edit Learning Route | Admin |
-| `/admin/users` | User Management | Admin |
-| `/admin/ai` | AI Config | Admin |
-| `/admin/ai-import` | AI Import | Admin |
 
 ## Project Structure
 
@@ -192,27 +234,31 @@ Visit `http://localhost:5173`, register — the first user automatically becomes
 src/
 ├── components/
 │   ├── ui/           shadcn primitives
-│   ├── auth/         login/register forms, QR scanner, 2FA dialogs, route guard
+│   ├── auth/         login/register forms, QR scanner, 2FA/Passkey dialogs, MFA panels, route guards
 │   ├── layout/       app shell, sidebar, header, plan progress & dialog
 │   ├── ai/           AI summary dialog
 │   ├── ai-import/    AI import wizard, PDF viewer, parse history
 │   ├── charts/       ECharts & Recharts components
 │   ├── markdown/     Markdown editor & renderer (Shiki highlighting)
 │   ├── notes/        note editor, emoji picker, formatting toolbar
-│   ├── practice/     practice session & KP selector
-│   ├── exam/         exam session, timer, navigator, result card, history
+│   ├── practice/     practice session & KP selector, coding IDE
+│   ├── exam/         exam session, timer, navigator, result, template editor, schedule panel
 │   ├── question-bank/ bank card, detail, dialog, question picker
+│   ├── study-room/   study-room related
+│   ├── settings/     settings items (sync, shortcuts, etc.)
 │   └── questions/    question card, form, list, import dialog
 ├── hooks/            custom hooks (answers, favorites, filters, swipe, timer, mobile)
 ├── i18n/             zh/en translations
-├── lib/              supabase client, AI SDK, constants, utilities
+├── lib/              supabase client, AI SDK, MFA/Passkey helpers, utilities
 ├── pages/            route-level page components
 ├── router/           lazy-loaded route definitions
 ├── stores/           Zustand state (auth, exam, settings, sync, sequential, dashboard, AI)
 └── types/            TypeScript type definitions
 supabase/
-├── migrations/       single-file DB schema
-└── functions/        Edge Functions (qr-login, verify-totp, manage-passkey, login-notify, delete-account, unlink-identity, r2-*, mineru-proxy)
+├── migrations/       single-file DB schema (001_initial_schema.sql, appended by Section)
+└── functions/        Edge Functions (verify-totp, manage-passkey, qr-login, admin-delete-user,
+                      delete-account, unlink-identity, login-notify, cloudflare-turnstile,
+                      judge, study-room, notify-exam, parse-paper-cover, mineru-proxy, r2-*)
 ```
 
 ## Scripts
@@ -232,6 +278,8 @@ npm run build
 ```
 
 Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment variables on your hosting platform.
+
+Edge Functions (optional): `npx supabase functions deploy <name> --project-ref <ref>`. Database migrations live in the single-file `supabase/migrations/001_initial_schema.sql`; apply remotely with `npx supabase db query --linked "<sql>"`.
 
 ## CI / CD
 
