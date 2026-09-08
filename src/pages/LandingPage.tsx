@@ -139,8 +139,8 @@ function FeatureBlock({
   Mock: () => ReactNode
 }) {
   return (
-    <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-      <div className="space-y-4">
+    <div className="grid items-stretch gap-8 lg:grid-cols-[2fr_3fr] lg:gap-14">
+      <div className="flex flex-col justify-center space-y-4">
         <div className="flex items-center gap-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             {row.icon}
@@ -157,7 +157,7 @@ function FeatureBlock({
           ))}
         </ul>
       </div>
-      <div className="h-[420px] overflow-y-auto">
+      <div className="h-[540px] overflow-y-auto">
         <Mock />
       </div>
     </div>
@@ -188,8 +188,10 @@ function FeatureParallax() {
         let opacity = 0
         let scale = 0.85
         if (i === index) {
-          opacity = 1 - cp
-          scale = 1 - cp * 0.15
+          // 淡出速度 = 淡入的 2 倍(在 cp 一半时即完全消失)
+          const fade = Math.min(cp * 2, 1)
+          opacity = 1 - fade
+          scale = 1 - fade * 0.15
         } else if (i === next) {
           opacity = cp
           scale = 0.85 + cp * 0.15
@@ -234,7 +236,7 @@ function FeatureParallax() {
     <div ref={containerRef} style={{ height: `${n * 100}vh` }} className="relative w-full">
       <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <div className="relative mx-auto h-[420px] max-w-5xl">
+          <div className="relative mx-auto h-[540px] max-w-5xl">
             {featureRows.map((row, i) => (
               <div
                 key={row.title}
