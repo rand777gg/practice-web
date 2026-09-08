@@ -24,6 +24,7 @@ import {
   Languages,
   Layers,
   ListChecks,
+  Loader2,
   Network,
   NotebookPen,
   PenLine,
@@ -200,12 +201,16 @@ export function ExamGridMock() {
 }
 
 export function IdeRunMock() {
-  const { ref, inView } = useInView<HTMLDivElement>()
-  const cases = [
-    { name: '示例 1', passed: true },
-    { name: '示例 2', passed: true },
-    { name: '边界 0', passed: true },
-  ]
+  const { ref } = useInView<HTMLDivElement>()
+  const [state, setState] = useState<'idle' | 'running' | 'accepted'>('idle')
+  const timerRef = useRef<number | null>(null)
+  const run = () => {
+    if (state === 'running') return
+    setState('running')
+    timerRef.current = window.setTimeout(() => setState('accepted'), 1200)
+  }
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+  const cases = ['示例 1', '示例 2', '边界 0']
   return (
     <div ref={ref}>
       <Panel>
@@ -250,35 +255,51 @@ export function IdeRunMock() {
               </div>
             </div>
             <div className="flex items-center justify-between gap-2 border-t pt-3">
-              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-500">
-                <svg
-                  className={cn('h-4 w-4', inView && 'animate-[passkey-success-pop_0.6s_ease-out]')}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    strokeDasharray="113"
-                    strokeDashoffset="113"
-                    className={cn(inView && 'animate-[passkey-check-circle_0.6s_ease-out_0.2s_forwards]')}
-                  />
-                  <path
-                    d="M8 12l3 3 5-5"
-                    strokeDasharray="48"
-                    strokeDashoffset="48"
-                    className={cn(inView && 'animate-[passkey-check-path_0.5s_ease-out_0.8s_forwards]')}
-                  />
-                </svg>
-                Accepted · 通过 3 / 3 个用例
-              </span>
-              <Button size="sm" className="gap-1">
-                <Play className="h-3.5 w-3.5" />
+              {state === 'accepted' ? (
+                <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-500">
+                  <svg
+                    className="animate-[passkey-success-pop_0.6s_ease-out] h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      strokeDasharray="113"
+                      strokeDashoffset="113"
+                      className="animate-[passkey-check-circle_0.6s_ease-out_0.2s_forwards]"
+                    />
+                    <path
+                      d="M8 12l3 3 5-5"
+                      strokeDasharray="48"
+                      strokeDashoffset="48"
+                      className="animate-[passkey-check-path_0.5s_ease-out_0.8s_forwards]"
+                    />
+                  </svg>
+                  Accepted · 通过 3 / 3 个用例
+                </span>
+              ) : state === 'running' ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  判题中…
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-border" />
+                  点击运行查看结果
+                </span>
+              )}
+              <Button size="sm" className="gap-1" onClick={run} disabled={state === 'running'}>
+                {state === 'running' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
                 运行
               </Button>
             </div>
@@ -286,12 +307,27 @@ export function IdeRunMock() {
           <div className="p-4">
             <p className="text-xs font-medium text-muted-foreground">用例</p>
             <ul className="mt-3 space-y-2">
-              {cases.map((c) => (
-                <li key={c.name} className="flex items-center gap-2 text-xs">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
-                    <Check className="h-3 w-3" />
+              {cases.map((name) => (
+                <li key={name} className="flex items-center gap-2 text-xs">
+                  <span
+                    className={cn(
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+                      state === 'accepted'
+                        ? 'bg-emerald-500 text-white'
+                        : state === 'running'
+                          ? 'bg-amber-400 text-amber-950'
+                          : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {state === 'accepted' ? (
+                      <Check className="h-3 w-3" />
+                    ) : state === 'running' ? (
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+                    ) : (
+                      <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                    )}
                   </span>
-                  {c.name}
+                  {name}
                 </li>
               ))}
             </ul>
@@ -330,13 +366,11 @@ export function AiChatMock() {
   const { ref, inView } = useInView<HTMLDivElement>()
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [typing, setTyping] = useState(false)
+  const played = useRef(false)
 
   useEffect(() => {
-    if (!inView) {
-      setTurns([])
-      setTyping(false)
-      return
-    }
+    if (!inView || played.current) return
+    played.current = true
     let cancelled = false
     const timers: number[] = []
     const ping = (ms: number) =>
@@ -345,24 +379,20 @@ export function AiChatMock() {
         timers.push(t)
       })
     const run = async () => {
-      while (!cancelled) {
-        await ping(300)
-        for (const turn of CHAT_SCRIPT) {
+      await ping(400)
+      for (const turn of CHAT_SCRIPT) {
+        if (cancelled) return
+        if (turn.role === 'user') {
+          setTurns((prev) => [...prev, turn])
+          await ping(900)
+        } else {
+          setTyping(true)
+          await ping(1500)
           if (cancelled) return
-          if (turn.role === 'user') {
-            setTurns((prev) => [...prev, turn])
-            await ping(650)
-          } else {
-            setTyping(true)
-            await ping(850)
-            if (cancelled) return
-            setTyping(false)
-            setTurns((prev) => [...prev, turn])
-            await ping(550)
-          }
+          setTyping(false)
+          setTurns((prev) => [...prev, turn])
+          await ping(800)
         }
-        await ping(2400)
-        setTurns([])
       }
     }
     run()
@@ -438,6 +468,51 @@ const WEEK = [
   { day: '日', ok: 22, bad: 2 },
 ]
 
+function RadarMini() {
+  const pts = '45,22.5 60.7,39.9 60,65.6 34.4,59.6 25,38.5'
+  const axes = [
+    [45, 15], [73.5, 35.7], [62.6, 69.3], [27.4, 69.3], [16.5, 35.7],
+  ] as const
+  return (
+    <svg viewBox="0 0 90 90" className="h-full w-full">
+      {axes.map(([x, y], i) => (
+        <line key={i} x1="45" y1="45" x2={x} y2={y} stroke="currentColor" strokeOpacity="0.14" />
+      ))}
+      <polygon points="45,15 73.5,35.7 62.6,69.3 27.4,69.3 16.5,35.7" fill="none" stroke="currentColor" strokeOpacity="0.18" />
+      <polygon points={pts} fill="currentColor" fillOpacity="0.28" stroke="currentColor" />
+      <circle cx="45" cy="45" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
+function RoseMini() {
+  const vals = [18, 12, 22, 14, 20, 10, 16, 12]
+  return (
+    <svg viewBox="0 0 90 90" className="h-full w-full">
+      {[9, 18, 27].map((r) => (
+        <circle key={r} cx="45" cy="45" r={r} fill="none" stroke="currentColor" strokeOpacity="0.12" />
+      ))}
+      {vals.map((v, i) => (
+        <rect key={i} x="45" y={45 - (2 + v)} width="3" height={2 + v} rx="1.5" fill="currentColor" transform={`rotate(${i * 45} 45 45)`} />
+      ))}
+      <circle cx="45" cy="45" r="3" fill="currentColor" />
+    </svg>
+  )
+}
+
+function SankeyMini() {
+  return (
+    <svg viewBox="0 0 90 60" className="h-full w-full">
+      <rect x="2" y="8" width="8" height="44" rx="1" className="fill-emerald-500/80" />
+      <rect x="80" y="6" width="8" height="22" rx="1" className="fill-sky-500/80" />
+      <rect x="80" y="32" width="8" height="22" rx="1" className="fill-rose-400/80" />
+      <path d="M10 18 C 40 18, 55 10, 80 14" strokeWidth="6" fill="none" className="stroke-emerald-500/40" />
+      <path d="M10 30 C 40 30, 55 26, 80 30" strokeWidth="6" fill="none" className="stroke-sky-500/35" />
+      <path d="M10 44 C 40 44, 55 50, 80 45" strokeWidth="6" fill="none" className="stroke-rose-400/35" />
+    </svg>
+  )
+}
+
 export function StatsMock() {
   return (
     <Panel>
@@ -475,6 +550,26 @@ export function StatsMock() {
             </span>
           </span>
           <span>本周 170 题 · 追平历史最佳</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg border bg-muted/40 p-2">
+            <p className="mb-1 text-[10px] text-muted-foreground">雷达</p>
+            <div className="mx-auto h-16 w-16 text-cyan-500">
+              <RadarMini />
+            </div>
+          </div>
+          <div className="rounded-lg border bg-muted/40 p-2">
+            <p className="mb-1 text-[10px] text-muted-foreground">玫瑰</p>
+            <div className="mx-auto h-16 w-16 text-violet-500">
+              <RoseMini />
+            </div>
+          </div>
+          <div className="rounded-lg border bg-muted/40 p-2">
+            <p className="mb-1 text-[10px] text-muted-foreground">桑基</p>
+            <div className="mx-auto h-16 w-16 text-emerald-500">
+              <SankeyMini />
+            </div>
+          </div>
         </div>
       </div>
     </Panel>

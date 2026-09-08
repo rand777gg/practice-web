@@ -25,6 +25,7 @@ import { useThemeStore } from '@/stores/theme-store'
 import {
   AiAnalysisMock,
   AiChatMock,
+  ExamGridMock,
   ExamPaperMock,
   FeaturedLogos,
   IdeRunMock,
@@ -197,9 +198,64 @@ function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }
   )
 }
 
+const heroSlides: { Mock: () => ReactNode; label: string }[] = [
+  { Mock: PracticeSessionMock, label: '顺序刷题' },
+  { Mock: ExamPaperMock, label: '模拟考试 · 试卷' },
+  { Mock: ExamGridMock, label: '模拟考试 · 答题卡' },
+  { Mock: IdeRunMock, label: '编程判题' },
+  { Mock: AiChatMock, label: 'AI 助教' },
+  { Mock: AiAnalysisMock, label: 'AI 智能解析' },
+  { Mock: StatsMock, label: '数据看板' },
+  { Mock: RouteStudyMock, label: '学习路线与自习室' },
+]
+
+function HeroCarousel() {
+  const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  useEffect(() => {
+    if (paused) return
+    const t = setInterval(() => setIndex((i) => (i + 1) % heroSlides.length), 5000)
+    return () => clearInterval(t)
+  }, [paused])
+
+  const { Mock, label } = heroSlides[index]
+  return (
+    <div className="w-full" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <div className="h-[560px] overflow-hidden">
+        <div key={index} className="animate-in fade-in-0 slide-in-from-right-4 duration-500 ease-out">
+          <Mock />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-center gap-2">
+        {heroSlides.map((s, idx) => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => setIndex(idx)}
+            aria-label={s.label}
+            className={cn(
+              'h-1.5 rounded-full transition-all',
+              idx === index ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60',
+            )}
+          />
+        ))}
+      </div>
+      <span className="sr-only">{label}</span>
+    </div>
+  )
+}
+
 export function LandingPage() {
   const { theme, toggle } = useThemeStore()
   const heroBgRef = useRef<HTMLDivElement>(null)
+  const [headlineEn, setHeadlineEn] = useState(true)
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = setInterval(() => setHeadlineEn((v) => !v), 4500)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -274,12 +330,28 @@ export function LandingPage() {
                 AI 驱动的全题型刷题平台
               </Badge>
               <div className="space-y-3">
-                <h1 className="text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
-                  Because mountain just
-                  <br />
-                  <span className="inline-block bg-foreground px-2 text-background">stands there.</span>
+                <h1
+                  className={cn(
+                    'font-bold leading-[1.1] tracking-tight',
+                    headlineEn
+                      ? 'font-mono text-3xl sm:text-4xl lg:text-4xl'
+                      : 'font-sans text-4xl sm:text-5xl lg:text-6xl',
+                  )}
+                >
+                  {headlineEn ? (
+                    <>
+                      Because the mountain just
+                      <br />
+                      <span className="inline-block bg-foreground px-2 text-background">stands there.</span>
+                    </>
+                  ) : (
+                    <>
+                      因为山
+                      <span className="inline-block bg-foreground px-2 text-background">就在那里。</span>
+                    </>
+                  )}
                 </h1>
-                <p className="max-w-md text-sm text-muted-foreground sm:text-base">
+                <p className="font-mono max-w-lg text-base text-muted-foreground sm:text-lg">
                   Open-source, online practice system for humans with AI abilities.
                 </p>
               </div>
@@ -299,9 +371,7 @@ export function LandingPage() {
               </p>
             </div>
             <div className="mx-auto w-full max-w-xl lg:mx-0">
-              <div className="animate-float">
-                <PracticeSessionMock />
-              </div>
+              <HeroCarousel />
             </div>
           </div>
         </section>
