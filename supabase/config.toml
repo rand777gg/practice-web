@@ -19,8 +19,3 @@ entrypoint = "./functions/study-room/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/notify-exam/index.ts"
-
-[functions.mail-test]
-enabled = true
-verify_jwt = false
-entrypoint = "./functions/mail-test/index.ts"
