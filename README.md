@@ -201,7 +201,7 @@ Quick steps: VirtualBox Ubuntu 22.04 → NAT port forward (host 2358 → guest 2
 | `/farewell` | Farewell (account deleted) | Public |
 | `/terms`, `/privacy` | Terms / Privacy | Public |
 | `/qr-confirm` | QR Login Confirm | Public |
-| `/` | Dashboard | Authenticated |
+| `/` | Landing portal (guests) / Dashboard (authenticated) | Public / Authenticated |
 | `/practice` | Practice | Authenticated |
 | `/exam` | Exam | Authenticated |
 | `/exam/templates` | Exam Templates & Scheduling | Authenticated |

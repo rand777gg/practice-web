@@ -67,6 +67,11 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       {t('nav.test')}
     </Badge>
   )
+  const enhanceBadge = (
+    <Badge variant="secondary" className="ml-auto shrink-0 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 text-[9px] px-1 py-0 leading-none">
+      {t('nav.enhance')}
+    </Badge>
+  )
 
   return (
     <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'p-2 space-y-1' : 'p-3 space-y-1')}>
@@ -76,7 +81,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
       <NavItem to="/favorites" icon={<Star className="h-4 w-4" />} label={t('nav.favorites')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/review" icon={<RotateCcw className="h-4 w-4" />} label={t('nav.wrongReview')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick} />
-      <NavItem to="/question-bank" icon={<Library className="h-4 w-4" />} label={t('nav.questionBank')} collapsed={collapsed} onClick={handleClick} />
+      <NavItem to="/question-bank" icon={<Library className="h-4 w-4" />} label={t('nav.questionBank')} collapsed={collapsed} onClick={handleClick} badge={enhanceBadge} />
       <NavItem to="/learning-routes" icon={<Route className="h-4 w-4" />} label={t('nav.learningRoutes')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />
       <NavItem to="/study-rooms" icon={<UsersRound className="h-4 w-4" />} label={t('nav.studyRooms')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/judge-local" icon={<Server className="h-4 w-4" />} label={t('nav.localJudge')} collapsed={collapsed} onClick={handleClick} badge={betaBadge} />

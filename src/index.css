@@ -704,3 +704,18 @@ html.dark .cm-editor {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+/* 门户口径：Logo 双向轮播 */
+@keyframes marquee-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes marquee-right {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+.animate-marquee-left { animation: marquee-left 34s linear infinite; }
+.animate-marquee-right { animation: marquee-right 34s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee-left, .animate-marquee-right { animation: none; }
+}

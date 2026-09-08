@@ -18,6 +18,7 @@ export const zh = {
     studyRooms: '自习室',
     learningRoutes: '学习路线',
     test: 'test',
+    enhance: 'enhance',
   },
   auth: {
     login: '登录',
@@ -1118,6 +1119,7 @@ export const en = {
     studyRooms: 'Study Rooms',
     learningRoutes: 'Learning Routes',
     test: 'test',
+    enhance: 'enhance',
   },
   auth: {
     login: 'Login',

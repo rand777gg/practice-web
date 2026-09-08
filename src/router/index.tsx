@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { OtpGuard } from '@/components/auth/OtpGuard'
+import { RootGate } from '@/router/RootGate'
 import { LoadingTips } from '@/components/layout/LoadingTips'
 import { Component as LoginPage } from '@/pages/LoginPage'
 import { Component as RegisterPage } from '@/pages/RegisterPage'
@@ -54,7 +55,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/',
-        element: <ProtectedRoute />,
+        Component: RootGate,
         children: [
           {
             element: <OtpGuard><AppLayout /></OtpGuard>,
