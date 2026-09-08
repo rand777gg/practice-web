@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -139,7 +139,7 @@ function FeatureBlock({
   Mock: () => ReactNode
 }) {
   return (
-    <div className="grid items-center gap-8 lg:grid-cols-[2fr_3fr] lg:gap-14">
+    <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
       <div className="space-y-4">
         <div className="flex items-center gap-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -157,107 +157,40 @@ function FeatureBlock({
           ))}
         </ul>
       </div>
-      <div className="h-[520px] overflow-y-auto">
-        <div className="flex h-full flex-col [&>*]:min-h-full">
-          <Mock />
-        </div>
+      <div className="h-[420px] overflow-y-auto">
+        <Mock />
       </div>
     </div>
   )
 }
 
-function FeatureParallax() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const slideRefs = useRef<(HTMLDivElement | null)[]>([])
-  const n = featureRows.length
-
+function Reveal({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [shown, setShown] = useState(() => typeof IntersectionObserver === 'undefined')
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    let raf = 0
-    let running = false
-    const update = () => {
-      const rect = container.getBoundingClientRect()
-      const scrollable = container.offsetHeight - window.innerHeight
-      const progress = scrollable > 0 ? Math.min(1, Math.max(0, -rect.top / scrollable)) : 0
-      const step = 1 / (n - 1)
-      const index = Math.min(Math.floor(progress / step), n - 2)
-      const next = index + 1
-      const cp = Math.min(Math.max((progress - index * step) / step, 0), 1)
-      for (let i = 0; i < n; i++) {
-        const el = slideRefs.current[i]
-        if (!el) continue
-        let opacity = 0
-        let scale = 0.97
-        let ty = 0
-        if (i === index) {
-          // 淡出速度 = 淡入的 2 倍(进度走一半即完全消失)，同时轻微上浮、细微缩小
-          const fade = Math.min(cp * 2, 1)
-          opacity = 1 - fade
-          scale = 1 - fade * 0.03
-          ty = -fade * 12
-        } else if (i === next) {
-          // 下一项：从下方轻微上浮 + 放大 + 淡入
-          opacity = cp
-          scale = 0.97 + cp * 0.03
-          ty = (1 - cp) * 12
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => {
+        if (e.isIntersecting) {
+          setShown(true)
+          io.disconnect()
         }
-        el.style.opacity = String(opacity)
-        el.style.transform = `translateY(${ty}px) scale(${scale})`
-      }
-    }
-    const loop = () => {
-      update()
-      raf = requestAnimationFrame(loop)
-    }
-    const start = () => {
-      if (!running) {
-        running = true
-        raf = requestAnimationFrame(loop)
-      }
-    }
-    const stop = () => {
-      running = false
-      cancelAnimationFrame(raf)
-    }
-    const io =
-      typeof IntersectionObserver !== 'undefined'
-        ? new IntersectionObserver(
-            (entries) => entries.forEach((e) => (e.isIntersecting ? start() : stop())),
-            { rootMargin: '120px 0px' },
-          )
-        : null
-    io?.observe(container)
-    update()
-    const onResize = () => update()
-    window.addEventListener('resize', onResize)
-    return () => {
-      stop()
-      io?.disconnect()
-      window.removeEventListener('resize', onResize)
-    }
-  }, [n])
-
+      }),
+      { threshold: 0.1 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
   return (
-    <div ref={containerRef} style={{ height: `${n * 100}vh` }} className="relative w-full">
-      <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden">
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <div className="relative mx-auto h-[560px] max-w-5xl">
-            {featureRows.map((row, i) => (
-              <div
-                key={row.title}
-                ref={(el) => {
-                  slideRefs.current[i] = el
-                }}
-                className="pointer-events-none absolute inset-0 flex items-center"
-                style={{ opacity: i === 0 ? 1 : 0, transform: i === 0 ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.97)' }}
-              >
-                <FeatureBlock row={row} Mock={featureMocks[i]} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+    <div
+      ref={ref}
+      className={cn(
+        'transition-all duration-700 ease-out',
+        shown ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-[0.98]',
+      )}
+    >
+      {children}
     </div>
   )
 }
@@ -353,7 +286,13 @@ export function LandingPage() {
               </p>
             </div>
 
-            <FeatureParallax />
+            <div className="space-y-16 sm:space-y-20">
+              {featureRows.map((row, i) => (
+                <Reveal key={row.title}>
+                  <FeatureBlock row={row} Mock={featureMocks[i]} />
+                </Reveal>
+              ))}
+            </div>
 
             <div className="flex flex-wrap items-center justify-center gap-2 border-t pb-16 pt-10 sm:pb-20">
               {extraFeatures.map((extra) => (
