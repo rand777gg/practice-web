@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -164,33 +164,92 @@ function FeatureBlock({
   )
 }
 
-function Reveal({ children }: { children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [shown, setShown] = useState(() => typeof IntersectionObserver === 'undefined')
+function FeatureParallax() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const slideRefs = useRef<(HTMLDivElement | null)[]>([])
+  const n = featureRows.length
+
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const io = new IntersectionObserver(
-      (entries) => entries.forEach((e) => {
-        if (e.isIntersecting) {
-          setShown(true)
-          io.disconnect()
+    const container = containerRef.current
+    if (!container) return
+    let raf = 0
+    let running = false
+    const update = () => {
+      const rect = container.getBoundingClientRect()
+      const scrollable = container.offsetHeight - window.innerHeight
+      const progress = scrollable > 0 ? Math.min(1, Math.max(0, -rect.top / scrollable)) : 0
+      const step = 1 / (n - 1)
+      const index = Math.min(Math.floor(progress / step), n - 2)
+      const next = index + 1
+      const cp = Math.min(Math.max((progress - index * step) / step, 0), 1)
+      for (let i = 0; i < n; i++) {
+        const el = slideRefs.current[i]
+        if (!el) continue
+        let opacity = 0
+        let scale = 0.85
+        if (i === index) {
+          opacity = 1 - cp
+          scale = 1 - cp * 0.15
+        } else if (i === next) {
+          opacity = cp
+          scale = 0.85 + cp * 0.15
         }
-      }),
-      { threshold: 0.1 },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [])
+        el.style.opacity = String(opacity)
+        el.style.transform = `scale(${scale})`
+      }
+    }
+    const loop = () => {
+      update()
+      raf = requestAnimationFrame(loop)
+    }
+    const start = () => {
+      if (!running) {
+        running = true
+        raf = requestAnimationFrame(loop)
+      }
+    }
+    const stop = () => {
+      running = false
+      cancelAnimationFrame(raf)
+    }
+    const io =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(
+            (entries) => entries.forEach((e) => (e.isIntersecting ? start() : stop())),
+            { rootMargin: '120px 0px' },
+          )
+        : null
+    io?.observe(container)
+    update()
+    const onResize = () => update()
+    window.addEventListener('resize', onResize)
+    return () => {
+      stop()
+      io?.disconnect()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [n])
+
   return (
-    <div
-      ref={ref}
-      className={cn(
-        'transition-all duration-700 ease-out',
-        shown ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-[0.98]',
-      )}
-    >
-      {children}
+    <div ref={containerRef} style={{ height: `${n * 100}vh` }} className="relative w-full">
+      <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+          <div className="relative mx-auto h-[420px] max-w-5xl">
+            {featureRows.map((row, i) => (
+              <div
+                key={row.title}
+                ref={(el) => {
+                  slideRefs.current[i] = el
+                }}
+                className="pointer-events-none absolute inset-0 flex items-center"
+                style={{ opacity: i === 0 ? 1 : 0, transform: i === 0 ? 'scale(1)' : 'scale(0.85)' }}
+              >
+                <FeatureBlock row={row} Mock={featureMocks[i]} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -286,13 +345,7 @@ export function LandingPage() {
               </p>
             </div>
 
-            <div className="space-y-16 sm:space-y-20">
-              {featureRows.map((row, i) => (
-                <Reveal key={row.title}>
-                  <FeatureBlock row={row} Mock={featureMocks[i]} />
-                </Reveal>
-              ))}
-            </div>
+            <FeatureParallax />
 
             <div className="flex flex-wrap items-center justify-center gap-2 border-t pb-16 pt-10 sm:pb-20">
               {extraFeatures.map((extra) => (
