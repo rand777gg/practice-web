@@ -11,6 +11,9 @@ export interface ExamScheduleDraft {
   enabled: boolean
   /** IANA 时区(建约设备), 服务端 cron 按其换算到点时刻 */
   tz: string
+  /** 定时邮件通知: 开关 + 自选发送时刻(分钟) */
+  email_enabled?: boolean
+  email_time?: number | null
 }
 
 interface ExamScheduleState {
@@ -58,6 +61,8 @@ export const useExamScheduleStore = create<ExamScheduleState>((set, get) => ({
         template: draft.template as unknown as Record<string, unknown>,
         enabled: draft.enabled,
         tz: draft.tz,
+        email_enabled: draft.email_enabled ?? false,
+        email_time: draft.email_time ?? null,
       })
       .select()
       .single()
@@ -79,6 +84,8 @@ export const useExamScheduleStore = create<ExamScheduleState>((set, get) => ({
     if (patch.template !== undefined) payload.template = patch.template as unknown as Record<string, unknown>
     if (patch.enabled !== undefined) payload.enabled = patch.enabled
     if (patch.tz !== undefined) payload.tz = patch.tz
+    if (patch.email_enabled !== undefined) payload.email_enabled = patch.email_enabled
+    if (patch.email_time !== undefined) payload.email_time = patch.email_time
 
     const { data, error } = await supabase
       .from('exam_schedules')

@@ -96,6 +96,9 @@ export function rowToSchedule(row: Record<string, unknown>): ExamSchedule {
     tz: typeof row.tz === 'string' && row.tz ? row.tz : 'Asia/Shanghai',
     last_fire_date: row.last_fire_date == null ? null : String(row.last_fire_date),
     last_notify_date: row.last_notify_date == null ? null : String(row.last_notify_date),
+    email_enabled: row.email_enabled === true,
+    email_time: row.email_time == null ? null : Number(row.email_time),
+    last_email_date: row.last_email_date == null ? null : String(row.last_email_date),
     created_at: String(row.created_at ?? ''),
     updated_at: String(row.updated_at ?? ''),
   }

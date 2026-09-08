@@ -137,6 +137,10 @@ function ScheduleFormDialog({
   const [days, setDays] = useState<number[]>(editing ? [...editing.days_of_week] : [0, 6])
   const [time, setTime] = useState(editing ? minutesToTime(editing.fire_time) : '20:00')
   const [notify, setNotify] = useState(true)
+  const [emailNotify, setEmailNotify] = useState(editing ? editing.email_enabled : false)
+  const [emailTime, setEmailTime] = useState(
+    editing && editing.email_time != null ? minutesToTime(editing.email_time) : '',
+  )
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -155,6 +159,10 @@ function ScheduleFormDialog({
       setFormError(t('examSched.dayRequired'))
       return
     }
+    if (emailNotify && !emailTime) {
+      setFormError(t('examSched.emailTimeRequired'))
+      return
+    }
     const draft: ExamScheduleDraft = {
       name: name.trim() || `${template.name} · ${minutesToTime(timeToMinutes(time))}`,
       days_of_week: days,
@@ -162,6 +170,8 @@ function ScheduleFormDialog({
       template,
       enabled: editing ? editing.enabled : true,
       tz: editing ? editing.tz || localTimezone() : localTimezone(),
+      email_enabled: emailNotify,
+      email_time: emailNotify ? timeToMinutes(emailTime || '') : null,
     }
     setSaving(true)
     try {
@@ -234,6 +244,32 @@ function ScheduleFormDialog({
               <p className="mt-0.5 text-[10px] text-muted-foreground">{t('examSched.notifyHint')}</p>
             </div>
             <Switch checked={notify} onCheckedChange={setNotify} />
+          </div>
+          <div className="space-y-2 rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-medium">{t('examSched.emailNotify')}</p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">{t('examSched.emailNotifyHint')}</p>
+              </div>
+              <Switch
+                checked={emailNotify}
+                onCheckedChange={(v) => {
+                  setEmailNotify(v)
+                  if (v && !emailTime) setEmailTime(minutesToTime(Math.max(0, timeToMinutes(time) - 30)))
+                }}
+              />
+            </div>
+            {emailNotify && (
+              <div className="flex items-center gap-2 pt-1">
+                <Label className="shrink-0 text-xs">{t('examSched.emailTime')}</Label>
+                <Input
+                  type="time"
+                  value={emailTime}
+                  onChange={(e) => setEmailTime(e.target.value || '')}
+                  className="w-40"
+                />
+              </div>
+            )}
           </div>
           {denyNotice && <p className="text-[10px] text-amber-600 dark:text-amber-500">{t('examSched.notifyDenied')}</p>}
           {formError && <p className="text-xs text-destructive">{formError}</p>}
