@@ -5,6 +5,7 @@
  * 同一个题目, 双页视图的「DOM 实测分页」依赖两侧高度一致。
  */
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
+import { CodeEditorCM } from '@/components/practice/CodeEditorCM'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
@@ -559,25 +560,51 @@ export function QuestionBody({
     )
   }
 
-  const coding = answer && typeof answer === 'object' && !Array.isArray(answer) && 'code' in (answer as object)
+  const codingObj = answer && typeof answer === 'object' && !Array.isArray(answer) && 'code' in (answer as object)
     ? (answer as CodingAnswer)
     : null
-  if (q.question_type === 'coding' && coding) {
-    return (
-      <div className="mt-2">
-        <p className="mb-1 text-xs text-muted-foreground">
-          {t('paperReview.yourCode')} · {coding.language}
-          {coding.allPassed !== undefined && (
-            <span className={cn('ml-1 font-medium', coding.allPassed ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
-              {coding.allPassed ? t('paperReview.testsPassed') : t('paperReview.testsFailed')}
-            </span>
+  const codingText = codingObj ? codingObj.code : typeof answer === 'string' ? answer : ''
+  if (q.question_type === 'coding') {
+    // 作答中(非批改/回顾): 用 CodeMirror 编辑(与考试卡片模式同一编辑器), 作答保持 CodingAnswer 对象
+    if (!readOnly) {
+      const codeLang = codingObj?.language && /^(javascript|typescript|python|cpp|java)$/.test(codingObj.language)
+        ? codingObj.language
+        : 'python'
+      return (
+        <div className="mt-2">
+          <p className="mb-1 text-xs text-muted-foreground">{t('paper.codingHint')}</p>
+          <CodeEditorCM
+            value={codingText}
+            language={codeLang}
+            onChange={(c) => onSet({ code: c, language: codeLang, allPassed: codingObj?.allPassed ?? false } as CodingAnswer)}
+            minHeight="140px"
+          />
+          {codingObj?.allPassed != null && (
+            <p className={cn('mt-1 text-[11px] font-medium', codingObj.allPassed ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
+              {codingObj.allPassed ? t('paperReview.testsPassed') : t('paperReview.testsFailed')}
+            </p>
           )}
-        </p>
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-dashed border-foreground/25 bg-transparent p-2 text-[11px] leading-relaxed">
-          {coding.code || DASH}
-        </pre>
-      </div>
-    )
+        </div>
+      )
+    }
+    // 批改/回顾: 有代码(对象或旧字符串)时以代码块展示
+    if (codingText) {
+      return (
+        <div className="mt-2">
+          <p className="mb-1 text-xs text-muted-foreground">
+            {t('paperReview.yourCode')} · {codingObj?.language ?? 'python'}
+            {codingObj?.allPassed != null && (
+              <span className={cn('ml-1 font-medium', codingObj.allPassed ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
+                {codingObj.allPassed ? t('paperReview.testsPassed') : t('paperReview.testsFailed')}
+              </span>
+            )}
+          </p>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-dashed border-foreground/25 bg-transparent p-2 text-[11px] leading-relaxed">
+            {codingText || DASH}
+          </pre>
+        </div>
+      )
+    }
   }
 
   const text = typeof answer === 'string' ? answer : ''

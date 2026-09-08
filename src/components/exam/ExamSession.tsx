@@ -35,6 +35,7 @@ import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
 import { ExamSchedulePanel } from './ExamSchedulePanel'
 import { PaperPreview } from './PaperPreview'
+import { ExamCodingPanel } from './ExamCodingPanel'
 import { buildPaperSections, type PaperSection } from '@/lib/exam-compose'
 
 import {
@@ -45,7 +46,7 @@ import {
   EXAM_MIN_DURATION_MIN,
   EXAM_MAX_DURATION_MIN,
 } from '@/lib/constants'
-import type { ExamSession as ExamSessionType, ExamTemplate, ExamTemplateSection, QuestionType, Question, CaseQuestion, CaseAnswer, CorrectAnswer } from '@/types'
+import type { ExamSession as ExamSessionType, ExamTemplate, ExamTemplateSection, QuestionType, Question, CaseQuestion, CaseAnswer, CorrectAnswer, CodingAnswer } from '@/types'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, OPTION_LABELS, EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -167,9 +168,17 @@ function isFillBlankAnswered(value: CorrectAnswer | null | undefined, nBlanks: n
   return true
 }
 
-/** 题目是否已完成作答(空改正内容的判断改错题、未填满全部空的填空题均不算完成) */
+/** 题目是否已完成作答(空改正内容的判断改错题、未填满全部空的填空题、无代码的编程题均不算完成) */
 function isQuestionAnswered(q: Question, value: CorrectAnswer | null | undefined): boolean {
   if (value === null || value === undefined) return false
+  if (q.question_type === 'coding') {
+    // 编程题作答为 CodingAnswer 对象或旧版纯代码字符串, 以是否写了代码为准
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'code' in (value as object)) {
+      const ca = value as CodingAnswer
+      return typeof ca.code === 'string' && ca.code.trim().length > 0
+    }
+    return typeof value === 'string' && value.trim().length > 0
+  }
   if (q.question_type === 'judge_correct') return isJudgeAnswered(value)
   if (q.question_type === 'fill_blank') return isFillBlankAnswered(value, blankNumber(q.question_text))
   if (q.question_type === 'case_analysis') {
@@ -1372,15 +1381,35 @@ export function ExamSession() {
 
             return (
               <div className="space-y-2">
-                <p className="text-xs text-muted-foreground mb-2">
-                  {{ fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', analysis: '分析题，输入分析内容', coding: '编程题，编写代码并运行测试' }[type] || '请输入答案'}
-                </p>
-                <textarea
-                  className="w-full min-h-[200px] p-3 rounded-lg border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="请输入答案..."
-                  value={typeof currentAnswer === 'string' ? currentAnswer : ''}
-                  onChange={(e) => answerQuestion(q.id, e.target.value)}
-                />
+                {type === 'coding' && (
+                  <ExamCodingPanel
+                    key={q.id}
+                    question={q}
+                    value={
+                      currentAnswer && typeof currentAnswer === 'object' && !Array.isArray(currentAnswer) && 'code' in (currentAnswer as object)
+                        ? (currentAnswer as CodingAnswer)
+                        : typeof currentAnswer === 'string'
+                          ? { code: currentAnswer, language: 'python', allPassed: false }
+                          : null
+                    }
+                    onChange={(a) => answerQuestion(q.id, a)}
+                  />
+                )}
+                {type !== 'coding' && (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {{
+                        fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', analysis: '分析题，输入分析内容',
+                      }[type] || '请输入答案'}
+                    </p>
+                    <textarea
+                      className="w-full min-h-[200px] p-3 rounded-lg border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="请输入答案..."
+                      value={typeof currentAnswer === 'string' ? currentAnswer : ''}
+                      onChange={(e) => answerQuestion(q.id, e.target.value)}
+                    />
+                  </>
+                )}
               </div>
             )
           })()}

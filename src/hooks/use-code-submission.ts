@@ -21,6 +21,8 @@ export interface SubmissionOptions {
   tolerant?: boolean
   /** 判题过程中每个测试点完成的即时回调(用于逐点回显,不入成绩) */
   onProgress?: (partial: SubmissionResult[]) => void
+  /** 是否把本次判题写入 submissions 表(考试自测等场景置 false, 不入公共提交记录) */
+  persist?: boolean
 }
 
 export function useCodeSubmission(questionId: string) {
@@ -70,7 +72,7 @@ export function useCodeSubmission(questionId: string) {
       options: SubmissionOptions = {},
     ) => {
       if (!user) return null
-      const { judgeSource = 'central', localJudgeUrl = JUDGE0_DEFAULT_URL, tolerant = false } = options
+      const { judgeSource = 'central', localJudgeUrl = JUDGE0_DEFAULT_URL, tolerant = false, persist: doPersist = true } = options
       const source: JudgeSource = judgeSource
 
       setLoading(true)
@@ -120,21 +122,25 @@ export function useCodeSubmission(questionId: string) {
 
         const allPassed = verdict.results.every((x) => x.passed)
 
-        await persist({
-          code,
-          language,
-          status: verdict.status,
-          results: verdict.results,
-          execution_time_ms: verdict.execution_time_ms,
-          judge_source: source,
-        })
+        if (doPersist) {
+          await persist({
+            code,
+            language,
+            status: verdict.status,
+            results: verdict.results,
+            execution_time_ms: verdict.execution_time_ms,
+            judge_source: source,
+          })
+        }
 
         return { allPassed, results: verdict.results, status: verdict.status, judgeSource: source }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         setJudgeStatus('runtime_error')
         // 本地自测仅记录失败现场,不重复抛错打断 UI;中心失败仍抛(由调用方兜底)
-        await persist({ code, language, status: 'runtime_error', error: msg, judge_source: source })
+        if (doPersist) {
+          await persist({ code, language, status: 'runtime_error', error: msg, judge_source: source })
+        }
         if (tolerant) {
           setResults([
             {

@@ -40,9 +40,14 @@ interface Props {
   onSaveResult?: (answer: CodingAnswer) => void
   attemptCount?: number
   wrongCount?: number
+  /** 覆盖容器高度(默认随视口自适应: min(100dvh - 8rem, 920px)) */
+  height?: string
 }
 
-export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount }: Props) {
+/** 内容宽度 ≥ 该值时切双栏(题目 | IDE), 否则单列堆叠(题干 → 示例 → 编辑器 → 判题) */
+const SPLIT_MIN_WIDTH = 800
+
+export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount, height }: Props) {
   const { t } = useT()
   const isLocalJudgeable = (question.execution_mode ?? 'stdio') !== 'function'
   const { submit, loading, results, judgeStatus, clearResults } = useCodeSubmission(question.id)
@@ -71,6 +76,19 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
   const testCases = (question.test_cases ?? []) as TestCase[]
   const examples = (question.examples ?? []) as ExampleCase[]
   const user = useAuthStore((s) => s.user)
+
+  // 容器宽度自适应: 够宽双栏(可拖拽), 否则单列堆叠(移动/窄窗/侧栏挤压)
+  const [split, setSplit] = useState(() => window.matchMedia('(min-width: 1024px)').matches)
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      const wide = el.clientWidth >= SPLIT_MIN_WIDTH
+      setSplit((prev) => (prev === wide ? prev : wide))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const loadRecords = useCallback(async () => {
     if (!user) return
@@ -106,7 +124,7 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
     return () => { cancelled = true }
   }, [isLocalJudgeable, selectChannel])
 
-  // 拖拽分割(横向整体宽度 + 左右两栏内部上下分隔)
+  // 拖拽分割(横向整体宽度 + 左右两栏内部上下分隔);仅双栏时启用
   const onPointerDown = useCallback((e: React.PointerEvent, dir: 'col' | 'rowL' | 'rowR') => {
     e.preventDefault()
     draggingRef.current = { dir }
@@ -199,196 +217,269 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
     )}>{icon}{label}</button>
   )
 
+  const activeLang = LANGUAGES.find((l) => l.value === language) ?? LANGUAGES[0]
+  const selectedCase = !customOn ? testCases[activeCase] : null
+
   return (
-    <div ref={rootRef} className="overflow-hidden" style={{ height: 700 }}>
-      <div className="flex h-full w-full select-none">
-        {/* ============ 左列 ============ */}
-        <div className="min-w-0 flex flex-col border-r" style={{ width: `${leftPct}%` }}>
-          {/* 上:题目(tab: 题目描述/题解/提交记录) */}
-          <div className="flex flex-col min-h-0" style={{ height: `${rowLeft}%` }}>
-            <div className="flex items-center border-b px-1 gap-1 shrink-0">
+    <div
+      ref={rootRef}
+      className="w-full select-none"
+      style={{
+        // 双栏: 占满可用视口高度(可覆盖);单列: 高度随内容自然撑开,由页面滚动
+        height: split ? (height ?? 'min(calc(100dvh - 8rem), 920px)') : undefined,
+        minHeight: split ? 560 : undefined,
+      }}
+    >
+      {split ? (
+        /* ================= 双栏(桌面/宽容器): 左题目 | 右 IDE ================= */
+        <div className="flex h-full w-full overflow-hidden">
+          {/* ---------- 左列 ---------- */}
+          <div className="min-w-0 flex flex-col border-r" style={{ width: `${leftPct}%` }}>
+            {/* 上:题目(tab: 题目描述/题解/提交记录) */}
+            <div className="flex flex-col min-h-0" style={{ height: `${rowLeft}%` }}>
+              <div className="flex items-center border-b px-1 gap-1 shrink-0">
+                {tabBtn('desc', t('practice.ide.descTab') ?? '题目描述', <BookOpen className="h-3 w-3" />)}
+                {tabBtn('solution', t('practice.ide.solutionTab') ?? '题解', <Terminal className="h-3 w-3" />)}
+                {tabBtn('records', t('practice.ide.recordsTab') ?? '提交记录', <History className="h-3 w-3" />)}
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3">{renderTabContent()}</div>
+            </div>
+            {/* 左栏上下分隔(题目/示例) */}
+            <div onPointerDown={(e) => onPointerDown(e, 'rowL')} className="shrink-0 cursor-row-resize bg-border hover:bg-primary/40 h-1 w-full" title={t('codeEditor.resizeV') ?? '拖拽调整高度'} />
+            {/* 下:示例 */}
+            <div className="flex flex-col min-h-0 flex-1 overflow-y-auto p-3">{renderExamples()}</div>
+          </div>
+
+          {/* 纵向分割线 */}
+          <div onPointerDown={(e) => onPointerDown(e, 'col')} className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/50" title={t('codeEditor.resizeH') ?? '拖拽调整宽度'} />
+
+          {/* ---------- 右列 ---------- */}
+          <div className="min-w-0 flex-1 flex flex-col bg-muted/20">
+            {/* 上:代码编辑 */}
+            <div className="flex flex-col min-h-0" style={{ height: `${rowRight}%` }}>
+              {renderEditorHeader()}
+              <div className="flex-1 min-h-0 overflow-y-auto p-2">
+                <CodeEditorCM value={code} onChange={setCode} language={language} minHeight="240px" onCursor={(line, col) => setCursor({ line, col })} />
+              </div>
+              {renderEditorFooter()}
+            </div>
+            {/* 横向分隔(右列上下) */}
+            <div onPointerDown={(e) => onPointerDown(e, 'rowR')} className="shrink-0 cursor-row-resize bg-border hover:bg-primary/40 h-1 w-full" title={t('codeEditor.resizeV') ?? '拖拽调整高度'} />
+            {/* 下:判题/测试 */}
+            <div className="flex-1 min-h-0 flex flex-col border-t border-border">{renderTestPanel()}</div>
+          </div>
+        </div>
+      ) : (
+        /* ================= 单列(窄屏/窄容器): 题干 → 示例 → 编辑器 → 判题 ================= */
+        <div className="flex w-full flex-col">
+          {/* 题目(tab: 题目描述/题解/提交记录) */}
+          <div className="flex flex-col min-h-0">
+            <div className="flex items-center border-b px-1 gap-1 shrink-0 overflow-x-auto">
               {tabBtn('desc', t('practice.ide.descTab') ?? '题目描述', <BookOpen className="h-3 w-3" />)}
               {tabBtn('solution', t('practice.ide.solutionTab') ?? '题解', <Terminal className="h-3 w-3" />)}
               {tabBtn('records', t('practice.ide.recordsTab') ?? '提交记录', <History className="h-3 w-3" />)}
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-3">
-              {tab === 'desc' ? (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} />
-                  </div>
-                  <div className="border-t border-border/60" />
-                  <MarkdownRenderer content={question.question_text} />
-                </div>
-              ) : tab === 'solution' ? (
-                question.analysis || question.answer_explanation ? (
-                  <div className="space-y-3">
-                    {question.analysis && <MarkdownRenderer content={question.analysis} />}
-                    {question.answer_explanation && question.analysis !== question.answer_explanation && <MarkdownRenderer content={question.answer_explanation} />}
-                  </div>
-                ) : <p className="text-sm text-muted-foreground">{t('practice.ide.noSolution') ?? '本题暂无题解解析。'}</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {!records || records.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">{t('practice.ide.noRecords') ?? '还没有提交记录。'}</p>
-                  ) : (
-                    records.map((r) => {
-                      const ok = r.status === 'accepted'
-                      const color = ok ? 'text-emerald-600 dark:text-emerald-400' : r.status === 'runtime_error' || r.status === 'timeout' || r.status === 'compile_error' ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'
-                      return (
-                        <div key={r.id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs">
-                          <span className={cn('font-medium', color)}>{recordLabel(r.status)}</span><span className="text-muted-foreground">{r.language}</span>
-                          {r.execution_time_ms != null && <span className="ml-auto text-muted-foreground tabular-nums">{r.execution_time_ms}ms</span>}
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              )}
+            {/* 题干区限高内滚,保证编辑器不用滚太远 */}
+            <div className="max-h-[45vh] min-h-24 overflow-y-auto p-3">{renderTabContent()}</div>
+          </div>
+          {/* 示例(有则展示) */}
+          {examples.length > 0 && (
+            <div className="border-t">
+              <div className="max-h-[28vh] overflow-y-auto p-3">{renderExamples()}</div>
             </div>
+          )}
+          {/* 编辑器 */}
+          <div className="flex flex-col min-h-0 border-t">
+            {renderEditorHeader()}
+            <div className="overflow-y-auto p-2">
+              <CodeEditorCM value={code} onChange={setCode} language={language} minHeight="260px" onCursor={(line, col) => setCursor({ line, col })} />
+            </div>
+            {renderEditorFooter()}
           </div>
-          {/* 左栏上下分隔(题目/示例) */}
-          <div onPointerDown={(e) => onPointerDown(e, 'rowL')} className="shrink-0 cursor-row-resize bg-border hover:bg-primary/40 h-1 w-full" title={t('codeEditor.resizeV') ?? '拖拽调整高度'} />
-          {/* 下:示例 */}
-          <div className="flex flex-col min-h-0 flex-1 overflow-y-auto p-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('codeEditor.examples') ?? '示例'}</p>
-            {examples.length === 0 ? (
-              <p className="text-xs text-muted-foreground">{t('codeEditor.noExamples') ?? '无示例。'}</p>
-            ) : (
-              <div className="space-y-2">
-                {examples.map((ex, i) => (
-                  <div key={i} className="rounded-lg border bg-muted/20 p-2.5 text-xs space-y-1">
-                    <p className="font-semibold text-muted-foreground">{t('codeEditor.example') ?? '示例'} {i + 1}</p>
-                    <p className="text-muted-foreground">{t('codeEditor.input') ?? '输入'}：<code className="ml-1 font-mono text-foreground">{ex.input}</code></p>
-                    <p className="text-muted-foreground">{t('codeEditor.output') ?? '输出'}：<code className="ml-1 font-mono text-emerald-600 dark:text-emerald-400">{ex.expected}</code></p>
-                    {ex.explanation && <p className="text-muted-foreground">{t('codeEditor.explanation') ?? '解释'}：{ex.explanation}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* 判题/测试 */}
+          <div className="flex flex-col min-h-0 border-t">{renderTestPanel()}</div>
         </div>
-
-        {/* 纵向分割线 */}
-        <div onPointerDown={(e) => onPointerDown(e, 'col')} className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/50" title={t('codeEditor.resizeH') ?? '拖拽调整宽度'} />
-
-        {/* ============ 右列 ============ */}
-        <div className="min-w-0 flex-1 flex flex-col bg-muted/20">
-          {/* 上:代码编辑 */}
-          <div className="flex flex-col min-h-0" style={{ height: `${rowRight}%` }}>
-            <div className="flex items-center gap-2 border-b border-border px-3 py-1 shrink-0">
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><Terminal className="h-3.5 w-3.5" />{t('codeEditor.code') ?? '代码'}</span>
-              <Icon icon={LANGUAGES.find((l) => l.value === language)?.icon ?? LANGUAGES[0].icon} className="h-4 w-4 shrink-0" />
-              <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger size="sm" className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}</SelectContent>
-              </Select>
-              <div className="ml-auto flex items-center gap-1">
-                <button type="button" onClick={clearRun} className="p-1 text-muted-foreground hover:text-foreground" title={t('codeEditor.clear') ?? '清空'}><RotateCcw className="h-4 w-4" /></button>
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2">
-              <CodeEditorCM value={code} onChange={setCode} language={language} minHeight="240px" onCursor={(line, col) => setCursor({ line, col })} />
-            </div>
-            {/* 编辑区右下角工具条:保存状态 + 判题通道 + 运行 */}
-            <div className="shrink-0 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-border bg-background/60 px-2.5 py-1.5">
-              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{t('codeEditor.saved') ?? '已存储'}</span>
-              <span className="hidden lg:inline text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">{t('codeEditor.line') ?? '行'} {cursor.line},{t('codeEditor.col') ?? '列'} {cursor.col}</span>
-              <div className="ml-auto flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1.5">
-                {/* 本地自测:Judge0 可达才可选(绿框),否则禁用 */}
-                <button type="button" onClick={() => selectChannel('local')} disabled={!isLocalJudgeable || localReachable !== true}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                    isLocalJudgeable && localReachable === true
-                      ? channel === 'local'
-                        ? 'border-emerald-500/70 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                        : 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 hover:bg-muted'
-                      : 'border-border text-muted-foreground',
-                  )}>
-                  <span className={cn('h-1.5 w-1.5 rounded-full', isLocalJudgeable && localReachable === true ? 'bg-emerald-500' : 'bg-muted-foreground/40')} />
-                  {t('localJudge.enableShort') ?? '本地自测'}
-                </button>
-                <button type="button" onClick={() => selectChannel('central')}
-                  className={cn('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap transition-colors',
-                    channel === 'central' ? 'border-primary/60 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}>
-                  {t('localJudge.central') ?? '平台判题'}
-                </button>
-                {channel === 'central' ? (
-                  platformChecking ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"><Loader2 className="h-3 w-3 animate-spin" />{t('localJudge.probing') ?? '探测中…'}</span>
-                  ) : platformLatency != null ? (
-                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 whitespace-nowrap tabular-nums">{(t('localJudge.latency') ?? '延迟 {n}ms').replace('{n}', String(platformLatency))}</span>
-                  ) : (
-                    <span className="text-[11px] text-red-500 whitespace-nowrap">{t('localJudge.unreachable') ?? '平台节点不可达'}</span>
-                  )
-                ) : (
-                  localReachable === null && isLocalJudgeable ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"><Loader2 className="h-3 w-3 animate-spin" />{t('localJudge.probing') ?? '探测中…'}</span>
-                  ) : localReachable === false && (
-                    <span className="text-[11px] text-red-500 whitespace-nowrap">{t('localJudge.offlineShort') ?? '未连接本地 Judge0'}</span>
-                  )
-                )}
-                {notice && <span className="inline-flex items-center gap-1 text-[11px] text-red-500"><TriangleAlert className="h-3 w-3 shrink-0" />{notice}</span>}
-                <Button onClick={run} size="sm" disabled={loading || !code.trim() || (channel === 'local' && localReachable !== true)} className="gap-1.5 h-8 shrink-0">
-                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                  {loading ? (t('codeEditor.judging') ?? '判题中…') : (t('codeEditor.runShort') ?? '运行')}
-                </Button>
-              </div>
-            </div>
-          </div>
-          {/* 横向分隔(右列上下) */}
-          <div onPointerDown={(e) => onPointerDown(e, 'rowR')} className="shrink-0 cursor-row-resize bg-border hover:bg-primary/40 h-1 w-full" title={t('codeEditor.resizeV') ?? '拖拽调整高度'} />
-          {/* 下:判题/测试 */}
-          <div className="flex-1 min-h-0 flex flex-col border-t border-border">
-            {/* 测试用例 tab 行 */}
-            <div className="flex items-center gap-1.5 px-2 py-2 overflow-x-auto shrink-0">
-              {testCases.map((_, i) => (
-                <button key={i} type="button" onClick={() => { setActiveCase(i); setCustomOn(false) }} className={casePill(i)}>
-                  Case {i + 1}
-                </button>
-              ))}
-              {/* "+":克隆当前选中为自定义 */}
-              <button type="button" onClick={addCustom} className={cn('shrink-0 inline-flex items-center gap-1 rounded-full border px-3.5 py-1 text-sm font-medium', customOn ? 'border-teal-500/60 bg-teal-500/10 text-teal-600 dark:text-teal-400' : 'border-border text-muted-foreground hover:bg-muted')}><Plus className="h-4 w-4" />{t('codeEditor.custom') ?? '自定义'}</button>
-            </div>
-            {/* 选中用例展示 + 结果 */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
-              {!customOn && testCases[activeCase] ? (
-                <div className="rounded-md border border-border bg-background/60 p-2 text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-muted-foreground">Case {activeCase + 1}</span>
-                    <Button variant="outline" size="sm" className="h-6 gap-1" onClick={() => runSingle(activeCase)} disabled={loading}>
-                      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}{t('codeEditor.singleTest') ?? '单测此例'}
-                    </Button>
-                  </div>
-                  <p className="text-muted-foreground">{t('codeEditor.input') ?? '输入'}</p><WhitespaceBlock text={testCases[activeCase].input || (t('codeEditor.emptyMark') ?? '(空)')} className="text-foreground" dim={false} />
-                  <p className="text-muted-foreground pt-0.5">{t('codeEditor.expected') ?? '期望'}</p><WhitespaceBlock text={testCases[activeCase].expected || (t('codeEditor.emptyMark') ?? '(空)')} className="text-emerald-600 dark:text-emerald-400" dim={false} />
-                </div>
-              ) : (
-                <div className="rounded-md border border-border bg-background/60 p-2 text-xs space-y-1.5">
-                  <p className="font-semibold text-muted-foreground">{(t('codeEditor.customNote') ?? '自定义输入自测(由选中的 Case {n} 克隆,可改)').replace('{n}', String(activeCase + 1))}</p>
-                  <Textarea value={customInput} onChange={(e) => setCustomInput(e.target.value)} rows={2} placeholder={t('codeEditor.stdinPlaceholder') ?? 'stdin(多行用回车)'} className="font-mono text-xs min-h-[2rem] resize-y border-input" spellCheck={false} />
-                  <Textarea value={customExpected} onChange={(e) => setCustomExpected(e.target.value)} rows={2} placeholder={t('codeEditor.expectedPlaceholder') ?? '期望输出(可选)'} className="font-mono text-xs min-h-[2rem] resize-y border-input" spellCheck={false} />
-                  <Button variant="outline" size="sm" className="gap-1" onClick={runCustom} disabled={loading}>
-                    {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}{t('codeEditor.selfTest') ?? '自测'}
-                  </Button>
-                </div>
-              )}
-              {/* 执行动画:判题中光带 */}
-              {loading && (
-                <div className="relative h-1 overflow-hidden rounded-full bg-muted">
-                  <div className="absolute inset-y-0 w-1/3 rounded-full bg-emerald-500 animate-[ideprog_1s_ease-in-out_infinite]" />
-                </div>
-              )}
-              <CodeResult
-                results={results}
-                status={judgeStatus}
-                testCasesCount={runMode === 'all' ? testCases.length : undefined}
-                singleCaseIndex={runMode === 'single' && singleIndex != null ? singleIndex : undefined}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   )
+
+  function renderTabContent() {
+    if (tab === 'desc') {
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} />
+          </div>
+          <div className="border-t border-border/60" />
+          <MarkdownRenderer content={question.question_text} />
+        </div>
+      )
+    }
+    if (tab === 'solution') {
+      return question.analysis || question.answer_explanation ? (
+        <div className="space-y-3">
+          {question.analysis && <MarkdownRenderer content={question.analysis} />}
+          {question.answer_explanation && question.analysis !== question.answer_explanation && <MarkdownRenderer content={question.answer_explanation} />}
+        </div>
+      ) : <p className="text-sm text-muted-foreground">{t('practice.ide.noSolution') ?? '本题暂无题解解析。'}</p>
+    }
+    return (
+      <div className="space-y-1.5">
+        {!records || records.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('practice.ide.noRecords') ?? '还没有提交记录。'}</p>
+        ) : (
+          records.map((r) => {
+            const ok = r.status === 'accepted'
+            const color = ok ? 'text-emerald-600 dark:text-emerald-400' : r.status === 'runtime_error' || r.status === 'timeout' || r.status === 'compile_error' ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'
+            return (
+              <div key={r.id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs">
+                <span className={cn('font-medium', color)}>{recordLabel(r.status)}</span><span className="text-muted-foreground">{r.language}</span>
+                {r.execution_time_ms != null && <span className="ml-auto text-muted-foreground tabular-nums">{r.execution_time_ms}ms</span>}
+              </div>
+            )
+          })
+        )}
+      </div>
+    )
+  }
+
+  function renderExamples() {
+    return (
+      <>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('codeEditor.examples') ?? '示例'}</p>
+        {examples.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('codeEditor.noExamples') ?? '无示例。'}</p>
+        ) : (
+          <div className="space-y-2">
+            {examples.map((ex, i) => (
+              <div key={i} className="rounded-lg border bg-muted/20 p-2.5 text-xs space-y-1">
+                <p className="font-semibold text-muted-foreground">{t('codeEditor.example') ?? '示例'} {i + 1}</p>
+                <p className="text-muted-foreground">{t('codeEditor.input') ?? '输入'}：<code className="ml-1 font-mono text-foreground">{ex.input}</code></p>
+                <p className="text-muted-foreground">{t('codeEditor.output') ?? '输出'}：<code className="ml-1 font-mono text-emerald-600 dark:text-emerald-400">{ex.expected}</code></p>
+                {ex.explanation && <p className="text-muted-foreground">{t('codeEditor.explanation') ?? '解释'}：{ex.explanation}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  function renderEditorHeader() {
+    return (
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1 shrink-0">
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><Terminal className="h-3.5 w-3.5" />{t('codeEditor.code') ?? '代码'}</span>
+        <Icon icon={activeLang.icon} className="h-4 w-4 shrink-0" />
+        <Select value={language} onValueChange={setLanguage}>
+          <SelectTrigger size="sm" className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>{LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <div className="ml-auto flex items-center gap-1">
+          <button type="button" onClick={clearRun} className="p-1 text-muted-foreground hover:text-foreground" title={t('codeEditor.clear') ?? '清空'}><RotateCcw className="h-4 w-4" /></button>
+        </div>
+      </div>
+    )
+  }
+
+  function renderEditorFooter() {
+    return (
+      <div className="shrink-0 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-border bg-background/60 px-2.5 py-1.5">
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{t('codeEditor.saved') ?? '已存储'}</span>
+        <span className="hidden lg:inline text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">{t('codeEditor.line') ?? '行'} {cursor.line},{t('codeEditor.col') ?? '列'} {cursor.col}</span>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1.5">
+          {/* 本地自测:Judge0 可达才可选(绿框),否则禁用 */}
+          <button type="button" onClick={() => selectChannel('local')} disabled={!isLocalJudgeable || localReachable !== true}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+              isLocalJudgeable && localReachable === true
+                ? channel === 'local'
+                  ? 'border-emerald-500/70 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 hover:bg-muted'
+                : 'border-border text-muted-foreground',
+            )}>
+            <span className={cn('h-1.5 w-1.5 rounded-full', isLocalJudgeable && localReachable === true ? 'bg-emerald-500' : 'bg-muted-foreground/40')} />
+            {t('localJudge.enableShort') ?? '本地自测'}
+          </button>
+          <button type="button" onClick={() => selectChannel('central')}
+            className={cn('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap transition-colors',
+              channel === 'central' ? 'border-primary/60 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}>
+            {t('localJudge.central') ?? '平台判题'}
+          </button>
+          {channel === 'central' ? (
+            platformChecking ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"><Loader2 className="h-3 w-3 animate-spin" />{t('localJudge.probing') ?? '探测中…'}</span>
+            ) : platformLatency != null ? (
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 whitespace-nowrap tabular-nums">{(t('localJudge.latency') ?? '延迟 {n}ms').replace('{n}', String(platformLatency))}</span>
+            ) : (
+              <span className="text-[11px] text-red-500 whitespace-nowrap">{t('localJudge.unreachable') ?? '平台节点不可达'}</span>
+            )
+          ) : (
+            localReachable === null && isLocalJudgeable ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"><Loader2 className="h-3 w-3 animate-spin" />{t('localJudge.probing') ?? '探测中…'}</span>
+            ) : localReachable === false && (
+              <span className="text-[11px] text-red-500 whitespace-nowrap">{t('localJudge.offlineShort') ?? '未连接本地 Judge0'}</span>
+            )
+          )}
+          {notice && <span className="inline-flex items-center gap-1 text-[11px] text-red-500"><TriangleAlert className="h-3 w-3 shrink-0" />{notice}</span>}
+          <Button onClick={run} size="sm" disabled={loading || !code.trim() || (channel === 'local' && localReachable !== true)} className="gap-1.5 h-8 shrink-0">
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            {loading ? (t('codeEditor.judging') ?? '判题中…') : (t('codeEditor.runShort') ?? '运行')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  function renderTestPanel() {
+    return (
+      <>
+        {/* 测试用例 tab 行 */}
+        <div className="flex items-center gap-1.5 px-2 py-2 overflow-x-auto shrink-0">
+          {testCases.map((_, i) => (
+            <button key={i} type="button" onClick={() => { setActiveCase(i); setCustomOn(false) }} className={casePill(i)}>
+              Case {i + 1}
+            </button>
+          ))}
+          {/* "+":克隆当前选中为自定义 */}
+          <button type="button" onClick={addCustom} className={cn('shrink-0 inline-flex items-center gap-1 rounded-full border px-3.5 py-1 text-sm font-medium', customOn ? 'border-teal-500/60 bg-teal-500/10 text-teal-600 dark:text-teal-400' : 'border-border text-muted-foreground hover:bg-muted')}><Plus className="h-4 w-4" />{t('codeEditor.custom') ?? '自定义'}</button>
+        </div>
+        {/* 选中用例展示 + 结果 */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
+          {selectedCase ? (
+            <div className="rounded-md border border-border bg-background/60 p-2 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-muted-foreground">Case {activeCase + 1}</span>
+                <Button variant="outline" size="sm" className="h-6 gap-1" onClick={() => runSingle(activeCase)} disabled={loading}>
+                  {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}{t('codeEditor.singleTest') ?? '单测此例'}
+                </Button>
+              </div>
+              <p className="text-muted-foreground">{t('codeEditor.input') ?? '输入'}</p><WhitespaceBlock text={selectedCase.input || (t('codeEditor.emptyMark') ?? '(空)')} className="text-foreground" dim={false} />
+              <p className="text-muted-foreground pt-0.5">{t('codeEditor.expected') ?? '期望'}</p><WhitespaceBlock text={selectedCase.expected || (t('codeEditor.emptyMark') ?? '(空)')} className="text-emerald-600 dark:text-emerald-400" dim={false} />
+            </div>
+          ) : (
+            <div className="rounded-md border border-border bg-background/60 p-2 text-xs space-y-1.5">
+              <p className="font-semibold text-muted-foreground">{(t('codeEditor.customNote') ?? '自定义输入自测(由选中的 Case {n} 克隆,可改)').replace('{n}', String(activeCase + 1))}</p>
+              <Textarea value={customInput} onChange={(e) => setCustomInput(e.target.value)} rows={2} placeholder={t('codeEditor.stdinPlaceholder') ?? 'stdin(多行用回车)'} className="font-mono text-xs min-h-[2rem] resize-y border-input" spellCheck={false} />
+              <Textarea value={customExpected} onChange={(e) => setCustomExpected(e.target.value)} rows={2} placeholder={t('codeEditor.expectedPlaceholder') ?? '期望输出(可选)'} className="font-mono text-xs min-h-[2rem] resize-y border-input" spellCheck={false} />
+              <Button variant="outline" size="sm" className="gap-1" onClick={runCustom} disabled={loading}>
+                {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}{t('codeEditor.selfTest') ?? '自测'}
+              </Button>
+            </div>
+          )}
+          {/* 执行动画:判题中光带 */}
+          {loading && (
+            <div className="relative h-1 overflow-hidden rounded-full bg-muted">
+              <div className="absolute inset-y-0 w-1/3 rounded-full bg-emerald-500 animate-[ideprog_1s_ease-in-out_infinite]" />
+            </div>
+          )}
+          <CodeResult
+            results={results}
+            status={judgeStatus}
+            testCasesCount={runMode === 'all' ? testCases.length : undefined}
+            singleCaseIndex={runMode === 'single' && singleIndex != null ? singleIndex : undefined}
+          />
+        </div>
+      </>
+    )
+  }
 }

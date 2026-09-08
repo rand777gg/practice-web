@@ -214,6 +214,11 @@ export function PracticeSession() {
     return () => { seqStopSync() }
   }, [seqStartSync, seqStopSync])
 
+  // 进入练习模式自动收起侧边栏, 给题干/IDE 更多横向空间(与考试开考行为一致)
+  useEffect(() => {
+    useSettingsStore.getState().setSidebarCollapsed(true)
+  }, [])
+
   const planSubjects = useMemo(() => {
     if (!profile?.plan_subjects) return [] as string[]
     try { const p = JSON.parse(profile.plan_subjects); return Array.isArray(p) ? p : [] } catch { return [] }
