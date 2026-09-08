@@ -139,8 +139,8 @@ function FeatureBlock({
   Mock: () => ReactNode
 }) {
   return (
-    <div className="grid items-stretch gap-8 lg:grid-cols-[2fr_3fr] lg:gap-14">
-      <div className="flex flex-col justify-center space-y-4">
+    <div className="grid items-center gap-8 lg:grid-cols-[2fr_3fr] lg:gap-14">
+      <div className="space-y-4">
         <div className="flex items-center gap-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             {row.icon}
@@ -157,8 +157,10 @@ function FeatureBlock({
           ))}
         </ul>
       </div>
-      <div className="h-[540px] overflow-y-auto">
-        <Mock />
+      <div className="h-[520px] overflow-y-auto">
+        <div className="flex h-full flex-col [&>*]:min-h-full">
+          <Mock />
+        </div>
       </div>
     </div>
   )
@@ -186,18 +188,22 @@ function FeatureParallax() {
         const el = slideRefs.current[i]
         if (!el) continue
         let opacity = 0
-        let scale = 0.85
+        let scale = 0.97
+        let ty = 0
         if (i === index) {
-          // 淡出速度 = 淡入的 2 倍(在 cp 一半时即完全消失)
+          // 淡出速度 = 淡入的 2 倍(进度走一半即完全消失)，同时轻微上浮、细微缩小
           const fade = Math.min(cp * 2, 1)
           opacity = 1 - fade
-          scale = 1 - fade * 0.15
+          scale = 1 - fade * 0.03
+          ty = -fade * 12
         } else if (i === next) {
+          // 下一项：从下方轻微上浮 + 放大 + 淡入
           opacity = cp
-          scale = 0.85 + cp * 0.15
+          scale = 0.97 + cp * 0.03
+          ty = (1 - cp) * 12
         }
         el.style.opacity = String(opacity)
-        el.style.transform = `scale(${scale})`
+        el.style.transform = `translateY(${ty}px) scale(${scale})`
       }
     }
     const loop = () => {
@@ -236,7 +242,7 @@ function FeatureParallax() {
     <div ref={containerRef} style={{ height: `${n * 100}vh` }} className="relative w-full">
       <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <div className="relative mx-auto h-[540px] max-w-5xl">
+          <div className="relative mx-auto h-[560px] max-w-5xl">
             {featureRows.map((row, i) => (
               <div
                 key={row.title}
@@ -244,7 +250,7 @@ function FeatureParallax() {
                   slideRefs.current[i] = el
                 }}
                 className="pointer-events-none absolute inset-0 flex items-center"
-                style={{ opacity: i === 0 ? 1 : 0, transform: i === 0 ? 'scale(1)' : 'scale(0.85)' }}
+                style={{ opacity: i === 0 ? 1 : 0, transform: i === 0 ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.97)' }}
               >
                 <FeatureBlock row={row} Mock={featureMocks[i]} />
               </div>
