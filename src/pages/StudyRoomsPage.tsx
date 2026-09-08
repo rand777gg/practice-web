@@ -305,14 +305,24 @@ export function Component() {
       setActionMsg(message)
       return
     }
-    const sent = (data?.sent ?? []).length
-    const failed = (data?.skipped ?? []).filter((s) => s.reason === 'send_failed').length
-    if (sent > 0) {
-      setActionMsg(`已向 ${sent} 位成员发送提醒邮件${failed > 0 ? `，${failed} 位发送失败` : ''}`)
-    } else if (failed > 0) {
-      setActionMsg('邮件发送失败，请稍后重试')
+    const sentN = (data?.sent ?? []).length
+    const skipped = data?.skipped ?? []
+    const byReason = (r: string) => skipped.filter((s) => s.reason === r).length
+    const failN = byReason('send_failed')
+    const doneN = byReason('already_done')
+    const noGoalN = byReason('no_goal')
+    const throttledN = byReason('throttled')
+    const parts: string[] = []
+    if (doneN > 0) parts.push(`${doneN} 位已完成`)
+    if (noGoalN > 0) parts.push(`${noGoalN} 位未设目标`)
+    if (throttledN > 0) parts.push(`${throttledN} 位 2 小时内已提醒`)
+    if (failN > 0) parts.push(`${failN} 位发送失败`)
+    if (sentN > 0) {
+      setActionMsg(`已向 ${sentN} 位成员发送提醒邮件${parts.length > 0 ? `（${parts.join('，')}）` : ''}`)
+    } else if (parts.length > 0) {
+      setActionMsg(parts.join('，') + '，未发送提醒邮件')
     } else {
-      setActionMsg('今天没有需要提醒的成员（都已完成，或刚提醒过）')
+      setActionMsg('今天没有需要提醒的成员')
     }
     bumpDetail()
   }
