@@ -50,13 +50,17 @@ export function LoginForm({
     e.preventDefault()
     setError('')
     setIsSubmitting(true)
+    // Keep the landing page mounted while the request resolves. RootGate flips to the dashboard
+    // as soon as the store's `user` is set, and supabase-js dispatches SIGNED_IN (which sets
+    // `user`) to subscribers before signInWithPassword's promise resolves. Writing the guard
+    // flag in advance closes that window; it is cleared on every exit path below.
+    sessionStorage.setItem('mfa_pending', '1')
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-      if (authError) { setError(authError.message); setIsSubmitting(false); return }
-
-      // Signed in — keep the landing page mounted (RootGate skips the dashboard while pending)
-      // until we know whether this user needs MFA / onboarding, so the inline flow isn't interrupted.
-      sessionStorage.setItem('mfa_pending', '1')
+      if (authError) {
+        sessionStorage.removeItem('mfa_pending')
+        setError(authError.message); setIsSubmitting(false); return
+      }
 
       let st: MfaStatus | null = null
       try { st = await getMfaStatus() } catch { /* fall through to app */ }
@@ -86,6 +90,7 @@ export function LoginForm({
       sessionStorage.removeItem('mfa_pending')
       navigate('/')
     } catch (err) {
+      sessionStorage.removeItem('mfa_pending')
       setError(err instanceof Error ? err.message : '验证失败')
       setIsSubmitting(false)
     }

@@ -35,17 +35,24 @@ export function RegisterForm({
     setError('')
     setSuccess('')
     setIsSubmitting(true)
+    // Same guard as login: keep the landing page mounted while the request resolves.
+    // supabase-js dispatches SIGNED_IN (setting the store's `user`) before the signUp
+    // promise resolves, which would otherwise let RootGate flash the dashboard. The flag
+    // is cleared on every exit path.
+    sessionStorage.setItem('mfa_pending', '1')
     try {
       const { data, error: authError } = await supabase.auth.signUp({
         email, password,
         options: { emailRedirectTo: window.location.origin + '/welcome' },
       })
       if (authError) {
+        sessionStorage.removeItem('mfa_pending')
         setError(authError.message?.includes('already registered') || authError.status === 422 ? t('auth.alreadyRegistered') : authError.message)
         setIsSubmitting(false)
         return
       }
       if (data.user?.identities?.length === 0) {
+        sessionStorage.removeItem('mfa_pending')
         setError(t('auth.alreadyRegistered'))
         setIsSubmitting(false)
         return
@@ -53,13 +60,11 @@ export function RegisterForm({
 
       // Email confirmation required → no session yet; stay and tell the user instead of bouncing to /login
       if (!data.session) {
+        sessionStorage.removeItem('mfa_pending')
         setSuccess(t('auth.checkEmail'))
         setIsSubmitting(false)
         return
       }
-
-      // Signed in — keep the landing page mounted while we decide on the onboarding guide.
-      sessionStorage.setItem('mfa_pending', '1')
 
       // New accounts have no MFA and are not onboarded → straight to /guide
       let st: MfaStatus | null = null
@@ -74,6 +79,7 @@ export function RegisterForm({
       sessionStorage.removeItem('mfa_pending')
       navigate('/')
     } catch (err) {
+      sessionStorage.removeItem('mfa_pending')
       setError(err instanceof Error ? err.message : '验证失败')
       setIsSubmitting(false)
     }
