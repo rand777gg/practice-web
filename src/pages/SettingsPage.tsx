@@ -67,7 +67,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode, practiceUiVariant, setPracticeUiVariant } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -744,6 +744,35 @@ export function Component() {
            )}
           >
            <Icon className="h-3.5 w-3.5" />
+           {label}
+          </button>
+         ))}
+        </div>
+       </div>
+
+       {/* Practice UI layout */}
+       <div className="border-t pt-4" />
+       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 mr-2">
+         <p className="text-sm">练习界面样式</p>
+         <p className="text-xs text-muted-foreground">选择练习模式的界面布局（新版为参考图风格）</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+         {([
+          { value: 'old', label: '旧版布局' },
+          { value: 'new', label: '新版布局' },
+         ] as const).map(({ value, label }) => (
+          <button
+           key={value}
+           type="button"
+           onClick={() => setPracticeUiVariant(value)}
+           className={cn(
+            'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs transition-colors',
+            practiceUiVariant === value
+             ? 'border-primary bg-accent text-accent-foreground'
+             : 'text-muted-foreground hover:bg-accent',
+           )}
+          >
            {label}
           </button>
          ))}

@@ -285,7 +285,6 @@ export function PracticeSession() {
   const isMobile = useIsMobile()
   const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
   const practiceUiVariant = useSettingsStore((s) => s.practiceUiVariant)
-  const setPracticeUiVariant = useSettingsStore((s) => s.setPracticeUiVariant)
 
 
   // Persist per-subject positions to localStorage keyed by sessionKey
@@ -431,6 +430,16 @@ export function PracticeSession() {
     }
     return { done, total: block.count }
   }, [seqActive, currentSubject, subjectBlocks, seqQuestionIds, answeredSessionSnapshot])
+
+  // 总进度：整个会话所有学科已作答题数/总题数
+  const overallProgress = useMemo(() => {
+    if (!seqActive) return { done: 0, total: 0 }
+    let done = 0
+    for (const id of seqQuestionIds) {
+      if (answeredSessionSnapshot.has(id)) done++
+    }
+    return { done, total: seqQuestionIds.length }
+  }, [seqActive, seqQuestionIds, answeredSessionSnapshot])
 
   // 本组正确率：当前学科本次会话已作答题目的 正确/(正确+错误)，无作答则隐藏
   const sessionAccuracy = useMemo(() => {
@@ -1698,29 +1707,12 @@ export function PracticeSession() {
         </div>
       ) : questionMode === 'sequential' && practiceUiVariant === 'new' && question && questionReady ? (
         <SequentialPracticeNewUi
-          uiVariant={practiceUiVariant}
-          onUiVariantChange={setPracticeUiVariant}
           subjectName={currentSubject}
+          subjectBlocks={subjectBlocks}
+          onSwitchSubject={switchToSubject}
           relIndex={seqUi.relIndex}
           total={seqUi.total}
           accuracy={sessionAccuracy}
-          subjectBlocks={subjectBlocks}
-          currentSubject={currentSubject}
-          onSwitchSubject={switchToSubject}
-          kpInfo={seqUi.ki}
-          qKp={seqUi.qKp}
-          deviceIcon={seqUi.devIcon}
-          deviceName={seqUi.devName}
-          syncText={seqUi.syncStr}
-          syncStatus={seqSyncStatus}
-          kpSeekMode={kpSeekMode}
-          onToggleKpSeek={() => setKpSeekMode((v) => !v)}
-          onSeekKp={handleSeekKp}
-          distMode={distMode}
-          currentKpDist={currentKpDist}
-          isMobile={isMobile}
-          tocVisible={tocVisible}
-          onToggleToc={() => { if (isMobile) setTocOpen(true); else setTocVisible((v) => !v) }}
           onOpenSessions={() => setDrawerOpen(true)}
           question={question}
           selectedAnswer={selectedAnswer}
@@ -1750,6 +1742,11 @@ export function PracticeSession() {
           onPrev={handlePrev}
           onNext={handleNext}
           onSubmit={handleSubmit}
+          isMobile={isMobile}
+          kpInfo={seqUi.ki}
+          qKp={seqUi.qKp}
+          sessionProgress={sessionProgress}
+          overallProgress={overallProgress}
           kpNav={{
             userId: profile?.id ?? '',
             questionIds: seqQuestionIds,
@@ -1768,7 +1765,6 @@ export function PracticeSession() {
             onShowDistChange: setDistMode,
             onCurrentKpDist: setCurrentKpDist,
           }}
-          sessionProgress={sessionProgress}
         />
       ) : (
         <div className="lg:flex lg:gap-4 lg:items-stretch">
@@ -1799,25 +1795,6 @@ export function PracticeSession() {
                     }) : null
                   })()}
                   <div className="ml-auto flex items-center gap-1.5">
-                    {/* 新/旧 练习界面切换 — 位于拖动进度条按钮左侧 */}
-                    <div className="flex items-center rounded-md border p-0.5" title="切换新/旧练习界面">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className={cn('h-6 px-2 text-[11px]', practiceUiVariant === 'old' ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:bg-accent')}
-                        onClick={() => setPracticeUiVariant('old')}
-                      >
-                        旧
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className={cn('h-6 px-2 text-[11px]', practiceUiVariant === 'new' ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:bg-accent')}
-                        onClick={() => setPracticeUiVariant('new')}
-                      >
-                        新
-                      </Button>
-                    </div>
                     <Button
                       variant="ghost"
                       size="icon"

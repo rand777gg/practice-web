@@ -7,6 +7,7 @@ import { useSubjectExplanations } from '@/hooks/use-subject-explanations'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
+import { Check } from 'lucide-react'
 
 interface KpGroup {
   kp: string
@@ -51,6 +52,8 @@ interface Props {
   showDist: boolean
   onShowDistChange: (v: boolean) => void
   onCurrentKpDist?: (d: GroupDist | null) => void
+  /** list:带进度条的传统列表; dots:参考图风格,用状态点表达知识点进度 */
+  variant?: 'list' | 'dots'
 }
 
 function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets?: Record<string, string> | null, planResetAt?: string | null) {
@@ -98,7 +101,8 @@ function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<st
   return { statuses, ...counts, total: statuses.length }
 }
 
-export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, subject, selectedKps, onExcludedRestored, answeredThisSession, sessionDist, showDist, onShowDistChange, onCurrentKpDist }: Props) {
+export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, subject, selectedKps, onExcludedRestored, answeredThisSession, sessionDist, showDist, onShowDistChange, onCurrentKpDist, variant = 'list' }: Props) {
+  const isDots = variant === 'dots'
   const [answeredMap, setAnsweredMap] = useState<Map<string, string>>(new Map())
   const [latestCorrectMap, setLatestCorrectMap] = useState<Map<string, boolean>>(new Map())
   // 分批拉取作答状态时的增量累积容器（避免逐批 setState 依赖旧快照丢数据）
@@ -297,7 +301,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                 <span className="shrink-0">知识点</span>
               </>
             ) : (
-              <span>知识点目录</span>
+              <span>{isDots ? '本组目录' : '知识点目录'}</span>
             )}
           </div>
           <span className="text-xs text-muted-foreground tabular-nums shrink-0">{totalDone}/{totalCount}</span>
@@ -306,7 +310,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs"
+            className={cn('h-6 px-2 text-xs', isDots && 'border')}
             onClick={() => onShowDistChange(!showDist)}
             title={showDist ? '返回知识点进度' : '查看全部知识点作答分布'}
           >
@@ -315,17 +319,19 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs"
+            className={cn('h-6 px-2 text-xs', isDots && 'border')}
             disabled={!controlsSubject || !explanations.has(controlsSubject)}
             onClick={() => { if (controlsSubject) setViewSubject(controlsSubject) }}
             title={!controlsSubject || !explanations.has(controlsSubject) ? '该学科未设置编排说明' : `查看${controlsSubject}编排说明`}
           >
             查看编排说明
           </Button>
-          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
-            显示太简单
-            <Switch checked={showTooEasy} onCheckedChange={setShowTooEasy} />
-          </label>
+          {!isDots && (
+            <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
+              显示太简单
+              <Switch checked={showTooEasy} onCheckedChange={setShowTooEasy} />
+            </label>
+          )}
         </div>
         {showDist && (
           <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] text-muted-foreground mb-2 shrink-0 animate-[page-enter_0.3s_ease-out_both]">
@@ -349,6 +355,10 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                   const pct = g.total > 0 ? Math.round((g.done / g.total) * 100) : 0
                   const status = g.done >= g.total && g.total > 0 ? 'done' : g.done > 0 ? 'partial' : 'none'
                   const exclCount = exclStats.get(g.kp)?.excluded ?? 0
+                  const dotColor = isDots
+                    ? isActive ? 'bg-foreground' : status === 'done' ? 'bg-green-500' : 'bg-muted-foreground/40'
+                    : status === 'done' ? 'bg-green-500' : status === 'partial' ? 'bg-blue-500' : 'bg-muted-foreground/40'
+                  const isGroupDone = status === 'done'
                   return (
                     <button
                       key={`${g.kp}-${g.start}`}
@@ -361,7 +371,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                       )}
                     >
                       <div className="flex items-center gap-1.5">
-                        <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', status === 'done' ? 'bg-green-500' : status === 'partial' ? 'bg-blue-500' : 'bg-muted-foreground/40')} />
+                        <span className={cn('shrink-0 rounded-full', isDots ? 'h-2 w-2' : 'h-1.5 w-1.5', dotColor)} />
                         <span className={cn('text-xs truncate flex-1', isActive ? 'font-medium text-foreground' : 'text-muted-foreground')}>{g.kp}</span>
                         {exclCount > 0 && (
                           <span
@@ -372,7 +382,11 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                             已排除 {exclCount}
                           </span>
                         )}
-                        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{g.done}/{g.total}</span>
+                        {isDots && isGroupDone ? (
+                          <Check className="h-3 w-3 shrink-0 text-green-500" />
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{g.done}/{g.total}</span>
+                        )}
                       </div>
                       {showDist ? (
                         <div className="relative mt-1 h-1 rounded-full bg-muted overflow-hidden animate-dist-bar" style={{ animationDelay: `${Math.min(i, 10) * 0.04}s` }}>
@@ -399,12 +413,14 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
                           })()}
                         </div>
                       ) : (
-                        <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden animate-in fade-in-0 duration-200">
-                          <div
-                            className={cn('h-full transition-all duration-300', status === 'done' ? 'bg-green-500' : status === 'partial' ? 'bg-blue-500' : 'bg-transparent')}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
+                        !isDots && (
+                          <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden animate-in fade-in-0 duration-200">
+                            <div
+                              className={cn('h-full transition-all duration-300', status === 'done' ? 'bg-green-500' : status === 'partial' ? 'bg-blue-500' : 'bg-transparent')}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        )
                       )}
                     </button>
                   )
