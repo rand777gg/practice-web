@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
 import { ExamSchedulePanel } from './ExamSchedulePanel'
+import { ExamExportPanel } from './ExamExportPanel'
 import { PaperPreview } from './PaperPreview'
 import { ExamCodingPanel } from './ExamCodingPanel'
 import { buildPaperSections, type PaperSection } from '@/lib/exam-compose'
@@ -242,7 +243,7 @@ export function ExamSession() {
   const [paperMode, setPaperMode] = useState(() => useSettingsStore.getState().examViewMode !== 'card')
   const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
   const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>(() => (useSettingsStore.getState().examViewMode === 'spread' ? 'spread' : 'sheet'))
-  const [tab, setTab] = useState<'settings' | 'appointment' | 'history'>('settings')
+  const [tab, setTab] = useState<'settings' | 'appointment' | 'history' | 'export'>('settings')
   const [paperNotice, setPaperNotice] = useState('')
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -525,11 +526,12 @@ export function ExamSession() {
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'settings' | 'appointment' | 'history')}>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'settings' | 'appointment' | 'history' | 'export')}>
           <TabsList>
             <TabsTrigger value="settings">{t('exam.tabSetup')}</TabsTrigger>
             <TabsTrigger value="appointment">{t('exam.tabAppoint')}</TabsTrigger>
             <TabsTrigger value="history">{t('exam.tabHistory')}</TabsTrigger>
+            <TabsTrigger value="export">{t('exam.tabExport')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="settings" className="mt-4">
@@ -859,6 +861,10 @@ export function ExamSession() {
 
           <TabsContent value="history" className="mt-4">
             <ExamHistory />
+          </TabsContent>
+
+          <TabsContent value="export" className="mt-4">
+            {user ? <ExamExportPanel userId={user.id} /> : <p className="text-muted-foreground">{t('exam.noExam')}</p>}
           </TabsContent>
         </Tabs>
 

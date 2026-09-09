@@ -77,7 +77,7 @@ function SidebarNav({ onClose, collapsed }: { onClose?: () => void; collapsed?: 
     <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'p-2 space-y-1' : 'p-3 space-y-1')}>
       <NavItem to="/" end icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/practice" icon={<Pencil className="h-4 w-4" />} label={t('nav.practice')} collapsed={collapsed} onClick={handleClick} />
-      <NavItem to="/exam" icon={<Clock className="h-4 w-4" />} label={t('nav.exam')} collapsed={collapsed} onClick={handleClick} />
+      <NavItem to="/exam" icon={<Clock className="h-4 w-4" />} label={t('nav.exam')} collapsed={collapsed} onClick={handleClick} badge={enhanceBadge} />
       <NavItem to="/favorites" icon={<Star className="h-4 w-4" />} label={t('nav.favorites')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/review" icon={<RotateCcw className="h-4 w-4" />} label={t('nav.wrongReview')} collapsed={collapsed} onClick={handleClick} />
       <NavItem to="/notes" icon={<BookOpen className="h-4 w-4" />} label={t('nav.publicNotes')} collapsed={collapsed} onClick={handleClick} />
