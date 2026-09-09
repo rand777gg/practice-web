@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { SequentialProgressBar } from '@/components/practice/SequentialProgressBar'
 import { SequentialKpNav, type SessionDistEntry, type GroupDist } from '@/components/practice/SequentialKpNav'
+import { SequentialPracticeNewUi } from '@/components/practice/SequentialPracticeNewUi'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -283,6 +284,8 @@ export function PracticeSession() {
 
   const isMobile = useIsMobile()
   const practiceShortcuts = useSettingsStore((s) => s.practiceShortcuts)
+  const practiceUiVariant = useSettingsStore((s) => s.practiceUiVariant)
+  const setPracticeUiVariant = useSettingsStore((s) => s.setPracticeUiVariant)
 
 
   // Persist per-subject positions to localStorage keyed by sessionKey
@@ -428,6 +431,39 @@ export function PracticeSession() {
     }
     return { done, total: block.count }
   }, [seqActive, currentSubject, subjectBlocks, seqQuestionIds, answeredSessionSnapshot])
+
+  // 本组正确率：当前学科本次会话已作答题目的 正确/(正确+错误)，无作答则隐藏
+  const sessionAccuracy = useMemo(() => {
+    if (!seqActive || currentSubject == null) return null
+    const block = subjectBlocks.find(b => b.subject === currentSubject)
+    const ids = block ? seqQuestionIds.slice(block.start, block.end + 1) : seqQuestionIds
+    let correct = 0, wrong = 0
+    for (const id of ids) {
+      const st = sessionDistSnapshot.get(id)?.status
+      if (st === 'correct') correct++
+      else if (st === 'wrong') wrong++
+    }
+    if (correct + wrong === 0) return null
+    return Math.round((correct / (correct + wrong)) * 100)
+  }, [seqActive, currentSubject, subjectBlocks, seqQuestionIds, sessionDistSnapshot])
+
+  // 新/旧 UI 共用的顶部信息位（当前题号、正确率、设备同步等）
+  const seqUi = useMemo(() => {
+    const block = currentSubject ? subjectBlocks.find(b => b.subject === currentSubject) : null
+    const ci = seqIndex
+    const total = block ? block.count : seqQuestionIds.length
+    const offset = block ? block.start : 0
+    const relIndex = block ? ci - offset : ci
+    const ki = seqGetCurrentKpInfo()
+    const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim()
+    const ua = navigator.userAgent
+    const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:apple-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
+    let devName = ''
+    try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
+    const lastSync = seqLastSyncAt || [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
+    const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` })() : null
+    return { block, total, offset, relIndex, ki, qKp, devIcon, devName, syncStr }
+  }, [currentSubject, subjectBlocks, seqIndex, question, seqGetCurrentKpInfo, seqLastSyncAt, seqSessions, seqQuestionIds.length])
 
   const kpBySubjectRef = useRef(kpBySubject)
   kpBySubjectRef.current = kpBySubject
@@ -1660,6 +1696,80 @@ export function PracticeSession() {
             {t('practice.tryAgain')}
           </Button>
         </div>
+      ) : questionMode === 'sequential' && practiceUiVariant === 'new' && question && questionReady ? (
+        <SequentialPracticeNewUi
+          uiVariant={practiceUiVariant}
+          onUiVariantChange={setPracticeUiVariant}
+          subjectName={currentSubject}
+          relIndex={seqUi.relIndex}
+          total={seqUi.total}
+          accuracy={sessionAccuracy}
+          subjectBlocks={subjectBlocks}
+          currentSubject={currentSubject}
+          onSwitchSubject={switchToSubject}
+          kpInfo={seqUi.ki}
+          qKp={seqUi.qKp}
+          deviceIcon={seqUi.devIcon}
+          deviceName={seqUi.devName}
+          syncText={seqUi.syncStr}
+          syncStatus={seqSyncStatus}
+          kpSeekMode={kpSeekMode}
+          onToggleKpSeek={() => setKpSeekMode((v) => !v)}
+          onSeekKp={handleSeekKp}
+          distMode={distMode}
+          currentKpDist={currentKpDist}
+          isMobile={isMobile}
+          tocVisible={tocVisible}
+          onToggleToc={() => { if (isMobile) setTocOpen(true); else setTocVisible((v) => !v) }}
+          onOpenSessions={() => setDrawerOpen(true)}
+          question={question}
+          selectedAnswer={selectedAnswer}
+          isSubmitted={isSubmitted}
+          attemptCount={attemptCount}
+          wrongCount={wrongCount}
+          note={note}
+          isPublic={isPublic}
+          onNoteChange={setNote}
+          onPublicToggle={handlePublicToggle}
+          onSelect={handleSelect}
+          isFavorite={isFavorite}
+          onToggleFavorite={toggleFavorite}
+          onMarkTooEasy={handleMarkTooEasy}
+          onMarkUnsure={handleMarkUnsure}
+          onFlagIssue={() => setFlagDialogOpen(true)}
+          isAdmin={isAdmin}
+          onVerify={!question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined}
+          allowLocalJudge
+          practiceShortcuts={practiceShortcuts}
+          availableKpEntries={availableKpEntries}
+          onShowKpExplain={(e) => setKpExplainView({ subject: e.subject, kp: e.kp })}
+          justAnsweredId={justAnsweredId}
+          answeredThisSession={answeredSessionSnapshot}
+          onSkipToNextUnanswered={handleSkipToNextUnanswered}
+          hasPrev={hasPrev}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          onSubmit={handleSubmit}
+          kpNav={{
+            userId: profile?.id ?? '',
+            questionIds: seqQuestionIds,
+            questionKps: seqQuestionKps,
+            questionSubjects: seqQuestionSubjects,
+            currentIndex: seqIndex,
+            onJump: loadSequentialQuestion,
+            subjectResets: profile?.subject_reset_at ?? null,
+            planResetAt: profile?.plan_reset_at ?? null,
+            subject: currentSubject,
+            selectedKps: seqSelectedKps,
+            onExcludedRestored: handleKpsRestored,
+            answeredThisSession: answeredSessionSnapshot,
+            sessionDist: sessionDistSnapshot,
+            showDist: distMode,
+            onShowDistChange: setDistMode,
+            onCurrentKpDist: setCurrentKpDist,
+          }}
+          sessionProgress={sessionProgress}
+        />
       ) : (
         <div className="lg:flex lg:gap-4 lg:items-stretch">
           <div className="flex-1 min-w-0 space-y-4">
@@ -1689,6 +1799,25 @@ export function PracticeSession() {
                     }) : null
                   })()}
                   <div className="ml-auto flex items-center gap-1.5">
+                    {/* 新/旧 练习界面切换 — 位于拖动进度条按钮左侧 */}
+                    <div className="flex items-center rounded-md border p-0.5" title="切换新/旧练习界面">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className={cn('h-6 px-2 text-[11px]', practiceUiVariant === 'old' ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:bg-accent')}
+                        onClick={() => setPracticeUiVariant('old')}
+                      >
+                        旧
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className={cn('h-6 px-2 text-[11px]', practiceUiVariant === 'new' ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:bg-accent')}
+                        onClick={() => setPracticeUiVariant('new')}
+                      >
+                        新
+                      </Button>
+                    </div>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1712,22 +1841,7 @@ export function PracticeSession() {
                     </Button>
                   </div>
                 </div>
-              {(() => {
-                const block = currentSubject ? subjectBlocks.find(b => b.subject === currentSubject) : null
-                const ci = seqIndex
-                const total = block ? block.count : seqQuestionIds.length
-                const offset = block ? block.start : 0
-                const relIndex = block ? ci - offset : ci
-                const ki = seqGetCurrentKpInfo()
-                const qKp = question?.key_points?.split(/[,，;；]/)[0]?.trim()
-                const ua = navigator.userAgent
-                const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:apple-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
-                let devName = ''
-                try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
-                const lastSync = seqLastSyncAt || [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
-                const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` })() : null
-                return <SequentialProgressBar currentIndex={relIndex} total={total} kpCurrent={ki.kpCurrent || 0} kpTotal={ki.kpTotal || 0} kpName={ki.kpName || qKp || null} deviceIcon={devIcon} deviceName={devName} syncText={syncStr} syncStatus={seqSyncStatus} seekable={kpSeekMode} onSeekKp={handleSeekKp} distMode={distMode} dist={currentKpDist} done={sessionProgress.done} doneTotal={sessionProgress.total} />
-              })()}
+              <SequentialProgressBar currentIndex={seqUi.relIndex} total={seqUi.total} kpCurrent={seqUi.ki.kpCurrent || 0} kpTotal={seqUi.ki.kpTotal || 0} kpName={seqUi.ki.kpName || seqUi.qKp || null} deviceIcon={seqUi.devIcon} deviceName={seqUi.devName} syncText={seqUi.syncStr} syncStatus={seqSyncStatus} seekable={kpSeekMode} onSeekKp={handleSeekKp} distMode={distMode} dist={currentKpDist} done={sessionProgress.done} doneTotal={sessionProgress.total} />
             </div>
             </div>
           )}

@@ -24,6 +24,14 @@ const FONT_FAMILY_KEY = 'font_family'
 const FONT_SIZE_KEY = 'font_size'
 const FONT_WEIGHT_KEY = 'font_weight'
 const EXAM_VIEW_MODE_KEY = 'exam_view_mode'
+const PRACTICE_UI_VARIANT_KEY = 'practice_ui_variant'
+
+/** 练习界面的呈现模式: old=旧版布局 / new=参考图风格新布局 */
+export type PracticeUiVariant = 'old' | 'new'
+
+function loadPracticeUiVariant(): PracticeUiVariant {
+  return localStorage.getItem(PRACTICE_UI_VARIANT_KEY) === 'new' ? 'new' : 'old'
+}
 
 /** 考试界面的呈现模式: card=卡片模式 / sheet=卷面·单页摊开 / spread=卷面·双页摊开 */
 export type ExamViewMode = 'card' | 'sheet' | 'spread'
@@ -175,6 +183,7 @@ interface SettingsState {
   practiceShortcuts: ShortcutConfig
   defaultPage: string
   examViewMode: ExamViewMode
+  practiceUiVariant: PracticeUiVariant
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -189,6 +198,7 @@ interface SettingsState {
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   setDefaultPage: (page: string) => void
   setExamViewMode: (value: ExamViewMode) => void
+  setPracticeUiVariant: (value: PracticeUiVariant) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
@@ -220,6 +230,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   practiceShortcuts: loadPracticeShortcuts(),
   defaultPage: loadDefaultPage(),
   examViewMode: loadExamViewMode(),
+  practiceUiVariant: loadPracticeUiVariant(),
   setFlag: (key, value) => {
     set((s) => {
       const next = { ...s.flags, [key]: value }
@@ -288,6 +299,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setExamViewMode: (value) => {
     localStorage.setItem(EXAM_VIEW_MODE_KEY, value)
     set({ examViewMode: value })
+  },
+  setPracticeUiVariant: (value) => {
+    localStorage.setItem(PRACTICE_UI_VARIANT_KEY, value)
+    set({ practiceUiVariant: value })
   },
   isEnabled: (key) => get().flags[key],
 }))
