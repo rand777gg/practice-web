@@ -30,7 +30,8 @@ const PRACTICE_UI_VARIANT_KEY = 'practice_ui_variant'
 export type PracticeUiVariant = 'old' | 'new'
 
 function loadPracticeUiVariant(): PracticeUiVariant {
-  return localStorage.getItem(PRACTICE_UI_VARIANT_KEY) === 'new' ? 'new' : 'old'
+  // 新版练习界面暂未启用：先强制使用旧版，后续开放时再读取 localStorage 恢复记忆
+  return 'old'
 }
 
 /** 考试界面的呈现模式: card=卡片模式 / sheet=卷面·单页摊开 / spread=卷面·双页摊开 */
@@ -301,6 +302,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ examViewMode: value })
   },
   setPracticeUiVariant: (value) => {
+    // 新版练习界面暂未启用：忽略 'new'，保证只能使用旧版
+    if (value === 'new') return
     localStorage.setItem(PRACTICE_UI_VARIANT_KEY, value)
     set({ practiceUiVariant: value })
   },

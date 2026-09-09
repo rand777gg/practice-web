@@ -759,18 +759,20 @@ export function Component() {
         </div>
         <div className="flex items-center gap-1.5">
          {([
-          { value: 'old', label: '旧版布局' },
-          { value: 'new', label: '新版布局' },
-         ] as const).map(({ value, label }) => (
+          { value: 'old', label: '旧版布局', disabled: false },
+          { value: 'new', label: '新版布局', disabled: true },
+         ] as const).map(({ value, label, disabled }) => (
           <button
            key={value}
            type="button"
+           disabled={disabled}
            onClick={() => setPracticeUiVariant(value)}
            className={cn(
             'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs transition-colors',
             practiceUiVariant === value
              ? 'border-primary bg-accent text-accent-foreground'
              : 'text-muted-foreground hover:bg-accent',
+             disabled && 'cursor-not-allowed opacity-50 hover:bg-transparent',
            )}
           >
            {label}

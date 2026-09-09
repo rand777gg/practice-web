@@ -5,7 +5,6 @@ import { ExcludedQuestionsDialog } from '@/components/practice/ExcludedQuestions
 import { SubjectExplanationDialog } from '@/components/practice/SubjectExplanationDialog'
 import { useSubjectExplanations } from '@/hooks/use-subject-explanations'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Check } from 'lucide-react'
 
@@ -110,7 +109,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
   const correctRef = useRef<Map<string, boolean>>(new Map())
   const [excludedKp, setExcludedKp] = useState<string | null>(null)
   const [exclStats, setExclStats] = useState<Map<string, ExclStat>>(new Map())
-  const [showTooEasy, setShowTooEasy] = useState(true)
+  const [showTooEasy] = useState(true)
   const listRef = useRef<HTMLDivElement>(null)
   const { explanations } = useSubjectExplanations()
   const [viewSubject, setViewSubject] = useState<string | null>(null)
@@ -310,7 +309,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
           <Button
             variant="ghost"
             size="sm"
-            className={cn('h-6 px-2 text-xs', isDots && 'border')}
+            className="h-6 px-2 text-xs border"
             onClick={() => onShowDistChange(!showDist)}
             title={showDist ? '返回知识点进度' : '查看全部知识点作答分布'}
           >
@@ -319,19 +318,13 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
           <Button
             variant="ghost"
             size="sm"
-            className={cn('h-6 px-2 text-xs', isDots && 'border')}
+            className="h-6 px-2 text-xs border"
             disabled={!controlsSubject || !explanations.has(controlsSubject)}
             onClick={() => { if (controlsSubject) setViewSubject(controlsSubject) }}
             title={!controlsSubject || !explanations.has(controlsSubject) ? '该学科未设置编排说明' : `查看${controlsSubject}编排说明`}
           >
             查看编排说明
           </Button>
-          {!isDots && (
-            <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
-              显示太简单
-              <Switch checked={showTooEasy} onCheckedChange={setShowTooEasy} />
-            </label>
-          )}
         </div>
         {showDist && (
           <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] text-muted-foreground mb-2 shrink-0 animate-[page-enter_0.3s_ease-out_both]">

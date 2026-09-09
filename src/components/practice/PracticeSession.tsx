@@ -265,7 +265,7 @@ export function PracticeSession() {
   const [justAnsweredId, setJustAnsweredId] = useState<string | null>(null)
   const sessionDistRef = useRef<Map<string, SessionDistEntry>>(new Map())
   const [sessionDistSnapshot, setSessionDistSnapshot] = useState<Map<string, SessionDistEntry>>(new Map())
-  const [distMode, setDistMode] = useState(false)
+  const [distMode, setDistMode] = useState(true)
   const [kpSeekMode, setKpSeekMode] = useState(false)
   const [currentKpDist, setCurrentKpDist] = useState<GroupDist | null>(null)
 
