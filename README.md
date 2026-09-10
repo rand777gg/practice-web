@@ -28,7 +28,7 @@ A modern, AI-powered question practice platform built with React + Supabase. Mul
 - **Dual Study Plan** — long-term plan with deadline-based daily goals, custom daily targets with per-subject progress tracking
 - **Question Banks** — curated question collections with detail view and session picker, reusable across practice, exam and learning routes
 - **Sequential Practice** — subject-aware ordered question flow with cross-device progress sync and knowledge-point batched sessions
-- **Learning Routes** — admin-curated stage-by-stage question paths with pass statistics and an archify route map colored by progress
+- **Learning Routes** — admin-curated stage-by-stage question paths with pass statistics and a draw.io route map (editable in-page and persisted per route, with the progress-colored archify map kept behind a "developing" tab)
 - **Coding Judge** — LeetCode-style split-pane IDE with both platform-central and local Judge0 judging channels
 - **Exam Templates & Scheduling** — WYSIWYG paper composer, multi-view preview, scheduled delivery with Web Push / email reminders
 - **Study Rooms** — join by invite code, daily check-in, email reminders for check-ins and scheduled exams
@@ -106,7 +106,7 @@ Quick steps: VirtualBox Ubuntu 22.04 → NAT port forward (host 2358 → guest 2
 | Priority Modes | Mixed / new-first / wrong-first / sequential |
 | Multi-Filter | Subject, category, question type, knowledge point |
 | Sequential Mode | KP-batched subject blocks, directory navigation, exclude & restore questions, auto-saved progress with resume prompt, cross-device sync |
-| Learning Routes | Admin-curated staged paths, free practice + pass statistics, archify map colored by progress |
+| Learning Routes | Admin-curated staged paths, free practice + pass statistics, editable draw.io route map plus the archify progress map (developing) |
 | Subject Explanations | Admin-managed per-subject Markdown explanations shown during practice |
 | Swipe Navigation | Touch swipe to move between questions |
 | Shortcuts | Prev/next question, favorite, too-easy, flag issue, etc. via keyboard |
@@ -174,7 +174,7 @@ Quick steps: VirtualBox Ubuntu 22.04 → NAT port forward (host 2358 → guest 2
 - Coding: local-judge test page (direct Judge0 self-test)
 - AI Import: parse-history management, PDF/image scan into the bank
 - User Management: role toggle (admin/user), **delete account (cascades all related data)**, **email-confirmed status column**, online / last-online display
-- Learning Routes: stage editing, question mounting, publish control
+- Learning Routes: stage editing, question mounting, publish control, embedded draw.io map editing (regenerate from stages / persist / export .drawio)
 
 ### Account & Security
 
@@ -211,7 +211,7 @@ Quick steps: VirtualBox Ubuntu 22.04 → NAT port forward (host 2358 → guest 2
 | `/notes` | Public Notes | Authenticated |
 | `/question-bank` | Question Banks | Authenticated |
 | `/learning-routes` | Learning Routes | Authenticated |
-| `/learning-routes/:routeId` | Learning Route Detail (stages + archify map) | Authenticated |
+| `/learning-routes/:routeId` | Learning Route Detail (stages + draw.io / archify map) | Authenticated |
 | `/learning-routes/:routeId/practice` | Route Practice | Authenticated |
 | `/study-rooms` | Study Rooms | Authenticated |
 | `/settings` | Settings | Authenticated |

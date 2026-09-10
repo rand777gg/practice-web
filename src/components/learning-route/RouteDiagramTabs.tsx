@@ -160,7 +160,9 @@ export function RouteDiagramTabs({
         />
         {editable ? (
           <p className="mt-2 text-xs text-muted-foreground">
-            draw.io 内可用工具栏 Save 或 Ctrl+S 直接存到本路线；点「保存路线」也会一并提交画布内容。
+            {onSaveDiagram
+              ? 'draw.io 内可用工具栏 Save 或 Ctrl+S 直接存到本路线；点「保存路线」也会一并提交画布内容。'
+              : '路线还没保存过，画布内容会随「保存路线」一起提交。'}
           </p>
         ) : !diagramXml && stages.length > 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">

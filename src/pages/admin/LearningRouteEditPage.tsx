@@ -72,6 +72,7 @@ export function Component() {
   const [savingQids, setSavingQids] = useState<Set<string>>(new Set())
   const [showMap, setShowMap] = useState(Boolean(routeId))
   const [diagramXml, setDiagramXml] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
 
   const serverRef = useRef<Map<string, ServerItemRec[]>>(new Map())
   const localKeyRef = useRef(0)
@@ -275,6 +276,7 @@ export function Component() {
     }
     setSaving(true)
     setError('')
+    setNotice('')
     try {
       const working: LocalStage[] = stages.map((s) => ({ ...s, items: s.items.map((it) => ({ ...it })) }))
       const rid = await saveLearningRoute({
@@ -320,6 +322,9 @@ export function Component() {
 
       const drawn = await drawioRef.current?.exportXml()
       if (drawn) await saveRouteDiagram(rid, drawn)
+      else if (drawioRef.current?.isReady()) {
+        setNotice('路线已保存，但没能从 draw.io 取回画布内容，请点「保存图」重试。')
+      }
 
       if (routeId) {
         await loadRoute(routeId)
@@ -402,6 +407,12 @@ export function Component() {
       {error && (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {error}
+        </p>
+      )}
+
+      {notice && (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+          {notice}
         </p>
       )}
 

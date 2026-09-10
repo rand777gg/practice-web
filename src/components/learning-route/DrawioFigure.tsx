@@ -95,22 +95,26 @@ export const DrawioFigure = memo(
       return `${DRAWIO_EMBED_ORIGIN}/?${params.toString()}`
     }, [editable])
 
+    const requestExport = useCallback((format: string) => new Promise<string | null>((resolve) => {
+      const timer = window.setTimeout(() => {
+        exportResolveRef.current = null
+        resolve(null)
+      }, EXPORT_TIMEOUT_MS)
+      exportResolveRef.current = (value) => {
+        window.clearTimeout(timer)
+        exportResolveRef.current = null
+        resolve(value)
+      }
+      post({ action: 'export', format })
+    }), [post])
+
     useImperativeHandle(ref, () => ({
-      exportXml: () => {
-        if (!readyRef.current) return Promise.resolve(null)
-        return new Promise<string | null>((resolve) => {
-          const timer = window.setTimeout(() => {
-            exportResolveRef.current = null
-            resolve(null)
-          }, EXPORT_TIMEOUT_MS)
-          exportResolveRef.current = (value) => {
-            window.clearTimeout(timer)
-            exportResolveRef.current = null
-            resolve(value)
-          }
-          // xmlpng 的应答里带 xml 字段, 是 embed 协议下取回当前数据最稳的方式
-          post({ action: 'export', format: 'xmlpng' })
-        })
+      exportXml: async () => {
+        if (!readyRef.current) return null
+        // xmlpng/xmlsvg 的应答里带 xml 字段, 是 embed 协议下取回当前数据最稳的方式
+        const viaPng = await requestExport('xmlpng')
+        if (viaPng) return viaPng
+        return requestExport('xmlsvg')
       },
       isReady: () => readyRef.current,
       loadXml: (next: string) => {
@@ -119,7 +123,7 @@ export const DrawioFigure = memo(
         syncedRef.current = wrapped
         post({ action: 'load', xml: wrapped, autosave: 0 })
       },
-    }), [post])
+    }), [post, requestExport])
 
     useEffect(() => {
       const host = hostRef.current
