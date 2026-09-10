@@ -384,15 +384,22 @@
 
 .ai-badge {
   @apply relative inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
-  border: 1.5px solid;
-  animation: colorWheel 1.5s linear 1, geminiBorderGlow 1.5s ease-in-out 1;
   color: rgb(73, 20, 148);
-  transition: animation-play-state 0.2s;
 }
 
-.ai-badge:hover {
-  animation: colorWheel 3s linear infinite, geminiBorderGlow 3s ease-in-out infinite;
+/* 2px 实心内胆压出流光边框，中间不透明，文字不受边框颜色影响 */
+.ai-badge::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  background-color: hsl(var(--background));
+  background-image: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.12));
+}
+
+.ai-badge > * {
+  position: relative;
+  z-index: 1;
 }
 
 .ai-badge .gemini-star {
@@ -407,10 +414,6 @@
 
 .ai-badge .badge-text {
   animation: textSlideIn 1.5s ease 1;
-}
-
-.ai-badge:hover .badge-text {
-  animation: textSlideIn 3s ease 1, none;
 }
 
 .ai-badge-dark {
@@ -756,7 +759,7 @@ html.dark .cm-editor {
     #34d399,
     #22d3ee
   );
-  animation: ai-ring-spin 4s linear infinite;
+  animation: ai-ring-spin 2.5s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

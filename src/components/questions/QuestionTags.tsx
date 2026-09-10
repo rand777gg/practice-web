@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { QUESTION_TYPE_LABELS, TYPE_COLORS, POINT_COLORS } from '@/lib/constants'
+import { cn } from '@/lib/utils'
 import { Check, Sparkles } from 'lucide-react'
 import type { Question } from '@/types'
 import { useT } from '@/i18n/use-t'
@@ -13,7 +14,7 @@ function MultiYearBadge({ yearCats }: { yearCats: string[] }) {
     <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
       <HoverCardTrigger asChild>
         <span
-          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
+          className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 border border-amber-500/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 cursor-pointer select-none"
           onClick={() => setOpen(!open)}
         >
           {(t('questionTags.realYearTemplate') ?? '{n}年真题').replace('{n}', String(yearCats.length))}
@@ -36,7 +37,7 @@ function AiBadge() {
   return (
     <HoverCard openDelay={200} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <span className="ai-badge ai-badge-dark">
+        <span className="ai-ring ai-badge ai-badge-dark">
           <span className="gemini-star"><Sparkles className="w-full h-full" /></span>
           <span className="badge-text">{t('ai.generated') ?? 'AI生成'}</span>
         </span>
@@ -67,20 +68,20 @@ export function QuestionTags({ question, attemptCount, wrongCount }: {
   const otherCats = cats.filter((c) => !yearPattern.test(c))
   return (
     <>
-      <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>
+      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>
         {typeLabel}
       </span>
       {question.verified ? (
-        <span className="inline-flex items-center gap-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
+        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 text-xs">
           <Check className="h-3 w-3" />{t('questionTags.verified') ?? '已验证'}
         </span>
       ) : (
-        <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs">
           {t('questionTags.unverified') ?? '待验证'}
         </span>
       )}
       {question.subject && (
-        <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary">
+        <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
           {question.subject}
         </span>
       )}
@@ -88,16 +89,18 @@ export function QuestionTags({ question, attemptCount, wrongCount }: {
         <>
           <MultiYearBadge yearCats={yearCats} />
           {otherCats.map((cat) => (cat === 'AI生成' ? <AiBadge key="AI生成" /> : (
-            <span key={cat} className="inline-block rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
+            <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
           )))}
         </>
       ) : (
         cats.map((cat) => (cat === 'AI生成' ? <AiBadge key="AI生成" /> : (
-          <span key={cat} className="inline-block rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
+          <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
         )))
       )}
       {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
-        <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
+        <Badge key={i} variant="secondary" className={cn(POINT_COLORS[i % POINT_COLORS.length], 'rounded-full')}>
+          {kp.trim()}
+        </Badge>
       ))}
       {attemptCount != null && (
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">

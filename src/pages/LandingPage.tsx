@@ -321,9 +321,9 @@ export function LandingPage() {
                 <span className="relative inline-flex rounded-full">
                   <span
                     aria-hidden
-                    className="ai-ring pointer-events-none absolute -inset-1 rounded-full opacity-40 blur-[10px]"
+                    className="ai-ring pointer-events-none absolute -inset-[3px] rounded-full opacity-45 blur-[6px]"
                   />
-                  <span className="ai-ring relative inline-flex rounded-full p-[1.5px]">
+                  <span className="ai-ring relative inline-flex rounded-full p-[2px]">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1 text-xs font-normal">
                       <Sparkles className="h-3.5 w-3.5 text-primary" />
                       AI 驱动的全题型刷题平台
