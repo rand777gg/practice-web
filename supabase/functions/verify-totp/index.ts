@@ -93,9 +93,22 @@ serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders })
   }
 
+  // Parse the body before rate limiting so read-only `status` lookups stay exempt: every page
+  // load performs one, shared NATs would blow the per-IP budget, and a 429 here used to reach
+  // the client as "this account has no MFA".
+  let body: any = {}
+  try {
+    body = await req.json()
+  } catch {
+    return new Response(JSON.stringify({ error: "invalid body" }), {
+      status: 400,
+      headers: corsHeaders,
+    })
+  }
+
   const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     || req.headers.get("x-real-ip") || "unknown"
-  if (isRateLimited(clientIp)) {
+  if (body.action !== "status" && isRateLimited(clientIp)) {
     return new Response(JSON.stringify({ error: "Too many requests" }), {
       status: 429,
       headers: corsHeaders,
@@ -123,7 +136,7 @@ serve(async (req: Request) => {
     // Supabase JWT exposes the session id as "session_id" (not "sid")
     const payload = decodeJwtPayload(token)
     const sid = (payload.session_id || payload.sid) as string || ""
-    const { action, code, secret, currentCode, recoveryCode, remember, deviceToken, deviceName } = await req.json()
+    const { action, code, secret, currentCode, recoveryCode, remember, deviceToken, deviceName } = body
 
     if (!action) {
       return new Response(JSON.stringify({ error: "missing action" }), {
@@ -134,16 +147,34 @@ serve(async (req: Request) => {
 
     // --- STATUS: server-authoritative MFA gate decision (L1 session / device trust / available methods)
     if (action === "status") {
-      const [{ data: prof }, { count: passkeyCount }, { data: sess }, { data: totp }, { data: rc }, { data: dev }] = await Promise.all([
-        supabaseAdmin.from("profiles").select("mfa_grace_until, mfa_validity_days, onboarded_at, role").eq("id", userId).single(),
+      const [
+        { data: prof, error: profErr },
+        { count: passkeyCount, error: passkeyErr },
+        { data: sess, error: sessErr },
+        { data: totp, error: totpErr },
+        { data: rc, error: rcErr },
+        { data: dev, error: devErr },
+      ] = await Promise.all([
+        // maybeSingle: a missing profile row is a real answer (new user), a lookup error is not
+        supabaseAdmin.from("profiles").select("mfa_grace_until, mfa_validity_days, onboarded_at, role").eq("id", userId).maybeSingle(),
         supabaseAdmin.from("passkey_credentials").select("id", { count: "exact", head: true }).eq("user_id", userId),
         supabaseAdmin.from("user_mfa_sessions").select("method, expires_at").eq("session_id", sid).eq("user_id", userId).maybeSingle(),
         supabaseAdmin.from("user_totp").select("user_id").eq("user_id", userId).maybeSingle(),
         supabaseAdmin.from("user_recovery_codes").select("codes").eq("user_id", userId).maybeSingle(),
         deviceToken
           ? supabaseAdmin.from("user_trusted_devices").select("expires_at").eq("user_id", userId).eq("device_id", deviceToken).maybeSingle()
-          : Promise.resolve({ data: null }),
+          : Promise.resolve({ data: null, error: null }),
       ])
+
+      // Never answer a failed lookup with the all-false default: client-side that reads as
+      // "no MFA configured" and sends an enrolled account to /guide.
+      if (profErr || passkeyErr || sessErr || totpErr || rcErr || devErr) {
+        console.error("status lookup failed", profErr || passkeyErr || sessErr || totpErr || rcErr || devErr)
+        return new Response(JSON.stringify({ error: "status lookup failed" }), {
+          status: 500,
+          headers: corsHeaders,
+        })
+      }
 
       const now = Date.now()
       const sessionVerified = !!sess && new Date(sess.expires_at).getTime() > now

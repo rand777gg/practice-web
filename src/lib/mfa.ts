@@ -62,7 +62,14 @@ export async function getMfaStatus(): Promise<MfaStatus> {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ action: 'status', deviceToken: getDeviceToken() }),
   })
-  const data = await res.json()
+  // A failed lookup (401 once the session was revoked elsewhere, 429 from the function's rate
+  // limiter, 5xx) must never be read as "this account has no MFA". The all-false default made a
+  // signed-in user look like an un-onboarded new account and bounced them to /guide.
+  if (!res.ok) throw new Error(`mfa status failed: ${res.status}`)
+  const data = await res.json().catch(() => null)
+  if (!data || typeof data.needsMfa !== 'boolean' || typeof data.availableMethods !== 'object' || data.availableMethods === null) {
+    throw new Error('mfa status malformed')
+  }
   return {
     needsMfa: data.needsMfa === true,
     sessionVerified: data.sessionVerified === true,

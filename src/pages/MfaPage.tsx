@@ -80,6 +80,8 @@ export function Component() {
   }
 
   const handleLogout = async () => {
+    sessionStorage.removeItem('mfa_pending')
+    sessionStorage.removeItem('mfa_force_verify')
     await signOut()
     navigate('/', { replace: true })
   }

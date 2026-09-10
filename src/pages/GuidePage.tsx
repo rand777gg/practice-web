@@ -17,18 +17,24 @@ export function Component() {
 
   useEffect(() => {
     let cancelled = false
+    // Leaving /guide for the app ends the pending state: if the flag survived, RootGate would
+    // keep showing the login page for a signed-in session.
+    const leave = () => {
+      sessionStorage.removeItem('mfa_pending')
+      navigate('/', { replace: true })
+    }
     getMfaStatus()
       .then((st) => {
         if (cancelled) return
         const hasAnyMfa = st.availableMethods.passkey || st.availableMethods.totp
         // Allow re-entering /guide whenever no MFA is configured (incl. skipped onboarding)
         if (hasAnyMfa) {
-          navigate('/', { replace: true })
+          leave()
           return
         }
         setStatus(st)
       })
-      .catch(() => navigate('/', { replace: true }))
+      .catch(leave)
     return () => { cancelled = true }
   }, [navigate])
 

@@ -88,6 +88,8 @@ export function Component() {
  const [deleteOpen, setDeleteOpen] = useState(false)
  const [deleting, setDeleting] = useState(false)
  const [logoutOpen, setLogoutOpen] = useState(false)
+ const [logoutAllOpen, setLogoutAllOpen] = useState(false)
+ const [loggingOutAll, setLoggingOutAll] = useState(false)
  const [passkeySetupOpen, setPasskeySetupOpen] = useState(false)
  const [otpSetupOpen, setOtpSetupOpen] = useState(false)
  const [pickOpen, setPickOpen] = useState(false)
@@ -265,8 +267,9 @@ export function Component() {
        <CardTitle className="text-sm">{t('settings.account')}</CardTitle>
       </CardHeader>
       <CardContent>
-       <div className="flex items-center justify-between gap-3 mb-3">
+       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <p className="text-xs text-muted-foreground">{t('settings.accountDesc')}</p>
+        <div className="flex items-center gap-2 shrink-0">
         <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
          <AlertDialogTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 text-xs shrink-0">
@@ -292,6 +295,31 @@ export function Component() {
           </div>
          </AlertDialogContent>
         </AlertDialog>
+        <AlertDialog open={logoutAllOpen} onOpenChange={setLogoutAllOpen}>
+         <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm" className="h-8 text-xs shrink-0">
+           <LogOut className="h-3.5 w-3.5" />
+           {t('auth.logoutAll')}
+          </Button>
+         </AlertDialogTrigger>
+         <AlertDialogContent>
+          <AlertDialogTitle>{t('auth.logoutAll')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('auth.logoutAllDesc')}</AlertDialogDescription>
+          <div className="flex gap-3 mt-4 justify-end">
+           <AlertDialogCancel asChild>
+            <Button variant="outline" size="sm" disabled={loggingOutAll}>取消</Button>
+           </AlertDialogCancel>
+           <Button variant="default" size="sm" disabled={loggingOutAll} onClick={async () => {
+            setLoggingOutAll(true)
+            await signOut('global')
+            navigate('/farewell', { replace: true })
+           }}>
+            {t('auth.logoutAll')}
+           </Button>
+          </div>
+         </AlertDialogContent>
+        </AlertDialog>
+        </div>
        </div>
        <table className="w-full text-sm">
         <tbody>

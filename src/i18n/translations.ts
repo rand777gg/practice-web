@@ -36,6 +36,8 @@ export const zh = {
     noAccount: '还没有账号？',
     hasAccount: '已有账号？',
     logout: '退出',
+    logoutAll: '退出所有设备',
+    logoutAllDesc: '将退出该账号在所有设备、浏览器上的登录（包括手机和其他部署环境）。确定继续吗？',
     checkEmail: '注册成功！请查收来自 register@mail.pguide.dev 的验证邮件，点击链接完成注册。若无此邮件，请检查垃圾箱。',
     welcome: {
       title: '欢迎来到刷题网！',
@@ -139,6 +141,9 @@ export const zh = {
 
     mfaTitle: '多因素认证',
     mfaDeviceRevoked: '设备信任已撤销，请重新验证以继续使用。',
+    mfaGateErrorTitle: '安全状态校验失败',
+    mfaGateErrorDesc: '暂时无法确认当前账号的二次验证状态。为避免跳过验证，已暂停进入应用，请检查网络后重试。',
+    mfaGateRetry: '重试',
     mfaAuthenticatePasskey: '使用你的 Passkey 验证',
     mfaAuthenticateTotp: '输入认证器 App 中的 6 位验证码',
     mfaMoreOptions: '更多选项',
@@ -1162,6 +1167,8 @@ export const en = {
     noAccount: "Don't have an account?",
     hasAccount: 'Already have an account?',
     logout: 'Logout',
+    logoutAll: 'Log out everywhere',
+    logoutAllDesc: 'This signs the account out of every device and browser, including your phone and other deployments. Continue?',
     checkEmail: 'Registration successful! Please check your email from register@mail.pguide.dev and click the confirmation link. Check your spam folder if not found.',
     welcome: {
       title: 'Welcome to Practice Web!',
@@ -1266,6 +1273,9 @@ export const en = {
 
     mfaTitle: 'Multi-factor authentication',
     mfaDeviceRevoked: 'Device trust revoked. Please verify again to continue.',
+    mfaGateErrorTitle: 'Security check failed',
+    mfaGateErrorDesc: 'Could not confirm this account\'s two-factor status. To avoid skipping verification, access is paused — check your network and retry.',
+    mfaGateRetry: 'Retry',
     mfaAuthenticatePasskey: 'Authenticate using your passkey',
     mfaAuthenticateTotp: 'Enter the 6-digit code from your authenticator app',
     mfaMoreOptions: 'More Options',

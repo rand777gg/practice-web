@@ -13,7 +13,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void
   setInitialized: (initialized: boolean) => void
   refreshProfile: () => Promise<void>
-  signOut: () => Promise<void>
+  signOut: (scope?: 'local' | 'global') => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -35,8 +35,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .single()
     if (data) set({ profile: data as Profile })
   },
-  signOut: async () => {
-    await supabase.auth.signOut()
+  signOut: async (scope = 'local') => {
+    // Default scope is 'local' on purpose: supabase-js defaults to 'global', which revokes every
+    // session of the account — other devices, other browsers and any other deployment sharing
+    // this Supabase project. Settings offers 'global' explicitly as "log out everywhere".
+    await supabase.auth.signOut({ scope })
     set({ user: null, profile: null })
   },
 }))

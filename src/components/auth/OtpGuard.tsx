@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
-import { getMfaStatus, getDeviceTokenSync, type MfaStatus } from '@/lib/mfa'
+import { getMfaStatus, getDeviceTokenSync } from '@/lib/mfa'
 import { supabase } from '@/lib/supabase'
 import { useT } from '@/i18n/use-t'
 import { Button } from '@/components/ui/button'
-import { ShieldCheck, X } from 'lucide-react'
+import { ShieldAlert, ShieldCheck, X } from 'lucide-react'
 
 interface Props {
   children: ReactNode
@@ -47,11 +47,36 @@ function MfaReminder({ onGo, onDismiss }: { onGo: () => void; onDismiss: () => v
   )
 }
 
+const GATE_ATTEMPTS = 3
+const GATE_RETRY_MS = 1500
+
+function MfaGateBlocked({ onRetry, onLogout, busy }: { onRetry: () => void; onLogout: () => void; busy: boolean }) {
+  const { t } = useT()
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm space-y-3 rounded-xl border bg-card p-5 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+          <ShieldAlert className="h-6 w-6 text-destructive" />
+        </div>
+        <h1 className="text-base font-semibold">{t('auth.mfaGateErrorTitle')}</h1>
+        <p className="text-xs leading-relaxed text-muted-foreground">{t('auth.mfaGateErrorDesc')}</p>
+        <div className="flex justify-center gap-2 pt-1">
+          <Button size="sm" onClick={onRetry} disabled={busy}>{t('auth.mfaGateRetry')}</Button>
+          <Button size="sm" variant="outline" onClick={onLogout} disabled={busy}>{t('auth.logout')}</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function OtpGuard({ children }: Props) {
-  const { user, isInitialized, refreshProfile } = useAuthStore()
+  const { user, isInitialized, refreshProfile, signOut } = useAuthStore()
   const navigate = useNavigate()
   const [showReminder, setShowReminder] = useState(false)
   const [otpCleared, setOtpCleared] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [gateError, setGateError] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   // No checkedRef dedup here: under React StrictMode (dev) the effect is
   // setup→cleanup→setup, so a ref set on the first run would cancel the
@@ -61,6 +86,7 @@ export function OtpGuard({ children }: Props) {
     if (!user || !isInitialized) return
 
     let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
     async function run() {
       // The login form is handling MFA / onboarding — skip the dialog
@@ -68,13 +94,20 @@ export function OtpGuard({ children }: Props) {
       await refreshProfile()
       if (cancelled) return
 
-      let status: MfaStatus | null = null
-      try {
-        status = await getMfaStatus()
-      } catch {
-        status = null
+      const status = await getMfaStatus().catch(() => null)
+      if (cancelled) return
+
+      // An unknown gate state must never silently drop the 2FA requirement (and must never be
+      // read as "no MFA configured"): retry, then block behind an explicit retry/logout screen.
+      if (!status) {
+        if (attempt < GATE_ATTEMPTS - 1) {
+          retryTimer = setTimeout(() => { if (!cancelled) setAttempt((a) => a + 1) }, GATE_RETRY_MS)
+        } else {
+          setGateError(true)
+        }
+        return
       }
-      if (cancelled || !status) return
+      setGateError(false)
 
       // No MFA method configured yet
       const hasAnyMfa = status.availableMethods.passkey || status.availableMethods.totp
@@ -102,8 +135,11 @@ export function OtpGuard({ children }: Props) {
     }
 
     run()
-    return () => { cancelled = true }
-  }, [user, isInitialized, refreshProfile, navigate])
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [user, isInitialized, refreshProfile, navigate, attempt])
 
   // Realtime: when this device's trust row is deleted elsewhere → force re-verification immediately
   useEffect(() => {
@@ -141,7 +177,22 @@ export function OtpGuard({ children }: Props) {
     setShowReminder(false)
   }, [])
 
+  const handleGateRetry = useCallback(() => {
+    setGateError(false)
+    setAttempt(0)
+  }, [])
+
+  const handleGateLogout = useCallback(async () => {
+    setLoggingOut(true)
+    await signOut()
+    navigate('/', { replace: true })
+  }, [signOut, navigate])
+
   if (!user || !isInitialized) return <>{children}</>
+
+  if (gateError) {
+    return <MfaGateBlocked onRetry={handleGateRetry} onLogout={handleGateLogout} busy={loggingOut} />
+  }
 
   return (
     <>

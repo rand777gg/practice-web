@@ -63,8 +63,9 @@ export function Component() {
 
         <h2 className="text-lg font-semibold mt-6">7. Cookie 与本地存储</h2>
         <ul className="list-disc pl-5 space-y-1">
-          <li>Supabase Auth 的登录会话 Cookie（必要，维持登录状态）</li>
+          <li>Supabase Auth 的登录会话（浏览器 localStorage 存储，键名前缀 sb-，维持登录状态，不上传第三方）</li>
           <li>设备信任令牌、界面主题语言偏好（localStorage 存储，不上传）</li>
+          <li>侧边栏折叠状态（Cookie，仅记录界面状态，不含任何账号信息）</li>
           <li>不包含任何第三方跟踪 Cookie 或广告标识符</li>
         </ul>
       </div>
