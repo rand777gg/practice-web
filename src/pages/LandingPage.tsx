@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PixelGridBackground } from '@/components/ui/pixel-grid-background'
 import { BrandLogo } from '@/components/layout/BrandLogo'
 import { LoginForm } from '@/components/login-form'
 import { RegisterForm } from '@/components/register-form'
@@ -280,6 +281,7 @@ export function LandingPage() {
 
       <main className="flex-1">
         <section className="relative overflow-hidden">
+          <PixelGridBackground variant="interactive" className="absolute inset-0 z-0" />
           <div
             aria-hidden
             ref={heroBgRef}
@@ -289,7 +291,7 @@ export function LandingPage() {
             <div className="animate-aurora absolute -left-16 top-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
             <div className="animate-aurora-slow absolute right-0 top-10 h-80 w-80 rounded-full bg-violet-500/10 blur-3xl" />
           </div>
-          <div className={cn(containerCls, 'grid items-center gap-12 pb-20 pt-16 sm:pb-24 sm:pt-20 lg:grid-cols-2 lg:gap-16')}>
+          <div className={cn(containerCls, 'relative z-10 grid items-center gap-12 pb-20 pt-16 sm:pb-24 sm:pt-20 lg:grid-cols-2 lg:gap-16')}>
             {authView === 'hero' ? (
               <div className="space-y-7 text-left">
                 <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1 text-xs font-normal">
