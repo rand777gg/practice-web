@@ -10,6 +10,7 @@ import {
   reorderRouteStages,
   removeRouteQuestion,
   saveLearningRoute,
+  saveRouteDiagram,
   updateRouteStage,
 } from '@/hooks/use-learning-routes'
 import type { LearningRoute } from '@/types/learning-routes'
@@ -22,7 +23,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QuestionPicker } from '@/components/question-bank/QuestionPicker'
-import { RouteMapFigure } from '@/components/learning-route/RouteMapFigure'
+import { RouteDiagramTabs } from '@/components/learning-route/RouteDiagramTabs'
+import type { DrawioFigureHandle } from '@/components/learning-route/DrawioFigure'
 import { ArrowDown, ArrowLeft, ArrowUp, Map as MapIcon, Plus, Save, Trash2 } from 'lucide-react'
 
 interface LocalQuestionItem {
@@ -68,10 +70,12 @@ export function Component() {
   const [stages, setStages] = useState<LocalStage[]>([])
   const [pickerStage, setPickerStage] = useState<number | null>(null)
   const [savingQids, setSavingQids] = useState<Set<string>>(new Set())
-  const [showPreview, setShowPreview] = useState(false)
+  const [showMap, setShowMap] = useState(Boolean(routeId))
+  const [diagramXml, setDiagramXml] = useState<string | null>(null)
 
   const serverRef = useRef<Map<string, ServerItemRec[]>>(new Map())
   const localKeyRef = useRef(0)
+  const drawioRef = useRef<DrawioFigureHandle | null>(null)
 
   const loadRoute = useCallback(async (rid: string) => {
     setLoading(true)
@@ -119,6 +123,7 @@ export function Component() {
       }
 
       serverRef.current = map
+      setDiagramXml(route.diagram_xml ?? null)
       setMeta({
         title: route.title,
         description: route.description,
@@ -153,6 +158,7 @@ export function Component() {
     if (!routeId) {
       setMeta({ title: '', description: '', is_published: false, route_order: 0 })
       setStages([])
+      setDiagramXml(null)
       setNotFound(false)
       setLoading(false)
       return
@@ -312,9 +318,11 @@ export function Component() {
         if (!working.some((s) => s.id === stageId)) await deleteRouteStage(stageId)
       }
 
+      const drawn = await drawioRef.current?.exportXml()
+      if (drawn) await saveRouteDiagram(rid, drawn)
+
       if (routeId) {
         await loadRoute(routeId)
-        setShowPreview(false)
       } else {
         navigate(`/admin/learning-routes/${rid}/edit`)
       }
@@ -384,9 +392,9 @@ export function Component() {
           {meta.is_published ? '已发布' : '草稿'}
         </Button>
         {stages.length > 0 && (
-          <Button variant="outline" size="sm" onClick={() => setShowPreview((v) => !v)}>
+          <Button variant="outline" size="sm" onClick={() => setShowMap((v) => !v)}>
             <MapIcon className="mr-1 h-3.5 w-3.5" />
-            {showPreview ? '收起预览' : '预览路线图'}
+            {showMap ? '收起路线图' : '路线图'}
           </Button>
         )}
       </div>
@@ -397,15 +405,18 @@ export function Component() {
         </p>
       )}
 
-      {showPreview && (
-        <RouteMapFigure
+      {showMap && stages.length > 0 && (
+        <RouteDiagramTabs
           title={meta.title || '路线图预览'}
           stages={stages.map((s, i) => ({
             id: s.id ?? `preview-${i}`,
             label: s.title || `阶段${i + 1}`,
             sublabel: `${s.items.length} 题`,
           }))}
-          state={undefined}
+          diagramXml={diagramXml}
+          editable
+          editorRef={drawioRef}
+          onSaveDiagram={routeId ? (xml) => saveRouteDiagram(routeId, xml) : undefined}
           height={560}
         />
       )}

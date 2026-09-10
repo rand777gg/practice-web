@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { RouteMapFigure, type RouteMapStageNode } from '@/components/learning-route/RouteMapFigure'
+import { RouteDiagramTabs } from '@/components/learning-route/RouteDiagramTabs'
+import type { RouteMapStageNode } from '@/components/learning-route/RouteMapFigure'
 import { useLearningRouteDetail } from '@/hooks/use-learning-routes'
 import { useAuthStore } from '@/stores/auth-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
@@ -105,10 +106,11 @@ export function Component() {
       </Card>
 
       {stages.length > 0 && (
-        <RouteMapFigure
+        <RouteDiagramTabs
           title={route.title || '学习路线'}
           stages={stageNodes}
           state={stageState}
+          diagramXml={route.diagram_xml}
           height={Math.min(900, 420 + stages.length * 46)}
         />
       )}

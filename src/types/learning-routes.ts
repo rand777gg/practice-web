@@ -7,6 +7,8 @@ export interface LearningRoute {
   description: string
   is_published: boolean
   route_order: number
+  /** 管理员用内嵌 draw.io 画好的路线图(mxGraph XML); 空则由客户端按阶段生成示意图 */
+  diagram_xml: string | null
   created_by: string | null
   created_at: string
   updated_at: string

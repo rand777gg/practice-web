@@ -736,6 +736,30 @@ html.dark .cm-editor {
 .animate-aurora { animation: aurora-drift 18s ease-in-out infinite; }
 .animate-aurora-slow { animation: aurora-drift 26s ease-in-out infinite reverse; }
 
+/* 落地页：AI 徽标流光彩色循环边框 */
+@property --ai-ring-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes ai-ring-spin {
+  to { --ai-ring-angle: 360deg; }
+}
+.ai-ring {
+  background: conic-gradient(
+    from var(--ai-ring-angle, 0deg),
+    #22d3ee,
+    #6366f1,
+    #a855f7,
+    #ec4899,
+    #f59e0b,
+    #34d399,
+    #22d3ee
+  );
+  animation: ai-ring-spin 4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-float, .animate-aurora, .animate-aurora-slow { animation: none; }
+  .ai-ring { animation: none; }
 }

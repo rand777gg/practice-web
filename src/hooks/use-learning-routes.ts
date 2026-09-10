@@ -255,6 +255,15 @@ export async function deleteLearningRoute(routeId: string) {
   if (error) throw error
 }
 
+/** 单独写路线的 draw.io 图: 编辑器内保存 / 保存路线时都会走这里 */
+export async function saveRouteDiagram(routeId: string, diagramXml: string | null) {
+  const { error } = await supabase
+    .from('learning_routes')
+    .update({ diagram_xml: diagramXml, updated_at: new Date().toISOString() })
+    .eq('id', routeId)
+  if (error) throw error
+}
+
 export async function fetchRouteStages(routeId: string): Promise<RouteStageWithQuestions[]> {
   const { data: stageRows } = await supabase.from('learning_route_stages').select('*').eq('route_id', routeId)
   const stages = sortByPosition((stageRows ?? []) as RouteStage[])
