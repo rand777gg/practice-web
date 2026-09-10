@@ -33,7 +33,7 @@ import { QuestionImportDialog } from '@/components/questions/QuestionImportDialo
 import { SubjectExplanationManagerDialog } from '@/components/practice/SubjectExplanationManagerDialog'
 import { KpExplanationManagerDialog } from '@/components/practice/KpExplanationManagerDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen, GitMerge, GraduationCap } from 'lucide-react'
+import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen, GitMerge, GraduationCap, Bot } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
 
 export function Component() {
@@ -302,6 +302,7 @@ export function Component() {
             { icon: FlaskConical, label: '测试题目', to: '/admin/questions/test', variant: 'outline' as const },
             { icon: BookOpen, label: '编排说明', action: () => setExplainOpen(true), variant: 'outline' as const },
             { icon: GraduationCap, label: '知识点解读', action: () => setKpExplainOpen(true), variant: 'outline' as const },
+            { icon: Bot, label: '分布式采集', to: '/admin/crawler', variant: 'outline' as const },
             { icon: Upload, label: t('questions.import'), action: () => setShowImport(true), variant: 'outline' as const },
             { icon: Plus, label: t('questions.addQuestion'), to: '/admin/questions/new', variant: 'default' as const },
           ]).map((btn, i) => {

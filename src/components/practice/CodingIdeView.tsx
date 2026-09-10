@@ -308,7 +308,7 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
       return (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
-            <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} />
+            <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} collapseAiTags />
           </div>
           <div className="border-t border-border/60" />
           <MarkdownRenderer content={question.question_text} />

@@ -50,6 +50,11 @@ stats.html
 .workbuddy
 .tmp-chrome
 
+# AI image generation output and the iki (live2d) character workdir
+vibe_images/
+iki-char/
+tmp-ssr.mjs
+
 # Agents
 
 agents.md

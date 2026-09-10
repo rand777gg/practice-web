@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
@@ -217,6 +217,7 @@ export function ExamSession() {
   } = useExamStore()
 
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [hasStarted, setHasStarted] = useState(false)
   const [showStart, setShowStart] = useState(true)
@@ -243,7 +244,16 @@ export function ExamSession() {
   const [paperMode, setPaperMode] = useState(() => useSettingsStore.getState().examViewMode !== 'card')
   const [sheetOpen, setSheetOpen] = useState(true)          // 桌面答题卡展开/收起
   const [paperLayout, setPaperLayout] = useState<'sheet' | 'spread'>(() => (useSettingsStore.getState().examViewMode === 'spread' ? 'spread' : 'sheet'))
-  const [tab, setTab] = useState<'settings' | 'appointment' | 'history' | 'export'>('settings')
+  // 考试模式二级子菜单: 由 URL 路径决定当前 tab, 侧边栏子项通过路由导航切换
+  const tab: 'settings' | 'appointment' | 'history' | 'export' =
+    location.pathname === '/exam/appointment' ? 'appointment'
+      : location.pathname === '/exam/history' ? 'history'
+        : location.pathname === '/exam/export' ? 'export'
+          : 'settings'
+  const navigateTab = (value: string) => {
+    const path = value === 'settings' ? '/exam' : `/exam/${value}`
+    if (location.pathname !== path) navigate(path)
+  }
   const [paperNotice, setPaperNotice] = useState('')
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -526,7 +536,7 @@ export function ExamSession() {
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'settings' | 'appointment' | 'history' | 'export')}>
+        <Tabs value={tab} onValueChange={navigateTab}>
           <TabsList>
             <TabsTrigger value="settings">{t('exam.tabSetup')}</TabsTrigger>
             <TabsTrigger value="appointment">{t('exam.tabAppoint')}</TabsTrigger>

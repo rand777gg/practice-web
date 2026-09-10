@@ -389,6 +389,8 @@ export interface AiProviderConfig {
   name: string
   description: string
   type: 'official' | 'community'
+  /** 接口协议：openai = /chat/completions + Bearer；anthropic = /v1/messages + x-api-key */
+  protocol: 'openai' | 'anthropic'
   enabled: boolean
   apiKey: string
   baseUrl: string

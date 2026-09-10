@@ -1,4 +1,10 @@
 import { create } from 'zustand'
+import {
+  DEFAULT_SIDEBAR_ORDER,
+  normalizeSidebarOrder,
+  type SidebarGroup,
+  type SidebarOrder,
+} from '@/lib/nav-order'
 
 export interface AiFeatureFlags {
   exam: boolean        // AI 智能出题
@@ -26,6 +32,7 @@ const FONT_SIZE_KEY = 'font_size'
 const FONT_WEIGHT_KEY = 'font_weight'
 const EXAM_VIEW_MODE_KEY = 'exam_view_mode'
 const PRACTICE_UI_VARIANT_KEY = 'practice_ui_variant'
+const SIDEBAR_ORDER_KEY = 'sidebar_order'
 
 /** 练习界面的呈现模式: old=旧版布局 / new=参考图风格新布局 */
 export type PracticeUiVariant = 'old' | 'new'
@@ -188,6 +195,14 @@ export const BOTTOM_NAV_HIDE_DELAY_MIN = 1
 export const BOTTOM_NAV_HIDE_DELAY_MAX = 5
 export const BOTTOM_NAV_HIDE_DELAY_DEFAULT = 3
 
+function loadSidebarOrder(): SidebarOrder {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_ORDER_KEY)
+    if (raw) return normalizeSidebarOrder(JSON.parse(raw))
+  } catch { /* ignore */ }
+  return { ...DEFAULT_SIDEBAR_ORDER }
+}
+
 function loadBottomNavHideDelay(): number {
   const v = Number(localStorage.getItem(BOTTOM_NAV_HIDE_DELAY_KEY))
   if (Number.isFinite(v) && v >= BOTTOM_NAV_HIDE_DELAY_MIN && v <= BOTTOM_NAV_HIDE_DELAY_MAX) return Math.round(v)
@@ -212,6 +227,7 @@ interface SettingsState {
   defaultPage: string
   examViewMode: ExamViewMode
   practiceUiVariant: PracticeUiVariant
+  sidebarOrder: SidebarOrder
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
   setEyeCare: (value: string) => void
@@ -226,6 +242,8 @@ interface SettingsState {
   setHeaderActions: (actions: HeaderActionKey[]) => void
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   setDefaultPage: (page: string) => void
+  setSidebarOrder: (group: SidebarGroup, ids: string[]) => void
+  resetSidebarOrder: () => void
   setExamViewMode: (value: ExamViewMode) => void
   setPracticeUiVariant: (value: PracticeUiVariant) => void
   isEnabled: (key: keyof AiFeatureFlags) => boolean
@@ -259,6 +277,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   headerActions: loadHeaderActions(),
   practiceShortcuts: loadPracticeShortcuts(),
   defaultPage: loadDefaultPage(),
+  sidebarOrder: loadSidebarOrder(),
   examViewMode: loadExamViewMode(),
   practiceUiVariant: loadPracticeUiVariant(),
   setFlag: (key, value) => {
@@ -329,6 +348,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setDefaultPage: (page) => {
     localStorage.setItem(DEFAULT_PAGE_KEY, page)
     set({ defaultPage: page })
+  },
+  setSidebarOrder: (group, ids) => {
+    set((s) => {
+      const next: SidebarOrder = { ...s.sidebarOrder, [group]: ids }
+      localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(next))
+      return { sidebarOrder: next }
+    })
+  },
+  resetSidebarOrder: () => {
+    localStorage.removeItem(SIDEBAR_ORDER_KEY)
+    set({ sidebarOrder: { ...DEFAULT_SIDEBAR_ORDER } })
   },
   setExamViewMode: (value) => {
     localStorage.setItem(EXAM_VIEW_MODE_KEY, value)

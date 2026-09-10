@@ -63,6 +63,18 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/ExamPage'),
               },
               {
+                path: 'exam/appointment',
+                lazy: () => import('@/pages/ExamPage'),
+              },
+              {
+                path: 'exam/history',
+                lazy: () => import('@/pages/ExamPage'),
+              },
+              {
+                path: 'exam/export',
+                lazy: () => import('@/pages/ExamPage'),
+              },
+              {
                 path: 'exam/templates',
                 lazy: () => import('@/pages/ExamTemplatesPage'),
               },
@@ -101,6 +113,78 @@ export const router = createBrowserRouter([
               {
                 path: 'study-rooms',
                 lazy: () => import('@/pages/StudyRoomsPage'),
+              },
+              {
+                path: 'topics',
+                lazy: () => import('@/pages/TopicsOverviewPage'),
+              },
+              {
+                path: 'topics/ranking',
+                lazy: () => import('@/pages/TopicsOverviewPage'),
+              },
+              {
+                path: 'topics/:topicId',
+                lazy: () => import('@/pages/TopicDetailPage'),
+              },
+              {
+                path: 'topics/:topicId/question-bank',
+                lazy: () => import('@/pages/TopicDetailPage'),
+              },
+              {
+                path: 'topics/:topicId/literature',
+                lazy: () => import('@/pages/TopicDetailPage'),
+              },
+              {
+                path: 'topics/:topicId/legacy',
+                lazy: () => import('@/pages/TopicDetailPage'),
+              },
+              {
+                path: 'arena',
+                lazy: () => import('@/pages/ArenaPage'),
+              },
+              {
+                path: 'achievements',
+                lazy: () => import('@/pages/AchievementsPage'),
+              },
+              {
+                path: 'mentors',
+                lazy: () => import('@/pages/MentorsPage'),
+              },
+              {
+                path: 'export',
+                lazy: () => import('@/pages/ExportPage'),
+              },
+              {
+                path: 'export/templates',
+                lazy: () => import('@/pages/ExportTemplatesPage'),
+              },
+              {
+                path: 'my-bank',
+                lazy: () => import('@/pages/MyQuestionBankPage'),
+              },
+              {
+                path: 'templates',
+                lazy: () => import('@/pages/TemplatesPage'),
+              },
+              {
+                path: 'templates/:tab',
+                lazy: () => import('@/pages/TemplatesPage'),
+              },
+              {
+                path: 'assistant',
+                lazy: () => import('@/pages/AssistantPage'),
+              },
+              {
+                path: 'ai',
+                lazy: () => import('@/pages/AiSettingsPage'),
+              },
+              {
+                path: 'data-center',
+                lazy: () => import('@/pages/DataCenterPage'),
+              },
+              {
+                path: 'feedback',
+                lazy: () => import('@/pages/FeedbackPage'),
               },
               {
                 path: 'settings',
@@ -143,8 +227,21 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/pages/admin/UsersManagePage'),
                   },
                   {
+                    // 旧路径保留，管理员与普通用户共用同一个 AI 设置页
                     path: 'ai',
-                    lazy: () => import('@/pages/admin/AiManagePage'),
+                    lazy: () => import('@/pages/AiSettingsPage'),
+                  },
+                  {
+                    path: 'crawler',
+                    lazy: () => import('@/pages/admin/CrawlerPage'),
+                  },
+                  {
+                    path: 'organize-exam',
+                    lazy: () => import('@/pages/admin/OrganizeExamPage'),
+                  },
+                  {
+                    path: 'data-center',
+                    lazy: () => import('@/pages/DataCenterPage'),
                   },
                   {
                     path: 'learning-routes',

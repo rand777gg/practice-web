@@ -6,7 +6,7 @@
  * - 右侧 Tabs 保留结构化表单 (设置 / 封面 / 排版), 与画布同一份草稿, 双向联动。
  */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowLeft, ChevronDown, Copy, GripVertical, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Copy, GripVertical, Layers, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'

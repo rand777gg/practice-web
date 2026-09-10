@@ -30,6 +30,7 @@ import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
 import { AboutProjectCard } from '@/components/settings/AboutProjectCard'
+import { SidebarOrderSettings } from '@/components/settings/SidebarOrderSettings'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
 import { OtpSetupDialog } from '@/components/auth/OtpSetupDialog'
@@ -867,6 +868,14 @@ export function Component() {
           </DropdownMenuContent>
          </DropdownMenu>
         </div>
+       </div>
+
+       {/* Sidebar order */}
+       <div className="border-t pt-4" />
+       <div>
+        <p className="text-sm mb-1">{t('settings.sidebarOrder')}</p>
+        <p className="text-xs text-muted-foreground mb-3">{t('settings.sidebarOrderDesc')}</p>
+        <SidebarOrderSettings />
        </div>
       </CardContent>
      </Card>

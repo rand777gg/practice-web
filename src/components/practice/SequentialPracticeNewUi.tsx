@@ -192,6 +192,7 @@ export function SequentialPracticeNewUi(props: Props) {
         disabled={isSubmitted}
         showEditLink={isAdmin}
         allowLocalJudge={allowLocalJudge}
+        collapseAiTags
         attemptCount={attemptCount}
         wrongCount={wrongCount}
         note={note}

@@ -209,10 +209,12 @@ interface Props {
   flagIssueKbd?: string
   /** 练习模式下是否允许使用本地自部署 Judge0 自测(考试/结果回顾一律 false) */
   allowLocalJudge?: boolean
+  /** 练习 / 考试场景下把 AI 生成的知识点折叠为悬停展开 */
+  collapseAiTags?: boolean
 
 }
 
-export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd, allowLocalJudge }: Props) {
+export const QuestionCard = memo(function QuestionCard({ question, selectedAnswer, showResult, onSelect, disabled, showEditLink, attemptCount, wrongCount, note, isFavorited, onToggleFavorite, onMarkTooEasy, onMarkUnsure, onVerify, onFlagIssue, unsureKbd, favoriteKbd, tooEasyKbd, flagIssueKbd, allowLocalJudge, collapseAiTags }: Props) {
   const { t } = useT()
   const [visible, setVisible] = useState(false)
   // 底部操作按钮(收藏/太简单/不确定/标记问题): <sm 折叠成纯图标,点击后展开图标+文字; ≥sm 恒展开。与题目管理顶部按钮同款动画。
@@ -334,7 +336,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
       {/* 标签行:练习模式 IDE 下移入 CodingIdeView 描述页内,其余题型/场景保留在题干下方 */}
       {!(isCoding && judgePanelOn) && (
         <div className={cn('flex flex-wrap gap-1.5', row(200).className)} style={row(200).style}>
-          <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} />
+          <QuestionTags question={question} attemptCount={attemptCount} wrongCount={wrongCount} collapseAiTags={collapseAiTags} />
         </div>
       )}
 

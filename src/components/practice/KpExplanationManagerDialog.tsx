@@ -3,7 +3,8 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { ChevronDown, Check, Trash2 } from 'lucide-react'
+import { ChevronDown, Check, Trash2, MessageSquareText } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import { kpExplanationKey, useKpExplanations } from '@/hooks/use-kp-explanations'
 import { naturalSort } from '@/lib/utils'
@@ -99,7 +100,17 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>知识点解读管理</DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            知识点解读管理
+            <Link
+              to="/admin/crawler?tab=experience"
+              onClick={() => onOpenChange(false)}
+              className="inline-flex items-center gap-1 text-xs font-normal text-primary hover:underline"
+            >
+              <MessageSquareText className="h-3.5 w-3.5" />
+              经验分享管理
+            </Link>
+          </DialogTitle>
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2">

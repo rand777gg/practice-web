@@ -23,6 +23,18 @@ interface Props {
 const BASE_KEY_W = 42
 const GAP = 3
 
+/** 主键盘区按最大行宽（15 个单位）固定，否则 F 行只有 13 个单位，会把右侧导航区整体带偏 */
+const MAIN_COLS = 15
+/** 右侧导航区固定 3 列（PrtSc/ScrLk/Pause 与 Ins/Home/PgUp 等） */
+const NAV_COLS = 3
+const SPLIT_COL = 14
+
+const colWidth = (cols: number) => cols * BASE_KEY_W + (cols - 1) * GAP
+const MAIN_W = colWidth(MAIN_COLS)
+const NAV_W = colWidth(NAV_COLS)
+const CLUSTER_GAP = GAP * 4
+const TOTAL_W = MAIN_W + CLUSTER_GAP + NAV_W
+
 function keyStyle(w: number, h: number) {
   return { width: BASE_KEY_W * w + GAP * (w - 1), height: h === 2 ? 85 : 40 }
 }
@@ -35,8 +47,6 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
   useEffect(() => { if (open) setRecorded(currentKeys ? currentKeys.split('+').filter(Boolean) : []) }, [open, currentKeys])
 
   const layout = useMemo(() => getLayout(), [])
-  const gridCols = 19
-  const totalW = gridCols * BASE_KEY_W + (gridCols - 1) * GAP
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!open) return
@@ -123,7 +133,37 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
   }
 
   // Split rows: left main area (col 0-13), right area (col 14+)
-  const splitCol = 14
+  const renderRow = (keys: KeyDef[], ri: number) => {
+    const leftKeys = keys.filter((k) => k.col < SPLIT_COL)
+    const rightKeys = keys.filter((k) => k.col >= SPLIT_COL)
+    const isActive = (code: string) => activeCodes.has(code) || recordedCodes.has(code)
+
+    return (
+      <div key={ri} className="flex">
+        {/* 左侧主键盘区：宽度固定，F 行内容不足时右侧留白，保证导航区起点一致 */}
+        <div className="flex" style={{ gap: GAP, width: MAIN_W, flexShrink: 0 }}>
+          {leftKeys.map((k) => renderKeyEl(k, isActive(k.code)))}
+        </div>
+        <div style={{ width: CLUSTER_GAP, flexShrink: 0 }} />
+        {/* 右侧导航区：固定三列的网格，按 col 定位，↑ 才会正好落在 ↓ 上方 */}
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns: `repeat(${NAV_COLS}, ${BASE_KEY_W}px)`,
+            gap: GAP,
+            width: NAV_W,
+            flexShrink: 0,
+          }}
+        >
+          {rightKeys.map((k) => (
+            <div key={k.code} style={{ gridColumnStart: k.col - SPLIT_COL + 1 }}>
+              {renderKeyEl(k, isActive(k.code))}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,22 +192,8 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
           </div>
 
           <div className="flex-1 p-4 select-none overflow-x-auto" style={{ backgroundColor: isDark ? '#1a1a2a' : '#ececec' }}>
-            <div className="flex flex-col mx-auto" style={{ gap: GAP, width: totalW, minWidth: totalW }}>
-              {allRows.map((keys, ri) => {
-                if (keys.length === 0) return null
-                const leftKeys = keys.filter(k => k.col < splitCol)
-                const rightKeys = keys.filter(k => k.col >= splitCol)
-                const leftEls = leftKeys.map(k => renderKeyEl(k, activeCodes.has(k.code) || recordedCodes.has(k.code)))
-                const rightEls = rightKeys.map(k => renderKeyEl(k, activeCodes.has(k.code) || recordedCodes.has(k.code)))
-                const gapW = rightKeys.length > 0 ? GAP * 4 : 0
-                return (
-                  <div key={ri} className="flex" style={{ gap: GAP }}>
-                    <div className="flex" style={{ gap: GAP }}>{leftEls}</div>
-                    <div style={{ width: gapW, flexShrink: 0 }} />
-                    <div className="flex" style={{ gap: GAP }}>{rightEls}</div>
-                  </div>
-                )
-              })}
+            <div className="flex flex-col mx-auto" style={{ gap: GAP, width: TOTAL_W, minWidth: TOTAL_W }}>
+              {allRows.map((keys, ri) => (keys.length === 0 ? null : renderRow(keys, ri)))}
             </div>
           </div>
         </div>

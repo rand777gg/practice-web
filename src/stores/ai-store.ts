@@ -5,8 +5,9 @@ const OFFICIAL_PROVIDERS: AiProviderConfig[] = [
   {
     id: 'deepseek',
     name: 'DeepSeek',
-    description: '深度求索推出的高性能大语言模型，支持 DeepSeek-V3 和 DeepSeek-R1 推理模型。',
+    description: '深度求索推出的高性能大语言模型，OpenAI 兼容格式。注意 402 表示账户余额不足。',
     type: 'official',
+    protocol: 'openai',
     enabled: false,
     apiKey: '',
     baseUrl: 'https://api.deepseek.com',
@@ -20,6 +21,7 @@ const OFFICIAL_PROVIDERS: AiProviderConfig[] = [
     name: 'OpenAI',
     description: 'OpenAI 提供的 GPT 系列模型，包括 GPT-4o、o3-mini 等旗舰模型。',
     type: 'official',
+    protocol: 'openai',
     enabled: false,
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
@@ -28,6 +30,21 @@ const OFFICIAL_PROVIDERS: AiProviderConfig[] = [
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini', enabled: false },
       { id: 'o3-mini', name: 'o3-mini', enabled: false },
       { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', enabled: false },
+    ],
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic (Claude)',
+    description: 'Anthropic Messages API 格式，与 OpenAI 不同：走 /v1/messages，鉴权用 x-api-key。529 表示服务过载。',
+    type: 'official',
+    protocol: 'anthropic',
+    enabled: false,
+    apiKey: '',
+    baseUrl: 'https://api.anthropic.com',
+    models: [
+      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', enabled: false },
+      { id: 'claude-opus-5', name: 'Claude Opus 5', enabled: false },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', enabled: false },
     ],
   },
 ]
@@ -76,6 +93,7 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
     name: '通义千问',
     description: '阿里云通义千问 Qwen3.7-Plus，支持图片、文字输入输出的多模态模型。通过 DashScope API 接入。',
     type: 'community',
+    protocol: 'openai',
     enabled: false,
     apiKey: '',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -89,6 +107,7 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
     name: 'OpenRouter',
     description: 'OpenRouter 免费模型聚合平台，一个 API 接入 25+ 免费模型。无需付费，速率限制 ~20 RPM / 50 次/天。',
     type: 'community',
+    protocol: 'openai',
     enabled: false,
     apiKey: '',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -119,6 +138,8 @@ function loadProviders(): AiProviderConfig[] {
               existing.models.push({ ...dm })
             }
           }
+          // protocol 是结构字段、不由用户编辑，始终跟随默认定义（兼容旧版本地缓存）
+          existing.protocol = def.protocol
         }
       }
       // Auto-fill env keys and auto-enable providers that have env keys
@@ -138,6 +159,9 @@ function loadProviders(): AiProviderConfig[] {
 
 interface AiState {
   providers: AiProviderConfig[]
+  /** 是否优先使用用户自己填的 Key（false 时跟随管理员配置的平台默认供应商） */
+  preferOwnKey: boolean
+  setPreferOwnKey: (value: boolean) => void
   save: (providers: AiProviderConfig[]) => void
   toggleProvider: (id: string) => void
   toggleModel: (providerId: string, modelId: string) => void
@@ -147,8 +171,22 @@ interface AiState {
   getActiveProviders: () => AiProviderConfig[]
 }
 
+function loadPreferOwnKey(): boolean {
+  try {
+    return localStorage.getItem('ai_prefer_own_key') !== '0'
+  } catch {
+    return true
+  }
+}
+
 export const useAiStore = create<AiState>((set, get) => ({
   providers: loadProviders(),
+  preferOwnKey: loadPreferOwnKey(),
+
+  setPreferOwnKey: (value) => {
+    try { localStorage.setItem('ai_prefer_own_key', value ? '1' : '0') } catch { /* noop */ }
+    set({ preferOwnKey: value })
+  },
 
   save: (providers) => {
     try { localStorage.setItem('ai_providers', JSON.stringify(providers)) } catch { /* noop */ }

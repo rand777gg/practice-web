@@ -59,7 +59,8 @@ export function MobileBottomNav() {
   const n = visibleTabs.length
   const activeIndex = visibleTabs.findIndex((tab) => {
     const to = routeMap[tab.key]
-    return to === '/' ? pathname === '/' : pathname.startsWith(to)
+    // 与侧边栏 isPathActive 同规则: 必须落在路径分段边界上, 避免 /examfoo 误命中 /exam
+    return to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`)
   })
   const idx = Math.max(activeIndex, 0)
 

@@ -50,10 +50,15 @@ function AiBadge() {
 }
 
 /** 题目标签徽章行:类型 / 验证状态 / 科目 / 分类(年份真题·AI生成等) / 知识点 / 作答次数 */
-export function QuestionTags({ question, attemptCount, wrongCount }: {
+export function QuestionTags({ question, attemptCount, wrongCount, collapseAiTags }: {
   question: Question
   attemptCount?: number
   wrongCount?: number
+  /**
+   * 练习与考试场景下设为 true：把 AI 生成的知识点折叠成一个「N 个知识点」的悬停入口。
+   * 知识点是 AI 抽取出来的，直接铺开会提示这道题在考什么，也把标签行挤得很长。
+   */
+  collapseAiTags?: boolean
 }) {
   const { t } = useT()
   const type = question.question_type
@@ -66,6 +71,18 @@ export function QuestionTags({ question, attemptCount, wrongCount }: {
   const yearPattern = /^\d{4}年真题$/
   const yearCats = cats.filter((c) => yearPattern.test(c))
   const otherCats = cats.filter((c) => !yearPattern.test(c))
+  // 与题库其它位置保持一致：半角/全角逗号与分号都当作分隔符
+  const kps = (question.key_points ?? '')
+    .split(/[,，;；]/)
+    .map((kp) => kp.trim())
+    .filter(Boolean)
+
+  const kpBadges = kps.map((kp, i) => (
+    <Badge key={i} variant="secondary" className={cn(POINT_COLORS[i % POINT_COLORS.length], 'rounded-full')}>
+      {kp}
+    </Badge>
+  ))
+
   return (
     <>
       <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[type] || 'bg-muted text-muted-foreground'}`}>
@@ -97,10 +114,24 @@ export function QuestionTags({ question, attemptCount, wrongCount }: {
           <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
         )))
       )}
-      {question.key_points && question.key_points.split(',').filter(Boolean).map((kp, i) => (
-        <Badge key={i} variant="secondary" className={cn(POINT_COLORS[i % POINT_COLORS.length], 'rounded-full')}>
-          {kp.trim()}
-        </Badge>
+      {kps.length > 0 && (collapseAiTags ? (
+        <HoverCard openDelay={120} closeDelay={80}>
+          <HoverCardTrigger asChild>
+            <span className="inline-flex cursor-pointer select-none items-center gap-1 rounded-full border border-dashed border-primary/40 px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+              <Sparkles className="h-3 w-3" />
+              {kps.length} 个知识点
+            </span>
+          </HoverCardTrigger>
+          <HoverCardContent side="bottom" align="start" className="w-auto max-w-[min(90vw,340px)] px-3 py-2">
+            <p className="mb-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Sparkles className="h-3 w-3 text-primary" />
+              AI 生成的知识点（悬停查看，避免影响作答）
+            </p>
+            <div className="flex flex-wrap gap-1">{kpBadges}</div>
+          </HoverCardContent>
+        </HoverCard>
+      ) : (
+        kpBadges
       ))}
       {attemptCount != null && (
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">

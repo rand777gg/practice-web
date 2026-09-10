@@ -115,7 +115,8 @@ export function SidebarAccountMenu() {
                   {mode === "dark" ? <Moon /> : mode === "light" ? <Sun /> : <Monitor />}
                   {t("settings.themeMode")}
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
+                {/* 子菜单没有 side 属性（Radix 刻意不暴露），方向由碰撞检测决定：保留避让 + 预留边距，移动端才会自动翻到左侧 */}
+                <DropdownMenuSubContent collisionPadding={isMobile ? 16 : 8}>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                       <Sun />
@@ -124,8 +125,10 @@ export function SidebarAccountMenu() {
                         <span className="text-[10px] text-muted-foreground">{activePalette.label}</span>
                       )}
                     </DropdownMenuSubTrigger>
+                    {/* 三级菜单（浅色配色列表）：原来写了 avoidCollisions={false} 会禁用自动避让，
+                        移动端主菜单在底部展开时这一层会被屏幕右边裁掉。放开避让并留 16px 边距，它会自动向左展开。 */}
                     <DropdownMenuSubContent
-                      avoidCollisions={false}
+                      collisionPadding={isMobile ? 16 : 8}
                       className="w-44 max-h-72 overflow-y-auto"
                     >
                       {EYE_CARE_PALETTES.map((palette) => (
@@ -166,7 +169,7 @@ export function SidebarAccountMenu() {
                   <Languages />
                   {t("settings.language")}
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
+                <DropdownMenuSubContent collisionPadding={isMobile ? 16 : 8}>
                   {([["zh", "中文"], ["en", "English"]] as const).map(([value, label]) => (
                     <DropdownMenuItem key={value} onClick={() => setLang(value)}>
                       {label}

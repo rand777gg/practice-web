@@ -172,6 +172,7 @@ export function ExamResultDialog({ sessionId, open, onClose }: Props) {
                     selectedAnswer={ans.selected_answer}
                     showResult
                     showEditLink={isAdmin}
+                    collapseAiTags
                   />
                 ))}
               </div>

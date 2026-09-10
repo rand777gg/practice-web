@@ -220,6 +220,7 @@ export function Component() {
                   onSelect={handleSelect}
                   disabled={isSubmitted}
                   allowLocalJudge
+                  collapseAiTags
                 />
                 {current.question.question_type === 'analysis' && (
                   <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">主观题不自动判分：提交即记为你已作答并计入进度。</p>
