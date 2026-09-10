@@ -207,6 +207,7 @@ export function LandingPage() {
   const [authView, setAuthView] = useState<'hero' | 'login' | 'register'>('hero')
   const [formVisible, setFormVisible] = useState(false)
   const [loginStep, setLoginStep] = useState<'credentials' | 'mfa'>('credentials')
+  const [pixelReveal, setPixelReveal] = useState(false)
 
   const openAuth = (mode: 'login' | 'register') => {
     if (authView !== mode) {
@@ -241,6 +242,15 @@ export function LandingPage() {
       window.removeEventListener('scroll', onScroll)
     }
   }, [])
+
+  useEffect(() => {
+    if (!pixelReveal) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPixelReveal(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pixelReveal])
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground">
@@ -280,8 +290,16 @@ export function LandingPage() {
       </header>
 
       <main className="flex-1">
-        <section className="relative overflow-hidden">
-          <PixelGridBackground variant="interactive" className="absolute inset-0 z-0" />
+        <section
+          className={cn('relative overflow-hidden', pixelReveal && 'cursor-pointer')}
+          onClick={pixelReveal ? () => setPixelReveal(false) : undefined}
+        >
+          <PixelGridBackground
+            variant="interactive"
+            reveal={pixelReveal}
+            revealText="PGuide Dev"
+            className="absolute inset-0 z-0"
+          />
           <div
             aria-hidden
             ref={heroBgRef}
@@ -291,7 +309,14 @@ export function LandingPage() {
             <div className="animate-aurora absolute -left-16 top-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
             <div className="animate-aurora-slow absolute right-0 top-10 h-80 w-80 rounded-full bg-violet-500/10 blur-3xl" />
           </div>
-          <div className={cn(containerCls, 'relative z-10 grid items-center gap-12 pb-20 pt-16 sm:pb-24 sm:pt-20 lg:grid-cols-2 lg:gap-16')}>
+          <div
+            inert={pixelReveal}
+            className={cn(
+              containerCls,
+              'relative z-10 grid items-center gap-12 pb-20 pt-16 transition-[opacity,transform] duration-500 sm:pb-24 sm:pt-20 lg:grid-cols-2 lg:gap-16',
+              pixelReveal && 'pointer-events-none scale-[0.97] opacity-0',
+            )}
+          >
             {authView === 'hero' ? (
               <div className="space-y-7 text-left">
                 <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1 text-xs font-normal">
@@ -345,15 +370,28 @@ export function LandingPage() {
                 <div className="animate-float">
                   <PracticeSessionMock />
                 </div>
-                <img
-                  src="https://r2-rpw.pguide.dev/nailong.webp"
-                  alt="奶龙"
-                  loading="lazy"
-                  className="pointer-events-none absolute -bottom-5 -right-3 w-20 sm:w-28 drop-shadow-xl"
-                />
+                <button
+                  type="button"
+                  onClick={() => setPixelReveal(true)}
+                  aria-label="显示 PGuide Dev 像素文字"
+                  title="点我看看"
+                  className="absolute -bottom-5 -right-3 w-20 cursor-pointer transition-transform duration-300 hover:scale-110 active:scale-95 sm:w-28"
+                >
+                  <img
+                    src="https://r2-rpw.pguide.dev/nailong.webp"
+                    alt="奶龙"
+                    loading="lazy"
+                    className="w-full drop-shadow-xl"
+                  />
+                </button>
               </div>
             </div>
           </div>
+          {pixelReveal && (
+            <p className="animate-in fade-in pointer-events-none absolute inset-x-0 bottom-6 z-10 text-center font-mono text-xs text-muted-foreground duration-700">
+              点击任意处 / 按 Esc 返回
+            </p>
+          )}
         </section>
 
         <section className="relative overflow-hidden border-t bg-muted/30">
