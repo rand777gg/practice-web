@@ -12,6 +12,7 @@ export interface AiFeatureFlags {
 
 const FLAGS_KEY = 'ai_feature_flags'
 const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
+const HEADER_ACTIONS_KEY = 'header_actions'
 const BOTTOM_NAV_HIDE_DELAY_KEY = 'bottom_nav_hide_delay'
 const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
 const OFFLINE_KEY = 'offline_mode'
@@ -87,6 +88,19 @@ export const BOTTOM_NAV_TABS = [
 export type BottomNavTabKey = (typeof BOTTOM_NAV_TABS)[number]['key']
 const DEFAULT_BOTTOM_NAV_TABS: BottomNavTabKey[] = ['dashboard', 'practice', 'exam', 'favorites', 'review']
 
+/** 顶栏可配置的快捷按钮; 顺序即显示顺序 */
+export const HEADER_ACTIONS = [
+  { key: 'theme' as const, labelZh: '深浅色切换', labelEn: 'Theme toggle' },
+  { key: 'lang' as const, labelZh: '语言切换', labelEn: 'Language' },
+  { key: 'eyeCare' as const, labelZh: '护眼模式', labelEn: 'Eye care' },
+  { key: 'qr' as const, labelZh: '扫码登录', labelEn: 'QR sign-in' },
+  { key: 'settings' as const, labelZh: '设置', labelEn: 'Settings' },
+  { key: 'aiSummary' as const, labelZh: 'AI 学习总结', labelEn: 'AI summary' },
+] as const
+
+export type HeaderActionKey = (typeof HEADER_ACTIONS)[number]['key']
+const DEFAULT_HEADER_ACTIONS: HeaderActionKey[] = ['theme', 'qr', 'settings']
+
 function loadFlags(): AiFeatureFlags {
   try {
     const raw = localStorage.getItem(FLAGS_KEY)
@@ -146,6 +160,18 @@ function loadBottomNavTabs(): BottomNavTabKey[] {
   return [...DEFAULT_BOTTOM_NAV_TABS]
 }
 
+function loadHeaderActions(): HeaderActionKey[] {
+  try {
+    const raw = localStorage.getItem(HEADER_ACTIONS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as HeaderActionKey[]
+      const valid = new Set(HEADER_ACTIONS.map((a) => a.key))
+      return parsed.filter((k) => valid.has(k))
+    }
+  } catch { /* ignore */ }
+  return [...DEFAULT_HEADER_ACTIONS]
+}
+
 function loadNoteRecognitionMode(): NoteRecognitionMode {
   return (localStorage.getItem(NOTE_RECOGNITION_MODE_KEY) as NoteRecognitionMode) || 'mineru'
 }
@@ -181,6 +207,7 @@ interface SettingsState {
   noteRecognitionMode: NoteRecognitionMode
   bottomNavTabs: BottomNavTabKey[]
   bottomNavHideDelay: number
+  headerActions: HeaderActionKey[]
   practiceShortcuts: ShortcutConfig
   defaultPage: string
   examViewMode: ExamViewMode
@@ -196,6 +223,7 @@ interface SettingsState {
   setNoteRecognitionMode: (value: NoteRecognitionMode) => void
   setBottomNavTabs: (tabs: BottomNavTabKey[]) => void
   setBottomNavHideDelay: (value: number) => void
+  setHeaderActions: (actions: HeaderActionKey[]) => void
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   setDefaultPage: (page: string) => void
   setExamViewMode: (value: ExamViewMode) => void
@@ -228,6 +256,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   noteRecognitionMode: loadNoteRecognitionMode(),
   bottomNavTabs: loadBottomNavTabs(),
   bottomNavHideDelay: loadBottomNavHideDelay(),
+  headerActions: loadHeaderActions(),
   practiceShortcuts: loadPracticeShortcuts(),
   defaultPage: loadDefaultPage(),
   examViewMode: loadExamViewMode(),
@@ -285,6 +314,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const clamped = Math.min(Math.max(Math.round(value), BOTTOM_NAV_HIDE_DELAY_MIN), BOTTOM_NAV_HIDE_DELAY_MAX)
     localStorage.setItem(BOTTOM_NAV_HIDE_DELAY_KEY, String(clamped))
     set({ bottomNavHideDelay: clamped })
+  },
+  setHeaderActions: (actions) => {
+    localStorage.setItem(HEADER_ACTIONS_KEY, JSON.stringify(actions))
+    set({ headerActions: actions })
   },
   setPracticeShortcut: (action, keys) => {
     set((s) => {

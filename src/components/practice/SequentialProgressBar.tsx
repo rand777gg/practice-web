@@ -96,14 +96,14 @@ export function SequentialProgressBar({ currentIndex, total, kpCurrent, kpTotal,
                         <div
                           key={idx}
                           className={cn(
-                            'absolute',
+                            'absolute inset-y-0',
                             st === 'correct' && 'bg-green-500',
                             st === 'wrong' && 'bg-red-500',
                             st === 'tooEasy' && 'bg-muted-foreground/40',
                             idx === 0 && 'rounded-l-full',
                             idx === n - 1 && 'rounded-r-full',
                           )}
-                          style={{ top: st === 'wrong' ? 0.5 : 0, bottom: 0, left: `${(idx * 100) / n}%`, width: `${100 / n}%` }}
+                          style={{ left: `${(idx * 100) / n}%`, width: `${100 / n}%` }}
                         />
                       ))
                     })()}

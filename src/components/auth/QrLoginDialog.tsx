@@ -26,7 +26,8 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
     if (error) { setStatus('error'); return }
 
     const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}&code=${code}`
-    const dataUrl = await QRCode.toDataURL(confirmUrl, { width: 240, margin: 1, color: { dark: '#ffffff', light: '#00000000' } })
+    // 二维码必须深色码点 + 浅色底才扫得动（浅色写成透明在白底上会完全看不见）
+    const dataUrl = await QRCode.toDataURL(confirmUrl, { width: 240, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
     setQrDataUrl(dataUrl)
     setStatus('waiting')
 
@@ -77,7 +78,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
         </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-4">
           {status === 'waiting' || status === 'loggingIn' ? (
-            <img src={qrDataUrl} alt="QR Code" className="size-60 rounded-xl border border-border/50" />
+            <img src={qrDataUrl} alt="QR Code" className="size-60 rounded-xl border border-border/50 bg-white p-1" />
           ) : status === 'generating' ? (
             <div className="size-60 flex items-center justify-center rounded-xl border border-border/50 bg-muted/20">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

@@ -5,7 +5,7 @@
  */
 import { execFileSync } from 'node:child_process'
 
-const REPO = process.env.GITHUB_REPOSITORY || 'rand777gg/react-practice-web'
+const REPO = process.env.GITHUB_REPOSITORY || 'rand777gg/practice-web'
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY
 const FEISHU_URL = process.env.FEISHU_WEBHOOK_URL
 const LOOKBACK_HOURS = Number(process.env.LOOKBACK_HOURS || 4)

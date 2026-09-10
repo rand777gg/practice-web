@@ -80,6 +80,7 @@ const featureRows: { icon: ReactNode; title: string; desc: string; points: strin
       'PDF / Word / 图片 OCR 智能导入题库',
       '知识点与题目一键 AI 解析',
       '每日学习总结、智能出题与复习计划',
+      '真实上岸学长学姐经验分享，正如哈利波特「混血王子」的小小批注，让你少走弯路。',
     ],
   },
   {

@@ -2760,3 +2760,34 @@ GRANT EXECUTE ON FUNCTION public.get_user_email_confirmed TO authenticated;
 -- ============================================================================
 ALTER TABLE public.learning_routes
   ADD COLUMN IF NOT EXISTS diagram_xml TEXT;
+-- ============================================================================
+-- Section 39: 专注时长 (focus_sessions) —— 秒表/番茄钟记录, 后续统计数据源
+--   一条记录 = 一次专注会话: started_at 开始, ended_at 结束(进行中为 NULL),
+--   duration_sec 累计秒数(暂停不计时), mode 区分秒表(stopwatch)/番茄钟(pomodoro)。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.focus_sessions (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  mode         TEXT NOT NULL DEFAULT 'stopwatch' CHECK (mode IN ('stopwatch', 'pomodoro')),
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at     TIMESTAMPTZ,
+  duration_sec INTEGER NOT NULL DEFAULT 0 CHECK (duration_sec >= 0),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_user_time
+  ON public.focus_sessions(user_id, started_at DESC);
+
+ALTER TABLE public.focus_sessions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS fs_select ON public.focus_sessions;
+CREATE POLICY fs_select ON public.focus_sessions FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS fs_insert ON public.focus_sessions;
+CREATE POLICY fs_insert ON public.focus_sessions FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS fs_update ON public.focus_sessions;
+CREATE POLICY fs_update ON public.focus_sessions FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS fs_delete ON public.focus_sessions;
+CREATE POLICY fs_delete ON public.focus_sessions FOR DELETE USING (auth.uid() = user_id);

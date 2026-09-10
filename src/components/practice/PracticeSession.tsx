@@ -43,7 +43,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Plus, Shuffle, Trash2, BookOpen } from 'lucide-react'
+import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Plus, Shuffle, Timer, Trash2, BookOpen } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { FocusTimer } from '@/components/layout/FocusTimer'
 
 import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 
@@ -1804,6 +1806,16 @@ export function PracticeSession() {
                     >
                       <MoveHorizontal className="h-3.5 w-3.5" />
                     </Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title={t('focus.title')}>
+                          <Timer className="h-3.5 w-3.5" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" sideOffset={6} className="w-80 p-3">
+                        <FocusTimer />
+                      </PopoverContent>
+                    </Popover>
                     <Button
                       variant="ghost"
                       size="icon"

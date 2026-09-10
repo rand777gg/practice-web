@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useAiStore } from '@/stores/ai-store'
-import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, BOTTOM_NAV_HIDE_DELAY_MIN, BOTTOM_NAV_HIDE_DELAY_MAX, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, HEADER_ACTIONS, BOTTOM_NAV_HIDE_DELAY_MIN, BOTTOM_NAV_HIDE_DELAY_MAX, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,6 +29,7 @@ import {
 import { ProviderIcon } from '@/components/ui/provider-icon'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
+import { AboutProjectCard } from '@/components/settings/AboutProjectCard'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { PasskeySetupDialog } from '@/components/auth/PasskeySetupDialog'
 import { OtpSetupDialog } from '@/components/auth/OtpSetupDialog'
@@ -67,7 +68,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode, practiceUiVariant, setPracticeUiVariant } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, headerActions, setHeaderActions, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode, practiceUiVariant, setPracticeUiVariant } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -870,6 +871,8 @@ export function Component() {
       </CardContent>
      </Card>
 
+     <AboutProjectCard />
+
     </div>
 
     {/* Right column */}
@@ -1030,6 +1033,27 @@ export function Component() {
         <Switch checked={offlineMode} onCheckedChange={setOfflineMode} />
        </div>
        <div className="pt-2 border-t">
+        <div className="pt-2 border-t">
+         <p className="text-sm mb-1">{t('settings.headerActions')}</p>
+         <p className="text-xs text-muted-foreground mb-3">{t('settings.headerActionsDesc')}</p>
+         <div className="space-y-2">
+          {HEADER_ACTIONS.map((action) => {
+           const checked = headerActions.includes(action.key)
+           return (
+            <div key={action.key} className="flex items-center justify-between">
+             <span className="text-sm">{lang === 'en' ? action.labelEn : action.labelZh}</span>
+             <Switch
+              checked={checked}
+              onCheckedChange={() => {
+               if (checked) setHeaderActions(headerActions.filter((k) => k !== action.key))
+               else setHeaderActions([...headerActions, action.key])
+              }}
+             />
+            </div>
+           )
+          })}
+         </div>
+        </div>
         <p className="text-sm mb-1">{t('settings.bottomNav')}</p>
         <p className="text-xs text-muted-foreground mb-3">{t('settings.bottomNavDesc')}</p>
         <div className="space-y-2">

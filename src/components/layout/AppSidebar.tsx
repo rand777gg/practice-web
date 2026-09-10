@@ -1,25 +1,17 @@
 import * as React from "react"
 import { Link, useLocation } from "react-router-dom"
 import {
-  BookOpen, ChevronRight, ChevronsUpDown, Clock, FileQuestion, LayoutDashboard,
-  Library, LogOut, Pencil, Route, Settings, Sparkles, Users, UsersRound,
+  BookOpen, ChevronRight, Clock, FileQuestion, LayoutDashboard,
+  Library, Pencil, Route, Sparkles, Users, UsersRound,
 } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Sidebar,
   SidebarContent,
@@ -34,10 +26,10 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar"
 import { BrandLogo } from "./BrandLogo"
+import { SidebarAccountMenu } from "./SidebarAccountMenu"
 import { useAuthStore } from "@/stores/auth-store"
 import { useT } from "@/i18n/use-t"
 import { cn } from "@/lib/utils"
@@ -49,6 +41,9 @@ const toneClass: Record<Tone, string> = {
   test: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
   enhance: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 }
+
+const collapsibleAnim =
+  "overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up"
 
 interface NavSubItem {
   title: string
@@ -74,7 +69,7 @@ function SubBadge({ tone, label }: { tone: Tone; label: string }) {
   return (
     <Badge
       variant="secondary"
-      className={cn("ml-auto shrink-0 px-1 py-0 text-[9px] leading-none", toneClass[tone])}
+      className={cn("mr-1 shrink-0 px-1 py-0 text-[9px] leading-none", toneClass[tone])}
     >
       {label}
     </Badge>
@@ -109,10 +104,59 @@ function NavMenu({ items }: { items: NavItem[] }) {
   )
 }
 
+/** 收起为图标时点一下直接弹出二级菜单, 不用先展开侧边栏 */
+function CollapsedFlyout({ item, pathname }: { item: NavItem; pathname: string }) {
+  const [open, setOpen] = React.useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <SidebarMenuButton isActive={item.items?.some((sub) => isPathActive(pathname, sub.url))}>
+          <item.icon />
+          <span>{item.title}</span>
+        </SidebarMenuButton>
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="w-52 rounded-lg border-sidebar-border bg-sidebar p-1 text-sidebar-foreground shadow-lg"
+      >
+        <p className="px-2 py-1.5 text-[11px] font-medium text-sidebar-foreground/50">{item.title}</p>
+        {item.items?.map((sub) => (
+          <Link
+            key={sub.title}
+            to={sub.url}
+            onClick={() => setOpen(false)}
+            className={cn(
+              "flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
+              isPathActive(pathname, sub.url)
+                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <span className="truncate">{sub.title}</span>
+            {sub.tone && sub.label && <SubBadge tone={sub.tone} label={sub.label} />}
+          </Link>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: string }) {
+  const { state, isMobile } = useSidebar()
   const within = (item.items ?? []).some((sub) => isPathActive(pathname, sub.url))
   const [open, setOpen] = React.useState(false)
   const expanded = open || within
+
+  if (state === "collapsed" && !isMobile) {
+    return (
+      <SidebarMenuItem>
+        <CollapsedFlyout item={item} pathname={pathname} />
+      </SidebarMenuItem>
+    )
+  }
 
   return (
     <Collapsible asChild open={expanded} onOpenChange={setOpen} className="group/collapsible">
@@ -124,7 +168,7 @@ function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: strin
             <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
-        <CollapsibleContent>
+        <CollapsibleContent className={collapsibleAnim}>
           <SidebarMenuSub>
             {item.items?.map((sub) => (
               <SidebarMenuSubItem key={sub.title}>
@@ -143,99 +187,27 @@ function CollapsibleNavItem({ item, pathname }: { item: NavItem; pathname: strin
   )
 }
 
-function NavUser() {
-  const { isMobile } = useSidebar()
-  const user = useAuthStore((s) => s.user)
-  const profile = useAuthStore((s) => s.profile)
-  const signOut = useAuthStore((s) => s.signOut)
+function SidebarBrand() {
   const { t } = useT()
 
-  const email = user?.email ?? ""
-  const name = profile?.nickname || email.split("@")[0] || "User"
-  const initials = name.slice(0, 2).toUpperCase()
-
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <Avatar className="size-8 rounded-lg">
-                <AvatarFallback className="rounded-lg bg-sidebar-primary text-xs text-sidebar-primary-foreground">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
+    <SidebarHeader>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" asChild tooltip={t("app.shortTitle")}>
+            <Link to="/">
+              <span className="flex size-8 shrink-0 items-center justify-center">
+                <BrandLogo size={28} />
+              </span>
               <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                <span className="truncate font-medium">{name}</span>
-                <span className="truncate text-xs text-sidebar-foreground/60">{email}</span>
+                <span className="truncate font-semibold">{t("app.shortTitle")}</span>
+                <span className="truncate text-xs text-sidebar-foreground/60">{t("app.title")}</span>
               </div>
-              <ChevronsUpDown className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{name}</span>
-                  <span className="truncate text-xs text-sidebar-foreground/60">{email}</span>
-                </div>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link to="/settings">
-                <Settings />
-                {t("settings.title")}
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()}>
-              <LogOut />
-              {t("auth.logout")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
-  )
-}
-
-function AppVersion() {
-  const [release, setRelease] = React.useState<{ tag_name: string; html_url: string } | null>(null)
-
-  React.useEffect(() => {
-    fetch("https://api.github.com/repos/rand777gg/react-practice-web/releases/latest")
-      .then((r) => r.json())
-      .then((d) => { if (d?.tag_name) setRelease({ tag_name: d.tag_name, html_url: d.html_url }) })
-      .catch(() => {})
-  }, [])
-
-  if (!release) return null
-
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton asChild size="sm" tooltip={release.tag_name} className="text-sidebar-foreground/60">
-          <a href={release.html_url} target="_blank" rel="noopener noreferrer">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-            </svg>
-            <span>{release.tag_name}</span>
-          </a>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </SidebarMenu>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarHeader>
   )
 }
 
@@ -297,23 +269,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip={t("app.shortTitle")}>
-              <Link to="/">
-                <span className="flex size-8 shrink-0 items-center justify-center">
-                  <BrandLogo size={20} />
-                </span>
-                <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                  <span className="truncate font-semibold">{t("app.shortTitle")}</span>
-                  <span className="truncate text-xs text-sidebar-foreground/60">{t("app.title")}</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+      <SidebarBrand />
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>{t("nav.groupLearn")}</SidebarGroupLabel>
@@ -327,10 +283,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         )}
       </SidebarContent>
       <SidebarFooter>
-        <NavUser />
-        <AppVersion />
+        <SidebarAccountMenu />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   )
 }
