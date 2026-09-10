@@ -2751,3 +2751,12 @@ RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$ SELECT email_confirmed_at IS NOT NULL FROM auth.users WHERE id = $1; $$;
 REVOKE EXECUTE ON FUNCTION public.get_user_email_confirmed(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_user_email_confirmed TO authenticated;
+
+-- ============================================================================
+-- Section 38: 学习路线 draw.io 路线图 (route diagram)
+--   管理员用内嵌 draw.io 编辑器为路线画一张自由版式流程图, 以 mxGraph XML
+--   存库; 为空时前台按阶段自动生成示意图。复用 lr_select/lr_update 策略,
+--   无需新增 RLS。
+-- ============================================================================
+ALTER TABLE public.learning_routes
+  ADD COLUMN IF NOT EXISTS diagram_xml TEXT;

@@ -32,7 +32,7 @@ import {
   ExamPaperMock,
   FeaturedLogos,
   IdeRunMock,
-  PracticeSessionMock,
+  QuestionDeckMock,
   PracticeSetupMock,
   QuestionTypes,
   RouteStudyMock,
@@ -368,7 +368,7 @@ export function LandingPage() {
             <div className="mx-auto w-full max-w-xl lg:mx-0">
               <div className="relative">
                 <div className="animate-float">
-                  <PracticeSessionMock />
+                  <QuestionDeckMock />
                 </div>
                 <button
                   type="button"

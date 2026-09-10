@@ -40,6 +40,8 @@ import {
   Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
 const mockBar = 'flex items-center justify-between border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground'
@@ -1268,5 +1270,127 @@ export function QuestionTypes() {
         </div>
       </div>
     </Panel>
+  )
+}
+
+function CodingExample() {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary">编程题</span>
+        <span className="rounded-md border px-1.5 py-0.5 text-muted-foreground">数组</span>
+        <span className="rounded-md border px-1.5 py-0.5 text-muted-foreground">简单</span>
+      </div>
+      <p className="text-sm font-medium">给定整数数组 nums 和整数 target，返回两数之和的下标。</p>
+      <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-[11px] leading-6 text-slate-300">
+        <div>
+          <span className="text-purple-400">def</span> <span className="text-sky-300">two_sum</span>(
+          <span className="text-orange-300">nums</span>, <span className="text-orange-300">target</span>):
+        </div>
+        <div className="pl-4">seen = {'{}'}</div>
+        <div className="pl-4">
+          <span className="text-purple-400">for</span> i, n <span className="text-purple-400">in</span>{' '}
+          <span className="text-purple-400">enumerate</span>(nums):
+        </div>
+        <div className="pl-8">
+          <span className="text-purple-400">if</span> target - n <span className="text-purple-400">in</span> seen:
+        </div>
+        <div className="pl-12">
+          <span className="text-purple-400">return</span> [seen[target - n], i]
+        </div>
+        <div className="pl-8">seen[n] = i</div>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-500">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        3 / 3 用例通过 · 用时 42ms
+      </div>
+    </div>
+  )
+}
+
+const DECK_SIZE = 5
+
+function QuestionDeckCard({ type, index }: { type: (typeof questionTypes)[number]; index: number }) {
+  return (
+    <Panel className="flex h-full flex-col">
+      <div className={cn(mockBar, 'shrink-0')}>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-primary [&>svg]:h-3.5 [&>svg]:w-3.5">{type.icon}</span>
+          {type.label} · 作答示例
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="font-medium">
+            第 {index + 1} / {questionTypes.length} 类
+          </span>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">{type.desc}</span>
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden p-5">
+        {type.id === 'single' && <SingleExample />}
+        {type.id === 'true_false' && <JudgeExample />}
+        {type.id === 'judge_correct' && <JudgeCorrectExample />}
+        {type.id === 'fill_blank' && <BlankExample />}
+        {type.id === 'short_answer' && <ShortExample />}
+        {type.id === 'case_analysis' && <CaseAnalysisExample />}
+        {type.id === 'coding' && <CodingExample />}
+      </div>
+    </Panel>
+  )
+}
+
+export function QuestionDeckMock() {
+  const reduced = useReducedMotion()
+  const isMobile = useIsMobile()
+  const [start, setStart] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  const dx = isMobile ? 9 : 16
+  const dy = isMobile ? 6 : 11
+
+  useEffect(() => {
+    if (reduced || paused) return
+    const id = window.setInterval(() => setStart((s) => (s + 1) % questionTypes.length), 3000)
+    return () => window.clearInterval(id)
+  }, [reduced, paused])
+
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{ paddingTop: dy * (DECK_SIZE - 1) + 8, paddingRight: dx * (DECK_SIZE - 1) + 8, paddingBottom: 22 }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="relative h-[392px] sm:h-[420px]">
+        <AnimatePresence>
+          {Array.from({ length: DECK_SIZE }, (_, slot) => {
+            const index = (start + slot) % questionTypes.length
+            const type = questionTypes[index]
+            return (
+              <motion.div
+                key={type.id}
+                className="absolute inset-0"
+                style={{
+                  zIndex: DECK_SIZE - slot,
+                  transformOrigin: 'top right',
+                  pointerEvents: slot === 0 ? 'auto' : 'none',
+                }}
+                initial={{ x: dx * DECK_SIZE, y: -dy * DECK_SIZE, scale: 0.9, opacity: 0 }}
+                animate={{ x: slot * dx, y: -slot * dy, scale: 1 - slot * 0.02, opacity: 1 }}
+                exit={{
+                  x: 0,
+                  y: 300,
+                  scale: 0.96,
+                  opacity: 0,
+                  transition: { duration: 0.45, ease: 'easeIn' },
+                }}
+                transition={{ type: 'spring', stiffness: 240, damping: 26 }}
+              >
+                <QuestionDeckCard type={type} index={index} />
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </div>
+    </div>
   )
 }
