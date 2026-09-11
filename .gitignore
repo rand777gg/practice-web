@@ -54,7 +54,9 @@ stats.html
 vibe_images/
 iki-char/
 tmp-ssr.mjs
+tmp-iki/
 
 # Agents
 
 agents.md
+

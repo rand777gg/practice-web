@@ -386,8 +386,8 @@ export function LandingPage() {
                   className="absolute -bottom-5 -right-3 w-20 cursor-pointer transition-transform duration-300 hover:scale-110 active:scale-95 sm:w-28"
                 >
                   <img
-                    src="https://r2-rpw.pguide.dev/nailong.webp"
-                    alt="奶龙"
+                    src="/littleq.webp"
+                    alt="小Q"
                     loading="lazy"
                     className="w-full drop-shadow-xl"
                   />
