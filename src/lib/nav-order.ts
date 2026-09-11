@@ -22,7 +22,7 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: 'notes', group: 'learn', labelZh: '公开笔记', labelEn: 'Public Notes' },
   { id: 'studyRooms', group: 'learn', labelZh: '自习室', labelEn: 'Study Rooms' },
 
-  { id: 'assistant', group: 'smart', labelZh: '小刷', labelEn: 'Assistant' },
+  { id: 'assistant', group: 'smart', labelZh: '小Q', labelEn: 'Xiao Q' },
   { id: 'aiSettings', group: 'smart', labelZh: 'AI 设置', labelEn: 'AI Settings' },
 
   { id: 'community', group: 'community', labelZh: '社区', labelEn: 'Community' },
