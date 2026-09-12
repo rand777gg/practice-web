@@ -257,7 +257,7 @@ export function LandingPage() {
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         <div className={cn(containerCls, 'flex h-16 items-center justify-between')}>
           <Link to="/" className="flex items-center gap-2.5">
-            <BrandLogo size={30} />
+            <BrandLogo size={22} />
             <span className="text-lg font-bold tracking-tight">刷题网</span>
           </Link>
           <nav className="flex items-center gap-3">
@@ -383,7 +383,7 @@ export function LandingPage() {
                   onClick={() => setPixelReveal(true)}
                   aria-label="显示 PGuide Dev 像素文字"
                   title="点我看看"
-                  className="absolute -bottom-5 -right-3 w-20 cursor-pointer transition-transform duration-300 hover:scale-110 active:scale-95 sm:w-28"
+                  className="absolute -bottom-5 -right-3 w-[160px] cursor-pointer transition-transform duration-300 hover:scale-110 active:scale-95 sm:w-[224px]"
                 >
                   <img
                     src="/littleq.webp"
@@ -464,7 +464,7 @@ export function LandingPage() {
         <div className={cn(containerCls, 'flex flex-col gap-6 py-10 sm:flex-row sm:items-center sm:justify-between')}>
           <div className="flex flex-col gap-2">
             <Link to="/" className="flex items-center gap-2.5">
-              <BrandLogo size={26} />
+              <BrandLogo size={18} />
               <span className="font-bold">刷题网</span>
             </Link>
             <p className="text-xs text-muted-foreground">坚持每天练习，用数据看见进步。</p>

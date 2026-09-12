@@ -70,8 +70,8 @@ self.addEventListener('push', (event: PushEvent) => {
   }
   const options: NotificationOptions = {
     body,
-    icon: '/logo-192.png',
-    badge: '/logo-192.png',
+    icon: '/logo-192.webp',
+    badge: '/logo-192.webp',
     tag: 'exam-schedule-push',
     renotify: false,
     data: { url },

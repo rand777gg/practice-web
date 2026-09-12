@@ -168,7 +168,7 @@ export function notifyExamDue(schedule: ExamSchedule): boolean {
   const title = schedule.name || '预约考试'
   const body = `${schedule.template.name || '考试'} · ${minutesToTime(schedule.fire_time)}`
   try {
-    const n = new Notification(title, { body, tag: `exam-schedule-${schedule.id}-${todayKey()}`, icon: '/logo-192.png' })
+    const n = new Notification(title, { body, tag: `exam-schedule-${schedule.id}-${todayKey()}`, icon: '/logo-192.webp' })
     n.onclick = () => {
       window.focus()
       window.location.assign('/exam')

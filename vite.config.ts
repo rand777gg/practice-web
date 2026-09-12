@@ -14,7 +14,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['logo-192.png', 'logo-512.png'],
+      includeAssets: ['logo-192.webp', 'logo-512.webp'],
       manifest: {
         name: '刷题练习',
         short_name: '刷题',
@@ -26,15 +26,15 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'logo-192.png',
+            src: 'logo-192.webp',
             sizes: '192x192',
-            type: 'image/png',
+            type: 'image/webp',
             purpose: 'any',
           },
           {
-            src: 'logo-512.png',
+            src: 'logo-512.webp',
             sizes: '512x512',
-            type: 'image/png',
+            type: 'image/webp',
             purpose: 'any',
           },
         ],
@@ -44,7 +44,7 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: {

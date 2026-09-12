@@ -121,7 +121,7 @@ export function Component() {
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="ai-ring relative inline-flex rounded-full p-[2px]">
-          <img src="/logo.webp" alt="" aria-hidden="true" className="h-11 w-11 rounded-full object-cover" />
+          <img src="/littleq.webp" alt="" aria-hidden="true" className="h-11 w-11 rounded-full object-cover" />
         </span>
         <div className="min-w-0 flex-1">
           <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
@@ -216,7 +216,7 @@ export function Component() {
                   className="animate-in fade-in-0 slide-in-from-bottom-2 flex items-start gap-2.5 duration-300"
                 >
                   <img
-                    src="/logo.webp"
+                    src="/littleq.webp"
                     alt=""
                     aria-hidden="true"
                     className="h-8 w-8 shrink-0 rounded-full object-cover"
@@ -280,7 +280,7 @@ export function Component() {
             {typing && (
               <div className="animate-in fade-in-0 flex items-start gap-2.5 duration-300">
                 <img
-                  src="/logo.webp"
+                  src="/littleq.webp"
                   alt=""
                   aria-hidden="true"
                   className="h-8 w-8 shrink-0 rounded-full object-cover"
@@ -407,7 +407,7 @@ export function Component() {
           <CardContent className="space-y-2 pt-1 text-[11px] leading-relaxed text-muted-foreground">
             <p>
               左侧的小Q是平台品牌形象
-              <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">littleQ.png</span>
+              <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">littleQ.webp</span>
               实时渲染的 Live2D 皮套：眨眼、呼吸、口型和跟随鼠标的转头都是实时算出来的。
             </p>
             <p>对话仍是内置剧本驱动，角色反应只反映「正在思考 / 正在回答」这类状态，不代表真实情绪判断。</p>

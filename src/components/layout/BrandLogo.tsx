@@ -5,11 +5,11 @@ interface Props {
   className?: string
 }
 
-/** 品牌 Logo: 小Q 睡颜(512x512 WebP) */
+/** 品牌 Logo: 小Q(768x768 WebP) */
 export function BrandLogo({ size = 24, className }: Props) {
   return (
     <img
-      src="/logo.webp"
+      src="/littleq.webp"
       alt=""
       aria-hidden="true"
       width={size}
