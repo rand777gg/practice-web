@@ -72,7 +72,7 @@ export function LittleQAvatar({ speaking = false, listening = false, emotion = '
       angleZ: 0,
       nodUntil: 0,
       seenNudge: propsRef.current.nudge,
-      hand: { clasp: 1, point: 0, cover: 0, coverUntil: 0, seenNudge: propsRef.current.nudge },
+      hand: { raise: 0, tilt: 0, coverUntil: 0, seenNudge: propsRef.current.nudge },
       pointer: { x: 0, y: 0, at: -1e9 },
     }
 
