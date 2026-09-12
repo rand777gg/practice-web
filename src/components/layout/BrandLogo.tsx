@@ -5,11 +5,11 @@ interface Props {
   className?: string
 }
 
-/** 品牌 Logo: 奶龙(512x512 WebP, 透明通道) */
+/** 品牌 Logo: 小Q 睡颜(512x512 WebP) */
 export function BrandLogo({ size = 24, className }: Props) {
   return (
     <img
-      src="/nailong.webp"
+      src="/logo.webp"
       alt=""
       aria-hidden="true"
       width={size}
