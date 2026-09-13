@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sparkles } from 'lucide-react'
 import { hasAiConfig } from '@/lib/ai'
+import { getPrompt } from '@/stores/prompt-store'
 
 interface Props {
   title: string
@@ -29,7 +30,7 @@ export function AiChartInsight({ title, dataDesc }: Props) {
       })
       const result = await generateText({
         model: model(import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'),
-        system: '你是一个学习数据分析助手。根据提供的图表数据，用2-4句话简要分析：1) 数据特征或规律 2) 一条实用的学习建议。语言简洁，不要重复数据本身。',
+        system: getPrompt('chart_insight'),
         prompt: `图表：${title}\n数据：${dataDesc}`,
         temperature: 0.7,
         maxOutputTokens: 300,

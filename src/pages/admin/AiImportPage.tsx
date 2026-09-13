@@ -36,7 +36,8 @@ import {
   generateQuestions, generateFromText,
 } from '@/lib/ai'
 import { extractFileText } from '@/lib/file-text'
-import { getPrompt, setPrompt, resetPrompt } from '@/stores/prompt-store'
+import { getPrompt, usePromptStore } from '@/stores/prompt-store'
+import { getPromptDefault } from '@/lib/ai/prompt-catalog'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn, naturalSort } from '@/lib/utils'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
@@ -178,6 +179,20 @@ export function Component() {
   const [generateDocPrompt, setGenerateDocPrompt] = useState(() => getPrompt('generate_doc'))
   const basePromptRef = useRef(generateDocPrompt)
   const baseExtractPromptRef = useRef(extractPrompt)
+
+  // 提示词是登录后异步从库里取的:取回来补一次种子,免得刚进页面用的还是内置默认
+  const promptsLoaded = usePromptStore((s) => s.loaded)
+  const promptsSeededRef = useRef(false)
+  useEffect(() => {
+    if (!promptsLoaded || promptsSeededRef.current) return
+    promptsSeededRef.current = true
+    const nextExtract = getPrompt('extract')
+    const nextDoc = getPrompt('generate_doc')
+    baseExtractPromptRef.current = nextExtract
+    basePromptRef.current = nextDoc
+    setExtractPrompt(nextExtract)
+    setGenerateDocPrompt(nextDoc)
+  }, [promptsLoaded])
 
   const { isEnabled } = useSettingsStore()
   const [showHistoryDialog, setShowHistoryDialog] = useState(false)
@@ -1373,8 +1388,8 @@ export function Component() {
                   </Card>
 
                   <PromptEditor label="提示词" value={generateDocPrompt}
-                    onChange={(v) => { setGenerateDocPrompt(v); setPrompt('generate_doc', v) }}
-                    onReset={() => setGenerateDocPrompt(resetPrompt('generate_doc'))}
+                    onChange={(v) => { setGenerateDocPrompt(v); void usePromptStore.getState().save('generate_doc', v) }}
+                    onReset={() => { void usePromptStore.getState().remove('generate_doc'); setGenerateDocPrompt(getPromptDefault('generate_doc')) }}
                   />
 
                   {/* Config */}
@@ -1586,8 +1601,8 @@ export function Component() {
                     <PromptEditor
                       label="提取题目"
                       value={extractPrompt}
-                      onChange={(v) => { setExtractPrompt(v); setPrompt('extract', v) }}
-                      onReset={() => setExtractPrompt(resetPrompt('extract'))}
+                      onChange={(v) => { setExtractPrompt(v); void usePromptStore.getState().save('extract', v) }}
+                      onReset={() => { void usePromptStore.getState().remove('extract'); setExtractPrompt(getPromptDefault('extract')) }}
                     />
                     <Card>
                       <CardContent className="py-3 space-y-2">

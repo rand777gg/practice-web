@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { getPrompt } from '@/stores/prompt-store'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -219,7 +220,7 @@ export function Component() {
     })
     const result = await generateText({
      model: model(import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'),
-     prompt: '生成一个中文学习者的昵称，2-6个字，有创意、有趣、不死板。只输出昵称，不要多余内容。',
+     prompt: getPrompt('nickname'),
      temperature: 1.2,
     })
     const aiName = result.text?.trim()

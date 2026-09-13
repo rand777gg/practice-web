@@ -10,6 +10,9 @@ import { PlanWatcher } from './PlanWatcher'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useExamStore } from '@/stores/exam-store'
+import { usePromptStore } from '@/stores/prompt-store'
+import { usePluginStore } from '@/stores/plugin-store'
+import { EyeRestReminder } from '@/components/plugins/EyeRestReminder'
 
 export function AppLayout() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
@@ -23,6 +26,12 @@ export function AppLayout() {
     return () => window.clearTimeout(id)
   }, [sidebarCollapsed])
 
+  // 用户提示词与插件配置进应用后各取一次,之后就靠 getPrompt() / getPlugin() 同步读 —— 调用点都是同步拼参数的
+  useEffect(() => {
+    void usePromptStore.getState().load()
+    void usePluginStore.getState().load()
+  }, [])
+
   return (
     <SidebarProvider
       open={!sidebarCollapsed}
@@ -32,6 +41,7 @@ export function AppLayout() {
       <OnlinePresenceTracker />
       <ExamScheduleWatcher />
       <PlanWatcher />
+      <EyeRestReminder />
       <AppSidebar />
       <SidebarInset>
         <Header />

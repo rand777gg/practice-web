@@ -1,11 +1,11 @@
 import * as React from "react"
 import { Link, useLocation } from "react-router-dom"
 import {
-  Award, Bookmark, BookOpen, Bot, Bug, CalendarClock, ChartPie, ChevronRight, ClipboardList,
+  Award, Blocks, Bookmark, BookOpen, Bot, Bug, CalendarClock, ChartPie, ChevronRight, ClipboardList,
   Clock, Compass, Database, FileDown, FileQuestion, FileText, FileWarning, GitMerge,
   GraduationCap, HardDrive, History, LayoutDashboard, LayoutGrid, LayoutTemplate,
   Library, List, PenLine, Pencil, Plug, Plus, Puzzle, RotateCcw, Route, Settings2, Sparkles, Star, Swords,
-  Terminal, Trophy, Users, UsersRound,
+  Terminal, Trophy, Users, UsersRound, Wand2,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -341,6 +341,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     { id: "aiSettings", title: t("nav.aiSettings"), url: "/ai", icon: Bot, tone: "beta", label: t("nav.beta") },
     { id: "skills", title: t("nav.skills"), url: "/skills", icon: Puzzle, tone: "beta", label: t("nav.beta") },
     { id: "mcp", title: t("nav.mcp"), url: "/mcp", icon: Plug, tone: "beta", label: t("nav.beta") },
+    { id: "prompts", title: t("nav.prompts"), url: "/prompts", icon: Wand2, tone: "beta", label: t("nav.beta") },
+    { id: "plugins", title: t("nav.plugins"), url: "/plugins", icon: Blocks, tone: "beta", label: t("nav.beta") },
   ]
 
   const communityItems: NavItem[] = [

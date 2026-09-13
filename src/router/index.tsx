@@ -187,6 +187,14 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/McpPage'),
               },
               {
+                path: 'prompts',
+                lazy: () => import('@/pages/PromptsPage'),
+              },
+              {
+                path: 'plugins',
+                lazy: () => import('@/pages/PluginsPage'),
+              },
+              {
                 path: 'data-center',
                 lazy: () => import('@/pages/DataCenterPage'),
               },

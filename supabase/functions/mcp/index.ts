@@ -23,6 +23,7 @@ const INSTRUCTIONS = [
   '读到的只是他自己的练习数据,以及平台公开题库。',
   '代码题:先用 judge_code 在平台判题上跑一遍,全部测试点通过才说「已通过」;',
   '判题不可用时如实说「未验证」,不要凭感觉宣布通过。',
+  '用户自己配了提示词的话,先用 list_prompts / get_prompt 取走,按他定的规矩干活。',
   '搭本地环境(Docker Supabase、本地 Judge0)不要走这里,那属于平台「AI 扩展」页的 SKILL.md。',
 ].join('\n')
 
@@ -277,6 +278,80 @@ const TOOLS: Tool[] = [
       const payload = await res.json().catch(() => null)
       if (!res.ok) fail(`判题失败:HTTP ${res.status} ${JSON.stringify(payload).slice(0, 300)}`)
       return payload
+    },
+  },
+  {
+    name: 'list_prompts',
+    description:
+      '列出当前用户在平台上配置的提示词(改过的内置提示词 + 自建提示词),返回 key、标题与摘要。要完整正文用 get_prompt。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        enabled_only: { type: 'boolean', description: '只看启用中的,默认 true' },
+      },
+      additionalProperties: false,
+    },
+    async run(ctx, args) {
+      const enabledOnly = args.enabled_only !== false
+      let query = ctx.db
+        .from('user_prompts')
+        .select('prompt_key, title, body, variables, enabled, updated_at')
+        .eq('user_id', ctx.userId)
+        .order('updated_at', { ascending: false })
+      if (enabledOnly) query = query.eq('enabled', true)
+
+      const { data, error } = await query
+      if (error) fail(`取提示词失败:${error.message}`)
+      return {
+        count: data?.length ?? 0,
+        prompts: (data ?? []).map((row) => ({
+          key: row.prompt_key,
+          title: row.title,
+          enabled: row.enabled,
+          variables: row.variables ?? [],
+          updated_at: row.updated_at,
+          preview: preview(row.body, 120),
+        })),
+        hint: '用 get_prompt 传 key 取完整正文。空列表说明用户还没在平台「提示词」页配置过。',
+      }
+    },
+  },
+  {
+    name: 'get_prompt',
+    description:
+      '按 key 取一条提示词的完整正文,例如 extract(从文档提取题目)、generate_doc(按材料出题)、clean_stem(题干清理)、br_format(换行修复)。请按用户定的规矩干活。',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string', description: '提示词 key,来自 list_prompts' } },
+      required: ['key'],
+      additionalProperties: false,
+    },
+    async run(ctx, args) {
+      const key = str(args.key) ?? fail('缺少 key')
+      const { data, error } = await ctx.db
+        .from('user_prompts')
+        .select('prompt_key, title, body, variables, enabled, updated_at')
+        .eq('user_id', ctx.userId)
+        .eq('prompt_key', key)
+        .maybeSingle()
+      if (error) fail(`取提示词失败:${error.message}`)
+      if (!data) {
+        return {
+          found: false,
+          key,
+          message: `没有名为 ${key} 的提示词。请用户到平台「提示词」页打开一次该条目,它就会被存进他的账号。`,
+        }
+      }
+      if (!data.enabled) return { found: true, key, enabled: false, message: '这条提示词已被用户停用。' }
+      return {
+        found: true,
+        key,
+        title: data.title,
+        enabled: true,
+        variables: data.variables ?? [],
+        updated_at: data.updated_at,
+        body: data.body,
+      }
     },
   },
 ]

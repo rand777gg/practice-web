@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import { getAiConfig as getConfig } from './config'
+import { getPrompt } from '@/stores/prompt-store'
 
 export interface SummaryData {
   todayStr: string
@@ -77,15 +78,7 @@ export async function generateDailySummary(data: SummaryData): Promise<string> {
 
   const { text } = await generateText({
     model,
-    system: `你是一个学习伙伴，用朋友之间聊天的口吻和用户交流。就像你和他是真实世界里的好朋友，你们经常一起学习。根据用户提供的答题数据，自然地聊一聊他的学习情况。
-
-要求：
-- 用朋友聊天的语气，可以适当用"你呀"、"咱们"、"哈哈"、"加油"等口语表达
-- 自然地提到：今天表现怎么样、最近趋势如何、哪些地方需要多练练、今天怎么安排学习比较好
-- 不要用markdown格式（不要用**加粗**、#标题等），纯文本就行
-- 总字数控制在200字以内
-- 像朋友一样鼓励他，不要太正式
-- 某项数据为0或无就跳过不提`,
+    system: getPrompt('study_summary'),
     prompt,
     temperature: 0.7,
     maxOutputTokens: 600,

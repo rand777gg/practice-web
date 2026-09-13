@@ -2994,3 +2994,62 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_public_profiles(UUID[]) TO authenticated;
+
+-- ============================================================================
+-- 29. USER PROMPTS — 用户提示词(覆盖内置默认 / 自建提示词)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.user_prompts (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  prompt_key  TEXT NOT NULL,
+  title       TEXT,
+  body        TEXT NOT NULL,
+  variables   TEXT[] NOT NULL DEFAULT '{}',
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, prompt_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_prompts_user     ON public.user_prompts(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_prompts_user_key ON public.user_prompts(user_id, prompt_key);
+
+DROP TRIGGER IF EXISTS trg_set_updated_at ON public.user_prompts;
+CREATE TRIGGER trg_set_updated_at
+  BEFORE UPDATE ON public.user_prompts
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+ALTER TABLE public.user_prompts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS user_prompts_own ON public.user_prompts;
+CREATE POLICY user_prompts_own ON public.user_prompts FOR ALL
+  USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+-- ============================================================================
+-- 30. USER PLUGINS — 插件开关与配置(每个用户一份,插件定义在代码里)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.user_plugins (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  plugin_id   TEXT NOT NULL,
+  enabled     BOOLEAN NOT NULL DEFAULT false,
+  config      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, plugin_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_plugins_user ON public.user_plugins(user_id);
+
+DROP TRIGGER IF EXISTS trg_set_updated_at ON public.user_plugins;
+CREATE TRIGGER trg_set_updated_at
+  BEFORE UPDATE ON public.user_plugins
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+ALTER TABLE public.user_plugins ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS user_plugins_own ON public.user_plugins;
+CREATE POLICY user_plugins_own ON public.user_plugins FOR ALL
+  USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());

@@ -26,6 +26,8 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: 'aiSettings', group: 'smart', labelZh: 'AI 设置', labelEn: 'AI Settings' },
   { id: 'skills', group: 'smart', labelZh: 'SKILL 技能', labelEn: 'Skills' },
   { id: 'mcp', group: 'smart', labelZh: 'MCP 服务', labelEn: 'MCP Server' },
+  { id: 'prompts', group: 'smart', labelZh: '提示词', labelEn: 'Prompts' },
+  { id: 'plugins', group: 'smart', labelZh: '插件', labelEn: 'Plugins' },
 
   { id: 'arena', group: 'community', labelZh: '竞赛', labelEn: 'Arena' },
   { id: 'achievements', group: 'community', labelZh: '成就', labelEn: 'Achievements' },

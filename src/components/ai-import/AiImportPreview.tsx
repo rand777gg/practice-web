@@ -18,6 +18,7 @@ import type { ParsedQuestion } from '@/lib/ai/types'
 import { generateKeyPoints, hasAiConfig, getAiConfig } from '@/lib/ai'
 import { useT } from '@/i18n/use-t'
 import { useSettingsStore } from '@/stores/settings-store'
+import { getPrompt } from '@/stores/prompt-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { normalizeChineseText, cleanOptionText, naturalSort } from '@/lib/utils'
 
@@ -65,7 +66,7 @@ export function AiImportPreview({
       const items = idxs.map((i) => `[${i}] ${questions[i].question_text}`).join('\n\n---\n\n')
       const { text } = await generateText({
         model: client(config.model || 'deepseek-chat'),
-        system: '你是一个纯文本格式化工具。对下面每段 [N] 标记的文本，在段落和列表项之间插入 <br> 换行符。逐字保留原文，不得修改任何内容。保持 [N] 标记不变。直接输出格式化后的文本。',
+        system: getPrompt('br_format_numbered'),
         prompt: `以下是要格式化的 ${idxs.length} 段文本，严格原样保留，只在需要的地方添加 <br>：\n\n---\n${items}\n---`,
         temperature: 0.1,
         maxOutputTokens: 16000,

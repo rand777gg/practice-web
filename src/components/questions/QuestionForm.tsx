@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
+import { getPrompt } from '@/stores/prompt-store'
 import {
   Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X, Wand2,
 } from 'lucide-react'
@@ -313,7 +314,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
           const model = client(config.model || 'deepseek-chat')
           const { text } = await generateText({
             model,
-            system: '你是一个题目格式化助手。你的任务是保留题目的完整题干内容，只删除选项部分和分析/解析部分。\n\n规则：\n1. 保留题干的所有正文叙述，一字不改，包括背景材料、情境描述、设问句等\n2. 删除以 A. B. C. D. 或 ①②③④ 等编号开头的选项行\n3. 删除"解析："、"分析："、"答案："等开头的解析内容\n4. 直接输出完整题干，不要总结、缩写或添加任何说明',
+            system: getPrompt('clean_stem'),
             prompt: questionText.trim(),
             temperature: 0.1,
           })

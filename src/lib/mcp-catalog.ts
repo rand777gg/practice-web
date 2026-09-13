@@ -67,6 +67,20 @@ export const MCP_TOOLS: McpToolDoc[] = [
     argsZh: 'language、source_code、test_cases[{input, expected}]（上限 20 点）',
     argsEn: 'language, source_code, test_cases[{input, expected}] (max 20 points)',
   },
+  {
+    name: 'list_prompts',
+    summaryZh: '列出你在「提示词」页配置过的提示词（改过的内置 + 自建）',
+    summaryEn: 'List the prompts you configured on the Prompts page (edited built-ins + your own)',
+    argsZh: 'enabled_only（默认 true）',
+    argsEn: 'enabled_only (default true)',
+  },
+  {
+    name: 'get_prompt',
+    summaryZh: '按 key 取一条提示词的完整正文，让 AI 按你定的规矩干活',
+    summaryEn: 'Fetch one prompt in full by key, so the AI works by your rules',
+    argsZh: 'key，例如 extract / generate_doc / clean_stem',
+    argsEn: 'key, e.g. extract / generate_doc / clean_stem',
+  },
 ]
 
 export interface McpClientDoc {
