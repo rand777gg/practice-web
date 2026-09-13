@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { normalizeDailyTargets } from '@/types'
-import type { DailyTarget } from '@/types'
+import { normalizeDailyTargets, normalizeMilestones } from '@/types'
+import type { DailyTarget, PlanMilestone } from '@/types'
 
 export interface PlanSubjectProgress {
   subject: string
@@ -19,6 +19,28 @@ export interface PlanTargetGroup {
   totalDone: number
 }
 
+export interface PlanMilestoneSubjectProgress {
+  subject: string
+  /** 目标轮数 */
+  rounds: number
+  /** 已刷轮数(窗口内作答次数 / 该科题量, 保留一位小数) */
+  roundsDone: number
+  attempts: number
+  total: number
+}
+
+export interface PlanMilestoneProgress {
+  id: string
+  deadline: string
+  subjects: PlanMilestoneSubjectProgress[]
+  totalRounds: number
+  doneRounds: number
+  /** 0..1 */
+  progress: number
+  daysLeft: number
+  passed: boolean
+}
+
 export interface PlanCompletion {
   loading: boolean
   hasPlan: boolean
@@ -27,6 +49,63 @@ export interface PlanCompletion {
   todayDone: number
   longTerm: PlanSubjectProgress[]
   targets: PlanTargetGroup[]
+  milestones: PlanMilestoneProgress[]
+}
+
+/** 里程碑进度原始行, key = `${milestoneId}|${subject}` */
+export type MilestoneProgressRow = { total: number; attempts: number }
+
+/**
+ * 拉取里程碑"窗口内作答次数"。窗口由里程碑截止日推导: 第 i 个窗口的起点是
+ * 第 i-1 个截止日的次日, 因此相邻里程碑互不重叠。
+ */
+export async function fetchMilestoneProgress(
+  userId: string,
+  milestones: PlanMilestone[],
+): Promise<Map<string, MilestoneProgressRow>> {
+  const map = new Map<string, MilestoneProgressRow>()
+  if (milestones.length === 0) return map
+  const { data, error } = await supabase.rpc('get_milestone_progress', {
+    p_user_id: userId,
+    p_milestones: milestones,
+  })
+  if (error) {
+    console.error('fetchMilestoneProgress:', error)
+    return map
+  }
+  for (const r of (data ?? []) as { milestone_id: string; subject: string; total: number; attempts: number }[]) {
+    map.set(`${r.milestone_id}|${r.subject}`, { total: Number(r.total), attempts: Number(r.attempts) })
+  }
+  return map
+}
+
+export function buildMilestoneProgress(
+  milestones: PlanMilestone[],
+  rows: Map<string, MilestoneProgressRow>,
+): PlanMilestoneProgress[] {
+  const now = Date.now()
+  return milestones.map((m) => {
+    const subjects = m.subjects.map((s) => {
+      const row = rows.get(`${m.id}|${s.subject}`)
+      const total = row?.total ?? 0
+      const attempts = row?.attempts ?? 0
+      const roundsDone = total > 0 ? Math.round((attempts / total) * 10) / 10 : 0
+      return { subject: s.subject, rounds: s.rounds, roundsDone, attempts, total }
+    })
+    const totalRounds = subjects.reduce((sum, s) => sum + s.rounds, 0)
+    const doneRounds = subjects.reduce((sum, s) => sum + Math.min(s.roundsDone, s.rounds), 0)
+    const endOfDay = new Date(`${m.deadline}T23:59:59`).getTime()
+    return {
+      id: m.id,
+      deadline: m.deadline,
+      subjects,
+      totalRounds,
+      doneRounds,
+      progress: totalRounds > 0 ? doneRounds / totalRounds : 0,
+      daysLeft: Math.max(Math.ceil((endOfDay - now) / 86400000), 0),
+      passed: endOfDay < now,
+    }
+  })
 }
 
 type ProgressRow = { subject: string; total: number; done_all: number; done_today: number }
@@ -79,6 +158,12 @@ export function usePlanCompletion(): PlanCompletion {
   const [todayDone, setTodayDone] = useState(0)
   const [longTerm, setLongTerm] = useState<PlanSubjectProgress[]>([])
   const [targets, setTargets] = useState<PlanTargetGroup[]>([])
+  const [milestones, setMilestones] = useState<PlanMilestoneProgress[]>([])
+
+  const milestoneList = useMemo<PlanMilestone[]>(
+    () => normalizeMilestones(profile?.milestones),
+    [profile?.milestones],
+  )
 
   useEffect(() => {
     if (!user || !profile) return
@@ -159,6 +244,14 @@ export function usePlanCompletion(): PlanCompletion {
           setTargets([])
         }
 
+        if (milestoneList.length > 0) {
+          const rows = await fetchMilestoneProgress(uid, milestoneList)
+          if (cancelled) return
+          setMilestones(buildMilestoneProgress(milestoneList, rows))
+        } else {
+          setMilestones([])
+        }
+
         if (!cancelled) setLoading(false)
       } catch (e) {
         console.error('usePlanCompletion:', e)
@@ -167,7 +260,7 @@ export function usePlanCompletion(): PlanCompletion {
     })()
 
     return () => { cancelled = true }
-  }, [user, profile, version])
+  }, [user, profile, version, milestoneList])
 
   // 北京时间零点(UTC 16:00)后重新拉取, 进度按新一天重置
   useEffect(() => {
@@ -185,7 +278,7 @@ export function usePlanCompletion(): PlanCompletion {
     return () => clearTimeout(timer)
   }, [])
 
-  const hasPlan = !!profile?.deadline || targets.length > 0
+  const hasPlan = !!profile?.deadline || targets.length > 0 || milestones.length > 0
 
   return {
     loading: loading && !!profile,
@@ -195,5 +288,6 @@ export function usePlanCompletion(): PlanCompletion {
     todayDone,
     longTerm,
     targets,
+    milestones,
   }
 }

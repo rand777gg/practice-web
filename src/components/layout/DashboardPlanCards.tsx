@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -6,10 +6,12 @@ import { useRefreshStore } from '@/stores/refresh-store'
 
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 import { PlanDialog } from './PlanDialog'
-import { Check, TrendingUp, TrendingDown } from 'lucide-react'
+import { Check, Flag, TrendingUp, TrendingDown } from 'lucide-react'
 import type { DailyTarget } from '@/types'
-import { normalizeDailyTargets } from '@/types'
+import { normalizeDailyTargets, normalizeMilestones } from '@/types'
+import { fetchMilestoneProgress, buildMilestoneProgress, type PlanMilestoneProgress } from '@/hooks/use-plan-completion'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
 
@@ -43,6 +45,12 @@ export function DashboardPlanCards() {
   const planSubjects = getPlanSubjects(profile)
   const dailyTargets = getDailyTargets(profile)
   const [dialogOpen, setDialogOpen] = useState(false)
+
+  const milestoneList = useMemo(
+    () => normalizeMilestones(profile?.milestones),
+    [profile?.milestones],
+  )
+  const [milestones, setMilestones] = useState<PlanMilestoneProgress[]>([])
 
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
@@ -185,10 +193,18 @@ export function DashboardPlanCards() {
         setCustomTargetTodayDone(0)
       }
 
+      if (milestoneList.length > 0) {
+        const rows = await fetchMilestoneProgress(uid, milestoneList)
+        if (cancelled) return
+        setMilestones(buildMilestoneProgress(milestoneList, rows))
+      } else {
+        setMilestones([])
+      }
+
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version])
+  }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version, milestoneList])
 
   if (!user) return null
 
@@ -274,6 +290,38 @@ export function DashboardPlanCards() {
                   </span>
                 </div>
               </div>
+              {milestones.length > 0 && (() => {
+                const current = milestones.find((m) => !m.passed && m.progress < 1) ?? milestones[milestones.length - 1]
+                return (
+                  <div className="space-y-1.5 border-t pt-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Flag className="h-3 w-3 text-blue-500" />
+                        {t('plan.nextMilestone')} · <b className="font-medium text-foreground">{current.deadline}</b>
+                      </span>
+                      <span className="tabular-nums">
+                        {current.passed
+                          ? t('plan.deadlinePassed')
+                          : `${t('plan.remaining')} ${current.daysLeft} ${t('plan.daysUnit')}`}
+                        {' · '}
+                        {current.doneRounds}/{current.totalRounds} {t('plan.roundsUnit')}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {current.subjects.map((s) => {
+                        const pct = s.rounds > 0 ? Math.min(Math.round((s.roundsDone / s.rounds) * 100), 100) : 0
+                        return (
+                          <div key={s.subject} className="flex items-center gap-2 text-[11px]">
+                            <span className="truncate max-w-[45%] text-muted-foreground">{s.subject}</span>
+                            <Progress value={pct} className="h-1 flex-1 [&>div]:bg-blue-500" />
+                            <span className="shrink-0 tabular-nums">{s.roundsDone}/{s.rounds}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
             </CardContent>
           </Card>
         )}

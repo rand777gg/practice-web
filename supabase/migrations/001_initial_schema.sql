@@ -2791,3 +2791,83 @@ CREATE POLICY fs_update ON public.focus_sessions FOR UPDATE USING (auth.uid() = 
 
 DROP POLICY IF EXISTS fs_delete ON public.focus_sessions;
 CREATE POLICY fs_delete ON public.focus_sessions FOR DELETE USING (auth.uid() = user_id);
+
+
+-- ============================================================================
+-- Section 40: 长期计划里程碑 (plan milestones)
+--   profiles.milestones = [{ id, deadline:'YYYY-MM-DD', subjects:[{subject,rounds}] }]
+--   里程碑按 deadline 升序排列, 相邻窗口不重叠:
+--     第 i 个窗口 = (第 i-1 个截止日次日 00:00, 第 i 个截止日 24:00] (北京时间)
+--     第 1 个不设下界, 统计该学科的全部历史作答
+--   "刷了几轮" = 窗口内该学科的作答次数 ÷ 该学科题量(重复刷同一题也计入),
+--   口径与 get_subject_progress 的 total 保持一致(排除无知识点题与已排除题)。
+--   注意: 里程碑只看时间窗, 不受"重置进度"(plan_reset_at/subject_reset_at)影响,
+--   否则重置一次就会抹掉历史里程碑的战绩。
+-- ============================================================================
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS milestones JSONB DEFAULT '[]'::jsonb;
+
+CREATE OR REPLACE FUNCTION public.get_milestone_progress(
+  p_user_id    UUID,
+  p_milestones JSONB
+)
+RETURNS TABLE(milestone_id TEXT, subject TEXT, total BIGINT, attempts BIGINT)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  WITH ms AS (
+    SELECT
+      (e.m->>'id')                           AS id,
+      (e.m->>'deadline')::DATE               AS deadline,
+      COALESCE(e.m->'subjects', '[]'::jsonb) AS subjects,
+      e.ord
+    FROM jsonb_array_elements(COALESCE(p_milestones, '[]'::jsonb)) WITH ORDINALITY AS e(m, ord)
+  ),
+  win AS (
+    SELECT id, deadline, subjects,
+           LAG(deadline) OVER (ORDER BY deadline, ord) AS prev_deadline
+    FROM ms
+  ),
+  ms_subj AS (
+    SELECT w.id, w.deadline, w.prev_deadline,
+           (s->>'subject') AS subject
+    FROM win w
+    CROSS JOIN LATERAL jsonb_array_elements(w.subjects) AS s
+    WHERE COALESCE(s->>'subject', '') <> ''
+  )
+  SELECT
+    sj.id                     AS milestone_id,
+    sj.subject                AS subject,
+    COALESCE(tot.total, 0)    AS total,
+    COALESCE(att.attempts, 0) AS attempts
+  FROM ms_subj sj
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS total
+    FROM public.questions q
+    WHERE q.subject = sj.subject
+      AND q.key_points IS NOT NULL AND q.key_points <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ueq
+        WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+      )
+  ) tot ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS attempts
+    FROM public.user_answers ua
+    JOIN public.questions q ON q.id = ua.question_id
+    WHERE ua.user_id = p_user_id
+      AND q.subject = sj.subject
+      -- 边界按北京时间(与客户端"今日"的 UTC 16:00 口径一致)
+      AND (sj.prev_deadline IS NULL
+           OR ua.answered_at >= ((sj.prev_deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
+      AND ua.answered_at < ((sj.deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ueq
+        WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+      )
+  ) att ON TRUE
+  ORDER BY sj.deadline, sj.subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_milestone_progress(UUID, JSONB) TO authenticated;

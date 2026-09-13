@@ -96,6 +96,47 @@ export interface DailyTarget {
   deadline: string | null
 }
 
+/**
+ * 长期计划下的里程碑: 把整体期限切成若干段, 每段给定"某学科刷 N 轮"。
+ * 相邻里程碑不重叠 —— 第 i 个的统计窗口 = (第 i-1 个截止日次日, 第 i 个截止日];
+ * 第一个里程碑不设起点, 统计该学科的全部历史作答。
+ */
+export interface PlanMilestone {
+  id: string
+  /** YYYY-MM-DD, 含当天 24:00 */
+  deadline: string
+  subjects: { subject: string; rounds: number }[]
+}
+
+export function newMilestoneId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `m${Date.now()}`
+}
+
+/**
+ * 归一化已存储的里程碑。列是 JSONB, PostgREST 直接回数组; 兼容历史上可能存成
+ * JSON 字符串(双重编码)的情况, 按截止日排序并丢弃无日期/无学科的脏数据。
+ */
+export function normalizeMilestones(raw: unknown): PlanMilestone[] {
+  if (typeof raw === 'string') {
+    try { return normalizeMilestones(JSON.parse(raw) as unknown) } catch { return [] }
+  }
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map((m) => ({
+      id: typeof m.id === 'string' && m.id ? m.id : newMilestoneId(),
+      deadline: typeof m.deadline === 'string' ? m.deadline : '',
+      subjects: Array.isArray(m.subjects)
+        ? (m.subjects as unknown[])
+            .filter((s): s is { subject: string; rounds?: unknown } =>
+              !!s && typeof s === 'object' && typeof (s as { subject?: unknown }).subject === 'string' && !!(s as { subject: string }).subject)
+            .map((s) => ({ subject: s.subject, rounds: Math.max(1, Math.round(Number(s.rounds) || 1)) }))
+        : [],
+    }))
+    .filter((m) => !!m.deadline)
+    .sort((a, b) => a.deadline.localeCompare(b.deadline))
+}
+
 /** Normalize legacy DailyTarget formats to the current shape */
 export function normalizeDailyTargets(raw: any[] | null | undefined): DailyTarget[] {
   if (!raw) return []
@@ -169,6 +210,8 @@ export interface Profile {
   plan_subjects: string | null
   daily_targets: string | null
   daily_deadline: string | null
+  /** 长期计划下的里程碑(JSONB 列, PostgREST 直接回数组), 见 PlanMilestone */
+  milestones: PlanMilestone[] | null
   /** 备考目标类型:kaoyan 考研 / gongkao 考公 / final 期末考 / other 其他考试 */
   goal_type?: string | null
   plan_reset_at: string | null
