@@ -2794,14 +2794,17 @@ CREATE POLICY fs_delete ON public.focus_sessions FOR DELETE USING (auth.uid() = 
 
 
 -- ============================================================================
+-- ============================================================================
 -- Section 40: 长期计划里程碑 (plan milestones)
---   profiles.milestones = [{ id, deadline:'YYYY-MM-DD', subjects:[{subject,rounds}] }]
---   里程碑按 deadline 升序排列, 相邻窗口不重叠:
---     第 i 个窗口 = (第 i-1 个截止日次日 00:00, 第 i 个截止日 24:00] (北京时间)
---     第 1 个不设下界, 统计该学科的全部历史作答
+--   profiles.milestones = [{ id, start?, deadline:'YYYY-MM-DD', subjects:[{subject,rounds}] }]
+--   每个里程碑自带统计窗口 [start, deadline](北京时间, 含 deadline 当天 24:00):
+--     start 有值 -> 直接用; 否则回退为"按 deadline 排序后的上一个里程碑截止日次日";
+--     两者皆无(第一个且没填 start) -> 不设下界, 统计该学科全部历史作答。
+--   窗口允许重叠: 同一学科可以并行多轮, 不同学科也可以同一段时间各自设里程碑,
+--   所以不再强制"里程碑之间不重叠", 窗口由各自的 start 显式区分。
 --   "刷了几轮" = 窗口内该学科的作答次数 ÷ 该学科题量(重复刷同一题也计入),
 --   口径与 get_subject_progress 的 total 保持一致(排除无知识点题与已排除题)。
---   注意: 里程碑只看时间窗, 不受"重置进度"(plan_reset_at/subject_reset_at)影响,
+--   注意: 里程碑只看时间窗, 不受"重置进度"(plan_reset_at/subject_reset_at)影响，
 --   否则重置一次就会抹掉历史里程碑的战绩。
 -- ============================================================================
 ALTER TABLE public.profiles
@@ -2820,6 +2823,7 @@ AS $$
   WITH ms AS (
     SELECT
       (e.m->>'id')                           AS id,
+      NULLIF(e.m->>'start', '')::DATE        AS start_day,
       (e.m->>'deadline')::DATE               AS deadline,
       COALESCE(e.m->'subjects', '[]'::jsonb) AS subjects,
       e.ord
@@ -2827,11 +2831,11 @@ AS $$
   ),
   win AS (
     SELECT id, deadline, subjects,
-           LAG(deadline) OVER (ORDER BY deadline, ord) AS prev_deadline
+           COALESCE(start_day, LAG(deadline) OVER (ORDER BY deadline, ord)) AS win_start
     FROM ms
   ),
   ms_subj AS (
-    SELECT w.id, w.deadline, w.prev_deadline,
+    SELECT w.id, w.win_start, w.deadline,
            (s->>'subject') AS subject
     FROM win w
     CROSS JOIN LATERAL jsonb_array_elements(w.subjects) AS s
@@ -2860,8 +2864,8 @@ AS $$
     WHERE ua.user_id = p_user_id
       AND q.subject = sj.subject
       -- 边界按北京时间(与客户端"今日"的 UTC 16:00 口径一致)
-      AND (sj.prev_deadline IS NULL
-           OR ua.answered_at >= ((sj.prev_deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
+      AND (sj.win_start IS NULL
+           OR ua.answered_at >= ((sj.win_start + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
       AND ua.answered_at < ((sj.deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ
       AND NOT EXISTS (
         SELECT 1 FROM public.user_excluded_questions ueq

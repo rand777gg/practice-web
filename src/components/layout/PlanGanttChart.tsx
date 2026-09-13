@@ -10,10 +10,11 @@ const DAY = 86400000
 const BAR_H = 10
 /** 图表上方留给"旗帜"的高度 */
 const FLAG_ZONE = 30
-/** 左侧 y 轴(学科)区宽度, 导出给旗杆轨道对齐用 */
+/** 底部 dataZoom 滑块占的高度 */
+const ZOOM_H = 26
+/** 左侧 y 轴(学科)区宽度 */
 export const GANTT_LEFT = 64
 export const GANTT_RIGHT = 46
-
 export const CUSTOM_PINK = '#ec4899'
 
 function parseDay(s: string): number {
@@ -26,9 +27,9 @@ function todayStart(): number {
   return d.getTime()
 }
 
-function mmdd(ts: number): string {
+function dayLabel(ts: number): string {
   const d = new Date(ts)
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getMonth() + 1}月${d.getDate()}日`
 }
 
 type BarDatum = {
@@ -77,23 +78,32 @@ export function PlanGanttChart({
 
   const model = useMemo(() => {
     const today = todayStart()
+    // 行 = 学科 × 里程碑(自定义计划里 = 学科 × 目标组): 同一学科的每一轮单独一行, 不叠在一起
+    const rows: string[] = []
+    const rowIndex = new Map<string, number>()
 
     if (mode === 'custom') {
-      const rows: string[] = []
+      const order: string[] = []
       const seen = new Set<string>()
       for (const g of targets) {
         for (const s of g.subjects) {
-          if (s.subject && !seen.has(s.subject)) { seen.add(s.subject); rows.push(s.subject) }
+          if (s.subject && !seen.has(s.subject)) { seen.add(s.subject); order.push(s.subject) }
         }
       }
-      const rowIndex = new Map(rows.map((s, i) => [s, i]))
+      order.forEach((subject, gi) => {
+        const group = targets.find((g) => g.subjects.some((s) => s.subject === subject))
+        rowIndex.set(`${subject}|${gi}`, rows.length)
+        rows.push(rows.length === 0 || rows[rows.length - 1] !== subject ? subject : '')
+        void group
+      })
       const bars: BarDatum[] = []
       const lines: number[] = []
-      for (const g of targets) {
+      targets.forEach((g, gi) => {
         const end = g.deadline ? parseDay(g.deadline) : today + DAY
         if (g.deadline) lines.push(parseDay(g.deadline))
         for (const s of g.subjects) {
-          const row = rowIndex.get(s.subject)
+          const key = `${s.subject}|${order.indexOf(s.subject)}`
+          const row = rowIndex.get(key)
           if (row === undefined) continue
           bars.push({
             value: [row, today, end, s.done, s.count],
@@ -104,7 +114,8 @@ export function PlanGanttChart({
             tip: `${s.subject} · ${t('plan.today')} ${s.done}/${s.count}${t('plan.questions')}${g.deadline ? ` · ${t('plan.deadline')} ${g.deadline}` : ''}`,
           })
         }
-      }
+        void gi
+      })
       return {
         rows,
         bars,
@@ -115,22 +126,30 @@ export function PlanGanttChart({
       }
     }
 
-    // 长期计划: 一个里程碑 = 一段时间窗; 学科为行, 画"窗口内已刷轮数/目标轮数"
-    const rows: string[] = []
-    const seen = new Set<string>()
-    const push = (s: string) => { if (s && !seen.has(s)) { seen.add(s); rows.push(s) } }
-    longTerm.forEach((r) => push(r.subject))
-    milestones.forEach((m) => m.subjects.forEach((s) => push(s.subject)))
-    // 只保留真正有里程碑窗口的学科, 避免出现一排没内容的空行
-    const hasBars = new Set<string>()
-    milestones.forEach((m) => m.subjects.forEach((s) => hasBars.add(s.subject)))
-    const barRows = rows.filter((s) => hasBars.has(s))
-    const rowIndex = new Map(barRows.map((s, i) => [s, i]))
+    // 学科顺序: 长期计划里的学科优先, 其次是只在里程碑里出现的学科
+    const subjectOrder: string[] = []
+    const seenSubject = new Set<string>()
+    const pushSubject = (s: string) => {
+      if (s && !seenSubject.has(s)) { seenSubject.add(s); subjectOrder.push(s) }
+    }
+    longTerm.forEach((r) => pushSubject(r.subject))
+    milestones.forEach((m) => m.subjects.forEach((s) => pushSubject(s.subject)))
+
+    for (const subject of subjectOrder) {
+      let first = true
+      milestones.forEach((m, mi) => {
+        if (!m.subjects.some((s) => s.subject === subject)) return
+        rowIndex.set(`${subject}|${m.id}`, rows.length)
+        // 同一学科的第一行写学科名, 之后的每一轮单独成行并用 (序号) 续行 — 不再堆在一行
+        rows.push(first ? subject : `(${mi + 1})`)
+        first = false
+      })
+    }
 
     const deadlineDays = milestones.map((m) => parseDay(m.deadline))
-    const earliest = Math.min(today, ...deadlineDays)
+    const startDays = milestones.map((m) => (m.start ? parseDay(m.start) : NaN)).filter((n) => Number.isFinite(n))
+    const earliest = Math.min(today, ...deadlineDays, ...startDays)
     const latest = Math.max(today + 7 * DAY, planDeadline ? parseDay(planDeadline) : 0, ...deadlineDays)
-    // 两侧留一点余量: 否则第一个里程碑(窗口从"计划起点"开始)会贴在最左边、宽度为 0
     const start = earliest - 10 * DAY
     const end = latest + 10 * DAY
 
@@ -139,20 +158,23 @@ export function PlanGanttChart({
     const currentId = milestones.find((m) => m.progress < 1 && !m.passed)?.id
     milestones.forEach((m, i) => {
       const mEnd = parseDay(m.deadline)
-      const prevEnd = i > 0 ? parseDay(milestones[i - 1].deadline) : null
-      const mStart = prevEnd === null ? start : prevEnd + DAY
+      // 里程碑自带时间窗; 没填 start 时回退到"上一个里程碑的次日"
+      const mStart = m.start
+        ? parseDay(m.start)
+        : i > 0 ? parseDay(milestones[i - 1].deadline) + DAY : start
+      const prevEnd = m.start ? parseDay(m.start) - DAY : (i > 0 ? parseDay(milestones[i - 1].deadline) : null)
       const gap = prevEnd === null ? 100 : ((mEnd - prevEnd) / (end - start)) * 100
       const color = m.progress >= 1 ? pal.correct : m.passed ? pal.wrong : currentId === m.id ? pal.brand : pal.label
       flags.push({
         value: [mEnd],
         color,
-        label: mmdd(mEnd),
-        showLabel: gap >= 4,
+        label: dayLabel(mEnd),
+        showLabel: gap >= 6,
         milestoneId: m.id,
         tip: `${t('plan.milestone')} ${i + 1} · ${m.deadline} · ${m.doneRounds}/${m.totalRounds} ${t('plan.roundsUnit')}`,
       })
       for (const s of m.subjects) {
-        const row = rowIndex.get(s.subject)
+        const row = rowIndex.get(`${s.subject}|${m.id}`)
         if (row === undefined) continue
         bars.push({
           value: [row, mStart, mEnd, s.roundsDone, s.rounds],
@@ -162,11 +184,11 @@ export function PlanGanttChart({
           total: s.rounds,
           selected: selectedMilestoneId === m.id,
           milestoneId: m.id,
-          tip: `${s.subject} · ${t('plan.milestone')} ${i + 1} (${mmdd(mStart)} → ${mmdd(mEnd)}) · ${s.roundsDone}/${s.rounds} ${t('plan.roundsUnit')}`,
+          tip: `${s.subject} · ${t('plan.milestone')} ${i + 1} (${dayLabel(mStart)} → ${dayLabel(mEnd)}) · ${s.roundsDone}/${s.rounds} ${t('plan.roundsUnit')}`,
         })
       }
     })
-    return { rows: barRows, bars, flags, lines: deadlineDays, start, end }
+    return { rows, bars, flags, lines: deadlineDays, start, end }
   }, [mode, milestones, planDeadline, longTerm, targets, selectedMilestoneId, pal, t])
 
   const option = useMemo(() => {
@@ -232,7 +254,7 @@ export function PlanGanttChart({
     return {
       backgroundColor: 'transparent',
       animation: false,
-      grid: { left: GANTT_LEFT, right: GANTT_RIGHT, top: FLAG_ZONE, bottom: 4, containLabel: false },
+      grid: { left: GANTT_LEFT, right: GANTT_RIGHT, top: FLAG_ZONE, bottom: ZOOM_H + 4, containLabel: false },
       tooltip: {
         trigger: 'item',
         backgroundColor: pal.panel,
@@ -240,13 +262,33 @@ export function PlanGanttChart({
         textStyle: { color: pal.ink, fontSize: 11 },
         formatter: (p: { data?: { tip?: string } }) => p?.data?.tip ?? '',
       },
+      dataZoom: [
+        { type: 'inside', xAxisIndex: 0, minValueSpan: 14 * DAY, zoomOnMouseWheel: true, moveOnMouseMove: true },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          bottom: 2,
+          height: 16,
+          showDetail: false,
+          brushSelect: false,
+          minValueSpan: 14 * DAY,
+          borderColor: pal.panelLine,
+          backgroundColor: 'transparent',
+          fillerColor: withAlpha(pal.brand, 0.14),
+          handleStyle: { color: pal.brand, borderColor: pal.brand },
+          moveHandleStyle: { color: withAlpha(pal.brand, 0.5) },
+          dataBackground: { lineStyle: { color: pal.line }, areaStyle: { color: withAlpha(pal.brand, 0.06) } },
+          selectedDataBackground: { lineStyle: { color: pal.brand }, areaStyle: { color: withAlpha(pal.brand, 0.16) } },
+          textStyle: { color: pal.label, fontSize: 10 },
+        },
+      ],
       xAxis: {
         type: 'time',
         min: start,
         max: end,
         axisTick: { show: false },
         axisLine: { lineStyle: { color: pal.line } },
-        axisLabel: { color: pal.label, fontSize: 10, hideOverlap: true, formatter: (v: number) => mmdd(v) },
+        axisLabel: { color: pal.label, fontSize: 10, hideOverlap: true, splitNumber: 5, formatter: (v: number) => dayLabel(v) },
         splitLine: { show: false },
       },
       yAxis: {
@@ -255,7 +297,7 @@ export function PlanGanttChart({
         inverse: true,
         axisTick: { show: false },
         axisLine: { show: false },
-        axisLabel: { color: pal.label, fontSize: 11, width: GANTT_LEFT - 10, overflow: 'truncate' },
+        axisLabel: { color: pal.label, fontSize: 11, width: GANTT_LEFT - 10, overflow: 'truncate', interval: 0 },
       },
       series: [
         {
@@ -265,6 +307,7 @@ export function PlanGanttChart({
           markLine: {
             silent: true,
             symbol: 'none',
+            label: { show: false },
             data: lines.map((d) => ({
               xAxis: d,
               lineStyle: { color: withAlpha(pal.brand, 0.35), type: 'dashed', width: 1 },
@@ -285,7 +328,7 @@ export function PlanGanttChart({
       option={option}
       notMerge
       lazyUpdate
-      style={{ height: height ?? Math.max(150, FLAG_ZONE + 26 + model.rows.length * 26), width: '100%' }}
+      style={{ height: height ?? Math.max(170, FLAG_ZONE + ZOOM_H + 20 + model.rows.length * 26), width: '100%' }}
       onEvents={{
         click: (p: { data?: { milestoneId?: string } }) => {
           const id = p?.data?.milestoneId

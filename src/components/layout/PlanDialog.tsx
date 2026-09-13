@@ -198,12 +198,22 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   // ==== 里程碑 ====
   const addMilestone = () => {
     setMilestoneError('')
-    setMilestones((prev) => [...prev, { id: newMilestoneId(), deadline: '', subjects: [] }])
+    setMilestones((prev) => {
+      const last = prev.filter((m) => m.deadline).sort((a, b) => a.deadline.localeCompare(b.deadline)).pop()
+      const d = last?.deadline ? new Date(`${last.deadline}T00:00:00`) : new Date()
+      if (last?.deadline) d.setDate(d.getDate() + 1)
+      return [...prev, { id: newMilestoneId(), start: toDateStr(d), deadline: '', subjects: [] }]
+    })
   }
 
   const removeMilestone = (id: string) => {
     setMilestoneError('')
     setMilestones((prev) => prev.filter((m) => m.id !== id))
+  }
+
+  const updateMilestoneStart = (id: string, d: string) => {
+    setMilestoneError('')
+    setMilestones((prev) => prev.map((m) => (m.id === id ? { ...m, start: d } : m)))
   }
 
   const updateMilestoneDeadline = (id: string, d: string) => {
@@ -235,9 +245,8 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     if (list.length === 0) return ''
     if (list.some((m) => !m.deadline)) return t('plan.milestoneNeedDate')
     if (list.some((m) => m.subjects.length === 0)) return t('plan.milestoneNeedSubject')
-    const dates = list.map((m) => m.deadline).sort()
-    if (new Set(dates).size !== dates.length) return t('plan.milestoneDupDate')
-    if (deadline && dates[dates.length - 1] > deadline) return t('plan.milestoneAfterDeadline')
+    if (list.some((m) => !!m.start && m.start >= m.deadline)) return t('plan.milestoneBadWindow')
+    if (deadline && list.some((m) => m.deadline > deadline)) return t('plan.milestoneAfterDeadline')
     return ''
   }
 
@@ -574,10 +583,17 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                         {i + 1}
                       </span>
                       <DatePicker
+                        date={m.start ? new Date(m.start + 'T00:00:00') : undefined}
+                        onSelect={(d) => updateMilestoneStart(m.id, d ? toDateStr(d) : '')}
+                        placeholder={t('plan.milestoneStart')}
+                        className="w-auto min-w-[104px] h-7 text-[11px] px-2"
+                      />
+                      <span className="shrink-0 text-[11px] text-muted-foreground">→</span>
+                      <DatePicker
                         date={m.deadline ? new Date(m.deadline + 'T00:00:00') : undefined}
                         onSelect={(d) => updateMilestoneDeadline(m.id, d ? toDateStr(d) : '')}
                         placeholder={t('plan.milestoneDeadline')}
-                        className="w-auto min-w-[112px] h-7 text-[11px] px-2"
+                        className="w-auto min-w-[104px] h-7 text-[11px] px-2"
                       />
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

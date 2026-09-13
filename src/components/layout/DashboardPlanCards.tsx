@@ -319,6 +319,8 @@ export function DashboardPlanCards() {
                     {t('plan.milestone')} {milestones.findIndex((x) => x.id === activeMilestone.id) + 1} · {activeMilestone.deadline}
                   </span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {t('plan.milestoneWindow')} {activeMilestone.start ? activeMilestone.start.slice(5) : t('plan.milestoneAutoStart')} → {activeMilestone.deadline.slice(5)}
+                    {' · '}
                     {activeMilestone.passed && activeMilestone.progress < 1
                       ? t('plan.deadlinePassed')
                       : `${t('plan.remaining')} ${activeMilestone.daysLeft} ${t('plan.daysUnit')}`}

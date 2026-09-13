@@ -97,12 +97,15 @@ export interface DailyTarget {
 }
 
 /**
- * 长期计划下的里程碑: 把整体期限切成若干段, 每段给定"某学科刷 N 轮"。
- * 相邻里程碑不重叠 —— 第 i 个的统计窗口 = (第 i-1 个截止日次日, 第 i 个截止日];
- * 第一个里程碑不设起点, 统计该学科的全部历史作答。
+ * 长期计划下的里程碑: 每个里程碑自带一个时间窗 [start, deadline]。
+ * 不同里程碑(即使是同一学科)允许时间重叠 —— 多学科同步复习是常态,
+ * 所以窗口不再由"上一个里程碑的截止日"推导; start 留空时才回退到
+ * "按截止日排序后的上一个里程碑截止日次日"。start 也为空则从计划起点算起。
  */
 export interface PlanMilestone {
   id: string
+  /** YYYY-MM-DD, 统计窗口起点; 空 = 自动(上一个里程碑次日) */
+  start?: string
   /** YYYY-MM-DD, 含当天 24:00 */
   deadline: string
   subjects: { subject: string; rounds: number }[]
@@ -125,6 +128,7 @@ export function normalizeMilestones(raw: unknown): PlanMilestone[] {
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
     .map((m) => ({
       id: typeof m.id === 'string' && m.id ? m.id : newMilestoneId(),
+      start: typeof m.start === 'string' ? m.start : '',
       deadline: typeof m.deadline === 'string' ? m.deadline : '',
       subjects: Array.isArray(m.subjects)
         ? (m.subjects as unknown[])

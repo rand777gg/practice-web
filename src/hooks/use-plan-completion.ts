@@ -31,6 +31,8 @@ export interface PlanMilestoneSubjectProgress {
 
 export interface PlanMilestoneProgress {
   id: string
+  /** 统计窗口起点(空 = 自动回退到上一个里程碑次日) */
+  start: string
   deadline: string
   subjects: PlanMilestoneSubjectProgress[]
   totalRounds: number
@@ -97,6 +99,7 @@ export function buildMilestoneProgress(
     const endOfDay = new Date(`${m.deadline}T23:59:59`).getTime()
     return {
       id: m.id,
+      start: m.start ?? '',
       deadline: m.deadline,
       subjects,
       totalRounds,
