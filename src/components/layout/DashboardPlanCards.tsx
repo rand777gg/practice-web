@@ -6,12 +6,12 @@ import { useRefreshStore } from '@/stores/refresh-store'
 
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { PlanDialog } from './PlanDialog'
-import { Check, Flag, TrendingUp, TrendingDown } from 'lucide-react'
+import { Check, TrendingUp, TrendingDown } from 'lucide-react'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets, normalizeMilestones } from '@/types'
-import { fetchMilestoneProgress, buildMilestoneProgress, type PlanMilestoneProgress } from '@/hooks/use-plan-completion'
+import { fetchMilestoneProgress, buildMilestoneProgress, type PlanMilestoneProgress, type PlanSubjectProgress, type PlanTargetGroup } from '@/hooks/use-plan-completion'
+import { PlanProgressOverview } from './PlanProgressOverview'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
 
@@ -51,6 +51,7 @@ export function DashboardPlanCards() {
     [profile?.milestones],
   )
   const [milestones, setMilestones] = useState<PlanMilestoneProgress[]>([])
+  const [longTermRows, setLongTermRows] = useState<PlanSubjectProgress[]>([])
 
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
@@ -126,6 +127,14 @@ export function DashboardPlanCards() {
         setTotalScope(scopeTotal)
         setTotalDone(scopeDoneAll)
         setYesterdayDone(scopeDoneAll - scopeDoneToday)
+        setLongTermRows((lt ?? []).map((r) => ({
+          subject: r.subject,
+          total: Number(r.total),
+          doneAll: Number(r.done_all),
+          doneToday: Number(r.done_today),
+        })))
+      } else {
+        setLongTermRows([])
       }
 
       if (dailyTargets.length > 0) {
@@ -214,6 +223,14 @@ export function DashboardPlanCards() {
 
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
 
+  // 自定义计划: 交给总览矩阵的"今日"列(组内学科合并)
+  const overviewTargets: PlanTargetGroup[] = targetProgress.map((g, i) => ({
+    deadline: dailyTargets[i]?.deadline ?? null,
+    subjects: g.subjects.map((s) => ({ subject: s.subject, count: s.count, done: s.done })),
+    total: g.total,
+    totalDone: g.totalDone,
+  }))
+
   const useTodayGoal = dailyTargetGoal > 0
   const todayGoal = useTodayGoal ? dailyTargetGoal : customTargetTotal
   const todayDone = useTodayGoal ? doneDaily : customTargetDone
@@ -290,38 +307,16 @@ export function DashboardPlanCards() {
                   </span>
                 </div>
               </div>
-              {milestones.length > 0 && (() => {
-                const current = milestones.find((m) => !m.passed && m.progress < 1) ?? milestones[milestones.length - 1]
-                return (
-                  <div className="space-y-1.5 border-t pt-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Flag className="h-3 w-3 text-blue-500" />
-                        {t('plan.nextMilestone')} · <b className="font-medium text-foreground">{current.deadline}</b>
-                      </span>
-                      <span className="tabular-nums">
-                        {current.passed
-                          ? t('plan.deadlinePassed')
-                          : `${t('plan.remaining')} ${current.daysLeft} ${t('plan.daysUnit')}`}
-                        {' · '}
-                        {current.doneRounds}/{current.totalRounds} {t('plan.roundsUnit')}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {current.subjects.map((s) => {
-                        const pct = s.rounds > 0 ? Math.min(Math.round((s.roundsDone / s.rounds) * 100), 100) : 0
-                        return (
-                          <div key={s.subject} className="flex items-center gap-2 text-[11px]">
-                            <span className="truncate max-w-[45%] text-muted-foreground">{s.subject}</span>
-                            <Progress value={pct} className="h-1 flex-1 [&>div]:bg-blue-500" />
-                            <span className="shrink-0 tabular-nums">{s.roundsDone}/{s.rounds}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })()}
+              {milestones.length > 0 && (
+                <div className="border-t pt-2.5">
+                  <PlanProgressOverview
+                    milestones={milestones}
+                    planDeadline={deadline}
+                    longTerm={longTermRows}
+                    targets={overviewTargets}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

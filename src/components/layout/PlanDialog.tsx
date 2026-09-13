@@ -47,7 +47,8 @@ import { Input } from '@/components/ui/input'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { DailyTarget, PlanMilestone } from '@/types'
 import { normalizeDailyTargets, normalizeMilestones, newMilestoneId } from '@/types'
-import { fetchMilestoneProgress, type MilestoneProgressRow } from '@/hooks/use-plan-completion'
+import { fetchMilestoneProgress, buildMilestoneProgress, type MilestoneProgressRow } from '@/hooks/use-plan-completion'
+import { PlanProgressOverview } from './PlanProgressOverview'
 import { useT } from '@/i18n/use-t'
 
 /** 本地时区的 YYYY-MM-DD（不能用 toISOString, 会把东八区的当天零点倒退一天） */
@@ -156,6 +157,12 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     if (!b.deadline) return -1
     return a.deadline.localeCompare(b.deadline)
   })
+
+  // 编辑态实时预览: 用已保存的窗口进度 + 当前编辑的日期/轮数
+  const previewMilestones = buildMilestoneProgress(
+    milestones.filter((m) => !!m.deadline),
+    milestoneRows,
+  )
 
   const toggleSubject = (s: string) => {
     setSelectedSubjects((prev) =>
@@ -534,7 +541,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               </Button>
             </div>
 
-            {/* 里程碑 — 把整体期限切成若干互不重叠的时间段, 每段定"某学科刷 N 轮" */}
+            {/* 里程碑 — 旗帜时间轴预览 + 每行一个里程碑的紧凑编辑 */}
             <div className="text-sm font-semibold text-blue-600 dark:text-blue-400 flex items-center">
               {t('plan.milestones')}
               <HoverCard openDelay={500}>
@@ -549,100 +556,91 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               </HoverCard>
             </div>
 
-            <div className="space-y-2">
+            {previewMilestones.length > 0 && (
+              <div className="rounded-lg border bg-muted/20 px-2.5 py-2">
+                <PlanProgressOverview milestones={previewMilestones} planDeadline={deadline || null} compact />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
               {orderedMilestones.map((m, i) => {
-                const prev = i > 0 ? orderedMilestones[i - 1].deadline : ''
                 const daysLeft = m.deadline
                   ? Math.max(Math.ceil((new Date(m.deadline + 'T23:59:59').getTime() - Date.now()) / 86400000), 0)
                   : null
                 return (
-                  <div key={m.id} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                      <span className="text-xs font-medium truncate shrink-0">
-                        {t('plan.milestone')} {i + 1}
-                        {i === 0 && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">{t('plan.milestoneFirstHint')}</span>}
+                  <div key={m.id} className="space-y-1.5 rounded-lg border p-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-blue-500/10 text-[11px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
+                        {i + 1}
                       </span>
                       <DatePicker
                         date={m.deadline ? new Date(m.deadline + 'T00:00:00') : undefined}
                         onSelect={(d) => updateMilestoneDeadline(m.id, d ? toDateStr(d) : '')}
                         placeholder={t('plan.milestoneDeadline')}
-                        className="w-auto min-w-[124px] h-7 text-[11px] px-2"
+                        className="w-auto min-w-[112px] h-7 text-[11px] px-2"
                       />
-                      <span className="ml-auto flex items-center gap-1 shrink-0">
-                        {daysLeft !== null && (
-                          <span className="text-[10px] text-muted-foreground tabular-nums">
-                            {daysLeft > 0 ? `${t('plan.remaining')} ${daysLeft} ${t('plan.daysUnit')}` : t('plan.deadlinePassed')}
-                          </span>
-                        )}
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => removeMilestone(m.id)} disabled={saving}>
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-7 min-w-[120px] flex-1 justify-between text-[11px] font-normal">
+                            <span className={cn('truncate', m.subjects.length === 0 && 'text-muted-foreground')}>
+                              {m.subjects.length === 0 ? t('plan.milestonePickSubjects') : m.subjects.map((s) => s.subject).join(', ')}
+                            </span>
+                            <ChevronDown className="ml-1 h-3 w-3 shrink-0" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                          {allSubjects.map((s) => {
+                            const checked = m.subjects.some((x) => x.subject === s)
+                            const disabledByDaily = dailyUsedSubjects.has(s) && !checked
+                            return (
+                              <DropdownMenuItem
+                                key={s}
+                                disabled={disabledByDaily}
+                                onSelect={(e) => { e.preventDefault(); toggleMilestoneSubject(m.id, s) }}
+                                className={`text-xs ${disabledByDaily ? 'opacity-40' : ''}`}
+                              >
+                                <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
+                                <span>{s}</span>
+                                <span className="ml-auto text-muted-foreground">{disabledByDaily ? t('plan.usedByDaily') : subjectCounts.get(s) ?? 0}</span>
+                              </DropdownMenuItem>
+                            )
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      {daysLeft !== null && (
+                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                          {daysLeft > 0 ? `${t('plan.remaining')} ${daysLeft} ${t('plan.daysUnit')}` : t('plan.deadlinePassed')}
+                        </span>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-6 w-6 shrink-0 p-0 text-destructive" onClick={() => removeMilestone(m.id)} disabled={saving}>
+                        <X className="h-3 w-3" />
+                      </Button>
                     </div>
 
-                    {prev && m.deadline && (
-                      <p className="text-[10px] text-muted-foreground">
-                        {t('plan.milestoneWindow')}: {prev} → {m.deadline}
-                      </p>
-                    )}
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
-                          <span className={m.subjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
-                            {m.subjects.length === 0 ? t('plan.selectHint') : m.subjects.map((s) => s.subject).join(', ')}
-                          </span>
-                          <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
-                        {allSubjects.map((s) => {
-                          const checked = m.subjects.some((x) => x.subject === s)
-                          const disabledByDaily = dailyUsedSubjects.has(s) && !checked
+                    {m.subjects.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-7">
+                        {m.subjects.map((s) => {
+                          const row = milestoneRows.get(`${m.id}|${s.subject}`)
+                          const total = row?.total ?? 0
+                          const attempts = row?.attempts ?? 0
+                          const roundsDone = total > 0 ? Math.round((attempts / total) * 10) / 10 : 0
                           return (
-                            <DropdownMenuItem
-                              key={s}
-                              disabled={disabledByDaily}
-                              onSelect={(e) => { e.preventDefault(); toggleMilestoneSubject(m.id, s) }}
-                              className={`text-xs ${disabledByDaily ? 'opacity-40' : ''}`}
-                            >
-                              <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
-                              <span>{s}</span>
-                              <span className="ml-auto text-muted-foreground">{disabledByDaily ? t('plan.usedByDaily') : subjectCounts.get(s) ?? 0}</span>
-                            </DropdownMenuItem>
+                            <span key={s.subject} className="flex items-center gap-1 text-[11px]">
+                              <span className="max-w-[92px] truncate">{s.subject}</span>
+                              <Input
+                                type="number"
+                                min={1}
+                                value={s.rounds}
+                                onChange={(e) => updateMilestoneRounds(m.id, s.subject, Math.max(1, Number(e.target.value) || 1))}
+                                className="h-6 w-12 px-1 text-center text-[11px]"
+                              />
+                              <span className="text-muted-foreground">{t('plan.roundsUnit')}</span>
+                              {row && <span className="tabular-nums text-muted-foreground">{t('plan.roundsDone')} {roundsDone}</span>}
+                            </span>
                           )
                         })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    {m.subjects.map((s) => {
-                      const row = milestoneRows.get(`${m.id}|${s.subject}`)
-                      const total = row?.total ?? 0
-                      const attempts = row?.attempts ?? 0
-                      const roundsDone = total > 0 ? Math.round((attempts / total) * 10) / 10 : 0
-                      const pct = s.rounds > 0 ? Math.min(Math.round((roundsDone / s.rounds) * 100), 100) : 0
-                      return (
-                        <div key={s.subject} className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] truncate flex-1">{s.subject}</span>
-                            {row && (
-                              <span className="text-[11px] tabular-nums text-muted-foreground">
-                                {t('plan.roundsDone')} {roundsDone} /
-                              </span>
-                            )}
-                            <Input
-                              type="number"
-                              min={1}
-                              value={s.rounds}
-                              onChange={(e) => updateMilestoneRounds(m.id, s.subject, Math.max(1, Number(e.target.value) || 1))}
-                              className="h-7 w-14 text-xs px-2"
-                            />
-                            <span className="text-[11px] text-muted-foreground">{t('plan.roundsUnit')}</span>
-                          </div>
-                          {row && <Progress value={pct} className="h-1 [&>div]:bg-blue-500" />}
-                        </div>
-                      )
-                    })}
+                      </div>
+                    )}
                   </div>
                 )
               })}
