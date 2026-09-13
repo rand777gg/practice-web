@@ -10,7 +10,7 @@ import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
 import { Progress } from '@/components/ui/progress'
 import { resolveGoals, resolveRounds } from '@/types'
 import {
-  buildGoalItems, buildRoundItems, fetchPlanStats, goalPlanSpec, roundPlanSpec,
+  buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanItem,
 } from '@/hooks/use-plan-completion'
 import { useT } from '@/i18n/use-t'
@@ -49,6 +49,8 @@ export function DashboardPlanCards() {
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
   const [yesterdayDone, setYesterdayDone] = useState(0)
+  /** 每个学科的题量进度, 用来算没排轮次的那些学科每天还要多少题 */
+  const [ltRows, setLtRows] = useState<{ subject: string; total: number; doneAll: number }[]>([])
 
   const [acc, setAcc] = useState<{ today: number; pct: number; delta: number | null } | null>(null)
   const [streak, setStreak] = useState<number | null>(null)
@@ -114,8 +116,14 @@ export function DashboardPlanCards() {
         setTotalScope(scopeTotal)
         setTotalDone(scopeDoneAll)
         setYesterdayDone(scopeDoneAll - scopeDoneToday)
+        setLtRows((lt ?? []).map((r) => ({
+          subject: r.subject,
+          total: Number(r.total),
+          doneAll: Number(r.done_all),
+        })))
       } else {
         setTotalScope(0)
+        setLtRows([])
       }
 
       const [roundStats, goalStats] = await Promise.all([
@@ -134,6 +142,7 @@ export function DashboardPlanCards() {
   if (!user) return null
 
   const todayDelta = totalDone - yesterdayDone
+  const roundSubjects = new Set(rounds.map((r) => r.subject))
 
   // 自定义计划: 还没刷完的批次一共还差多少题 / 已经刷完几批
   const goalRest = goals.filter((g) => g.state !== 'done').reduce((sum, g) => sum + Math.max(g.quantity - g.done, 0), 0)
@@ -143,7 +152,14 @@ export function DashboardPlanCards() {
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const yestSegPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
   const todaySegPct = totalScope > 0 ? (todayDelta / totalScope) * 100 : 0
-  const longDailyGoal = dayLeft && dayLeft > 0 && totalScope > 0 ? Math.ceil(Math.max(totalScope - totalDone, 0) / dayLeft) : 0
+  const longDailyGoal = deadline
+    ? dailyPace(
+        rounds,
+        ltRows.reduce((sum, r) => sum + (roundSubjects.has(r.subject) ? 0 : Math.max(r.total - r.doneAll, 0)), 0),
+        deadline,
+        nowMs,
+      )
+    : 0
 
   // 选中的记录: 默认落在最紧的那个还没刷完的, 全刷完了就落在最后一条
   const pickActive = (list: PlanItem[]) => list
@@ -164,6 +180,7 @@ export function DashboardPlanCards() {
     subjectMap.set(r.subject, cur)
   }
   const subjectRows = [...subjectMap.values()]
+  const paceBySubject = new Map(subjectPaces(rounds, nowMs).map((p) => [p.subject, p]))
 
   // 自定义计划: 每个学科下一个还没刷完的批次
   const goalSubjectMap = new Map<string, { subject: string; totalBatches: number; rest: number; next?: PlanItem }>()
@@ -350,23 +367,27 @@ export function DashboardPlanCards() {
               </p>
               {deadline && totalScope > 0 && (
                 <p className="text-muted-foreground">
-                  {t('plan.aboutPerDay')} <b className="text-foreground">{longDailyGoal}</b> {t('plan.questions')}
+                  {t('plan.bySchedule')} {t('plan.aboutPerDay')} <b className="text-foreground">{longDailyGoal}</b> {t('plan.perDay')}
                   {' · '}{t('plan.remaining')} <b className="text-foreground">{Math.max(totalScope - totalDone, 0)}</b> {t('plan.questions')}
                 </p>
               )}
-              {subjectRows.map((s) => (
-                <p key={s.subject} className="flex flex-wrap gap-x-1.5 text-muted-foreground">
-                  <span className="shrink-0 text-foreground/80">{s.subject}</span>
-                  <span className="tabular-nums">
-                    {t('plan.roundPrefix')}{s.next ? s.next.index : s.round}/{s.totalRounds}{t('plan.roundsUnit')}
-                  </span>
-                  {s.next
-                    ? <span className={cn('tabular-nums', s.next.state === 'overdue' ? 'text-destructive' : '')}>
-                        · {s.next.target}{s.next.state === 'overdue' ? ` ${t('plan.roundStateOverdue')}` : ''}
-                      </span>
-                    : <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.roundsAllDone')}</span>}
-                </p>
-              ))}
+              {subjectRows.map((s) => {
+                const pace = paceBySubject.get(s.subject)
+                return (
+                  <p key={s.subject} className="flex flex-wrap gap-x-1.5 text-muted-foreground">
+                    <span className="shrink-0 text-foreground/80">{s.subject}</span>
+                    <span className="tabular-nums">
+                      {t('plan.roundPrefix')}{s.next ? s.next.index : s.round}/{s.totalRounds}{t('plan.roundsUnit')}
+                    </span>
+                    {s.next
+                      ? <span className={cn('tabular-nums', s.next.state === 'overdue' ? 'text-destructive' : '')}>
+                          · {s.next.target}{s.next.state === 'overdue' ? ` ${t('plan.roundStateOverdue')}` : ''}
+                          {pace ? ` · ${pace.remaining}${t('plan.questions')}/${pace.days}${t('plan.daysUnit')} ≈ ${pace.perDay}${t('plan.perDay')}` : ''}
+                        </span>
+                      : <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.roundsAllDone')}</span>}
+                  </p>
+                )
+              })}
               {!deadline && <p className="text-muted-foreground/70">{t('plan.notSet')}</p>}
             </div>
 

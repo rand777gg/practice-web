@@ -48,7 +48,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 import type { PlanGoal, PlanRound } from '@/types'
 import { resolveGoals, resolveRounds, newRoundId, addDays, toDateStr, todayStr } from '@/types'
 import {
-  buildGoalItems, buildRoundItems, fetchPlanStats, goalPlanSpec, roundPlanSpec,
+  buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanStat,
 } from '@/hooks/use-plan-completion'
 import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
@@ -88,6 +88,13 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const [resetTooEasy, setResetTooEasy] = useState(false)
   const [askLoadNewSession, setAskLoadNewSession] = useState(false)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
+
+  // "还剩几天"每分钟跟着走, 也避免在渲染里直接取当前时间
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   // Mutual exclusion: subjects in long-term plan can't be in custom plan and vice versa
   const goalSubjects = [...new Set(goals.map((g) => g.subject))]
@@ -147,13 +154,6 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const totalDone = selectedSubjects.reduce((sum, s) => sum + (subjectProgress.get(s)?.done ?? 0), 0)
   const remaining = Math.max(totalSelected - totalDone, 0)
 
-  let dailyGoal = 0
-  if (deadline) {
-    const deadlineDate = new Date(deadline + 'T23:59:59')
-    const daysLeft = Math.max(Math.ceil((deadlineDate.getTime() - Date.now()) / 86400000), 1)
-    dailyGoal = Math.ceil(remaining / daysLeft)
-  }
-
   // 编辑态实时预览: 用已保存记录的实际完成情况 + 当前编辑的目标日/题数
   const previewRounds = buildRoundItems(rounds.filter((r) => !!r.target), roundStats)
   const previewRoundById = new Map(previewRounds.map((r) => [r.id, r]))
@@ -174,8 +174,16 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   }
   for (const list of goalsBySubject.values()) list.sort((a, b) => a.target.localeCompare(b.target))
   const previewDaysLeft = deadline
-    ? Math.max(Math.ceil((new Date(deadline + 'T23:59:59').getTime() - Date.now()) / 86400000), 1)
+    ? Math.max(Math.ceil((new Date(deadline + 'T23:59:59').getTime() - nowMs) / 86400000), 1)
     : 0
+
+  // 每天题数按排期算: 有轮次的学科看最紧的那一轮, 没排轮次的学科按剩余 ÷ 计划剩余天数
+  const previewPaces = subjectPaces(previewRounds, nowMs)
+  const previewPaceBySubject = new Map(previewPaces.map((p) => [p.subject, p]))
+  const previewUnscheduled = selectedSubjects
+    .filter((s) => !previewPaceBySubject.has(s))
+    .reduce((sum, s) => sum + Math.max((subjectCounts.get(s) ?? 0) - (subjectProgress.get(s)?.done ?? 0), 0), 0)
+  const previewPace = dailyPace(previewRounds, previewUnscheduled, deadline || null, nowMs)
 
   const toggleSubject = (s: string) => {
     setSelectedSubjects((prev) =>
@@ -560,7 +568,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                   {deadline && (
                     <p className="text-[11px] pt-1">
                       <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
-                      <span className="font-semibold text-blue-600 dark:text-blue-400">{dailyGoal} {t('plan.perDay')}</span>
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">{previewPace} {t('plan.perDay')}</span>
                       <span className="text-muted-foreground ml-2">{t('plan.doneCount')}: {totalDone}/{totalSelected}</span>
                     </p>
                   )}
@@ -622,7 +630,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                       const p = previewRoundById.get(r.id)
                       const doneAt = p?.doneAt ?? null
                       const daysLeft = r.target
-                        ? Math.max(Math.ceil((new Date(`${r.target}T23:59:59`).getTime() - Date.now()) / 86400000), 0)
+                        ? Math.max(Math.ceil((new Date(`${r.target}T23:59:59`).getTime() - nowMs) / 86400000), 0)
                         : null
                       return (
                         <div key={r.id} className="flex flex-wrap items-center gap-1.5 pl-1">
@@ -742,7 +750,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                         const item = goalPreviewById.get(g.id)
                         const doneAt = item?.doneAt ?? null
                         const daysLeft = g.target
-                          ? Math.max(Math.ceil((new Date(`${g.target}T23:59:59`).getTime() - Date.now()) / 86400000), 0)
+                          ? Math.max(Math.ceil((new Date(`${g.target}T23:59:59`).getTime() - nowMs) / 86400000), 0)
                           : null
                         return (
                           <div key={g.id} className="flex flex-wrap items-center gap-1.5 pl-1">
@@ -814,32 +822,37 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               <>
                 <div className="space-y-1 rounded-lg border bg-muted/20 p-2.5">
                   <p className="text-[11px] text-muted-foreground">{t('plan.schedulePreview')}</p>
-                  {deadline ? (
+                  {selectedSubjects.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">{t('plan.pickDate')}</p>
+                  ) : (
                     <>
                       <p className="text-[12px] tabular-nums">
-                        {t('plan.remaining')} <b>{remaining}</b> {t('plan.questions')} ÷ <b>{previewDaysLeft}</b> {t('plan.daysUnit')}
-                        {' ≈ '}
-                        <b className="text-blue-600 dark:text-blue-400">{dailyGoal}</b> {t('plan.perDay')}
+                        {t('plan.bySchedule')} {t('plan.aboutPerDay')}
+                        {' '}
+                        <b className="text-blue-600 dark:text-blue-400">{previewPace}</b> {t('plan.perDay')}
+                        <span className="text-muted-foreground">
+                          {' · '}{t('plan.remaining')} <b className="font-semibold text-foreground">{remaining}</b> {t('plan.questions')}
+                          {previewDaysLeft > 0 && <> ÷ {previewDaysLeft} {t('plan.daysUnit')}</>}
+                        </span>
                       </p>
-                      {selectedSubjects.length > 0 && (
-                        <ul className="space-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
-                          {selectedSubjects.map((s) => {
-                            const p = subjectProgress.get(s)
-                            const rem = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
-                            return (
-                              <li key={s} className="flex justify-between gap-2">
-                                <span className="truncate">{s}</span>
-                                <span className="shrink-0 tabular-nums">
-                                  {t('plan.remaining')} {rem} · {t('plan.aboutPerDay')} {Math.ceil(rem / previewDaysLeft)} {t('plan.questions')}
-                                </span>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      )}
+                      <ul className="space-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
+                        {selectedSubjects.map((s) => {
+                          const pace = previewPaceBySubject.get(s)
+                          const p = subjectProgress.get(s)
+                          const rem = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
+                          return (
+                            <li key={s} className="flex justify-between gap-2">
+                              <span className="truncate">{s}</span>
+                              <span className="shrink-0 tabular-nums">
+                                {pace
+                                  ? <>{t('plan.roundPrefix')}{pace.index}{t('plan.roundsUnit')} · {t('plan.remaining')} {pace.remaining} {t('plan.questions')} ÷ {pace.days} {t('plan.daysUnit')} ≈ {pace.perDay} {t('plan.perDay')}</>
+                                  : <>{t('plan.remaining')} {rem}{previewDaysLeft > 0 ? <> ÷ {previewDaysLeft} {t('plan.daysUnit')} ≈ {Math.ceil(rem / previewDaysLeft)} {t('plan.perDay')}</> : null}</>}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
                     </>
-                  ) : (
-                    <p className="text-[11px] text-muted-foreground">{t('plan.pickDate')}</p>
                   )}
                 </div>
 

@@ -223,6 +223,74 @@ export function pickVisibleItems(items: PlanItem[], keepDone = 2): PlanItem[] {
     a.subject.localeCompare(b.subject, 'zh-CN') || a.index - b.index)
 }
 
+/** 到目标日当天 24:00 还有几天(已过期或就是今天都算 1 天: 得赶紧补上) */
+function daysUntil(day: string, now = Date.now()): number {
+  return Math.max(Math.ceil((new Date(`${day}T23:59:59`).getTime() - now) / 86400000), 1)
+}
+
+/** 某学科当前最卡进度的那一条: 还差多少题、到目标日还有几天、平均每天多少题 */
+export interface SubjectPace {
+  subject: string
+  /** 卡进度的是第几轮 / 第几批 */
+  index: number
+  target: string
+  remaining: number
+  days: number
+  perDay: number
+}
+
+/**
+ * 每天要刷多少题按排期反推: 逐个学科看还没完成的记录, 算"到这一条的目标日为止累计还差
+ * 多少题 ÷ 还剩几天", 取最紧的那一条(后面排得紧, 今天就得开始还账)。
+ * 题量大的学科自然权重大 —— 剩余题数就是它的量。
+ */
+export function subjectPaces(items: PlanItem[], now = Date.now()): SubjectPace[] {
+  const bySubject = new Map<string, PlanItem[]>()
+  for (const r of items) {
+    const list = bySubject.get(r.subject)
+    if (list) list.push(r)
+    else bySubject.set(r.subject, [r])
+  }
+
+  const out: SubjectPace[] = []
+  for (const [subject, list] of bySubject) {
+    const ordered = [...list].sort((a, b) => a.index - b.index)
+    const current = ordered.findIndex((r) => r.state !== 'done')
+    if (current < 0) continue
+    // 当前这一条已经刷掉的部分, 后面几条的账要连着它一起算
+    let need = 0
+    let tightest: SubjectPace | null = null
+    for (let i = current; i < ordered.length; i++) {
+      const r = ordered[i]
+      need += r.quantity - (i === current ? r.done : 0)
+      const days = daysUntil(r.target, now)
+      const perDay = Math.ceil(need / days)
+      if (!tightest || perDay > tightest.perDay) {
+        tightest = { subject, index: r.index, target: r.target, remaining: need, days, perDay }
+      }
+    }
+    if (tightest) out.push(tightest)
+  }
+  return out.sort((a, b) => b.perDay - a.perDay)
+}
+
+/**
+ * 每天需要刷多少题 = 各学科最紧那条的速度之和。
+ * 完全没排轮次的学科没法按排期算, 回退成"整科剩余 ÷ 计划剩余天数"。
+ */
+export function dailyPace(
+  items: PlanItem[],
+  unscheduledRemaining: number,
+  planDeadline: string | null,
+  now = Date.now(),
+): number {
+  let total = subjectPaces(items, now).reduce((sum, p) => sum + p.perDay, 0)
+  if (planDeadline && unscheduledRemaining > 0) {
+    total += Math.ceil(unscheduledRemaining / daysUntil(planDeadline, now))
+  }
+  return total
+}
+
 type ProgressRow = { subject: string; total: number; done_all: number; done_today: number }
 
 function todayStart(): string {
@@ -230,10 +298,6 @@ function todayStart(): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16, 0, 0, 0))
   if (now < d) d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString()
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.ceil((b.getTime() - a.getTime()) / 86400000)
 }
 
 function getPlanSubjects(profile: { plan_subjects?: string | null } | null): string[] {
@@ -296,15 +360,8 @@ export function usePlanCompletion(): PlanCompletion {
         if (cancelled) return
 
         if (deadline && ltRows) {
-          const deadlineDate = new Date(deadline + 'T23:59:59')
-          const daysLeft = Math.max(daysBetween(new Date(), deadlineDate), 1)
-          let scopeTotal = 0, scopeDoneAll = 0, scopeDoneToday = 0
-          for (const r of ltRows) {
-            scopeTotal += Number(r.total)
-            scopeDoneAll += Number(r.done_all)
-            scopeDoneToday += Number(r.done_today)
-          }
-          setDailyGoal(Math.ceil(Math.max(scopeTotal - scopeDoneAll, 0) / daysLeft))
+          let scopeDoneToday = 0
+          for (const r of ltRows) scopeDoneToday += Number(r.done_today)
           setTodayDone(scopeDoneToday)
           setLongTerm(ltRows.map((r) => ({
             subject: r.subject,
@@ -313,7 +370,6 @@ export function usePlanCompletion(): PlanCompletion {
             doneToday: Number(r.done_today),
           })))
         } else {
-          setDailyGoal(0)
           setTodayDone(0)
           setLongTerm([])
         }
@@ -323,8 +379,17 @@ export function usePlanCompletion(): PlanCompletion {
           goalList.length > 0 ? fetchPlanStats(uid, goalPlanSpec(goalList)) : Promise.resolve(null),
         ])
         if (cancelled) return
-        setRounds(roundStats ? buildRoundItems(roundList, roundStats) : [])
+        const roundItems = roundStats ? buildRoundItems(roundList, roundStats) : []
+        setRounds(roundItems)
         setGoals(goalStats ? buildGoalItems(goalList, goalStats) : [])
+
+        // 每天题数按排期算(见 dailyPace); 只有完全没排轮次的学科才退回"剩余 ÷ 剩余天数"
+        const scheduled = new Set(roundItems.map((r) => r.subject))
+        let unscheduled = 0
+        for (const r of ltRows ?? []) {
+          if (!scheduled.has(r.subject)) unscheduled += Math.max(Number(r.total) - Number(r.done_all), 0)
+        }
+        setDailyGoal(dailyPace(roundItems, deadline ? unscheduled : 0, deadline))
 
         if (!cancelled) setLoading(false)
       } catch (e) {
