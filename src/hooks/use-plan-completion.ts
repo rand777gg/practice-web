@@ -27,6 +27,8 @@ export interface PlanMilestoneSubjectProgress {
   roundsDone: number
   attempts: number
   total: number
+  /** 刷满目标轮数的时刻(未刷满为 null) */
+  doneAt: string | null
 }
 
 export interface PlanMilestoneProgress {
@@ -55,7 +57,7 @@ export interface PlanCompletion {
 }
 
 /** 里程碑进度原始行, key = `${milestoneId}|${subject}` */
-export type MilestoneProgressRow = { total: number; attempts: number }
+export type MilestoneProgressRow = { total: number; attempts: number; doneAt: string | null }
 
 /**
  * 拉取里程碑"窗口内作答次数"。窗口由里程碑截止日推导: 第 i 个窗口的起点是
@@ -75,8 +77,12 @@ export async function fetchMilestoneProgress(
     console.error('fetchMilestoneProgress:', error)
     return map
   }
-  for (const r of (data ?? []) as { milestone_id: string; subject: string; total: number; attempts: number }[]) {
-    map.set(`${r.milestone_id}|${r.subject}`, { total: Number(r.total), attempts: Number(r.attempts) })
+  for (const r of (data ?? []) as { milestone_id: string; subject: string; total: number; attempts: number; done_at: string | null }[]) {
+    map.set(`${r.milestone_id}|${r.subject}`, {
+      total: Number(r.total),
+      attempts: Number(r.attempts),
+      doneAt: r.done_at ?? null,
+    })
   }
   return map
 }
@@ -92,7 +98,7 @@ export function buildMilestoneProgress(
       const total = row?.total ?? 0
       const attempts = row?.attempts ?? 0
       const roundsDone = total > 0 ? Math.round((attempts / total) * 10) / 10 : 0
-      return { subject: s.subject, rounds: s.rounds, roundsDone, attempts, total }
+      return { subject: s.subject, rounds: s.rounds, roundsDone, attempts, total, doneAt: row?.doneAt ?? null }
     })
     const totalRounds = subjects.reduce((sum, s) => sum + s.rounds, 0)
     const doneRounds = subjects.reduce((sum, s) => sum + Math.min(s.roundsDone, s.rounds), 0)

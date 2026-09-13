@@ -2810,11 +2810,13 @@ CREATE POLICY fs_delete ON public.focus_sessions FOR DELETE USING (auth.uid() = 
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS milestones JSONB DEFAULT '[]'::jsonb;
 
+-- 返回列有变化时 CREATE OR REPLACE 会报 42P13, 先 DROP
+DROP FUNCTION IF EXISTS public.get_milestone_progress(UUID, JSONB);
 CREATE OR REPLACE FUNCTION public.get_milestone_progress(
   p_user_id    UUID,
   p_milestones JSONB
 )
-RETURNS TABLE(milestone_id TEXT, subject TEXT, total BIGINT, attempts BIGINT)
+RETURNS TABLE(milestone_id TEXT, subject TEXT, total BIGINT, attempts BIGINT, done_at TIMESTAMPTZ)
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
@@ -2836,7 +2838,8 @@ AS $$
   ),
   ms_subj AS (
     SELECT w.id, w.win_start, w.deadline,
-           (s->>'subject') AS subject
+           (s->>'subject') AS subject,
+           GREATEST(COALESCE((s->>'rounds')::INT, 1), 1) AS target_rounds
     FROM win w
     CROSS JOIN LATERAL jsonb_array_elements(w.subjects) AS s
     WHERE COALESCE(s->>'subject', '') <> ''
@@ -2845,7 +2848,8 @@ AS $$
     sj.id                     AS milestone_id,
     sj.subject                AS subject,
     COALESCE(tot.total, 0)    AS total,
-    COALESCE(att.attempts, 0) AS attempts
+    COALESCE(att.attempts, 0) AS attempts,
+    att.done_at               AS done_at
   FROM ms_subj sj
   LEFT JOIN LATERAL (
     SELECT COUNT(*)::BIGINT AS total
@@ -2858,19 +2862,26 @@ AS $$
       )
   ) tot ON TRUE
   LEFT JOIN LATERAL (
-    SELECT COUNT(*)::BIGINT AS attempts
-    FROM public.user_answers ua
-    JOIN public.questions q ON q.id = ua.question_id
-    WHERE ua.user_id = p_user_id
-      AND q.subject = sj.subject
-      -- 边界按北京时间(与客户端"今日"的 UTC 16:00 口径一致)
-      AND (sj.win_start IS NULL
-           OR ua.answered_at >= ((sj.win_start + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
-      AND ua.answered_at < ((sj.deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ
-      AND NOT EXISTS (
-        SELECT 1 FROM public.user_excluded_questions ueq
-        WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
-      )
+    -- 窗口内按时间排序的第 N 次作答(N = 目标轮数 × 该科题量)即"刷完这轮"的时刻
+    SELECT COUNT(*)::BIGINT AS attempts,
+           MIN(t.answered_at) FILTER (
+             WHERE t.rn = GREATEST(sj.target_rounds * tot.total, 1)
+           ) AS done_at
+    FROM (
+      SELECT ua.answered_at, ROW_NUMBER() OVER (ORDER BY ua.answered_at) AS rn
+      FROM public.user_answers ua
+      JOIN public.questions q ON q.id = ua.question_id
+      WHERE ua.user_id = p_user_id
+        AND q.subject = sj.subject
+        -- 边界按北京时间(与客户端"今日"的 UTC 16:00 口径一致)
+        AND (sj.win_start IS NULL
+             OR ua.answered_at >= ((sj.win_start + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
+        AND ua.answered_at < ((sj.deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ
+        AND NOT EXISTS (
+          SELECT 1 FROM public.user_excluded_questions ueq
+          WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+        )
+    ) t
   ) att ON TRUE
   ORDER BY sj.deadline, sj.subject;
 $$;

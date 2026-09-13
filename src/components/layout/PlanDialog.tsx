@@ -198,12 +198,8 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   // ==== 里程碑 ====
   const addMilestone = () => {
     setMilestoneError('')
-    setMilestones((prev) => {
-      const last = prev.filter((m) => m.deadline).sort((a, b) => a.deadline.localeCompare(b.deadline)).pop()
-      const d = last?.deadline ? new Date(`${last.deadline}T00:00:00`) : new Date()
-      if (last?.deadline) d.setDate(d.getDate() + 1)
-      return [...prev, { id: newMilestoneId(), start: toDateStr(d), deadline: '', subjects: [] }]
-    })
+    // 一轮的起点 = 创建这轮的那天
+    setMilestones((prev) => [...prev, { id: newMilestoneId(), start: toDateStr(new Date()), deadline: '', subjects: [] }])
   }
 
   const removeMilestone = (id: string) => {
@@ -211,16 +207,11 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     setMilestones((prev) => prev.filter((m) => m.id !== id))
   }
 
-  const updateMilestoneStart = (id: string, d: string) => {
-    setMilestoneError('')
-    setMilestones((prev) => prev.map((m) => (m.id === id ? { ...m, start: d } : m)))
-  }
 
   const updateMilestoneDeadline = (id: string, d: string) => {
     setMilestoneError('')
     setMilestones((prev) => prev.map((m) => (m.id === id ? { ...m, deadline: d } : m)))
   }
-
   const toggleMilestoneSubject = (id: string, subj: string) => {
     setMilestones((prev) => prev.map((m) => {
       if (m.id !== id) return m
@@ -582,12 +573,9 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-blue-500/10 text-[11px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
                         {i + 1}
                       </span>
-                      <DatePicker
-                        date={m.start ? new Date(m.start + 'T00:00:00') : undefined}
-                        onSelect={(d) => updateMilestoneStart(m.id, d ? toDateStr(d) : '')}
-                        placeholder={t('plan.milestoneStart')}
-                        className="w-auto min-w-[104px] h-7 text-[11px] px-2"
-                      />
+                      <span className="shrink-0 rounded-md border px-2 py-1 text-[11px] tabular-nums text-muted-foreground">
+                        {t('plan.createdAt')} {m.start ? m.start.slice(5) : t('plan.milestoneAutoStart')}
+                      </span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">→</span>
                       <DatePicker
                         date={m.deadline ? new Date(m.deadline + 'T00:00:00') : undefined}

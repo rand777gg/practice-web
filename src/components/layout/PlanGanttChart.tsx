@@ -176,15 +176,18 @@ export function PlanGanttChart({
       for (const s of m.subjects) {
         const row = rowIndex.get(`${s.subject}|${m.id}`)
         if (row === undefined) continue
+        // 刷满了就画到"刷满那一刻", 没刷满就画到截止日
+        const doneTs = s.doneAt ? new Date(s.doneAt).getTime() : null
+        const mEndDraw = doneTs ?? mEnd
         bars.push({
-          value: [row, mStart, mEnd, s.roundsDone, s.rounds],
+          value: [row, mStart, mEndDraw, s.roundsDone, s.rounds],
           color,
           soft: withAlpha(color, 0.18),
           done: s.roundsDone,
           total: s.rounds,
           selected: selectedMilestoneId === m.id,
           milestoneId: m.id,
-          tip: `${s.subject} · ${t('plan.milestone')} ${i + 1} (${dayLabel(mStart)} → ${dayLabel(mEnd)}) · ${s.roundsDone}/${s.rounds} ${t('plan.roundsUnit')}`,
+          tip: `${s.subject} · ${t('plan.milestone')} ${i + 1} (${dayLabel(mStart)} → ${dayLabel(mEndDraw)}) · ${s.roundsDone}/${s.rounds} ${t('plan.roundsUnit')}${doneTs ? ` · ${t('plan.completedAt')} ${dayLabel(doneTs)}` : ''}`,
         })
       }
     })
@@ -193,6 +196,7 @@ export function PlanGanttChart({
 
   const option = useMemo(() => {
     const { rows, bars, flags, lines, start, end } = model
+    const todayTs = todayStart()
 
     const barRenderer = (params: CustomSeriesRenderItemParams, api: CustomSeriesRenderItemAPI) => {
       const data = bars[params.dataIndex]
@@ -203,12 +207,14 @@ export function PlanGanttChart({
       const x = from[0]
       const y = from[1] - BAR_H / 2
       const w = Math.max(to[0] - x, 3)
-      const ratio = data.total > 0 ? Math.min(data.done / data.total, 1) : 0
+      // 到今天为止的一段用实色, 今天之后(还没到的时间)用浅色
+      const pastX = api.coord([Math.min(todayTs, Number(api.value(2))), row])[0]
+      const pastW = Math.min(Math.max(pastX - x, 0), w)
       const children: unknown[] = [
         { type: 'rect', shape: { x, y, width: w, height: BAR_H, r: 3 }, style: { fill: data.soft } },
       ]
-      if (ratio > 0) {
-        children.push({ type: 'rect', shape: { x, y, width: Math.max(w * ratio, 3), height: BAR_H, r: 3 }, style: { fill: data.color } })
+      if (pastW > 0) {
+        children.push({ type: 'rect', shape: { x, y, width: pastW, height: BAR_H, r: 3 }, style: { fill: data.color } })
       }
       if (data.selected) {
         children.push({

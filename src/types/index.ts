@@ -124,19 +124,28 @@ export function normalizeMilestones(raw: unknown): PlanMilestone[] {
     try { return normalizeMilestones(JSON.parse(raw) as unknown) } catch { return [] }
   }
   if (!Array.isArray(raw)) return []
+  const t = new Date()
+  t.setHours(0, 0, 0, 0)
+  const todayTs = t.getTime()
   return raw
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
-    .map((m) => ({
-      id: typeof m.id === 'string' && m.id ? m.id : newMilestoneId(),
-      start: typeof m.start === 'string' ? m.start : '',
-      deadline: typeof m.deadline === 'string' ? m.deadline : '',
-      subjects: Array.isArray(m.subjects)
-        ? (m.subjects as unknown[])
-            .filter((s): s is { subject: string; rounds?: unknown } =>
-              !!s && typeof s === 'object' && typeof (s as { subject?: unknown }).subject === 'string' && !!(s as { subject: string }).subject)
-            .map((s) => ({ subject: s.subject, rounds: Math.max(1, Math.round(Number(s.rounds) || 1)) }))
-        : [],
-    }))
+    .map((m) => {
+      const start = typeof m.start === 'string' ? m.start : ''
+      // 一轮的起点 = 创建这轮的那天, 不可能在未来; 老数据里被填成未来日期的(旧版"上一个里程碑次日"自动值),
+      // 视为坏数据 → 归到今天
+      const startTs = start ? new Date(`${start}T00:00:00`).getTime() : NaN
+      return {
+        id: typeof m.id === 'string' && m.id ? m.id : newMilestoneId(),
+        start: start && Number.isFinite(startTs) && startTs <= todayTs ? start : '',
+        deadline: typeof m.deadline === 'string' ? m.deadline : '',
+        subjects: Array.isArray(m.subjects)
+          ? (m.subjects as unknown[])
+              .filter((s): s is { subject: string; rounds?: unknown } =>
+                !!s && typeof s === 'object' && typeof (s as { subject?: unknown }).subject === 'string' && !!(s as { subject: string }).subject)
+              .map((s) => ({ subject: s.subject, rounds: Math.max(1, Math.round(Number(s.rounds) || 1)) }))
+          : [],
+      }
+    })
     .filter((m) => !!m.deadline)
     .sort((a, b) => a.deadline.localeCompare(b.deadline))
 }

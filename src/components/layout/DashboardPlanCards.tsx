@@ -242,6 +242,18 @@ export function DashboardPlanCards() {
   const activeMilestone = milestones.find((m) => m.id === selectedMilestoneId) ?? currentMilestone
   const showCustom = (tab === 'custom' || !deadline) && dailyTargets.length > 0
 
+  // 右侧"里程碑详情"用到的派生值
+  const msIndex = activeMilestone ? milestones.findIndex((x) => x.id === activeMilestone.id) + 1 : 0
+  const msAllDone = !!activeMilestone && activeMilestone.subjects.length > 0 && activeMilestone.subjects.every((s) => s.roundsDone >= s.rounds)
+  const msAnyProgress = !!activeMilestone && activeMilestone.subjects.some((s) => s.roundsDone > 0)
+  const msDoneAt = activeMilestone ? ([...activeMilestone.subjects.map((s) => s.doneAt).filter(Boolean) as string[]].sort().pop() ?? null) : null
+  const msStateTone = msAllDone
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : activeMilestone?.passed ? 'text-destructive' : msAnyProgress ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
+  const msStateLabel = msAllDone
+    ? t('plan.milestoneStateDone')
+    : activeMilestone?.passed ? t('plan.milestoneStateOverdue') : msAnyProgress ? t('plan.milestoneStateCurrent') : t('plan.milestoneStateUpcoming')
+
   if (!deadline && dailyTargets.length === 0) return null
 
   return (
@@ -312,33 +324,6 @@ export function DashboardPlanCards() {
               <p className="py-6 text-center text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>
             )}
 
-            {!showCustom && activeMilestone && (
-              <div className="space-y-1 rounded-lg border bg-muted/20 p-2">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px]">
-                  <span className="font-medium">
-                    {t('plan.milestone')} {milestones.findIndex((x) => x.id === activeMilestone.id) + 1} · {activeMilestone.deadline}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {t('plan.milestoneWindow')} {activeMilestone.start ? activeMilestone.start.slice(5) : t('plan.milestoneAutoStart')} → {activeMilestone.deadline.slice(5)}
-                    {' · '}
-                    {activeMilestone.passed && activeMilestone.progress < 1
-                      ? t('plan.deadlinePassed')
-                      : `${t('plan.remaining')} ${activeMilestone.daysLeft} ${t('plan.daysUnit')}`}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-                  {activeMilestone.subjects.length === 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{t('plan.milestoneNoSubject')}</span>
-                  ) : activeMilestone.subjects.map((s) => (
-                    <div key={s.subject} className="flex items-center gap-2 text-[11px]">
-                      <span className="max-w-[40%] truncate">{s.subject}</span>
-                      <Progress value={s.rounds > 0 ? Math.min((s.roundsDone / s.rounds) * 100, 100) : 0} className="h-1 flex-1 [&>div]:bg-blue-500" />
-                      <span className="shrink-0 tabular-nums text-muted-foreground">{s.roundsDone}/{s.rounds} {t('plan.roundsUnit')}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -353,6 +338,43 @@ export function DashboardPlanCards() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-[11px]">
+            {!showCustom && activeMilestone && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-2.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                  <span className="font-medium text-blue-600 dark:text-blue-400">
+                    {t('plan.roundPrefix')}{msIndex}{t('plan.roundsUnit')}
+                  </span>
+                  <span className={cn('shrink-0 text-[10px]', msStateTone)}>{msStateLabel}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  <span>{t('plan.createdAt')} {activeMilestone.start || t('plan.milestoneAutoStart')}</span>
+                  <span>· {t('plan.deadline')} {activeMilestone.deadline}</span>
+                  {msAllDone && msDoneAt
+                    ? <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.completedAt')} {msDoneAt.slice(0, 10)}</span>
+                    : !activeMilestone.passed && <span>· {t('plan.remaining')} {activeMilestone.daysLeft} {t('plan.daysUnit')}</span>}
+                </div>
+                <div className="space-y-1 pt-0.5">
+                  {activeMilestone.subjects.length === 0 ? (
+                    <span className="text-[11px] text-muted-foreground">{t('plan.milestoneNoSubject')}</span>
+                  ) : activeMilestone.subjects.map((s) => {
+                    const ok = s.roundsDone >= s.rounds
+                    return (
+                      <div key={s.subject} className="flex items-center gap-2 text-[11px]">
+                        <span className="max-w-[38%] truncate">{s.subject}</span>
+                        <Progress
+                          value={s.rounds > 0 ? Math.min((s.roundsDone / s.rounds) * 100, 100) : 0}
+                          className={cn('h-1 flex-1', ok ? '[&>div]:bg-emerald-500' : '[&>div]:bg-blue-500')}
+                        />
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {s.roundsDone}/{s.rounds}{t('plan.roundsUnit')}
+                          {s.doneAt && <span className="ml-1 text-emerald-600 dark:text-emerald-400">{s.doneAt.slice(5, 10)}</span>}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 font-medium text-blue-600 dark:text-blue-400">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />
