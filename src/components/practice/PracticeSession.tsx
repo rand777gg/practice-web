@@ -248,10 +248,16 @@ export function PracticeSession() {
   const planRounds = useMemo(() => resolveRounds(profile), [profile])
   const [reviewRounds, setReviewRounds] = useState<string[]>(saved.current?.reviewRounds ?? [])
 
-  // 复习池题数(按选中的 学科×轮次 时间窗, 去重)
-  const reviewWindows = useMemo(() => planRounds
-    .filter((r) => reviewRounds.includes(`${r.subject}|${r.round}`))
-    .map((r) => ({ subject: r.subject, round: r.round, since: r.createdAt, until: r.target })), [planRounds, reviewRounds])
+  // 复习池的窗口: `${学科}|${轮次}` 按该轮时间窗; `${学科}|all` = 该学科全部(不限轮次)
+  const reviewWindows = useMemo(() => {
+    const alls = reviewRounds
+      .filter((k) => k.endsWith('|all'))
+      .map((k) => ({ subject: k.slice(0, -4), round: 0, since: '1970-01-01', until: '' }))
+    const byRound = planRounds
+      .filter((r) => reviewRounds.includes(`${r.subject}|${r.round}`))
+      .map((r) => ({ subject: r.subject, round: r.round, since: r.createdAt, until: r.target }))
+    return [...alls, ...byRound]
+  }, [planRounds, reviewRounds])
 
   useEffect(() => {
     if (!authUser) return
@@ -271,6 +277,7 @@ export function PracticeSession() {
 
   const roundsByPlanSubject = useMemo(() => {
     const map = new Map<string, typeof planRounds>()
+    for (const s of planSubjectSet) map.set(s, [])
     for (const r of planRounds) {
       const list = map.get(r.subject)
       if (list) list.push(r)
@@ -278,7 +285,7 @@ export function PracticeSession() {
     }
     for (const list of map.values()) list.sort((a, b) => a.round - b.round)
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'zh-CN'))
-  }, [planRounds])
+  }, [planRounds, planSubjectSet])
 
   const initRef = useRef(false)
 
@@ -1682,10 +1689,18 @@ export function PracticeSession() {
             ) : roundsByPlanSubject.map(([subject, rounds]) => (
               <div key={subject} className="space-y-1 rounded-lg border p-2">
                 <p className="text-[11px] font-medium">{subject}</p>
+                <label className="flex cursor-pointer items-center gap-2 text-[11px]">
+                  <Checkbox
+                    checked={reviewRounds.includes(`${subject}|all`)}
+                    onCheckedChange={() => toggleReviewRound(`${subject}|all`)}
+                  />
+                  <span className="shrink-0">{t('practice.reviewAll')}</span>
+                  <span className="text-muted-foreground">{t('practice.reviewAllHint')}</span>
+                </label>
                 {rounds.map((r) => {
                   const key = `${r.subject}|${r.round}`
                   return (
-                    <label key={key} className="flex cursor-pointer items-center gap-2 text-[11px]">
+                    <label key={key} className="flex cursor-pointer items-center gap-2 pl-5 text-[11px]">
                       <Checkbox checked={reviewRounds.includes(key)} onCheckedChange={() => toggleReviewRound(key)} />
                       <span className="shrink-0">{t('plan.roundPrefix')}{r.round}{t('plan.roundsUnit')}</span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
