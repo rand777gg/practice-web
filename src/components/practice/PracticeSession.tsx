@@ -57,7 +57,7 @@ import { isAnswerCorrect } from '@/lib/answer-utils'
 import { cn, naturalSort } from '@/lib/utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
-import { normalizeDailyTargets } from '@/types'
+import { resolveGoals } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
@@ -228,13 +228,9 @@ export function PracticeSession() {
   }, [profile?.plan_subjects])
 
   const dailyTargetSubjects = useMemo(() => {
-    if (!profile?.daily_targets) return [] as string[]
-    try {
-      const raw = normalizeDailyTargets(JSON.parse(profile.daily_targets))
-      const planSet = new Set(planSubjects)
-      return [...new Set(raw.flatMap((t) => t.subjects.map((s) => s.subject)))].filter((s) => !planSet.has(s))
-    } catch { return [] }
-  }, [profile?.daily_targets, planSubjects])
+    const planSet = new Set(planSubjects)
+    return [...new Set(resolveGoals(profile).map((g) => g.subject))].filter((s) => !planSet.has(s))
+  }, [profile, planSubjects])
 
   const planSubjectSet = useMemo(() => new Set([...planSubjects, ...dailyTargetSubjects]), [planSubjects, dailyTargetSubjects])
   const planSessionScope = useMemo(() => JSON.stringify([...planSubjectSet].sort()), [planSubjectSet])
@@ -574,7 +570,7 @@ export function PracticeSession() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kpVersion])
   // Refresh KPs when plan subjects change
-  useEffect(() => { triggerKpRefresh() }, [profile?.daily_targets, profile?.plan_subjects, triggerKpRefresh])
+  useEffect(() => { triggerKpRefresh() }, [profile, planSubjects, triggerKpRefresh])
 
   const yearCategories = useMemo(
     () => filteredCategories.filter((c) => /^\d{4}年真题$/.test(c)).sort((a, b) => b.localeCompare(a)),
@@ -1054,7 +1050,7 @@ export function PracticeSession() {
     const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks, question.case_questions)
     sessionDistRef.current.set(question.id, { status: isCorrect ? 'correct' : 'wrong' })
     setSessionDistSnapshot(new Map(sessionDistRef.current))
-    const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice')
+    const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random')
     setAnswerId(id)
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
@@ -1289,7 +1285,7 @@ export function PracticeSession() {
     setSelectedAnswer([])
     sessionDistRef.current.set(question.id, { status: 'wrong' })
     setSessionDistSnapshot(new Map(sessionDistRef.current))
-    const id = await saveAnswer(question.id, [], false, 'practice')
+    const id = await saveAnswer(question.id, [], false, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random')
     setAnswerId(id)
     answeredThisSession.current.add(question.id)
     setAnsweredSessionSnapshot(new Set(answeredThisSession.current))

@@ -4,6 +4,9 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useSyncStore } from '@/stores/sync-store'
 import { addPendingAnswer } from '@/lib/offline-db'
 
+/** sequential = 顺序学习(推进计划轮次), random = 复习自由刷 */
+export type AnswerSource = 'sequential' | 'random'
+
 export function useUserAnswers() {
   const user = useAuthStore((s) => s.user)
   const pendingCount = useSyncStore((s) => s.pendingCount)
@@ -19,7 +22,7 @@ export function useUserAnswers() {
   }, [])
 
   const saveAnswer = useCallback(
-    async (questionId: string, selectedAnswer: unknown, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string) => {
+    async (questionId: string, selectedAnswer: unknown, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string, source?: AnswerSource) => {
       if (!user) return null
 
       // Offline: queue to IndexedDB
@@ -31,6 +34,7 @@ export function useUserAnswers() {
           is_correct: isCorrect,
           mode,
           exam_session_id: examSessionId ?? null,
+          source: source ?? null,
           answered_at: new Date().toISOString(),
         })
         refreshPending()
@@ -45,6 +49,7 @@ export function useUserAnswers() {
         is_correct: isCorrect,
         mode,
         exam_session_id: examSessionId ?? null,
+        source: source ?? null,
       }).select('id').single()
 
       if (error) {
@@ -57,6 +62,7 @@ export function useUserAnswers() {
             is_correct: isCorrect,
             mode,
             exam_session_id: examSessionId ?? null,
+            source: source ?? null,
             answered_at: new Date().toISOString(),
           })
           refreshPending()

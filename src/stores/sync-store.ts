@@ -30,6 +30,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           is_correct: a.is_correct,
           mode: a.mode,
           exam_session_id: a.exam_session_id ?? null,
+          source: a.source ?? null,
           answered_at: a.answered_at,
         }))
         const { error } = await supabase.from('user_answers').insert(rows)

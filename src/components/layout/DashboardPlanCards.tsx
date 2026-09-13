@@ -6,11 +6,13 @@ import { useRefreshStore } from '@/stores/refresh-store'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
-import { PlanGanttChart } from './PlanGanttChart'
+import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
 import { Progress } from '@/components/ui/progress'
-import type { DailyTarget } from '@/types'
-import { normalizeDailyTargets, normalizeMilestones } from '@/types'
-import { fetchMilestoneProgress, buildMilestoneProgress, type PlanMilestoneProgress, type PlanSubjectProgress, type PlanTargetGroup } from '@/hooks/use-plan-completion'
+import { resolveGoals, resolveRounds } from '@/types'
+import {
+  buildGoalItems, buildRoundItems, fetchPlanStats, goalPlanSpec, roundPlanSpec,
+  type PlanItem,
+} from '@/hooks/use-plan-completion'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
 
@@ -26,13 +28,6 @@ function getPlanSubjects(profile: { plan_subjects?: string | null } | null): str
   try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
 }
 
-function getDailyTargets(profile: { daily_targets?: string | null } | null): DailyTarget[] {
-  if (!profile?.daily_targets) return []
-  try { return normalizeDailyTargets(JSON.parse(profile.daily_targets)) } catch { return [] }
-}
-
-function subjectKey(s: string) { return s || 'Other' }
-
 export function DashboardPlanCards() {
   const { t } = useT()
   const { user, profile } = useAuthStore()
@@ -40,29 +35,20 @@ export function DashboardPlanCards() {
   const deadline = profile?.deadline ?? null
   const planResetAt = profile?.plan_reset_at ?? null
   const subjectResetAt = profile?.subject_reset_at ?? null
-  const dailyResetAt = profile?.daily_reset_at ?? null
   const planSubjects = getPlanSubjects(profile)
-  const dailyTargets = getDailyTargets(profile)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const milestoneList = useMemo(
-    () => normalizeMilestones(profile?.milestones),
-    [profile?.milestones],
-  )
-  const [milestones, setMilestones] = useState<PlanMilestoneProgress[]>([])
-  const [longTermRows, setLongTermRows] = useState<PlanSubjectProgress[]>([])
+  const roundList = useMemo(() => resolveRounds(profile), [profile])
+  const goalList = useMemo(() => resolveGoals(profile), [profile])
+  const [rounds, setRounds] = useState<PlanItem[]>([])
+  const [goals, setGoals] = useState<PlanItem[]>([])
   const [tab, setTab] = useState<'long-term' | 'custom'>('long-term')
-  const [selectedMilestoneId, setSelectedMilestoneId] = useState<string | null>(null)
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null)
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
 
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
   const [yesterdayDone, setYesterdayDone] = useState(0)
-
-  const [targetProgress, setTargetProgress] = useState<{ subjects: { subject: string; count: number; done: number; missingKp: number }[]; total: number; totalDone: number }[]>([])
-  const [dailyTargetGoal, setDailyTargetGoal] = useState(0)
-  const [customTargetTotal, setCustomTargetTotal] = useState(0)
-  const [customTargetDone, setCustomTargetDone] = useState(0)
-  const [, setCustomTargetTodayDone] = useState(0)
 
   const [acc, setAcc] = useState<{ today: number; pct: number; delta: number | null } | null>(null)
   const [streak, setStreak] = useState<number | null>(null)
@@ -128,133 +114,83 @@ export function DashboardPlanCards() {
         setTotalScope(scopeTotal)
         setTotalDone(scopeDoneAll)
         setYesterdayDone(scopeDoneAll - scopeDoneToday)
-        setLongTermRows((lt ?? []).map((r) => ({
-          subject: r.subject,
-          total: Number(r.total),
-          doneAll: Number(r.done_all),
-          doneToday: Number(r.done_today),
-        })))
       } else {
-        setLongTermRows([])
+        setTotalScope(0)
       }
 
-      if (dailyTargets.length > 0) {
-        const targetSubjects = [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))]
-
-        const { data: dt } = await supabase.rpc('get_subject_progress', {
-          p_user_id: uid,
-          p_plan_reset_at: dailyResetAt || null,
-          p_today_since: today,
-          p_subjects: targetSubjects,
-          p_subject_resets: subjectResetAt,
-        }) as { data: { subject: string; total: number; done_all: number; done_today: number; missing_kp?: number }[] | null }
-        if (cancelled) return
-
-        const subjTotal = new Map<string, number>()
-        const subjDoneAll = new Map<string, number>()
-        const subjDoneToday = new Map<string, number>()
-        const subjMissingKp = new Map<string, number>()
-        let totalAll = 0
-        for (const r of (dt ?? [])) {
-          subjTotal.set(r.subject, Number(r.total))
-          subjDoneAll.set(r.subject, Number(r.done_all))
-          subjDoneToday.set(r.subject, Number(r.done_today))
-          subjMissingKp.set(r.subject, Number(r.missing_kp ?? 0))
-          totalAll += Number(r.total)
-        }
-        const totalDoneAll = [...subjDoneAll.values()].reduce((a, b) => a + b, 0)
-        const totalDoneToday = [...subjDoneToday.values()].reduce((a, b) => a + b, 0)
-        if (cancelled) return
-        setCustomTargetTotal(totalAll)
-        setCustomTargetDone(totalDoneAll)
-        setCustomTargetTodayDone(totalDoneToday)
-
-        // Daily goal for deadline targets
-        const deadlineTargets = dailyTargets.filter((t) => t.deadline)
-        let computedGoal = 0
-        for (const target of deadlineTargets) {
-          const daysLeft = Math.max(Math.ceil((new Date(target.deadline!).getTime() - Date.now()) / 86400000), 1)
-          for (const subj of target.subjects) {
-            const total = subjTotal.get(subj.subject) ?? 0
-            const doneSubj = subjDoneAll.get(subj.subject) ?? 0
-            computedGoal += Math.ceil(Math.max(total - doneSubj, 0) / daysLeft)
-          }
-        }
-        const manualTotal = dailyTargets
-          .filter((t) => !t.deadline)
-          .reduce((s, t) => s + t.subjects.reduce((sum, subj) => sum + subj.count, 0), 0)
-        setDailyTargetGoal(computedGoal + manualTotal)
-
-        setTargetProgress(dailyTargets.map((t) => ({
-          subjects: t.subjects.map((s) => ({
-            subject: s.subject,
-            count: s.count,
-            done: Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count),
-            missingKp: subjMissingKp.get(subjectKey(s.subject)) ?? 0,
-          })),
-          total: t.subjects.reduce((sum, s) => sum + s.count, 0),
-          totalDone: t.subjects.reduce((sum, s) => sum + Math.min(subjDoneToday.get(subjectKey(s.subject)) ?? 0, s.count), 0),
-        })))
-      } else {
-        setTargetProgress([])
-        setDailyTargetGoal(0)
-        setCustomTargetTotal(0)
-        setCustomTargetDone(0)
-        setCustomTargetTodayDone(0)
-      }
-
-      if (milestoneList.length > 0) {
-        const rows = await fetchMilestoneProgress(uid, milestoneList)
-        if (cancelled) return
-        setMilestones(buildMilestoneProgress(milestoneList, rows))
-      } else {
-        setMilestones([])
-      }
+      const [roundStats, goalStats] = await Promise.all([
+        roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList)) : Promise.resolve(null),
+        goalList.length > 0 ? fetchPlanStats(uid, goalPlanSpec(goalList)) : Promise.resolve(null),
+      ])
+      if (cancelled) return
+      setRounds(roundStats ? buildRoundItems(roundList, roundStats) : [])
+      setGoals(goalStats ? buildGoalItems(goalList, goalStats) : [])
 
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, deadline, planResetAt, dailyResetAt, planSubjects.join(','), JSON.stringify(dailyTargets), version, milestoneList])
+  }, [user?.id, deadline, planResetAt, planSubjects.join(','), version, roundList, goalList])
 
   if (!user) return null
 
   const todayDelta = totalDone - yesterdayDone
-  const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
 
-  const overviewTargets: PlanTargetGroup[] = targetProgress.map((g, i) => ({
-    deadline: dailyTargets[i]?.deadline ?? null,
-    subjects: g.subjects.map((s) => ({ subject: s.subject, count: s.count, done: s.done })),
-    total: g.total,
-    totalDone: g.totalDone,
-  }))
-
-  const useTodayGoal = dailyTargetGoal > 0
-  const todayGoal = useTodayGoal ? dailyTargetGoal : customTargetTotal
-  const todayDone = useTodayGoal ? doneDaily : customTargetDone
-  const todayPct = todayGoal > 0 ? Math.min(100, Math.round((todayDone / todayGoal) * 100)) : 0
+  // 自定义计划: 还没刷完的批次一共还差多少题 / 已经刷完几批
+  const goalRest = goals.filter((g) => g.state !== 'done').reduce((sum, g) => sum + Math.max(g.quantity - g.done, 0), 0)
+  const goalDoneCount = goals.filter((g) => g.state === 'done').length
+  const goalPct = goals.length > 0 ? Math.round((goalDoneCount / goals.length) * 100) : 0
   const dayLeft = deadline ? Math.max(Math.ceil((new Date(deadline).getTime() - nowMs) / 86400000), 0) : null
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const yestSegPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
   const todaySegPct = totalScope > 0 ? (todayDelta / totalScope) * 100 : 0
   const longDailyGoal = dayLeft && dayLeft > 0 && totalScope > 0 ? Math.ceil(Math.max(totalScope - totalDone, 0) / dayLeft) : 0
 
-  const currentMilestone = milestones.find((m) => m.progress < 1 && !m.passed) ?? milestones[milestones.length - 1]
-  const activeMilestone = milestones.find((m) => m.id === selectedMilestoneId) ?? currentMilestone
-  const showCustom = (tab === 'custom' || !deadline) && dailyTargets.length > 0
+  // 选中的记录: 默认落在最紧的那个还没刷完的, 全刷完了就落在最后一条
+  const pickActive = (list: PlanItem[]) => list
+    .filter((r) => r.state !== 'done')
+    .reduce<PlanItem | null>((best, r) => (!best || r.target < best.target ? r : best), null)
+    ?? list[list.length - 1]
+  const activeRound = rounds.find((r) => r.id === selectedRoundId) ?? pickActive(rounds)
+  const activeGoal = goals.find((g) => g.id === selectedGoalId) ?? pickActive(goals)
+  const showCustom = tab === 'custom' && goals.length > 0
 
-  // 右侧"里程碑详情"用到的派生值
-  const msIndex = activeMilestone ? milestones.findIndex((x) => x.id === activeMilestone.id) + 1 : 0
-  const msAllDone = !!activeMilestone && activeMilestone.subjects.length > 0 && activeMilestone.subjects.every((s) => s.roundsDone >= s.rounds)
-  const msAnyProgress = !!activeMilestone && activeMilestone.subjects.some((s) => s.roundsDone > 0)
-  const msDoneAt = activeMilestone ? ([...activeMilestone.subjects.map((s) => s.doneAt).filter(Boolean) as string[]].sort().pop() ?? null) : null
-  const msStateTone = msAllDone
+  // 每个学科"下一个还没刷完的轮次" + 该科一共几轮
+  const subjectMap = new Map<string, { subject: string; round: number; totalRounds: number; next?: PlanItem }>()
+  for (const r of rounds) {
+    const cur = subjectMap.get(r.subject) ?? { subject: r.subject, round: 0, totalRounds: 0 }
+    cur.totalRounds++
+    cur.round = Math.max(cur.round, r.index)
+    if (r.state !== 'done' && (!cur.next || r.target < cur.next.target)) cur.next = r
+    subjectMap.set(r.subject, cur)
+  }
+  const subjectRows = [...subjectMap.values()]
+
+  // 自定义计划: 每个学科下一个还没刷完的批次
+  const goalSubjectMap = new Map<string, { subject: string; totalBatches: number; rest: number; next?: PlanItem }>()
+  for (const g of goals) {
+    const cur = goalSubjectMap.get(g.subject) ?? { subject: g.subject, totalBatches: 0, rest: 0 }
+    cur.totalBatches++
+    if (g.state !== 'done') {
+      cur.rest += Math.max(g.quantity - g.done, 0)
+      if (!cur.next || g.target < cur.next.target) cur.next = g
+    }
+    goalSubjectMap.set(g.subject, cur)
+  }
+  const goalSubjectRows = [...goalSubjectMap.values()]
+
+  const stateTone = (state?: PlanItem['state']) => state === 'done'
     ? 'text-emerald-600 dark:text-emerald-400'
-    : activeMilestone?.passed ? 'text-destructive' : msAnyProgress ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
-  const msStateLabel = msAllDone
-    ? t('plan.milestoneStateDone')
-    : activeMilestone?.passed ? t('plan.milestoneStateOverdue') : msAnyProgress ? t('plan.milestoneStateCurrent') : t('plan.milestoneStateUpcoming')
+    : state === 'overdue' ? 'text-destructive'
+      : state === 'current' ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
+  const stateLabel = (state?: PlanItem['state']) => state === 'done'
+    ? t('plan.roundStateDone')
+    : state === 'overdue' ? t('plan.roundStateOverdue')
+      : state === 'current' ? t('plan.roundStateCurrent') : t('plan.roundStateUpcoming')
+  const daysLeftOf = (item?: PlanItem) => item && item.state !== 'done'
+    ? Math.max(Math.ceil((new Date(`${item.target}T23:59:59`).getTime() - nowMs) / 86400000), 0)
+    : null
 
-  if (!deadline && dailyTargets.length === 0) return null
+  if (!deadline && goals.length === 0) return null
 
   return (
     <>
@@ -274,7 +210,7 @@ export function DashboardPlanCards() {
                 <button
                   type="button"
                   onClick={() => setTab('custom')}
-                  disabled={dailyTargets.length === 0}
+                  disabled={goals.length === 0}
                   className={cn('rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-40', showCustom ? 'bg-pink-500 text-white' : 'text-muted-foreground hover:text-foreground')}
                 >
                   {t('plan.dailyTarget')}
@@ -286,11 +222,14 @@ export function DashboardPlanCards() {
             {showCustom ? (
               <div className="space-y-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-muted-foreground">
-                  <span className="tabular-nums">{t('plan.today')} <b className="text-sm font-semibold text-foreground">{todayDone}</b>/{todayGoal} {t('plan.questions')} · {todayPct}%</span>
+                  <span className="tabular-nums">
+                    {t('plan.batchRest')} <b className="text-sm font-semibold text-foreground">{goalRest}</b> {t('plan.questions')}
+                    {' · '}{t('plan.roundStateDone')} {goalDoneCount}/{goals.length}{t('plan.batchesUnit')}
+                  </span>
                   <span>{t('plan.dailyTarget')}</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-pink-500 transition-all duration-700" style={{ width: `${todayPct}%` }} />
+                  <div className="h-full rounded-full bg-pink-500 transition-all duration-700" style={{ width: `${goalPct}%` }} />
                 </div>
               </div>
             ) : deadline ? (
@@ -309,18 +248,26 @@ export function DashboardPlanCards() {
               </div>
             ) : null}
 
-            {showCustom && <PlanGanttChart mode="custom" targets={overviewTargets} />}
-            {!showCustom && milestones.length > 0 && (
+            {showCustom && goals.length > 0 && (
               <PlanGanttChart
-                mode="long-term"
-                milestones={milestones}
-                planDeadline={deadline}
-                longTerm={longTermRows}
-                selectedMilestoneId={activeMilestone?.id ?? null}
-                onSelectMilestone={setSelectedMilestoneId}
+                items={goals}
+                color={CUSTOM_PINK}
+                unit={t('plan.batchesUnit')}
+                selectedId={activeGoal?.id ?? null}
+                onSelect={setSelectedGoalId}
               />
             )}
-            {!showCustom && milestones.length === 0 && (
+            {!showCustom && rounds.length > 0 && (
+              <PlanGanttChart
+                items={rounds}
+                color={PLAN_BLUE}
+                unit={t('plan.roundsUnit')}
+                planDeadline={deadline}
+                selectedId={activeRound?.id ?? null}
+                onSelect={setSelectedRoundId}
+              />
+            )}
+            {!showCustom && rounds.length === 0 && (
               <p className="py-6 text-center text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>
             )}
 
@@ -338,40 +285,57 @@ export function DashboardPlanCards() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-[11px]">
-            {!showCustom && activeMilestone && (
+            {!showCustom && activeRound && (
               <div className="space-y-1.5 rounded-lg border bg-muted/20 p-2.5" onClick={(e) => e.stopPropagation()}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                  <span className="font-medium text-blue-600 dark:text-blue-400">
-                    {t('plan.roundPrefix')}{msIndex}{t('plan.roundsUnit')}
+                  <span className="min-w-0 truncate font-medium text-blue-600 dark:text-blue-400">
+                    {activeRound.subject} · {t('plan.roundPrefix')}{activeRound.index}{t('plan.roundsUnit')}
                   </span>
-                  <span className={cn('shrink-0 text-[10px]', msStateTone)}>{msStateLabel}</span>
+                  <span className={cn('shrink-0 text-[10px]', stateTone(activeRound.state))}>{stateLabel(activeRound.state)}</span>
                 </div>
                 <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
-                  <span>{t('plan.createdAt')} {activeMilestone.start || t('plan.milestoneAutoStart')}</span>
-                  <span>· {t('plan.deadline')} {activeMilestone.deadline}</span>
-                  {msAllDone && msDoneAt
-                    ? <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.completedAt')} {msDoneAt.slice(0, 10)}</span>
-                    : !activeMilestone.passed && <span>· {t('plan.remaining')} {activeMilestone.daysLeft} {t('plan.daysUnit')}</span>}
+                  <span>{t('plan.createdAt')} {activeRound.createdAt}</span>
+                  <span>· {t('plan.roundTarget')} {activeRound.target}</span>
+                  {activeRound.doneAt
+                    ? <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.completedAt')} {activeRound.doneAt}</span>
+                    : daysLeftOf(activeRound) !== null && <span>· {t('plan.remaining')} {daysLeftOf(activeRound)} {t('plan.daysUnit')}</span>}
                 </div>
-                <div className="space-y-1 pt-0.5">
-                  {activeMilestone.subjects.length === 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{t('plan.milestoneNoSubject')}</span>
-                  ) : activeMilestone.subjects.map((s) => {
-                    const ok = s.roundsDone >= s.rounds
-                    return (
-                      <div key={s.subject} className="flex items-center gap-2 text-[11px]">
-                        <span className="max-w-[38%] truncate">{s.subject}</span>
-                        <Progress
-                          value={s.rounds > 0 ? Math.min((s.roundsDone / s.rounds) * 100, 100) : 0}
-                          className={cn('h-1 flex-1', ok ? '[&>div]:bg-emerald-500' : '[&>div]:bg-blue-500')}
-                        />
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {s.roundsDone}/{s.rounds}{t('plan.roundsUnit')}
-                          {s.doneAt && <span className="ml-1 text-emerald-600 dark:text-emerald-400">{s.doneAt.slice(5, 10)}</span>}
-                        </span>
-                      </div>
-                    )
-                  })}
+                {activeRound.quantity > 0 && (
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <Progress
+                      value={Math.min((activeRound.done / activeRound.quantity) * 100, 100)}
+                      className={cn('h-1 flex-1', activeRound.state === 'done' ? '[&>div]:bg-emerald-500' : '[&>div]:bg-blue-500')}
+                    />
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {activeRound.state === 'done' ? activeRound.quantity : activeRound.done}/{activeRound.quantity}{t('plan.questions')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+            {showCustom && activeGoal && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-2.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                  <span className="min-w-0 truncate font-medium text-pink-600 dark:text-pink-400">
+                    {activeGoal.subject} · {t('plan.roundPrefix')}{activeGoal.index}{t('plan.batchesUnit')}
+                  </span>
+                  <span className={cn('shrink-0 text-[10px]', stateTone(activeGoal.state))}>{stateLabel(activeGoal.state)}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  <span>{t('plan.createdAt')} {activeGoal.createdAt}</span>
+                  <span>· {t('plan.roundTarget')} {activeGoal.target}</span>
+                  {activeGoal.doneAt
+                    ? <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.completedAt')} {activeGoal.doneAt}</span>
+                    : daysLeftOf(activeGoal) !== null && <span>· {t('plan.remaining')} {daysLeftOf(activeGoal)} {t('plan.daysUnit')}</span>}
+                </div>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <Progress
+                    value={activeGoal.quantity > 0 ? Math.min((activeGoal.done / activeGoal.quantity) * 100, 100) : 0}
+                    className={cn('h-1 flex-1', activeGoal.state === 'done' ? '[&>div]:bg-emerald-500' : '[&>div]:bg-pink-500')}
+                  />
+                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                    {activeGoal.done}/{activeGoal.quantity}{t('plan.questions')}
+                  </span>
                 </div>
               </div>
             )}
@@ -390,10 +354,17 @@ export function DashboardPlanCards() {
                   {' · '}{t('plan.remaining')} <b className="text-foreground">{Math.max(totalScope - totalDone, 0)}</b> {t('plan.questions')}
                 </p>
               )}
-              {milestones.map((m) => (
-                <p key={m.id} className="flex gap-1.5 text-muted-foreground">
-                  <span className="shrink-0 tabular-nums">{m.deadline}</span>
-                  <span className="truncate text-foreground/80">{m.subjects.map((s) => `${s.subject} ${s.rounds}${t('plan.roundsUnit')}`).join(' · ')}</span>
+              {subjectRows.map((s) => (
+                <p key={s.subject} className="flex flex-wrap gap-x-1.5 text-muted-foreground">
+                  <span className="shrink-0 text-foreground/80">{s.subject}</span>
+                  <span className="tabular-nums">
+                    {t('plan.roundPrefix')}{s.next ? s.next.index : s.round}/{s.totalRounds}{t('plan.roundsUnit')}
+                  </span>
+                  {s.next
+                    ? <span className={cn('tabular-nums', s.next.state === 'overdue' ? 'text-destructive' : '')}>
+                        · {s.next.target}{s.next.state === 'overdue' ? ` ${t('plan.roundStateOverdue')}` : ''}
+                      </span>
+                    : <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.roundsAllDone')}</span>}
                 </p>
               ))}
               {!deadline && <p className="text-muted-foreground/70">{t('plan.notSet')}</p>}
@@ -404,12 +375,17 @@ export function DashboardPlanCards() {
                 <span className="h-2 w-2 shrink-0 rounded-full bg-pink-500" />
                 {t('plan.dailyTarget')}
               </div>
-              {dailyTargets.length === 0 ? (
+              {goals.length === 0 ? (
                 <p className="text-muted-foreground/70">{t('plan.noCustomHint')}</p>
-              ) : dailyTargets.map((target, i) => (
-                <p key={i} className="flex flex-wrap gap-x-1.5 text-foreground/80">
-                  {target.deadline && <span className="shrink-0 tabular-nums text-muted-foreground">{target.deadline} 前</span>}
-                  <span>{target.subjects.map((s) => `${s.subject} ${s.count}${t('plan.questions')}`).join(' · ')}</span>
+              ) : goalSubjectRows.map((s) => (
+                <p key={s.subject} className="flex flex-wrap gap-x-1.5 text-muted-foreground">
+                  <span className="shrink-0 text-foreground/80">{s.subject}</span>
+                  <span className="tabular-nums">
+                    {t('plan.roundPrefix')}{s.next ? s.next.index : s.totalBatches}/{s.totalBatches}{t('plan.batchesUnit')}
+                  </span>
+                  {s.next
+                    ? <span className="tabular-nums">· {t('plan.remaining')} {s.rest} {t('plan.questions')} · {s.next.target}</span>
+                    : <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.roundsAllDone')}</span>}
                 </p>
               ))}
             </div>

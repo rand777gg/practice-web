@@ -17,7 +17,7 @@ import { SubjectCompositionDonut, TypeRadarChart, WeekHourHeat } from '@/compone
 import { YearHeatPreview, MilestonesCard } from '@/components/dashboard/DashJourneyTop'
 import { ExamGoalPicker } from '@/components/dashboard/ExamGoalPicker'
 import { examGoalLabel } from '@/lib/exam-goals'
-import { normalizeDailyTargets } from '@/types'
+import { resolveGoals } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { LazyChart } from '@/components/layout/LazyChart'
@@ -180,11 +180,7 @@ export function Component() {
       return Array.isArray(raw) ? (raw as string[]) : []
     } catch { return [] }
   })()
-  const targetSubjectList = (() => {
-    try {
-      return normalizeDailyTargets(JSON.parse(profile?.daily_targets || '[]')).flatMap((x) => x.subjects.map((s) => s.subject))
-    } catch { return [] }
-  })()
+  const targetSubjectList = resolveGoals(profile).map((g) => g.subject)
   const subjectUnion = [...new Set([...planSubjectList, ...targetSubjectList])]
   const hasPlanOrTarget = subjectUnion.length > 0
 

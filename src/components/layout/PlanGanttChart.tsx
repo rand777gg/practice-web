@@ -3,7 +3,8 @@ import ReactECharts from 'echarts-for-react'
 import type { CustomSeriesRenderItemAPI, CustomSeriesRenderItemParams } from 'echarts'
 import echarts from '@/lib/echarts'
 import { useChartPalette, withAlpha } from '@/lib/chart-theme'
-import type { PlanMilestoneProgress, PlanSubjectProgress, PlanTargetGroup } from '@/hooks/use-plan-completion'
+import { pickVisibleItems } from '@/hooks/use-plan-completion'
+import type { PlanItem } from '@/hooks/use-plan-completion'
 import { useT } from '@/i18n/use-t'
 
 const DAY = 86400000
@@ -15,6 +16,8 @@ const ZOOM_H = 26
 /** 左侧 y 轴(学科)区宽度 */
 export const GANTT_LEFT = 64
 export const GANTT_RIGHT = 46
+/** 长期计划的蓝色 / 自定义计划的粉色 */
+export const PLAN_BLUE = '#3b82f6'
 export const CUSTOM_PINK = '#ec4899'
 
 function parseDay(s: string): number {
@@ -38,8 +41,9 @@ type BarDatum = {
   soft: string
   done: number
   total: number
+  label: string
   selected?: boolean
-  milestoneId?: string
+  itemId?: string
   tip: string
 }
 
@@ -47,30 +51,29 @@ type FlagDatum = {
   value: [number]
   color: string
   label: string
-  showLabel: boolean
-  milestoneId: string
+  itemId?: string
   tip: string
 }
 
 interface Props {
-  mode: 'long-term' | 'custom'
-  milestones?: PlanMilestoneProgress[]
+  /** 长期计划的一轮 / 自定义计划的一批, 画法完全一样, 只有颜色和行标签单位不同 */
+  items: PlanItem[]
+  color: string
+  /** 行标签用的单位, 如 "轮" / "批" */
+  unit: string
   planDeadline?: string | null
-  longTerm?: PlanSubjectProgress[]
-  targets?: PlanTargetGroup[]
-  selectedMilestoneId?: string | null
-  onSelectMilestone?: (id: string) => void
+  selectedId?: string | null
+  onSelect?: (id: string) => void
   height?: number
 }
 
 export function PlanGanttChart({
-  mode,
-  milestones = [],
+  items,
+  color: baseColor,
+  unit,
   planDeadline = null,
-  longTerm = [],
-  targets = [],
-  selectedMilestoneId = null,
-  onSelectMilestone,
+  selectedId = null,
+  onSelect,
   height,
 }: Props) {
   const pal = useChartPalette()
@@ -78,121 +81,77 @@ export function PlanGanttChart({
 
   const model = useMemo(() => {
     const today = todayStart()
-    // 行 = 学科 × 里程碑(自定义计划里 = 学科 × 目标组): 同一学科的每一轮单独一行, 不叠在一起
+    // 一圈一行。条形左端 = 创建这条的那天(或上一条实际完成日), 右端 = 目标完成日,
+    // 旗子插在实际刷够的那天 —— 没有时间窗, 也不需要"窗口起点"。
+    const bySubject = new Map<string, PlanItem[]>()
+    for (const it of items) {
+      const list = bySubject.get(it.subject)
+      if (list) list.push(it)
+      else bySubject.set(it.subject, [it])
+    }
+
+    const visible = pickVisibleItems(items)
     const rows: string[] = []
     const rowIndex = new Map<string, number>()
-
-    if (mode === 'custom') {
-      const order: string[] = []
-      const seen = new Set<string>()
-      for (const g of targets) {
-        for (const s of g.subjects) {
-          if (s.subject && !seen.has(s.subject)) { seen.add(s.subject); order.push(s.subject) }
-        }
-      }
-      order.forEach((subject, gi) => {
-        const group = targets.find((g) => g.subjects.some((s) => s.subject === subject))
-        rowIndex.set(`${subject}|${gi}`, rows.length)
-        rows.push(rows.length === 0 || rows[rows.length - 1] !== subject ? subject : '')
-        void group
-      })
-      const bars: BarDatum[] = []
-      const lines: number[] = []
-      targets.forEach((g, gi) => {
-        const end = g.deadline ? parseDay(g.deadline) : today + DAY
-        if (g.deadline) lines.push(parseDay(g.deadline))
-        for (const s of g.subjects) {
-          const key = `${s.subject}|${order.indexOf(s.subject)}`
-          const row = rowIndex.get(key)
-          if (row === undefined) continue
-          bars.push({
-            value: [row, today, end, s.done, s.count],
-            color: CUSTOM_PINK,
-            soft: withAlpha(CUSTOM_PINK, 0.18),
-            done: s.done,
-            total: s.count,
-            tip: `${s.subject} · ${t('plan.today')} ${s.done}/${s.count}${t('plan.questions')}${g.deadline ? ` · ${t('plan.deadline')} ${g.deadline}` : ''}`,
-          })
-        }
-        void gi
-      })
-      return {
-        rows,
-        bars,
-        flags: [] as FlagDatum[],
-        lines,
-        start: today - 2 * DAY,
-        end: Math.max(today + 7 * DAY, ...lines, 0),
-      }
+    const barStart = new Map<string, number>()
+    const barEnd = new Map<string, number>()
+    let lastSubject = ''
+    for (const it of visible) {
+      rowIndex.set(it.id, rows.length)
+      rows.push(it.subject === lastSubject
+        ? `${t('plan.roundPrefix')}${it.index}${unit}`
+        : it.subject)
+      lastSubject = it.subject
+      const list = bySubject.get(it.subject) ?? []
+      const prev = list.find((x) => x.index === it.index - 1)
+      const startTs = prev ? parseDay(prev.doneAt ?? prev.target) : parseDay(it.createdAt)
+      const endTs = parseDay(it.target)
+      barStart.set(it.id, Math.min(startTs, endTs))
+      barEnd.set(it.id, endTs)
     }
 
-    // 学科顺序: 长期计划里的学科优先, 其次是只在里程碑里出现的学科
-    const subjectOrder: string[] = []
-    const seenSubject = new Set<string>()
-    const pushSubject = (s: string) => {
-      if (s && !seenSubject.has(s)) { seenSubject.add(s); subjectOrder.push(s) }
-    }
-    longTerm.forEach((r) => pushSubject(r.subject))
-    milestones.forEach((m) => m.subjects.forEach((s) => pushSubject(s.subject)))
-
-    for (const subject of subjectOrder) {
-      let first = true
-      milestones.forEach((m, mi) => {
-        if (!m.subjects.some((s) => s.subject === subject)) return
-        rowIndex.set(`${subject}|${m.id}`, rows.length)
-        // 同一学科的第一行写学科名, 之后的每一轮单独成行并用 (序号) 续行 — 不再堆在一行
-        rows.push(first ? subject : `(${mi + 1})`)
-        first = false
-      })
-    }
-
-    const deadlineDays = milestones.map((m) => parseDay(m.deadline))
-    const startDays = milestones.map((m) => (m.start ? parseDay(m.start) : NaN)).filter((n) => Number.isFinite(n))
-    const earliest = Math.min(today, ...deadlineDays, ...startDays)
-    const latest = Math.max(today + 7 * DAY, planDeadline ? parseDay(planDeadline) : 0, ...deadlineDays)
-    const start = earliest - 10 * DAY
-    const end = latest + 10 * DAY
-
-    const bars: BarDatum[] = []
+    const allStart = [...barStart.values(), today]
+    const allEnd = [...barEnd.values(), today, planDeadline ? parseDay(planDeadline) : 0]
     const flags: FlagDatum[] = []
-    const currentId = milestones.find((m) => m.progress < 1 && !m.passed)?.id
-    milestones.forEach((m, i) => {
-      const mEnd = parseDay(m.deadline)
-      // 里程碑自带时间窗; 没填 start 时回退到"上一个里程碑的次日"
-      const mStart = m.start
-        ? parseDay(m.start)
-        : i > 0 ? parseDay(milestones[i - 1].deadline) + DAY : start
-      const prevEnd = m.start ? parseDay(m.start) - DAY : (i > 0 ? parseDay(milestones[i - 1].deadline) : null)
-      const gap = prevEnd === null ? 100 : ((mEnd - prevEnd) / (end - start)) * 100
-      const color = m.progress >= 1 ? pal.correct : m.passed ? pal.wrong : currentId === m.id ? pal.brand : pal.label
+    const bars: BarDatum[] = []
+    for (const it of visible) {
+      const row = rowIndex.get(it.id)
+      if (row === undefined) continue
+      const color = it.state === 'done' ? pal.correct
+        : it.state === 'overdue' ? pal.wrong
+          : it.state === 'current' ? baseColor : pal.label
+      const start = barStart.get(it.id)!
+      const end = barEnd.get(it.id)!
+      const flagTs = parseDay(it.doneAt ?? it.target)
       flags.push({
-        value: [mEnd],
+        value: [flagTs],
         color,
-        label: dayLabel(mEnd),
-        showLabel: gap >= 6,
-        milestoneId: m.id,
-        tip: `${t('plan.milestone')} ${i + 1} · ${m.deadline} · ${m.doneRounds}/${m.totalRounds} ${t('plan.roundsUnit')}`,
+        label: dayLabel(flagTs),
+        itemId: it.id,
+        tip: `${it.subject} · ${t('plan.roundPrefix')}${it.index}${unit} · ${it.doneAt ? `${t('plan.completedAt')} ${it.doneAt}` : `${t('plan.deadline')} ${it.target}`}`,
       })
-      for (const s of m.subjects) {
-        const row = rowIndex.get(`${s.subject}|${m.id}`)
-        if (row === undefined) continue
-        // 刷满了就画到"刷满那一刻", 没刷满就画到截止日
-        const doneTs = s.doneAt ? new Date(s.doneAt).getTime() : null
-        const mEndDraw = doneTs ?? mEnd
-        bars.push({
-          value: [row, mStart, mEndDraw, s.roundsDone, s.rounds],
-          color,
-          soft: withAlpha(color, 0.18),
-          done: s.roundsDone,
-          total: s.rounds,
-          selected: selectedMilestoneId === m.id,
-          milestoneId: m.id,
-          tip: `${s.subject} · ${t('plan.milestone')} ${i + 1} (${dayLabel(mStart)} → ${dayLabel(mEndDraw)}) · ${s.roundsDone}/${s.rounds} ${t('plan.roundsUnit')}${doneTs ? ` · ${t('plan.completedAt')} ${dayLabel(doneTs)}` : ''}`,
-        })
-      }
-    })
-    return { rows, bars, flags, lines: deadlineDays, start, end }
-  }, [mode, milestones, planDeadline, longTerm, targets, selectedMilestoneId, pal, t])
+      bars.push({
+        value: [row, start, end, it.done, it.quantity],
+        color,
+        soft: withAlpha(color, 0.18),
+        done: it.done,
+        total: it.quantity,
+        label: it.state === 'done' ? '✓' : it.quantity > 0 ? `${it.done}/${it.quantity}` : '',
+        selected: selectedId === it.id,
+        itemId: it.id,
+        tip: `${it.subject} · ${t('plan.roundPrefix')}${it.index}${unit} (${dayLabel(start)} → ${dayLabel(end)}) · ${it.done}/${it.quantity}${t('plan.questions')}${it.doneAt ? ` · ${t('plan.completedAt')} ${it.doneAt}` : ''}`,
+      })
+    }
+    // 时间轴覆盖所有条形 + 今天 + 计划截止日, 两侧各留一周余量
+    return {
+      rows,
+      bars,
+      flags,
+      lines: [today, ...(planDeadline ? [parseDay(planDeadline)] : [])],
+      start: Math.min(...allStart) - 7 * DAY,
+      end: Math.max(...allEnd) + 7 * DAY,
+    }
+  }, [items, baseColor, unit, planDeadline, selectedId, pal, t])
 
   const option = useMemo(() => {
     const { rows, bars, flags, lines, start, end } = model
@@ -223,18 +182,20 @@ export function PlanGanttChart({
           style: { fill: 'transparent', stroke: data.color, lineWidth: 1.5 },
         })
       }
-      children.push({
-        type: 'text',
-        style: {
-          text: `${data.done}/${data.total}`,
-          x: x + w + 5,
-          y: y + BAR_H / 2,
-          textAlign: 'left',
-          textVerticalAlign: 'middle',
-          fill: pal.label,
-          fontSize: 10,
-        },
-      })
+      if (data.label) {
+        children.push({
+          type: 'text',
+          style: {
+            text: data.label,
+            x: x + w + 5,
+            y: y + BAR_H / 2,
+            textAlign: 'left',
+            textVerticalAlign: 'middle',
+            fill: pal.label,
+            fontSize: 10,
+          },
+        })
+      }
       return { type: 'group', children } as never
     }
 
@@ -248,12 +209,10 @@ export function PlanGanttChart({
         { type: 'line', shape: { x1: x, y1: top, x2: x, y2: bottom }, style: { stroke: data.color, lineWidth: 1.5 } },
         { type: 'polygon', shape: { points: [[x, top], [x + 9, top + 4.5], [x, top + 9]] }, style: { fill: data.color } },
       ]
-      if (data.showLabel) {
-        children.push({
-          type: 'text',
-          style: { text: data.label, x: x + 12, y: top + 4.5, textAlign: 'left', textVerticalAlign: 'middle', fill: pal.label, fontSize: 9 },
-        })
-      }
+      children.push({
+        type: 'text',
+        style: { text: data.label, x: x + 12, y: top + 4.5, textAlign: 'left', textVerticalAlign: 'middle', fill: pal.label, fontSize: 9 },
+      })
       return { type: 'group', children } as never
     }
 
@@ -280,11 +239,11 @@ export function PlanGanttChart({
           minValueSpan: 14 * DAY,
           borderColor: pal.panelLine,
           backgroundColor: 'transparent',
-          fillerColor: withAlpha(pal.brand, 0.14),
-          handleStyle: { color: pal.brand, borderColor: pal.brand },
-          moveHandleStyle: { color: withAlpha(pal.brand, 0.5) },
-          dataBackground: { lineStyle: { color: pal.line }, areaStyle: { color: withAlpha(pal.brand, 0.06) } },
-          selectedDataBackground: { lineStyle: { color: pal.brand }, areaStyle: { color: withAlpha(pal.brand, 0.16) } },
+          fillerColor: withAlpha(baseColor, 0.14),
+          handleStyle: { color: baseColor, borderColor: baseColor },
+          moveHandleStyle: { color: withAlpha(baseColor, 0.5) },
+          dataBackground: { lineStyle: { color: pal.line }, areaStyle: { color: withAlpha(baseColor, 0.06) } },
+          selectedDataBackground: { lineStyle: { color: baseColor }, areaStyle: { color: withAlpha(baseColor, 0.16) } },
           textStyle: { color: pal.label, fontSize: 10 },
         },
       ],
@@ -316,7 +275,7 @@ export function PlanGanttChart({
             label: { show: false },
             data: lines.map((d) => ({
               xAxis: d,
-              lineStyle: { color: withAlpha(pal.brand, 0.35), type: 'dashed', width: 1 },
+              lineStyle: { color: withAlpha(baseColor, 0.35), type: 'dashed', width: 1 },
             })),
           },
         },
@@ -324,7 +283,7 @@ export function PlanGanttChart({
         { type: 'custom', renderItem: flagRenderer, encode: { x: 0 }, data: flags, z: 5 },
       ],
     }
-  }, [model, pal])
+  }, [model, pal, baseColor])
 
   if (model.rows.length === 0) return null
 
@@ -336,9 +295,9 @@ export function PlanGanttChart({
       lazyUpdate
       style={{ height: height ?? Math.max(170, FLAG_ZONE + ZOOM_H + 20 + model.rows.length * 26), width: '100%' }}
       onEvents={{
-        click: (p: { data?: { milestoneId?: string } }) => {
-          const id = p?.data?.milestoneId
-          if (id && onSelectMilestone) onSelectMilestone(id)
+        click: (p: { data?: { itemId?: string } }) => {
+          const id = p?.data?.itemId
+          if (id && onSelect) onSelect(id)
         },
       }}
     />

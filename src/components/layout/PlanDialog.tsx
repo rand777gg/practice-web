@@ -45,18 +45,14 @@ import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
-import type { DailyTarget, PlanMilestone } from '@/types'
-import { normalizeDailyTargets, normalizeMilestones, newMilestoneId } from '@/types'
-import { fetchMilestoneProgress, buildMilestoneProgress, type MilestoneProgressRow } from '@/hooks/use-plan-completion'
-import { PlanGanttChart } from './PlanGanttChart'
+import type { PlanGoal, PlanRound } from '@/types'
+import { resolveGoals, resolveRounds, newRoundId, addDays, toDateStr, todayStr } from '@/types'
+import {
+  buildGoalItems, buildRoundItems, fetchPlanStats, goalPlanSpec, roundPlanSpec,
+  type PlanStat,
+} from '@/hooks/use-plan-completion'
+import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
 import { useT } from '@/i18n/use-t'
-
-/** 本地时区的 YYYY-MM-DD（不能用 toISOString, 会把东八区的当天零点倒退一天） */
-function toDateStr(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
-}
 
 interface Props {
   open: boolean
@@ -70,15 +66,17 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const { user, profile, refreshProfile } = useAuthStore()
 
   const savedSubjects = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
-  const savedTargets = normalizeDailyTargets(profile?.daily_targets ? JSON.parse(profile.daily_targets) : null)
-  const savedMilestones = normalizeMilestones(profile?.milestones)
+  const savedRounds = resolveRounds(profile)
+  const savedGoals = resolveGoals(profile)
 
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(savedSubjects)
   const [deadline, setDeadline] = useState(profile?.deadline ?? '')
-  const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>(savedTargets)
-  const [milestones, setMilestones] = useState<PlanMilestone[]>(savedMilestones)
-  const [milestoneRows, setMilestoneRows] = useState<Map<string, MilestoneProgressRow>>(new Map())
-  const [milestoneError, setMilestoneError] = useState('')
+  const [goals, setGoals] = useState<PlanGoal[]>(savedGoals)
+  const [rounds, setRounds] = useState<PlanRound[]>(savedRounds)
+  const [roundStats, setRoundStats] = useState<Map<string, PlanStat>>(new Map())
+  const [goalStats, setGoalStats] = useState<Map<string, PlanStat>>(new Map())
+  const [roundError, setRoundError] = useState('')
+  const [goalError, setGoalError] = useState('')
   const [saving, setSaving] = useState(false)
   const [planTab, setPlanTab] = useState<'long-term' | 'daily'>('long-term')
 
@@ -86,13 +84,13 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const [subjectCounts, setSubjectCounts] = useState<Map<string, number>>(new Map())
   const [subjectProgress, setSubjectProgress] = useState<Map<string, { total: number; done: number; missing_kp: number }>>(new Map())
   const [planLoading, setPlanLoading] = useState(false)
-  const [confirmReset, setConfirmReset] = useState<'long' | number | null>(null)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [resetTooEasy, setResetTooEasy] = useState(false)
   const [askLoadNewSession, setAskLoadNewSession] = useState(false)
   const ltDropdownRef = useRef<HTMLButtonElement>(null)
 
-  // Mutual exclusion: subjects in long-term plan can't be in daily targets and vice versa
-  const dailyUsedSubjects = new Set(dailyTargets.flatMap(t => t.subjects.map(s => s.subject)))
+  // Mutual exclusion: subjects in long-term plan can't be in custom plan and vice versa
+  const goalSubjects = [...new Set(goals.map((g) => g.subject))]
   const longUsedSubjects = new Set(selectedSubjects)
 
   const { fetchPlanCache } = useDashboardStore()
@@ -122,23 +120,28 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
 
   useEffect(() => {
     const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
-    const t = normalizeDailyTargets(profile?.daily_targets ? JSON.parse(profile.daily_targets) : null)
     setSelectedSubjects(s)
-    setDailyTargets(t)
-    setMilestones(normalizeMilestones(profile?.milestones))
+    setGoals(resolveGoals(profile))
+    setRounds(resolveRounds(profile))
     setDeadline(profile?.deadline ?? '')
   }, [profile])
 
-  // 里程碑进度(窗口内作答次数)只在打开弹窗时拉一次, 用于回显"已刷 N 轮"
+  // 轮次 / 批次的实际完成情况只在打开弹窗时拉一次, 用于回显"刷完了没 / 这批刷了多少"
   useEffect(() => {
     if (!open || !user) return
-    const saved = normalizeMilestones(profile?.milestones)
+    const savedRounds = resolveRounds(profile)
+    const savedGoals = resolveGoals(profile)
     let cancelled = false
-    fetchMilestoneProgress(user.id, saved).then((rows) => {
-      if (!cancelled) setMilestoneRows(rows)
+    void Promise.all([
+      savedRounds.length > 0 ? fetchPlanStats(user.id, roundPlanSpec(savedRounds)) : Promise.resolve(null),
+      savedGoals.length > 0 ? fetchPlanStats(user.id, goalPlanSpec(savedGoals)) : Promise.resolve(null),
+    ]).then(([r, g]) => {
+      if (cancelled) return
+      setRoundStats(r ?? new Map())
+      setGoalStats(g ?? new Map())
     })
     return () => { cancelled = true }
-  }, [open, user, profile?.milestones])
+  }, [open, user, profile])
 
   const totalSelected = selectedSubjects.reduce((sum, s) => sum + (subjectCounts.get(s) ?? 0), 0)
   const totalDone = selectedSubjects.reduce((sum, s) => sum + (subjectProgress.get(s)?.done ?? 0), 0)
@@ -151,18 +154,25 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     dailyGoal = Math.ceil(remaining / daysLeft)
   }
 
-  // 里程碑按截止日展示(窗口由前后两个截止日推导, 顺序即语义); 未填日期的排在最后
-  const orderedMilestones = [...milestones].sort((a, b) => {
-    if (!a.deadline) return 1
-    if (!b.deadline) return -1
-    return a.deadline.localeCompare(b.deadline)
-  })
-
-  // 编辑态实时预览: 用已保存的窗口进度 + 当前编辑的日期/轮数
-  const previewMilestones = buildMilestoneProgress(
-    milestones.filter((m) => !!m.deadline),
-    milestoneRows,
-  )
+  // 编辑态实时预览: 用已保存记录的实际完成情况 + 当前编辑的目标日/题数
+  const previewRounds = buildRoundItems(rounds.filter((r) => !!r.target), roundStats)
+  const previewRoundById = new Map(previewRounds.map((r) => [r.id, r]))
+  const previewGoals = buildGoalItems(goals.filter((g) => !!g.target), goalStats)
+  const goalPreviewById = new Map(previewGoals.map((g) => [g.id, g]))
+  const roundsBySubject = new Map<string, PlanRound[]>()
+  for (const r of rounds) {
+    const list = roundsBySubject.get(r.subject)
+    if (list) list.push(r)
+    else roundsBySubject.set(r.subject, [r])
+  }
+  for (const list of roundsBySubject.values()) list.sort((a, b) => a.round - b.round)
+  const goalsBySubject = new Map<string, PlanGoal[]>()
+  for (const g of goals) {
+    const list = goalsBySubject.get(g.subject)
+    if (list) list.push(g)
+    else goalsBySubject.set(g.subject, [g])
+  }
+  for (const list of goalsBySubject.values()) list.sort((a, b) => a.target.localeCompare(b.target))
   const previewDaysLeft = deadline
     ? Math.max(Math.ceil((new Date(deadline + 'T23:59:59').getTime() - Date.now()) / 86400000), 1)
     : 0
@@ -173,71 +183,130 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     )
   }
 
-  const addDailyTarget = () => {
-    setDailyTargets((prev) => [...prev, { subjects: [] as { subject: string; count: number }[], deadline: null }])
+  // ==== 自定义计划的批次 ====
+  /** 新一批的题数默认值 = 这科还没刷过的题数 */
+  const suggestBatchCount = (subject: string): number => {
+    const p = subjectProgress.get(subject)
+    const rest = (p?.total ?? 0) - (p?.done ?? 0)
+    return rest > 0 ? rest : 20
   }
 
-  const updateDailyDeadline = (i: number, deadline: string) => {
-    setDailyTargets((prev) => prev.map((t, idx) => idx === i ? { ...t, deadline } : t))
+  /** 选中学科即给它排第一批: 题数默认 = 这科还没刷过的题数, 目标日默认一周后 */
+  const toggleGoalSubject = (subject: string) => {
+    setGoalError('')
+    setGoals((prev) => {
+      if (prev.some((g) => g.subject === subject)) return prev.filter((g) => g.subject !== subject)
+      return [...prev, {
+        id: newRoundId(),
+        subject,
+        count: suggestBatchCount(subject),
+        target: addDays(todayStr(), 7),
+        createdAt: todayStr(),
+        doneAt: null,
+      }]
+    })
   }
-  const toggleTargetSubject = (i: number, subj: string) => {
-    setDailyTargets((prev) => prev.map((t, idx) => {
-      if (idx !== i) return t
-      const exists = t.subjects.some(s => s.subject === subj)
-      if (exists) {
-        return { ...t, subjects: t.subjects.filter(s => s.subject !== subj) }
+
+  const addGoal = (subject: string) => {
+    setGoalError('')
+    const list = goalsBySubject.get(subject) ?? []
+    const last = list[list.length - 1]
+    setGoals((prev) => [...prev, {
+      id: newRoundId(),
+      subject,
+      count: last?.count ?? suggestBatchCount(subject),
+      target: addDays(last?.target && last.target > todayStr() ? last.target : todayStr(), 7),
+      createdAt: todayStr(),
+      doneAt: null,
+    }])
+  }
+
+  const removeGoal = (id: string) => {
+    setGoalError('')
+    setGoals((prev) => prev.filter((g) => g.id !== id))
+  }
+
+  const updateGoalCount = (id: string, count: number) => {
+    setGoalError('')
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, count } : g)))
+  }
+
+  const updateGoalTarget = (id: string, target: string) => {
+    setGoalError('')
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, target } : g)))
+  }
+
+  /** 校验: 每批都要有题数和目标日, 同学科按目标日递增 */
+  const validateGoals = (list: PlanGoal[]): string => {
+    if (list.some((g) => !g.target || g.count < 1)) return t('plan.goalNeedCount')
+    const bySubject = new Map<string, PlanGoal[]>()
+    for (const g of list) {
+      const arr = bySubject.get(g.subject)
+      if (arr) arr.push(g)
+      else bySubject.set(g.subject, [g])
+    }
+    for (const arr of bySubject.values()) {
+      const sorted = [...arr].sort((a, b) => a.target.localeCompare(b.target))
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].target === sorted[i - 1].target) return t('plan.roundNotIncreasing')
       }
-      return { ...t, subjects: [...t.subjects, { subject: subj, count: 5 }] }
-    }))
+    }
+    return ''
   }
 
-  const removeDailyTarget = (i: number) => {
-    setDailyTargets((prev) => prev.filter((_, idx) => idx !== i))
+  // ==== 轮次 ====
+  /** 新加一轮的默认目标日: 排在上一轮之后一周, 且不超过长期计划的最后一天 */
+  const suggestTarget = (subject: string): string => {
+    const list = roundsBySubject.get(subject) ?? []
+    const last = list[list.length - 1]
+    const base = last?.target && last.target > todayStr() ? last.target : todayStr()
+    const d = new Date(`${base}T00:00:00`)
+    d.setDate(d.getDate() + 7)
+    let next = toDateStr(d)
+    if (deadline && next > deadline) next = deadline
+    if (next < todayStr()) next = todayStr()
+    return next
   }
 
-  // ==== 里程碑 ====
-  const addMilestone = () => {
-    setMilestoneError('')
-    // 一轮的起点 = 创建这轮的那天
-    setMilestones((prev) => [...prev, { id: newMilestoneId(), start: toDateStr(new Date()), deadline: '', subjects: [] }])
+  const addRound = (subject: string) => {
+    setRoundError('')
+    const list = roundsBySubject.get(subject) ?? []
+    setRounds((prev) => [...prev, {
+      id: newRoundId(),
+      subject,
+      round: (list[list.length - 1]?.round ?? 0) + 1,
+      target: suggestTarget(subject),
+      createdAt: todayStr(),
+      doneAt: null,
+    }])
   }
 
-  const removeMilestone = (id: string) => {
-    setMilestoneError('')
-    setMilestones((prev) => prev.filter((m) => m.id !== id))
+  const removeRound = (id: string) => {
+    setRoundError('')
+    setRounds((prev) => prev.filter((r) => r.id !== id))
   }
 
-
-  const updateMilestoneDeadline = (id: string, d: string) => {
-    setMilestoneError('')
-    setMilestones((prev) => prev.map((m) => (m.id === id ? { ...m, deadline: d } : m)))
+  const updateRoundTarget = (id: string, target: string) => {
+    setRoundError('')
+    setRounds((prev) => prev.map((r) => (r.id === id ? { ...r, target } : r)))
   }
-  const toggleMilestoneSubject = (id: string, subj: string) => {
-    setMilestones((prev) => prev.map((m) => {
-      if (m.id !== id) return m
-      const exists = m.subjects.some((s) => s.subject === subj)
-      return {
-        ...m,
-        subjects: exists
-          ? m.subjects.filter((s) => s.subject !== subj)
-          : [...m.subjects, { subject: subj, rounds: 1 }],
+
+  /** 校验: 每轮都要有目标日, 不超过长期计划最后一天, 同学科按轮次递增 */
+  const validateRounds = (list: PlanRound[]): string => {
+    if (list.some((r) => !r.target)) return t('plan.roundNeedDate')
+    if (deadline && list.some((r) => r.target > deadline)) return t('plan.roundAfterDeadline')
+    const bySubject = new Map<string, PlanRound[]>()
+    for (const r of list) {
+      const arr = bySubject.get(r.subject)
+      if (arr) arr.push(r)
+      else bySubject.set(r.subject, [r])
+    }
+    for (const arr of bySubject.values()) {
+      const sorted = [...arr].sort((a, b) => a.round - b.round)
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].target <= sorted[i - 1].target) return t('plan.roundNotIncreasing')
       }
-    }))
-  }
-
-  const updateMilestoneRounds = (id: string, subj: string, rounds: number) => {
-    setMilestones((prev) => prev.map((m) => m.id === id
-      ? { ...m, subjects: m.subjects.map((s) => (s.subject === subj ? { ...s, rounds } : s)) }
-      : m))
-  }
-
-  /** 排序 + 校验: 每个里程碑要有截止日和至少一个学科, 且截止日互不相同(否则时间窗会重叠/为空) */
-  const validateMilestones = (list: PlanMilestone[]): string => {
-    if (list.length === 0) return ''
-    if (list.some((m) => !m.deadline)) return t('plan.milestoneNeedDate')
-    if (list.some((m) => m.subjects.length === 0)) return t('plan.milestoneNeedSubject')
-    if (list.some((m) => !!m.start && m.start >= m.deadline)) return t('plan.milestoneBadWindow')
-    if (deadline && list.some((m) => m.deadline > deadline)) return t('plan.milestoneAfterDeadline')
+    }
     return ''
   }
 
@@ -286,43 +355,15 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     useSequentialStore.setState({ subjectPositions: savedSps })
   }
 
-  const handleResetDaily = async (groupIdx: number) => {
-    if (!user) return
-    setSaving(true)
-    const now = new Date().toISOString()
-    // Reset subjects in this daily target group
-    const resetEntries: Record<string, string> = {}
-    const target = dailyTargets[groupIdx]
-    const resetSubjects = target ? target.subjects.map(s => s.subject) : []
-    if (target) for (const s of target.subjects) resetEntries[s.subject] = now
-    const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', user.id).single()
-    const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
-    const merged = { ...existingResets, ...resetEntries }
-    await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', user.id)
-    if (resetTooEasy && resetSubjects.length > 0) {
-      const { data: qids } = await supabase.from('questions').select('id').in('subject', resetSubjects)
-      if (qids && qids.length > 0) {
-        await supabase.from('user_excluded_questions').delete().eq('user_id', user.id).in('question_id', qids.map(q => q.id))
-      }
-    }
-    await refreshProfile()
-    useRefreshStore.getState().bump()
-    useRefreshStore.getState().bumpPlan()
-    useDashboardStore.getState().invalidatePlanCache()
-    window.dispatchEvent(new Event('plan-progress-refresh'))
-    setSaving(false)
-    setAskLoadNewSession(true)
-  }
-
   const handleDeleteLong = async () => {
     if (!user) return
     setSaving(true)
-    await supabase.from('profiles').update({ deadline: null, plan_subjects: null, milestones: null }).eq('id', user.id)
+    await supabase.from('profiles').update({ deadline: null, plan_subjects: null, plan_rounds: null }).eq('id', user.id)
     await refreshProfile()
     setDeadline('')
     setSelectedSubjects([])
-    setMilestones([])
-    setMilestoneRows(new Map())
+    setRounds([])
+    setRoundStats(new Map())
     useRefreshStore.getState().bump()
     useRefreshStore.getState().bumpPlan()
     useDashboardStore.getState().invalidatePlanCache()
@@ -332,34 +373,32 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
 
   const handleSave = async () => {
     if (!user) return
-    const sortedMilestones = [...milestones].sort((a, b) => a.deadline.localeCompare(b.deadline))
-    const msError = validateMilestones(sortedMilestones)
-    if (msError) {
-      setMilestoneError(msError)
+    // 轮次挂在长期计划的学科上: 学科被移出计划, 它的轮次也一并丢掉
+    const sortedRounds = rounds
+      .filter((r) => selectedSubjects.includes(r.subject))
+      .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.round - b.round)
+    const roundErr = validateRounds(sortedRounds)
+    if (roundErr) {
+      setRoundError(roundErr)
       setPlanTab('long-term')
       return
     }
+    const sortedGoals = [...goals].sort((a, b) =>
+      a.subject.localeCompare(b.subject, 'zh-CN') || a.target.localeCompare(b.target))
+    const goalErr = validateGoals(sortedGoals)
+    if (goalErr) {
+      setGoalError(goalErr)
+      setPlanTab('daily')
+      return
+    }
     setSaving(true)
-    // ponytail: auto-calc daily target counts from deadline before saving
-    const effectiveTargets = dailyTargets.map((target) => {
-      if (!target.deadline) return target
-      const daysLeft = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
-      return {
-        ...target,
-        subjects: target.subjects.map((subj) => {
-          const p = subjectProgress.get(subj.subject)
-          const remaining = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
-          return { ...subj, count: Math.ceil(remaining / daysLeft) }
-        }),
-      }
-    })
     await supabase
       .from('profiles')
       .update({
         deadline: deadline || null,
         plan_subjects: selectedSubjects.length > 0 ? JSON.stringify(selectedSubjects) : null,
-        daily_targets: effectiveTargets.length > 0 ? JSON.stringify(effectiveTargets) : null,
-        milestones: sortedMilestones.length > 0 ? sortedMilestones : null,
+        plan_rounds: sortedRounds.length > 0 ? sortedRounds : null,
+        plan_goals: sortedGoals.length > 0 ? sortedGoals : null,
       })
       .eq('id', user.id)
     await refreshProfile()
@@ -373,7 +412,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     }
 
     // Sync active sequential session with new plan subjects
-    const allPlanSubs = [...new Set([...selectedSubjects, ...effectiveTargets.flatMap(t => t.subjects.map(s => s.subject))])]
+    const allPlanSubs = [...new Set([...selectedSubjects, ...sortedGoals.map((g) => g.subject)])]
     if (allPlanSubs.length > 0) {
       const s = useSequentialStore.getState()
       if (s.isActive && s.sessionKey) {
@@ -463,17 +502,17 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                   <DropdownMenuSeparator />
                   {allSubjects.map((s) => {
                     const checked = selectedSubjects.includes(s)
-                    const disabledByDaily = dailyUsedSubjects.has(s) && !checked
+                    const disabledByGoal = goalSubjects.includes(s) && !checked
                     return (
                       <DropdownMenuItem
                         key={s}
-                        disabled={disabledByDaily}
+                        disabled={disabledByGoal}
                         onSelect={(e) => { e.preventDefault(); toggleSubject(s) }}
-                        className={`text-xs ${disabledByDaily ? 'opacity-40' : ''}`}
+                        className={`text-xs ${disabledByGoal ? 'opacity-40' : ''}`}
                       >
                         <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
                         <span>{s}</span>
-                        <span className="ml-auto text-muted-foreground">{disabledByDaily ? '已用于自定义' : subjectCounts.get(s) ?? 0}</span>
+                        <span className="ml-auto text-muted-foreground">{disabledByGoal ? t('plan.usedByDaily') : subjectCounts.get(s) ?? 0}</span>
                       </DropdownMenuItem>
                     )
                   })}
@@ -529,7 +568,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               )}
 
               <div className="flex justify-end gap-1.5 pt-1">
-                <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => setConfirmReset('long')} disabled={saving}>
+                <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => setConfirmReset(true)} disabled={saving}>
                   {saving ? '...' : '重置进度'}
                 </Button>
                 <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={handleDeleteLong} disabled={saving}>
@@ -546,9 +585,9 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               </Button>
             </div>
 
-            {/* 里程碑 — 旗帜时间轴预览 + 每行一个里程碑的紧凑编辑 */}
+            {/* 轮次 — 每个学科一条自己的时间线: 目标完成日由你定, 旗子插在实际刷完的那天 */}
             <div className="text-sm font-semibold text-blue-600 dark:text-blue-400 flex items-center">
-              {t('plan.milestones')}
+              {t('plan.rounds')}
               <HoverCard openDelay={500}>
                 <HoverCardTrigger asChild>
                   <span className="inline-flex items-center ml-1 cursor-help">
@@ -556,107 +595,73 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                   </span>
                 </HoverCardTrigger>
                 <HoverCardContent className="text-xs w-64">
-                  {t('plan.milestoneDesc')}
+                  {t('plan.roundDesc')}
                 </HoverCardContent>
               </HoverCard>
             </div>
 
 
             <div className="space-y-1.5">
-              {orderedMilestones.map((m, i) => {
-                const daysLeft = m.deadline
-                  ? Math.max(Math.ceil((new Date(m.deadline + 'T23:59:59').getTime() - Date.now()) / 86400000), 0)
-                  : null
+              {selectedSubjects.length === 0 ? (
+                <p className="rounded-lg border p-3 text-[11px] text-muted-foreground">{t('plan.roundPickSubjectFirst')}</p>
+              ) : selectedSubjects.map((subject) => {
+                const list = roundsBySubject.get(subject) ?? []
                 return (
-                  <div key={m.id} className="space-y-1.5 rounded-lg border p-2">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-blue-500/10 text-[11px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
-                        {i + 1}
-                      </span>
-                      <span className="shrink-0 rounded-md border px-2 py-1 text-[11px] tabular-nums text-muted-foreground">
-                        {t('plan.createdAt')} {m.start ? m.start.slice(5) : t('plan.milestoneAutoStart')}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">→</span>
-                      <DatePicker
-                        date={m.deadline ? new Date(m.deadline + 'T00:00:00') : undefined}
-                        onSelect={(d) => updateMilestoneDeadline(m.id, d ? toDateStr(d) : '')}
-                        placeholder={t('plan.milestoneDeadline')}
-                        className="w-auto min-w-[104px] h-7 text-[11px] px-2"
-                      />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="h-7 min-w-[120px] flex-1 justify-between text-[11px] font-normal">
-                            <span className={cn('truncate', m.subjects.length === 0 && 'text-muted-foreground')}>
-                              {m.subjects.length === 0 ? t('plan.milestonePickSubjects') : m.subjects.map((s) => s.subject).join(', ')}
-                            </span>
-                            <ChevronDown className="ml-1 h-3 w-3 shrink-0" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
-                          {allSubjects.map((s) => {
-                            const checked = m.subjects.some((x) => x.subject === s)
-                            const disabledByDaily = dailyUsedSubjects.has(s) && !checked
-                            return (
-                              <DropdownMenuItem
-                                key={s}
-                                disabled={disabledByDaily}
-                                onSelect={(e) => { e.preventDefault(); toggleMilestoneSubject(m.id, s) }}
-                                className={`text-xs ${disabledByDaily ? 'opacity-40' : ''}`}
-                              >
-                                <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
-                                <span>{s}</span>
-                                <span className="ml-auto text-muted-foreground">{disabledByDaily ? t('plan.usedByDaily') : subjectCounts.get(s) ?? 0}</span>
-                              </DropdownMenuItem>
-                            )
-                          })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      {daysLeft !== null && (
-                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                          {daysLeft > 0 ? `${t('plan.remaining')} ${daysLeft} ${t('plan.daysUnit')}` : t('plan.deadlinePassed')}
-                        </span>
-                      )}
-                      <Button variant="ghost" size="sm" className="h-6 w-6 shrink-0 p-0 text-destructive" onClick={() => removeMilestone(m.id)} disabled={saving}>
-                        <X className="h-3 w-3" />
+                  <div key={subject} className="space-y-1 rounded-lg border p-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{subject}</span>
+                      <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => addRound(subject)} disabled={saving}>
+                        <Plus className="h-3 w-3" />
+                        {t('plan.addRound')}
                       </Button>
                     </div>
-
-                    {m.subjects.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-7">
-                        {m.subjects.map((s) => {
-                          const row = milestoneRows.get(`${m.id}|${s.subject}`)
-                          const total = row?.total ?? 0
-                          const attempts = row?.attempts ?? 0
-                          const roundsDone = total > 0 ? Math.round((attempts / total) * 10) / 10 : 0
-                          return (
-                            <span key={s.subject} className="flex items-center gap-1 text-[11px]">
-                              <span className="max-w-[92px] truncate">{s.subject}</span>
-                              <Input
-                                type="number"
-                                min={1}
-                                value={s.rounds}
-                                onChange={(e) => updateMilestoneRounds(m.id, s.subject, Math.max(1, Number(e.target.value) || 1))}
-                                className="h-6 w-12 px-1 text-center text-[11px]"
-                              />
-                              <span className="text-muted-foreground">{t('plan.roundsUnit')}</span>
-                              {row && <span className="tabular-nums text-muted-foreground">{t('plan.roundsDone')} {roundsDone}</span>}
-                            </span>
-                          )
-                        })}
-                      </div>
+                    {list.length === 0 && (
+                      <p className="pl-1 text-[11px] text-muted-foreground">{t('plan.noRoundHint')}</p>
                     )}
+                    {list.map((r) => {
+                      const p = previewRoundById.get(r.id)
+                      const doneAt = p?.doneAt ?? null
+                      const daysLeft = r.target
+                        ? Math.max(Math.ceil((new Date(`${r.target}T23:59:59`).getTime() - Date.now()) / 86400000), 0)
+                        : null
+                      return (
+                        <div key={r.id} className="flex flex-wrap items-center gap-1.5 pl-1">
+                          <span className="grid h-6 shrink-0 place-items-center rounded-md bg-blue-500/10 px-1.5 text-[10px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
+                            {t('plan.roundPrefix')}{r.round}{t('plan.roundsUnit')}
+                          </span>
+                          {doneAt ? (
+                            <span className="shrink-0 rounded-md border border-emerald-500/40 px-2 py-1 text-[11px] tabular-nums text-emerald-600 dark:text-emerald-400">
+                              {doneAt} {t('plan.roundDone')}
+                            </span>
+                          ) : (
+                            <DatePicker
+                              date={r.target ? new Date(`${r.target}T00:00:00`) : undefined}
+                              onSelect={(d) => updateRoundTarget(r.id, d ? toDateStr(d) : '')}
+                              placeholder={t('plan.roundTarget')}
+                              className="w-auto min-w-[112px] h-7 text-[11px] px-2"
+                            />
+                          )}
+                          {!doneAt && daysLeft !== null && (
+                            <span className={cn('shrink-0 text-[10px] tabular-nums', daysLeft === 0 ? 'text-destructive' : 'text-muted-foreground')}>
+                              {daysLeft > 0 ? `${t('plan.remaining')} ${daysLeft} ${t('plan.daysUnit')}` : t('plan.deadlinePassed')}
+                            </span>
+                          )}
+                          {!doneAt && (p?.quantity ?? 0) > 0 && p?.state === 'current' && (
+                            <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                              {p?.done}/{p?.quantity}{t('plan.questions')}
+                            </span>
+                          )}
+                          <Button variant="ghost" size="sm" className="ml-auto h-6 w-6 shrink-0 p-0 text-destructive" onClick={() => removeRound(r.id)} disabled={saving}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )
               })}
 
-              {milestoneError && <p className="text-[11px] text-destructive">{milestoneError}</p>}
-
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={addMilestone} className="text-xs h-7" disabled={saving}>
-                  <Plus className="h-3 w-3" />
-                  {t('plan.addMilestone')}
-                </Button>
-              </div>
+              {roundError && <p className="text-[11px] text-destructive">{roundError}</p>}
             </div>
           </>
           )}
@@ -682,133 +687,120 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                   </div>
                 ))}
               </div>
-            ) : dailyTargets.length === 0 ? (
-              <div className="border rounded-lg p-6 text-center space-y-2">
-                <p className="text-sm text-muted-foreground">{t('plan.selectHint')}</p>
-                <p className="text-xs text-muted-foreground">点击下方按钮添加自定义目标</p>
-              </div>
-            ) : dailyTargets.map((target, i) => {
-              const usedByOthers = new Set(
-                dailyTargets.flatMap((t, idx) => idx !== i ? t.subjects.map(s => s.subject) : [])
-              )
-              const targetSubjectNames = target.subjects.map(s => s.subject)
-              const availableSubjects = allSubjects.filter(s => !usedByOthers.has(s) || targetSubjectNames.includes(s))
-              return (
-                <div key={i}>
-                  {/* Title outside box */}
-                  <div className="text-sm font-semibold text-pink-600 dark:text-pink-400 truncate mb-1.5">{t('plan.dailyTarget')}</div>
+            ) : (
+              <>
+                {/* 学科: 选中即建第一批, 之后每批自己定题数与目标完成日 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full justify-between text-xs font-normal h-8">
+                      <span className={goalSubjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
+                        {goalSubjects.length === 0
+                          ? t('plan.selectHint')
+                          : goalSubjects.map((s) => `${s} (${subjectCounts.get(s) ?? 0})`).join(', ')}
+                      </span>
+                      <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
+                    {allSubjects.map((s) => {
+                      const checked = goalSubjects.includes(s)
+                      const disabledByLong = longUsedSubjects.has(s) && !checked
+                      return (
+                        <DropdownMenuItem
+                          key={s}
+                          disabled={disabledByLong}
+                          onSelect={(e) => { e.preventDefault(); toggleGoalSubject(s) }}
+                          className={`text-xs ${disabledByLong ? 'opacity-40' : ''}`}
+                        >
+                          <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
+                          <span>{s}</span>
+                          <span className="ml-auto text-muted-foreground">{disabledByLong ? t('plan.usedByLong') : subjectCounts.get(s) ?? 0}</span>
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-                  <div className="border rounded-lg p-3 space-y-2">
-
-                  {/* Subject multi-select + action buttons */}
-                  <div className="flex items-center gap-1.5">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="flex-1 justify-between text-xs font-normal h-8">
-                        <span className={target.subjects.length === 0 ? 'text-muted-foreground' : 'truncate'}>
-                          {target.subjects.length === 0
-                            ? t('plan.selectHint')
-                            : target.subjects.map(s => `${s.subject} (${subjectCounts.get(s.subject) ?? 0})`).join(', ')}
-                        </span>
-                        <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-48 overflow-y-auto w-[var(--radix-dropdown-menu-trigger-width)]">
-                      {availableSubjects.map((s) => {
-                        const checked = targetSubjectNames.includes(s)
-                        const disabledByLong = longUsedSubjects.has(s) && !checked
+                {goalSubjects.map((subject) => {
+                  const list = goalsBySubject.get(subject) ?? []
+                  const p = subjectProgress.get(subject)
+                  const total = p?.total ?? 0
+                  const done = p?.done ?? 0
+                  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+                  return (
+                    <div key={subject} className="space-y-1 rounded-lg border p-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{subject}</span>
+                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{done}/{total}</span>
+                        <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => addGoal(subject)} disabled={saving}>
+                          <Plus className="h-3 w-3" />
+                          {t('plan.addBatch')}
+                        </Button>
+                      </div>
+                      <Progress value={pct} className="h-1 [&>div]:bg-pink-500" />
+                      {list.map((g) => {
+                        const item = goalPreviewById.get(g.id)
+                        const doneAt = item?.doneAt ?? null
+                        const daysLeft = g.target
+                          ? Math.max(Math.ceil((new Date(`${g.target}T23:59:59`).getTime() - Date.now()) / 86400000), 0)
+                          : null
                         return (
-                          <DropdownMenuItem
-                            key={s}
-                            disabled={disabledByLong}
-                            onSelect={(e) => { e.preventDefault(); toggleTargetSubject(i, s) }}
-                            className={`text-xs ${disabledByLong ? 'opacity-40' : ''}`}
-                          >
-                            <Check className={cn('h-3 w-3', !checked && 'opacity-0')} />
-                            <span>{s}</span>
-                            <span className="ml-auto text-muted-foreground">{disabledByLong ? '已用于长期' : subjectCounts.get(s) ?? 0}</span>
-                          </DropdownMenuItem>
+                          <div key={g.id} className="flex flex-wrap items-center gap-1.5 pl-1">
+                            <span className="grid h-6 shrink-0 place-items-center rounded-md bg-pink-500/10 px-1.5 text-[10px] font-medium tabular-nums text-pink-600 dark:text-pink-400">
+                              {t('plan.roundPrefix')}{item?.index ?? ''}{t('plan.batchesUnit')}
+                            </span>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={g.count}
+                              disabled={!!doneAt}
+                              onChange={(e) => updateGoalCount(g.id, Math.max(1, Number(e.target.value) || 1))}
+                              className="h-7 w-16 px-1 text-center text-[11px]"
+                            />
+                            <span className="shrink-0 text-[11px] text-muted-foreground">{t('plan.questions')}</span>
+                            {doneAt ? (
+                              <span className="shrink-0 rounded-md border border-emerald-500/40 px-2 py-1 text-[11px] tabular-nums text-emerald-600 dark:text-emerald-400">
+                                {doneAt} {t('plan.roundDone')}
+                              </span>
+                            ) : (
+                              <DatePicker
+                                date={g.target ? new Date(`${g.target}T00:00:00`) : undefined}
+                                onSelect={(d) => updateGoalTarget(g.id, d ? toDateStr(d) : '')}
+                                placeholder={t('plan.roundTarget')}
+                                className="w-auto min-w-[112px] h-7 text-[11px] px-2"
+                              />
+                            )}
+                            {!doneAt && daysLeft !== null && (
+                              <span className={cn('shrink-0 text-[10px] tabular-nums', daysLeft === 0 ? 'text-destructive' : 'text-muted-foreground')}>
+                                {daysLeft > 0 ? `${t('plan.remaining')} ${daysLeft} ${t('plan.daysUnit')}` : t('plan.deadlinePassed')}
+                              </span>
+                            )}
+                            {!doneAt && (item?.quantity ?? 0) > 0 && item?.state === 'current' && (
+                              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                                {item?.done}/{item?.quantity}{t('plan.questions')}
+                              </span>
+                            )}
+                            <Button variant="ghost" size="sm" className="ml-auto h-6 w-6 shrink-0 p-0 text-destructive" onClick={() => removeGoal(g.id)} disabled={saving}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
                         )
                       })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  </div>
-
-                  {/* Deadline */}
-                  <DateTimePicker
-                    date={target.deadline ? new Date(target.deadline) : undefined}
-                    onSelect={(d) => updateDailyDeadline(i, d ? d.toISOString() : '')}
-                    placeholder={t('plan.deadline')}
-                  />
-
-                  {/* Subject progress items — same layout as long-term tab */}
-                  {target.subjects.length > 0 && (
-                    <div className="space-y-1.5">
-                      {target.subjects.map((subj) => {
-                        const p = subjectProgress.get(subj.subject)
-                        const total = p?.total ?? 0
-                        const done = p?.done ?? 0
-                        const mk = p?.missing_kp ?? 0
-                        const pct = total > 0 ? Math.round((done / total) * 100) : 0
-                        return (
-                        <div key={subj.subject} className="space-y-0.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-muted-foreground truncate max-w-[60%]">{subj.subject}</span>
-                            <span className="tabular-nums">{done}/{total}{mk > 0 && <Link to={`/admin/questions?subject=${encodeURIComponent(subj.subject)}&kp=__none__`} className="ml-1.5 text-amber-500 hover:text-amber-600 underline">{mk}题缺知识点</Link>}</span>
-                          </div>
-                          <Progress value={pct} className="h-1.5 [&>div]:bg-pink-500" />
-                        </div>
-                      )})}
+                      {list.length === 0 && <p className="pl-1 text-[11px] text-muted-foreground">{t('plan.noBatchHint')}</p>}
                     </div>
-                  )}
+                  )
+                })}
 
-                  {/* Per-group summary at bottom-left */}
-                  {target.subjects.length > 0 && (() => {
-                    const grpDailyGoal = !target.deadline
-                      ? target.subjects.reduce((s, subj) => s + subj.count, 0)
-                      : (() => {
-                          const daysLeft = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
-                          return target.subjects.reduce((s, subj) => {
-                            const p = subjectProgress.get(subj.subject)
-                            const r = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
-                            return s + Math.ceil(r / daysLeft)
-                          }, 0)
-                        })()
-                    let grpTotal = 0, grpDone = 0
-                    for (const subj of target.subjects) {
-                      const p = subjectProgress.get(subj.subject)
-                      grpTotal += p?.total ?? 0
-                      grpDone += p?.done ?? 0
-                    }
-                    return (
-                      <p className="text-[11px] pt-1">
-                        <span className="text-muted-foreground">{t('plan.dailyGoal')}: </span>
-                        <span className="font-semibold text-pink-600 dark:text-pink-400">{grpDailyGoal} {t('plan.perDay')}</span>
-                        <span className="text-muted-foreground ml-2">{t('plan.doneCount')}: {grpDone}/{grpTotal}</span>
-                      </p>
-                    )
-                  })()}
-
-                  <div className="flex justify-end gap-1.5 pt-1">
-                    <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => setConfirmReset(i)} disabled={saving}>
-                      {saving ? '...' : '重置进度'}
-                    </Button>
-                    <Button variant="outline" size="sm" className="text-destructive text-xs h-7" onClick={() => removeDailyTarget(i)} disabled={saving}>
-                      <X className="h-3 w-3 mr-1" />删除目标
-                    </Button>
+                {goalSubjects.length === 0 && (
+                  <div className="border rounded-lg p-6 text-center space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('plan.selectHint')}</p>
+                    <p className="text-xs text-muted-foreground">{t('plan.noCustomHint')}</p>
                   </div>
-                </div>
-              </div>
-              )
-            })}
+                )}
 
-            {/* Add button — outside box */}
-            <div className="flex justify-end">
-              <Button variant="outline" size="sm" onClick={addDailyTarget} className="text-xs h-7">
-                <Plus className="h-3 w-3" />
-                新增目标
-              </Button>
-            </div>
+                {goalError && <p className="text-[11px] text-destructive">{goalError}</p>}
+              </>
+            )}
           </div>
           )}
 
@@ -851,53 +843,56 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                   )}
                 </div>
 
-                {previewMilestones.length > 0 ? (
+                {previewRounds.length > 0 ? (
                   <div className="rounded-lg border p-2">
-                    <PlanGanttChart mode="long-term" milestones={previewMilestones} planDeadline={deadline || null} />
+                    <PlanGanttChart items={previewRounds} color={PLAN_BLUE} unit={t('plan.roundsUnit')} planDeadline={deadline || null} />
                   </div>
                 ) : (
                   <p className="text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>
                 )}
               </>
             ) : (
-              <div className="space-y-1 rounded-lg border bg-muted/20 p-2.5">
-                <p className="text-[11px] text-muted-foreground">{t('plan.schedulePreview')}</p>
-                {dailyTargets.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground">{t('plan.noCustomHint')}</p>
-                ) : (
-                  <>
-                    <p className="text-[12px]">
-                      {t('plan.perDayTotal')}
-                      {' '}
-                      <b className="text-pink-600 dark:text-pink-400">{dailyTargets.reduce((sum, target) => sum + target.subjects.reduce((s, subj) => s + (target.deadline ? (() => {
-                        const days = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
-                        const p = subjectProgress.get(subj.subject)
-                        return Math.ceil(Math.max((p?.total ?? 0) - (p?.done ?? 0), 0) / days)
-                      })() : subj.count), 0), 0)}</b>
-                      {' '}
-                      {t('plan.questions')}
-                    </p>
-                    <ul className="space-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
-                      {dailyTargets.flatMap((target, gi) => target.subjects.map((subj) => {
-                        const p = subjectProgress.get(subj.subject)
-                        const rem = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
-                        const per = target.deadline
-                          ? Math.ceil(rem / Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1))
-                          : subj.count
-                        return (
-                          <li key={`${gi}-${subj.subject}`} className="flex justify-between gap-2">
-                            <span className="truncate">{subj.subject}</span>
-                            <span className="shrink-0 tabular-nums">
-                              {target.deadline ? <>{target.deadline} 前 · </> : null}
-                              {t('plan.aboutPerDay')} {per} {t('plan.questions')}
-                            </span>
-                          </li>
-                        )
-                      }))}
-                    </ul>
-                  </>
+              <>
+                <div className="space-y-1 rounded-lg border bg-muted/20 p-2.5">
+                  <p className="text-[11px] text-muted-foreground">{t('plan.schedulePreview')}</p>
+                  {previewGoals.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">{t('plan.noCustomHint')}</p>
+                  ) : (
+                    <>
+                      <p className="text-[12px] tabular-nums">
+                        {t('plan.batchTotal')}
+                        {' '}
+                        <b className="text-pink-600 dark:text-pink-400">{previewGoals.filter((g) => g.state !== 'done').reduce((sum, g) => sum + g.quantity, 0)}</b>
+                        {' '}
+                        {t('plan.questions')}
+                        {' · '}
+                        {t('plan.roundStateDone')} {previewGoals.filter((g) => g.state === 'done').length}/{previewGoals.length}
+                        {t('plan.batchesUnit')}
+                      </p>
+                      <ul className="space-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
+                        {goalSubjects.map((subject) => {
+                          const list = goalsBySubject.get(subject) ?? []
+                          const rest = list.filter((g) => !goalPreviewById.get(g.id)?.doneAt).reduce((sum, g) => sum + g.count, 0)
+                          return (
+                            <li key={subject} className="flex justify-between gap-2">
+                              <span className="truncate">{subject}</span>
+                              <span className="shrink-0 tabular-nums">
+                                {list.length}{t('plan.batchesUnit')} · {t('plan.remaining')} {rest} {t('plan.questions')}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </div>
+
+                {previewGoals.length > 0 && (
+                  <div className="rounded-lg border p-2">
+                    <PlanGanttChart items={previewGoals} color={CUSTOM_PINK} unit={t('plan.batchesUnit')} />
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -928,14 +923,12 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
         </DialogFooter>
       </DialogContent>
 
-      <AlertDialog open={confirmReset !== null} onOpenChange={(open) => { if (!open) { setConfirmReset(null); setResetTooEasy(false) } }}>
+      <AlertDialog open={confirmReset} onOpenChange={(open) => { if (!open) { setConfirmReset(false); setResetTooEasy(false) } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认重置</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmReset === 'long'
-                ? '重置后，所选科目的已完成题目计数将归零。'
-                : '重置后，该组自定义目标的已完成计数将归零。'}
+              重置后，所选科目的已完成题目计数将归零。
             </AlertDialogDescription>
             <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
               <Checkbox checked={resetTooEasy} onCheckedChange={(v) => setResetTooEasy(v === true)} />
@@ -946,10 +939,9 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (confirmReset === 'long') handleResetLong()
-                else if (typeof confirmReset === 'number') handleResetDaily(confirmReset)
+                handleResetLong()
                 setResetTooEasy(false)
-                setConfirmReset(null)
+                setConfirmReset(false)
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -970,7 +962,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setAskLoadNewSession(false)}>暂不</AlertDialogCancel>
             <AlertDialogAction className="bg-muted text-foreground hover:bg-muted/80" onClick={reloadSessionNow}>重新拉取题目（保留记录）</AlertDialogAction>
-            <AlertDialogAction onClick={loadNewSessionNow}>从第一题开始</AlertDialogAction>
+            <AlertDialogAction onClick={loadNewSessionNow}>从第一题重新开始</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

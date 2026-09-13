@@ -9,6 +9,7 @@ interface PendingAnswer {
   is_correct: boolean
   mode: 'practice' | 'exam'
   exam_session_id: string | null
+  source: 'sequential' | 'random' | null
   answered_at: string
   synced: 0 | 1
 }

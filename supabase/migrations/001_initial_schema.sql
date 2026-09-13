@@ -2794,95 +2794,125 @@ CREATE POLICY fs_delete ON public.focus_sessions FOR DELETE USING (auth.uid() = 
 
 
 -- ============================================================================
+-- Section 40: 计划批次 (plan rounds / plan goals)
+--   profiles.plan_rounds = [{ id, subject, round, target, createdAt, doneAt }]
+--     长期计划的一轮 = 该学科刷完一遍题, 一批的题量 = 该学科题量
+--   profiles.plan_goals  = [{ id, subject, count, target, createdAt, doneAt }]
+--     自定义计划的一批 = 该学科刷够 count 题(题数自己定)
+--   两者是同一套模型, 只是"一批刷多少题"不同:
+--     target    这批的计划完成日, 用户设定, 不超过长期计划 deadline
+--     createdAt 创建这批的那天 —— 既是统计起点, 也是甘特图条形左端
+--     doneAt    实际刷够的那天, 检测到跨过阈值后写入, 甘特图的旗子插在这天
+--   一批只属于一个学科, 没有时间窗, 也不要求相邻批次首尾相接。
+--   注意: 只看作答历史, 不受"重置进度"(plan_reset_at/subject_reset_at)影响,
+--   否则重置一次就会抹掉已经插上的旗子。
 -- ============================================================================
--- Section 40: 长期计划里程碑 (plan milestones)
---   profiles.milestones = [{ id, start?, deadline:'YYYY-MM-DD', subjects:[{subject,rounds}] }]
---   每个里程碑自带统计窗口 [start, deadline](北京时间, 含 deadline 当天 24:00):
---     start 有值 -> 直接用; 否则回退为"按 deadline 排序后的上一个里程碑截止日次日";
---     两者皆无(第一个且没填 start) -> 不设下界, 统计该学科全部历史作答。
---   窗口允许重叠: 同一学科可以并行多轮, 不同学科也可以同一段时间各自设里程碑,
---   所以不再强制"里程碑之间不重叠", 窗口由各自的 start 显式区分。
---   "刷了几轮" = 窗口内该学科的作答次数 ÷ 该学科题量(重复刷同一题也计入),
---   口径与 get_subject_progress 的 total 保持一致(排除无知识点题与已排除题)。
---   注意: 里程碑只看时间窗, 不受"重置进度"(plan_reset_at/subject_reset_at)影响，
---   否则重置一次就会抹掉历史里程碑的战绩。
--- ============================================================================
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS plan_rounds JSONB DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS plan_goals JSONB DEFAULT '[]'::jsonb;
+
+-- 旧的时间窗里程碑 / 每日定额已废弃(客户端首次加载时一次性搬成上面两列), 列保留仅作历史
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS milestones JSONB DEFAULT '[]'::jsonb;
 
--- 返回列有变化时 CREATE OR REPLACE 会报 42P13, 先 DROP
 DROP FUNCTION IF EXISTS public.get_milestone_progress(UUID, JSONB);
-CREATE OR REPLACE FUNCTION public.get_milestone_progress(
-  p_user_id    UUID,
-  p_milestones JSONB
+DROP FUNCTION IF EXISTS public.get_plan_round_stats(UUID, JSONB);
+
+-- 只有"顺序学习"模式的作答推进批次; 复习(自由随机刷)、考试都不计入。
+-- 老数据没有 source, 按顺序学习算 —— 否则历史批次会凭空消失。
+ALTER TABLE public.user_answers
+  ADD COLUMN IF NOT EXISTS source TEXT;
+
+CREATE OR REPLACE FUNCTION public.get_plan_stats(
+  p_user_id UUID,
+  -- { "学科": { "since": "YYYY-MM-DD", "size": 128, "steps": [128, 50] } }
+  --   since 统计起点(该科第一批的创建日); size/steps 都不给 = 每批一科题量(长期计划的轮次)
+  --   steps 给的是每批题数, 内部累加成阈值(自定义计划的批次可以每批题数不同)
+  p_plan    JSONB
 )
-RETURNS TABLE(milestone_id TEXT, subject TEXT, total BIGINT, attempts BIGINT, done_at TIMESTAMPTZ)
+RETURNS TABLE(subject TEXT, total BIGINT, attempts BIGINT, done_dates JSONB)
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = ''
 AS $$
-  WITH ms AS (
-    SELECT
-      (e.m->>'id')                           AS id,
-      NULLIF(e.m->>'start', '')::DATE        AS start_day,
-      (e.m->>'deadline')::DATE               AS deadline,
-      COALESCE(e.m->'subjects', '[]'::jsonb) AS subjects,
-      e.ord
-    FROM jsonb_array_elements(COALESCE(p_milestones, '[]'::jsonb)) WITH ORDINALITY AS e(m, ord)
+  WITH base AS (
+    SELECT e.key AS subject,
+           (e.value->>'since')::DATE              AS since,
+           NULLIF(e.value->>'size', '')::BIGINT   AS size,
+           COALESCE(e.value->'steps', '[]'::jsonb) AS steps
+    FROM jsonb_each(COALESCE(p_plan, '{}'::jsonb)) AS e
   ),
-  win AS (
-    SELECT id, deadline, subjects,
-           COALESCE(start_day, LAG(deadline) OVER (ORDER BY deadline, ord)) AS win_start
-    FROM ms
+  tot AS (
+    SELECT b.subject, b.since, b.size, b.steps, COUNT(q.id)::BIGINT AS total
+    FROM base b
+    LEFT JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    GROUP BY b.subject, b.since, b.size, b.steps
   ),
-  ms_subj AS (
-    SELECT w.id, w.win_start, w.deadline,
-           (s->>'subject') AS subject,
-           GREATEST(COALESCE((s->>'rounds')::INT, 1), 1) AS target_rounds
-    FROM win w
-    CROSS JOIN LATERAL jsonb_array_elements(w.subjects) AS s
-    WHERE COALESCE(s->>'subject', '') <> ''
-  )
-  SELECT
-    sj.id                     AS milestone_id,
-    sj.subject                AS subject,
-    COALESCE(tot.total, 0)    AS total,
-    COALESCE(att.attempts, 0) AS attempts,
-    att.done_at               AS done_at
-  FROM ms_subj sj
-  LEFT JOIN LATERAL (
-    SELECT COUNT(*)::BIGINT AS total
-    FROM public.questions q
-    WHERE q.subject = sj.subject
-      AND q.key_points IS NOT NULL AND q.key_points <> ''
-      AND NOT EXISTS (
-        SELECT 1 FROM public.user_excluded_questions ueq
-        WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
-      )
-  ) tot ON TRUE
-  LEFT JOIN LATERAL (
-    -- 窗口内按时间排序的第 N 次作答(N = 目标轮数 × 该科题量)即"刷完这轮"的时刻
-    SELECT COUNT(*)::BIGINT AS attempts,
-           MIN(t.answered_at) FILTER (
-             WHERE t.rn = GREATEST(sj.target_rounds * tot.total, 1)
-           ) AS done_at
+  att AS (
+    SELECT t.id, t.subject, t.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY t.subject ORDER BY t.answered_at, t.id) AS rn
     FROM (
-      SELECT ua.answered_at, ROW_NUMBER() OVER (ORDER BY ua.answered_at) AS rn
+      SELECT ua.id, ua.answered_at, q.subject
       FROM public.user_answers ua
       JOIN public.questions q ON q.id = ua.question_id
+      JOIN base b ON b.subject = q.subject
       WHERE ua.user_id = p_user_id
-        AND q.subject = sj.subject
-        -- 边界按北京时间(与客户端"今日"的 UTC 16:00 口径一致)
-        AND (sj.win_start IS NULL
-             OR ua.answered_at >= ((sj.win_start + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
-        AND ua.answered_at < ((sj.deadline + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ
+        AND ua.mode = 'practice'
+        AND ua.source IS DISTINCT FROM 'random'
+        -- 起点按北京时间当天 00:00 算(与客户端"今日"的 UTC 16:00 口径一致)
+        AND ua.answered_at >= (b.since::text || ' 00:00:00+08')::TIMESTAMPTZ
+        AND q.key_points IS NOT NULL AND q.key_points <> ''
         AND NOT EXISTS (
           SELECT 1 FROM public.user_excluded_questions ueq
           WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
         )
     ) t
-  ) att ON TRUE
-  ORDER BY sj.deadline, sj.subject;
+  ),
+  -- 第 k 批刷够的时刻 = 起点以来第 (前 k 批题数之和) 次作答
+  mark AS (
+    SELECT b.subject, SUM(s.v) OVER (PARTITION BY b.subject ORDER BY s.ord) AS rn
+    FROM tot b
+    CROSS JOIN LATERAL (
+      SELECT (x.value)::BIGINT AS v, x.ord
+      FROM jsonb_array_elements_text(b.steps) WITH ORDINALITY AS x(value, ord)
+    ) s
+    UNION ALL
+    -- 没给每批题数: 按 size(缺省 = 整科题量)的整数倍算
+    SELECT a.subject, a.rn
+    FROM att a
+    JOIN tot b ON b.subject = a.subject
+    WHERE jsonb_array_length(b.steps) = 0
+      AND COALESCE(b.size, b.total) > 0
+      AND a.rn % COALESCE(b.size, b.total) = 0
+  )
+  SELECT
+    tot.subject,
+    tot.total,
+    COALESCE(cnt.attempts, 0) AS attempts,
+    COALESCE(dd.dates, '[]'::jsonb) AS done_dates
+  FROM tot
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS attempts
+    FROM att WHERE att.subject = tot.subject
+  ) cnt ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT jsonb_agg(
+             to_char((a.answered_at AT TIME ZONE 'Asia/Shanghai')::DATE, 'YYYY-MM-DD')
+             ORDER BY a.rn
+           ) AS dates
+    FROM att a
+    JOIN mark m ON m.subject = a.subject AND m.rn = a.rn
+    WHERE a.subject = tot.subject
+  ) dd ON TRUE
+  ORDER BY tot.subject;
 $$;
-GRANT EXECUTE ON FUNCTION public.get_milestone_progress(UUID, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;

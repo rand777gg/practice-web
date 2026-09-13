@@ -48,8 +48,9 @@ export function HeaderPlanMenu() {
   const longDone = plan.longTerm.reduce((s, r) => s + r.doneAll, 0)
   const longTotal = plan.longTerm.reduce((s, r) => s + r.total, 0)
   const longToday = plan.longTerm.reduce((s, r) => s + r.doneToday, 0)
-  const targetDone = plan.targets.reduce((s, g) => s + g.totalDone, 0)
-  const targetTotal = plan.targets.reduce((s, g) => s + g.total, 0)
+  // 自定义计划: 按"这批刷够 X 题"的完成度算
+  const goalTotal = plan.goals.reduce((s, g) => s + g.quantity, 0)
+  const goalDone = plan.goals.reduce((s, g) => s + Math.min(g.done, g.quantity), 0)
 
   const rows = useMemo<PlanRow[]>(() => {
     const list: PlanRow[] = []
@@ -67,24 +68,25 @@ export function HeaderPlanMenu() {
         })),
       })
     }
-    if (targetTotal > 0) {
+    if (goalTotal > 0) {
+      const bySubject = new Map<string, SubjectDetail>()
+      for (const g of plan.goals) {
+        const cur = bySubject.get(g.subject) ?? { label: g.subject || t("plan.other"), done: 0, total: 0 }
+        cur.done += Math.min(g.done, g.quantity)
+        cur.total += g.quantity
+        bySubject.set(g.subject, cur)
+      }
       list.push({
-        name: `${t("plan.daily")} · ${t("plan.today")}`,
-        done: targetDone,
-        total: targetTotal,
-        today: targetDone,
+        name: `${t("plan.daily")} · ${t("plan.overall")}`,
+        done: goalDone,
+        total: goalTotal,
+        today: goalDone,
         color: CATEGORY_COLORS[4],
-        details: plan.targets.flatMap((g) =>
-          g.subjects.map((s) => ({
-            label: s.subject || t("plan.other"),
-            done: s.done,
-            total: s.count,
-          }))
-        ),
+        details: [...bySubject.values()],
       })
     }
     return list
-  }, [plan.longTerm, plan.targets, longDone, longTotal, longToday, targetDone, targetTotal, t])
+  }, [plan.longTerm, plan.goals, longDone, longTotal, longToday, goalDone, goalTotal, t])
 
   const option = useMemo(() => {
     if (rows.length === 0) return null
@@ -177,8 +179,9 @@ export function HeaderPlanMenu() {
   if (plan.loading) return null
 
   const longPct = plan.dailyGoal > 0 ? Math.min(Math.round((plan.todayDone / plan.dailyGoal) * 100), 100) : 0
-  const targetPct = targetTotal > 0 ? Math.min(Math.round((targetDone / targetTotal) * 100), 100) : 0
-  const allDone = (plan.dailyGoal === 0 || plan.todayDone >= plan.dailyGoal) && (targetTotal === 0 || targetDone >= targetTotal)
+  const targetPct = goalTotal > 0 ? Math.min(Math.round((goalDone / goalTotal) * 100), 100) : 0
+  const allDone = (plan.dailyGoal === 0 || plan.todayDone >= plan.dailyGoal)
+    && (plan.goals.length === 0 || plan.goals.every((g) => g.state === 'done'))
 
   return (
     <>
@@ -204,11 +207,11 @@ export function HeaderPlanMenu() {
                       <span className="shrink-0 tabular-nums text-[10px]">{plan.todayDone}/{plan.dailyGoal}</span>
                     </span>
                   )}
-                  {targetTotal > 0 && (
+                  {goalTotal > 0 && (
                     <span className="flex shrink-0 items-center gap-1">
                       <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.daily")}</span>
                       <Progress value={targetPct} className="h-2 w-10 [&>div]:bg-pink-500" />
-                      <span className="shrink-0 tabular-nums text-[10px]">{targetDone}/{targetTotal}</span>
+                      <span className="shrink-0 tabular-nums text-[10px]">{goalDone}/{goalTotal}</span>
                     </span>
                   )}
                 </>

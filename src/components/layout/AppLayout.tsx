@@ -6,6 +6,7 @@ import { Header } from './Header'
 import { MobileBottomNav } from './MobileBottomNav'
 import { OnlinePresenceTracker } from './OnlinePresenceTracker'
 import { ExamScheduleWatcher } from '@/components/exam/ExamScheduleWatcher'
+import { PlanWatcher } from './PlanWatcher'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useExamStore } from '@/stores/exam-store'
@@ -30,6 +31,7 @@ export function AppLayout() {
     >
       <OnlinePresenceTracker />
       <ExamScheduleWatcher />
+      <PlanWatcher />
       <AppSidebar />
       <SidebarInset>
         <Header />

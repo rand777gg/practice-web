@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { normalizeDailyTargets, normalizeMilestones } from '@/types'
-import type { DailyTarget, PlanMilestone } from '@/types'
+import { resolveGoals, resolveRounds, todayStr } from '@/types'
+import type { PlanGoal, PlanRound } from '@/types'
 
 export interface PlanSubjectProgress {
   subject: string
@@ -12,37 +12,46 @@ export interface PlanSubjectProgress {
   doneToday: number
 }
 
-export interface PlanTargetGroup {
-  deadline: string | null
-  subjects: { subject: string; count: number; done: number }[]
-  total: number
-  totalDone: number
-}
+/** 一条计划记录的状态: 已刷完 / 过了目标日还没刷完 / 正在刷 / 还没轮到 */
+export type PlanItemState = 'done' | 'overdue' | 'current' | 'upcoming'
+/** round = 长期计划的一轮(一批 = 该学科题量), goal = 自定义计划的一批(题数自己定) */
+export type PlanItemKind = 'round' | 'goal'
 
-export interface PlanMilestoneSubjectProgress {
-  subject: string
-  /** 目标轮数 */
-  rounds: number
-  /** 已刷轮数(窗口内作答次数 / 该科题量, 保留一位小数) */
-  roundsDone: number
-  attempts: number
-  total: number
-  /** 刷满目标轮数的时刻(未刷满为 null) */
-  doneAt: string | null
-}
-
-export interface PlanMilestoneProgress {
+/**
+ * 一条计划记录。长期计划的一轮和自定义计划的一批是同一个东西:
+ * "从创建那天起累计刷够 quantity 题", 只是 quantity 的来源不同。
+ */
+export interface PlanItem {
   id: string
-  /** 统计窗口起点(空 = 自动回退到上一个里程碑次日) */
-  start: string
-  deadline: string
-  subjects: PlanMilestoneSubjectProgress[]
-  totalRounds: number
-  doneRounds: number
-  /** 0..1 */
-  progress: number
-  daysLeft: number
-  passed: boolean
+  subject: string
+  kind: PlanItemKind
+  /** 第几轮 / 第几批 */
+  index: number
+  /** 这一批的目标题数 */
+  quantity: number
+  target: string
+  createdAt: string
+  /** 实际刷够的那天: 落库值优先, 没有就用作答记录算出来的 */
+  doneAt: string | null
+  state: PlanItemState
+  /** 这一批已经刷了多少题 */
+  done: number
+}
+
+export interface PlanStat {
+  /** 该学科题量 */
+  total: number
+  /** 统计起点以来"顺序学习"模式的作答次数 */
+  attempts: number
+  /** 第 1..k 批的实际完成日 */
+  doneDates: string[]
+}
+
+/** 传给 get_plan_stats 的每科参数: 起点 + 每批题数(steps) 或统一的 size(缺省 = 题量) */
+export interface PlanSpecEntry {
+  since: string
+  size?: number
+  steps?: number[]
 }
 
 export interface PlanCompletion {
@@ -52,69 +61,166 @@ export interface PlanCompletion {
   dailyGoal: number
   todayDone: number
   longTerm: PlanSubjectProgress[]
-  targets: PlanTargetGroup[]
-  milestones: PlanMilestoneProgress[]
+  rounds: PlanItem[]
+  goals: PlanItem[]
 }
 
-/** 里程碑进度原始行, key = `${milestoneId}|${subject}` */
-export type MilestoneProgressRow = { total: number; attempts: number; doneAt: string | null }
+interface PlanRecord {
+  id: string
+  subject: string
+  index: number
+  /** null = 用该学科题量 */
+  quantity: number | null
+  target: string
+  createdAt: string
+  doneAt: string | null
+}
+
+/** 每科的统计起点 = 该科最早那条记录的创建日 */
+export function planBaselines(records: { subject: string; createdAt: string }[]): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const r of records) {
+    const cur = map[r.subject]
+    if (!cur || r.createdAt < cur) map[r.subject] = r.createdAt
+  }
+  return map
+}
 
 /**
- * 拉取里程碑"窗口内作答次数"。窗口由里程碑截止日推导: 第 i 个窗口的起点是
- * 第 i-1 个截止日的次日, 因此相邻里程碑互不重叠。
+ * 长期计划的轮次换成统计参数: 每批题量 = 该学科题量, 所以只给起点。
  */
-export async function fetchMilestoneProgress(
+export function roundPlanSpec(rounds: PlanRound[]): Record<string, PlanSpecEntry> {
+  const spec: Record<string, PlanSpecEntry> = {}
+  for (const [subject, since] of Object.entries(planBaselines(rounds))) spec[subject] = { since }
+  return spec
+}
+
+/** 自定义计划的批次换成统计参数: 每批题数自己定, 交给 SQL 累加成阈值 */
+export function goalPlanSpec(goals: PlanGoal[]): Record<string, PlanSpecEntry> {
+  const spec: Record<string, PlanSpecEntry> = {}
+  for (const [subject, since] of Object.entries(planBaselines(goals))) spec[subject] = { since, steps: [] }
+  for (const g of goals) {
+    const entry = spec[g.subject]
+    if (entry) entry.steps!.push(g.count)
+  }
+  return spec
+}
+
+/**
+ * 拉取"从起点以来顺序学习的作答次数"和每一批的实际完成日。
+ * 第 k 批刷够的时刻 = 起点以来第 (前 k 批题数之和) 次作答, 所以完成日是算出来的,
+ * 不需要在刷题时实时打点。
+ */
+export async function fetchPlanStats(
   userId: string,
-  milestones: PlanMilestone[],
-): Promise<Map<string, MilestoneProgressRow>> {
-  const map = new Map<string, MilestoneProgressRow>()
-  if (milestones.length === 0) return map
-  const { data, error } = await supabase.rpc('get_milestone_progress', {
-    p_user_id: userId,
-    p_milestones: milestones,
-  })
+  plan: Record<string, PlanSpecEntry>,
+): Promise<Map<string, PlanStat>> {
+  const map = new Map<string, PlanStat>()
+  if (Object.keys(plan).length === 0) return map
+  const { data, error } = await supabase.rpc('get_plan_stats', { p_user_id: userId, p_plan: plan })
   if (error) {
-    console.error('fetchMilestoneProgress:', error)
+    console.error('fetchPlanStats:', error)
     return map
   }
-  for (const r of (data ?? []) as { milestone_id: string; subject: string; total: number; attempts: number; done_at: string | null }[]) {
-    map.set(`${r.milestone_id}|${r.subject}`, {
+  for (const r of (data ?? []) as { subject: string; total: number; attempts: number; done_dates: string[] | null }[]) {
+    map.set(r.subject, {
       total: Number(r.total),
       attempts: Number(r.attempts),
-      doneAt: r.done_at ?? null,
+      doneDates: (r.done_dates ?? []) as string[],
     })
   }
   return map
 }
 
-export function buildMilestoneProgress(
-  milestones: PlanMilestone[],
-  rows: Map<string, MilestoneProgressRow>,
-): PlanMilestoneProgress[] {
-  const now = Date.now()
-  return milestones.map((m) => {
-    const subjects = m.subjects.map((s) => {
-      const row = rows.get(`${m.id}|${s.subject}`)
-      const total = row?.total ?? 0
-      const attempts = row?.attempts ?? 0
-      const roundsDone = total > 0 ? Math.round((attempts / total) * 10) / 10 : 0
-      return { subject: s.subject, rounds: s.rounds, roundsDone, attempts, total, doneAt: row?.doneAt ?? null }
+/** 把计划里的记录和真实作答统计合起来: 每条的完成日、状态、进度 */
+function toPlanItems(kind: PlanItemKind, rows: PlanRecord[], stats: Map<string, PlanStat>): PlanItem[] {
+  const bySubject = new Map<string, PlanRecord[]>()
+  for (const r of rows) {
+    const list = bySubject.get(r.subject)
+    if (list) list.push(r)
+    else bySubject.set(r.subject, [r])
+  }
+
+  const today = todayStr()
+  const out: PlanItem[] = []
+  for (const [subject, list] of bySubject) {
+    const stat = stats.get(subject)
+    const attempts = stat?.attempts ?? 0
+    // 前面几批的题数之和: 当前这批的进度 = 总作答次数 - 前面已刷掉的
+    let prefix = 0
+    let metCurrent = false
+    ;[...list].sort((a, b) => a.index - b.index).forEach((row, i) => {
+      const quantity = row.quantity ?? stat?.total ?? 0
+      const doneAt = row.doneAt ?? stat?.doneDates[i] ?? null
+      const state: PlanItemState = doneAt
+        ? 'done'
+        : row.target < today ? 'overdue' : metCurrent ? 'upcoming' : 'current'
+      if (!doneAt) metCurrent = true
+      out.push({
+        id: row.id,
+        subject,
+        kind,
+        index: row.index,
+        quantity,
+        target: row.target,
+        createdAt: row.createdAt,
+        doneAt,
+        state,
+        done: doneAt ? quantity : Math.min(Math.max(attempts - prefix, 0), quantity),
+      })
+      prefix += quantity
     })
-    const totalRounds = subjects.reduce((sum, s) => sum + s.rounds, 0)
-    const doneRounds = subjects.reduce((sum, s) => sum + Math.min(s.roundsDone, s.rounds), 0)
-    const endOfDay = new Date(`${m.deadline}T23:59:59`).getTime()
+  }
+  return out.sort((a, b) =>
+    a.subject.localeCompare(b.subject, 'zh-CN') || a.index - b.index)
+}
+
+export function buildRoundItems(rounds: PlanRound[], stats: Map<string, PlanStat>): PlanItem[] {
+  return toPlanItems('round', rounds.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    index: r.round,
+    quantity: null,
+    target: r.target,
+    createdAt: r.createdAt,
+    doneAt: r.doneAt,
+  })), stats)
+}
+
+export function buildGoalItems(goals: PlanGoal[], stats: Map<string, PlanStat>): PlanItem[] {
+  const counter = new Map<string, number>()
+  return toPlanItems('goal', goals.map((g) => {
+    const index = (counter.get(g.subject) ?? 0) + 1
+    counter.set(g.subject, index)
     return {
-      id: m.id,
-      start: m.start ?? '',
-      deadline: m.deadline,
-      subjects,
-      totalRounds,
-      doneRounds,
-      progress: totalRounds > 0 ? doneRounds / totalRounds : 0,
-      daysLeft: Math.max(Math.ceil((endOfDay - now) / 86400000), 0),
-      passed: endOfDay < now,
+      id: g.id,
+      subject: g.subject,
+      index,
+      quantity: g.count,
+      target: g.target,
+      createdAt: g.createdAt,
+      doneAt: g.doneAt,
     }
-  })
+  }), stats)
+}
+
+/**
+ * 甘特图只画"还没刷完的 + 每科最近 keepDone 条已完成的", 否则刷得越久行数越多。
+ */
+export function pickVisibleItems(items: PlanItem[], keepDone = 2): PlanItem[] {
+  const bySubject = new Map<string, PlanItem[]>()
+  for (const r of items) {
+    const list = bySubject.get(r.subject)
+    if (list) list.push(r)
+    else bySubject.set(r.subject, [r])
+  }
+  const out: PlanItem[] = []
+  for (const list of bySubject.values()) {
+    const done = list.filter((r) => r.state === 'done')
+    out.push(...list.filter((r) => r.state !== 'done'), ...done.slice(-keepDone))
+  }
+  return out.sort((a, b) =>
+    a.subject.localeCompare(b.subject, 'zh-CN') || a.index - b.index)
 }
 
 type ProgressRow = { subject: string; total: number; done_all: number; done_today: number }
@@ -134,13 +240,6 @@ function getPlanSubjects(profile: { plan_subjects?: string | null } | null): str
   if (!profile?.plan_subjects) return []
   try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
 }
-
-function getDailyTargets(profile: { daily_targets?: string | null } | null): DailyTarget[] {
-  if (!profile?.daily_targets) return []
-  try { return normalizeDailyTargets(JSON.parse(profile.daily_targets)) } catch { return [] }
-}
-
-function subjectKey(s: string) { return s || 'Other' }
 
 async function fetchProgress(params: {
   p_user_id: string
@@ -166,47 +265,33 @@ export function usePlanCompletion(): PlanCompletion {
   const [dailyGoal, setDailyGoal] = useState(0)
   const [todayDone, setTodayDone] = useState(0)
   const [longTerm, setLongTerm] = useState<PlanSubjectProgress[]>([])
-  const [targets, setTargets] = useState<PlanTargetGroup[]>([])
-  const [milestones, setMilestones] = useState<PlanMilestoneProgress[]>([])
+  const [rounds, setRounds] = useState<PlanItem[]>([])
+  const [goals, setGoals] = useState<PlanItem[]>([])
 
-  const milestoneList = useMemo<PlanMilestone[]>(
-    () => normalizeMilestones(profile?.milestones),
-    [profile?.milestones],
-  )
+  const roundList = useMemo<PlanRound[]>(() => resolveRounds(profile), [profile])
+  const goalList = useMemo<PlanGoal[]>(() => resolveGoals(profile), [profile])
 
   useEffect(() => {
     if (!user || !profile) return
     const uid = user.id
-    let cancelled = false
+    const cancelled = false
 
     void (async () => {
       try {
         const today = todayStart()
         const deadline = profile.deadline ?? null
         const planSubjects = getPlanSubjects(profile)
-        const dailyTargets = getDailyTargets(profile)
         const subjectResets = (profile.subject_reset_at ?? null) as Record<string, string> | null
 
-        const [ltRows, dtRows] = await Promise.all([
-          deadline
-            ? fetchProgress({
-                p_user_id: uid,
-                p_plan_reset_at: profile.plan_reset_at || null,
-                p_today_since: today,
-                p_subjects: planSubjects.length > 0 ? planSubjects : null,
-                p_subject_resets: subjectResets,
-              })
-            : Promise.resolve(null),
-          dailyTargets.length > 0
-            ? fetchProgress({
-                p_user_id: uid,
-                p_plan_reset_at: profile.daily_reset_at || null,
-                p_today_since: today,
-                p_subjects: [...new Set(dailyTargets.flatMap((t) => t.subjects.map((s) => s.subject)))],
-                p_subject_resets: subjectResets,
-              })
-            : Promise.resolve(null),
-        ])
+        const ltRows = deadline
+          ? await fetchProgress({
+              p_user_id: uid,
+              p_plan_reset_at: profile.plan_reset_at || null,
+              p_today_since: today,
+              p_subjects: planSubjects.length > 0 ? planSubjects : null,
+              p_subject_resets: subjectResets,
+            })
+          : null
 
         if (cancelled) return
 
@@ -233,33 +318,13 @@ export function usePlanCompletion(): PlanCompletion {
           setLongTerm([])
         }
 
-        if (dailyTargets.length > 0 && dtRows) {
-          const doneTodayBySubject = new Map<string, number>()
-          for (const r of dtRows) doneTodayBySubject.set(r.subject, Number(r.done_today))
-          setTargets(dailyTargets.map((t) => {
-            const subjects = t.subjects.map((s) => ({
-              subject: s.subject,
-              count: s.count,
-              done: Math.min(doneTodayBySubject.get(subjectKey(s.subject)) ?? 0, s.count),
-            }))
-            return {
-              deadline: t.deadline ?? null,
-              subjects,
-              total: subjects.reduce((sum, s) => sum + s.count, 0),
-              totalDone: subjects.reduce((sum, s) => sum + s.done, 0),
-            }
-          }))
-        } else {
-          setTargets([])
-        }
-
-        if (milestoneList.length > 0) {
-          const rows = await fetchMilestoneProgress(uid, milestoneList)
-          if (cancelled) return
-          setMilestones(buildMilestoneProgress(milestoneList, rows))
-        } else {
-          setMilestones([])
-        }
+        const [roundStats, goalStats] = await Promise.all([
+          roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList)) : Promise.resolve(null),
+          goalList.length > 0 ? fetchPlanStats(uid, goalPlanSpec(goalList)) : Promise.resolve(null),
+        ])
+        if (cancelled) return
+        setRounds(roundStats ? buildRoundItems(roundList, roundStats) : [])
+        setGoals(goalStats ? buildGoalItems(goalList, goalStats) : [])
 
         if (!cancelled) setLoading(false)
       } catch (e) {
@@ -267,9 +332,7 @@ export function usePlanCompletion(): PlanCompletion {
         if (!cancelled) setLoading(false)
       }
     })()
-
-    return () => { cancelled = true }
-  }, [user, profile, version, milestoneList])
+  }, [user, profile, version, roundList, goalList])
 
   // 北京时间零点(UTC 16:00)后重新拉取, 进度按新一天重置
   useEffect(() => {
@@ -287,7 +350,7 @@ export function usePlanCompletion(): PlanCompletion {
     return () => clearTimeout(timer)
   }, [])
 
-  const hasPlan = !!profile?.deadline || targets.length > 0 || milestones.length > 0
+  const hasPlan = !!profile?.deadline || rounds.length > 0 || goals.length > 0
 
   return {
     loading: loading && !!profile,
@@ -296,7 +359,7 @@ export function usePlanCompletion(): PlanCompletion {
     dailyGoal,
     todayDone,
     longTerm,
-    targets,
-    milestones,
+    rounds,
+    goals,
   }
 }

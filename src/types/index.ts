@@ -96,58 +96,218 @@ export interface DailyTarget {
   deadline: string | null
 }
 
+/** 本地时区的 YYYY-MM-DD（不能用 toISOString, 会把东八区的当天零点倒退一天） */
+export function toDateStr(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+export function todayStr(): string {
+  return toDateStr(new Date())
+}
+
 /**
- * 长期计划下的里程碑: 每个里程碑自带一个时间窗 [start, deadline]。
- * 不同里程碑(即使是同一学科)允许时间重叠 —— 多学科同步复习是常态,
- * 所以窗口不再由"上一个里程碑的截止日"推导; start 留空时才回退到
- * "按截止日排序后的上一个里程碑截止日次日"。start 也为空则从计划起点算起。
+ * 长期计划下的一轮 = 某学科刷完一遍题。只认真实记录:
+ * 目标完成日由用户设定, 实际完成日由刷题数据检测出来后落库。
+ * 没有统计窗口 —— 相邻轮次不需要首尾相接, 同一学科也不会因为在多个里程碑里
+ * 被重复勾选而把时间叠加到一起。
  */
-export interface PlanMilestone {
+export interface PlanRound {
   id: string
-  /** YYYY-MM-DD, 统计窗口起点; 空 = 自动(上一个里程碑次日) */
-  start?: string
-  /** YYYY-MM-DD, 含当天 24:00 */
-  deadline: string
-  subjects: { subject: string; rounds: number }[]
+  subject: string
+  /** 该学科第几轮, 从 1 开始 */
+  round: number
+  /** YYYY-MM-DD 计划完成日, 不超过长期计划 deadline */
+  target: string
+  /** YYYY-MM-DD 创建这轮的那天 —— 这轮统计的起点, 也是甘特图条形左端 */
+  createdAt: string
+  /** YYYY-MM-DD 实际刷完的那天; 未完成 = null */
+  doneAt: string | null
 }
 
-export function newMilestoneId(): string {
-  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `m${Date.now()}`
+export function newRoundId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `r${Date.now()}`
+}
+
+function isDayStr(v: unknown): v is string {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
 }
 
 /**
- * 归一化已存储的里程碑。列是 JSONB, PostgREST 直接回数组; 兼容历史上可能存成
- * JSON 字符串(双重编码)的情况, 按截止日排序并丢弃无日期/无学科的脏数据。
+ * 归一化已存储的轮次。列是 JSONB, PostgREST 直接回数组; 兼容历史上可能存成
+ * JSON 字符串(双重编码)的情况, 丢弃脏数据并按 学科 → 轮次 排序。
  */
-export function normalizeMilestones(raw: unknown): PlanMilestone[] {
+export function normalizePlanRounds(raw: unknown): PlanRound[] {
   if (typeof raw === 'string') {
-    try { return normalizeMilestones(JSON.parse(raw) as unknown) } catch { return [] }
+    try { return normalizePlanRounds(JSON.parse(raw) as unknown) } catch { return [] }
   }
   if (!Array.isArray(raw)) return []
-  const t = new Date()
-  t.setHours(0, 0, 0, 0)
-  const todayTs = t.getTime()
   return raw
-    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
-    .map((m) => {
-      const start = typeof m.start === 'string' ? m.start : ''
-      // 一轮的起点 = 创建这轮的那天, 不可能在未来; 老数据里被填成未来日期的(旧版"上一个里程碑次日"自动值),
-      // 视为坏数据 → 归到今天
-      const startTs = start ? new Date(`${start}T00:00:00`).getTime() : NaN
-      return {
-        id: typeof m.id === 'string' && m.id ? m.id : newMilestoneId(),
-        start: start && Number.isFinite(startTs) && startTs <= todayTs ? start : '',
-        deadline: typeof m.deadline === 'string' ? m.deadline : '',
-        subjects: Array.isArray(m.subjects)
-          ? (m.subjects as unknown[])
-              .filter((s): s is { subject: string; rounds?: unknown } =>
-                !!s && typeof s === 'object' && typeof (s as { subject?: unknown }).subject === 'string' && !!(s as { subject: string }).subject)
-              .map((s) => ({ subject: s.subject, rounds: Math.max(1, Math.round(Number(s.rounds) || 1)) }))
-          : [],
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+    .filter((r) => typeof r.subject === 'string' && !!r.subject && isDayStr(r.target))
+    .map((r) => ({
+      id: typeof r.id === 'string' && r.id ? r.id : newRoundId(),
+      subject: r.subject as string,
+      round: Math.max(1, Math.round(Number(r.round) || 1)),
+      target: r.target as string,
+      createdAt: isDayStr(r.createdAt) ? r.createdAt : todayStr(),
+      doneAt: isDayStr(r.doneAt) ? r.doneAt : null,
+    }))
+    .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.round - b.round)
+}
+
+export function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00`)
+  d.setDate(d.getDate() + n)
+  return toDateStr(d)
+}
+
+export function daysBetweenDays(from: string, to: string): number {
+  return Math.round((new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000)
+}
+
+/**
+ * 一次性把旧的时间窗里程碑搬成轮次: "D 之前刷 N 轮" 展开成第 1..N 轮各自的目标完成日,
+ * 在 (计划起点, D] 上按轮次均分, 最后一轮正好落在 D。统计起点统一为今天 ——
+ * 旧模型只存了目标、没有历史完成记录, 从今天重新起算才不会凭空冒出一堆已完成轮次。
+ * 截止日已经过去的里程碑直接丢掉(那是上一版计划的残留)。
+ */
+export function migrateMilestonesToRounds(raw: unknown, planStart: string): PlanRound[] {
+  const list = typeof raw === 'string'
+    ? (() => { try { return JSON.parse(raw) as unknown } catch { return [] as unknown } })()
+    : raw
+  if (!Array.isArray(list)) return []
+  const milestones = list
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object' && isDayStr(m.deadline))
+    .sort((a, b) => (a.deadline as string).localeCompare(b.deadline as string))
+    .filter((m) => (m.deadline as string) >= planStart)
+
+  const counter = new Map<string, number>()
+  const out: PlanRound[] = []
+  let segStart = planStart
+  for (const m of milestones) {
+    const segEnd = m.deadline as string
+    const subjects = Array.isArray(m.subjects) ? m.subjects : []
+    for (const s of subjects) {
+      if (!s || typeof s !== 'object') continue
+      const subject = (s as { subject?: unknown }).subject
+      if (typeof subject !== 'string' || !subject) continue
+      const n = Math.max(1, Math.round(Number((s as { rounds?: unknown }).rounds) || 1))
+      const span = Math.max(daysBetweenDays(segStart, segEnd), n)
+      for (let i = 1; i <= n; i++) {
+        const round = (counter.get(subject) ?? 0) + 1
+        counter.set(subject, round)
+        out.push({
+          id: newRoundId(),
+          subject,
+          round,
+          target: addDays(segStart, Math.ceil((span * i) / n)),
+          createdAt: planStart,
+          doneAt: null,
+        })
       }
-    })
-    .filter((m) => !!m.deadline)
-    .sort((a, b) => a.deadline.localeCompare(b.deadline))
+    }
+    segStart = segEnd
+  }
+  return out
+}
+
+/**
+ * 读取一个账号的轮次: 新列有数据就用新列; 还是空的但留着老里程碑, 就先按内存里搬出来的
+ * 结果展示(落库由 PlanRoundWatcher 完成), 免得升级后一段时间里计划看起来是空的。
+ */
+export function resolveRounds(profile: { plan_rounds?: unknown; milestones?: unknown } | null): PlanRound[] {
+  const rounds = normalizePlanRounds(profile?.plan_rounds)
+  if (rounds.length > 0) return rounds
+  if (!profile?.milestones) return []
+  return migrateMilestonesToRounds(profile.milestones, todayStr())
+}
+
+/**
+ * 自定义计划的一批: 某学科刷够 count 题。和长期计划的一轮是同一套记录模型,
+ * 区别只在"一批刷多少题"—— 轮次固定等于该学科题量, 批次由自己定。
+ */
+export interface PlanGoal {
+  id: string
+  subject: string
+  /** 这批要刷多少题 */
+  count: number
+  /** YYYY-MM-DD 计划完成日 */
+  target: string
+  /** YYYY-MM-DD 创建这批的那天, 也是这批统计的起点 */
+  createdAt: string
+  /** YYYY-MM-DD 实际刷够的那天; 未完成 = null */
+  doneAt: string | null
+}
+
+/** 归一化已存储的批次目标(JSONB 列 / JSON 字符串两种存法都认), 丢弃脏数据并按 学科 → 目标日 排序 */
+export function normalizePlanGoals(raw: unknown): PlanGoal[] {
+  if (typeof raw === 'string') {
+    try { return normalizePlanGoals(JSON.parse(raw) as unknown) } catch { return [] }
+  }
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((g): g is Record<string, unknown> => !!g && typeof g === 'object')
+    .filter((g) => typeof g.subject === 'string' && !!g.subject && isDayStr(g.target))
+    .map((g) => ({
+      id: typeof g.id === 'string' && g.id ? g.id : newRoundId(),
+      subject: g.subject as string,
+      count: Math.max(1, Math.round(Number(g.count) || 1)),
+      target: g.target as string,
+      createdAt: isDayStr(g.createdAt) ? g.createdAt : todayStr(),
+      doneAt: isDayStr(g.doneAt) ? g.doneAt : null,
+    }))
+    .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.target.localeCompare(b.target))
+}
+
+/** 旧数据的 deadline 可能是 ISO 时间戳也可能是 YYYY-MM-DD, 统一成本地日期 */
+function isoToDay(v: unknown): string | null {
+  if (typeof v !== 'string' || !v) return null
+  if (isDayStr(v)) return v
+  const d = new Date(v)
+  return Number.isFinite(d.getTime()) ? toDateStr(d) : null
+}
+
+/**
+ * 一次性把旧的"每日定额"搬成批次目标: 每组里每个学科各一批, 题数用它自己填的 count,
+ * 目标完成日沿用组的截止日。没填截止日的组(原来就是"每天 N 题")给一周缓冲期, 之后可在弹窗里改。
+ */
+export function migrateDailyTargetsToGoals(raw: unknown, today: string): PlanGoal[] {
+  const list = typeof raw === 'string'
+    ? (() => { try { return JSON.parse(raw) as unknown } catch { return [] as unknown } })()
+    : raw
+  if (!Array.isArray(list)) return []
+  const out: PlanGoal[] = []
+  for (const t of list) {
+    if (!t || typeof t !== 'object') continue
+    const deadline = isoToDay((t as { deadline?: unknown }).deadline)
+    const subjects = (t as { subjects?: unknown }).subjects
+    if (!Array.isArray(subjects)) continue
+    for (const s of subjects) {
+      const subject = s && typeof s === 'object' ? (s as { subject?: unknown }).subject : null
+      if (typeof subject !== 'string' || !subject) continue
+      out.push({
+        id: newRoundId(),
+        subject,
+        count: Math.max(1, Math.round(Number((s as { count?: unknown }).count) || 1)),
+        target: deadline ?? addDays(today, 7),
+        createdAt: today,
+        doneAt: null,
+      })
+    }
+  }
+  // 顺序必须和统计阈值(每批题数的累加)一致 —— 同学科按目标日排, 后面的批次才算在后面
+  return out.sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.target.localeCompare(b.target))
+}
+
+/** 读一个账号的批次目标: 新列优先, 还没搬过就先按内存里搬出来的结果展示 */
+export function resolveGoals(profile: { plan_goals?: unknown; daily_targets?: unknown } | null): PlanGoal[] {
+  const goals = normalizePlanGoals(profile?.plan_goals)
+  if (goals.length > 0) return goals
+  const legacy = profile?.daily_targets
+  if (!legacy || legacy === 'null') return []
+  return migrateDailyTargetsToGoals(legacy, todayStr())
 }
 
 /** Normalize legacy DailyTarget formats to the current shape */
@@ -221,10 +381,15 @@ export interface Profile {
   nickname: string | null
   deadline: string | null
   plan_subjects: string | null
+  /** 长期计划下的轮次(JSONB 列, PostgREST 直接回数组), 见 PlanRound */
+  plan_rounds: PlanRound[] | null
+  /** 自定义计划的批次目标(JSONB 列), 见 PlanGoal */
+  plan_goals: PlanGoal[] | null
+  /** 已废弃的每日定额, 只在首次加载时用来搬成 plan_goals */
   daily_targets: string | null
   daily_deadline: string | null
-  /** 长期计划下的里程碑(JSONB 列, PostgREST 直接回数组), 见 PlanMilestone */
-  milestones: PlanMilestone[] | null
+  /** 已废弃的时间窗里程碑, 只在首次加载时用来搬成 plan_rounds */
+  milestones?: unknown
   /** 备考目标类型:kaoyan 考研 / gongkao 考公 / final 期末考 / other 其他考试 */
   goal_type?: string | null
   plan_reset_at: string | null
@@ -427,6 +592,8 @@ export interface UserAnswer {
   selected_answer: CorrectAnswer
   is_correct: boolean
   mode: AnswerMode
+  /** 作答来源: sequential = 顺序学习(推进计划轮次), random = 复习自由刷; 老数据为 null */
+  source?: 'sequential' | 'random' | null
   exam_session_id: string | null
   note: string | null
   is_public: boolean
