@@ -2,5 +2,7 @@ export { DeepSeekParser, generateKeyPoints, suggestExamConfig, suggestPlan, gene
 export { MinerUClient } from './mineru'
 export { generateDailySummary } from './summary'
 export type { SummaryData } from './summary'
+export { chatWithLittleQ } from './assistant'
+export type { AssistantTurn } from './assistant'
 export { getAiConfig, hasAiConfig, getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion, hasMinerUToken } from './config'
 export type { AiConfig, ParsedQuestion, AiParseResult, DocumentParseResult, MinerUModelVersion, MinerUPrecisionOptions, MinerUTaskResult, MinerUBatchFileResult } from './types'

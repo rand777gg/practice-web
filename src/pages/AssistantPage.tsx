@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  BookOpen, GraduationCap, HeartHandshake, Info, Library, RotateCcw, Send, ShieldCheck,
+  BookOpen, GraduationCap, HeartHandshake, Library, RotateCcw, Send, ShieldCheck,
   Sparkles, TriangleAlert,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { LittleQAvatar } from '@/components/assistant/LittleQAvatar'
 import { DemoBadge } from '@/components/topics/TopicSidebar'
+import { hasAiConfig } from '@/lib/ai/config'
+import type { AssistantTurn } from '@/lib/ai/assistant'
 import {
   FALLBACK_EMOTION, FALLBACK_REPLY, MODE_LABEL, QUICK_PROMPTS, matchScript,
   type AssistantMode, type AssistantReply, type LittleQEmotion,
@@ -59,6 +61,8 @@ export function Component() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<number | null>(null)
   const idRef = useRef(1)
+  /** 每次发送/重置自增: 在途的模型回复与剧本计时器靠它作废 */
+  const requestRef = useRef(0)
 
   useEffect(() => {
     const node = scrollRef.current
@@ -71,41 +75,70 @@ export function Component() {
     }
   }, [])
 
-  function respond(text: string) {
+  function pushReply(reply: AssistantReply, nextEmotion: LittleQEmotion, extraTags?: string[]) {
+    setTyping(false)
+    setEmotion(nextEmotion)
+    setTurns((prev) => [
+      ...prev,
+      {
+        id: idRef.current++,
+        role: 'assistant',
+        text: reply.text,
+        sub: reply.sub,
+        tags: extraTags ? [...(reply.tags ?? []), ...extraTags] : reply.tags,
+        sources: reply.sources,
+        followups: reply.followups,
+      },
+    ])
+  }
+
+  /** 没配模型（或模型挂了）时走内置剧本: 关键词匹配 + 一点打字延迟 */
+  function respondScripted(text: string, extraTags?: string[]) {
     const script = matchScript(text, mode)
-    const reply: AssistantReply = script?.reply ?? FALLBACK_REPLY
+    const reply = script?.reply ?? FALLBACK_REPLY
     const nextEmotion = script?.emotion ?? FALLBACK_EMOTION
     const delay = 700 + Math.min(reply.text.length * 4, 1100)
+    const serial = requestRef.current
     timerRef.current = window.setTimeout(() => {
-      setTyping(false)
-      setEmotion(nextEmotion)
-      setTurns((prev) => [
-        ...prev,
-        {
-          id: idRef.current++,
-          role: 'assistant',
-          text: reply.text,
-          sub: reply.sub,
-          tags: reply.tags,
-          sources: reply.sources,
-          followups: reply.followups,
-        },
-      ])
+      if (serial !== requestRef.current) return
+      pushReply(reply, nextEmotion, extraTags)
     }, delay)
+  }
+
+  async function respond(text: string, history: AssistantTurn[]) {
+    if (!hasAiConfig()) {
+      respondScripted(text)
+      return
+    }
+    const serial = requestRef.current
+    try {
+      const { chatWithLittleQ } = await import('@/lib/ai/assistant')
+      const { reply, emotion: nextEmotion } = await chatWithLittleQ(text, history, mode)
+      if (serial !== requestRef.current) return
+      pushReply(reply, nextEmotion)
+    } catch {
+      if (serial !== requestRef.current) return
+      respondScripted(text, ['AI 暂不可用，已用示例回答'])
+    }
   }
 
   function send(text: string) {
     const value = text.trim()
     if (!value || typing) return
+    const history: AssistantTurn[] = turns
+      .filter((turn) => turn.id !== GREETING.id)
+      .map((turn) => ({ role: turn.role, text: turn.text }))
     setTurns((prev) => [...prev, { id: idRef.current++, role: 'user', text: value }])
     setInput('')
     setTyping(true)
     setEmotion('thinking')
-    respond(value)
+    requestRef.current += 1
+    void respond(value, history)
   }
 
   function reset() {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    requestRef.current += 1
     setTyping(false)
     setTurns([GREETING])
     setInput('')
@@ -122,7 +155,7 @@ export function Component() {
         <div className="min-w-0 flex-1">
           <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
             小Q
-            <DemoBadge />
+            {!hasAiConfig() && <DemoBadge />}
           </h1>
           <p className="text-sm text-muted-foreground">
             备考心理陪伴 + 基于平台题库与文献的专业课答疑
@@ -141,7 +174,11 @@ export function Component() {
               aria-hidden
               className="pointer-events-none absolute -right-8 bottom-6 h-44 w-44 rounded-full bg-rose-300/20 blur-3xl"
             />
-            <LittleQAvatar className="h-[340px] sm:h-[400px] lg:h-[440px]" />
+            <LittleQAvatar
+              className="h-[340px] sm:h-[400px] lg:h-[440px]"
+              emotion={emotion}
+              typing={typing}
+            />
             <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
               <span
                 className={cn(
@@ -159,7 +196,7 @@ export function Component() {
             </div>
           </div>
           <p className="px-1 text-[11px] text-muted-foreground">
-            她是小Q的形象参考图，说话的是右边那个对话框。
+            立绘会跟着鼠标移动视线，也会随对话切换情绪；说话的是右边那个对话框。
           </p>
         </div>
 
@@ -393,14 +430,15 @@ export function Component() {
           </CardHeader>
           <CardContent className="space-y-2 pt-1 text-[11px] leading-relaxed text-muted-foreground">
             <p>
-              左侧的小Q是平台品牌形象
-              <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">littleQ.webp</span>
-              的静态图。
+              左侧的小Q是平台品牌立绘
+              <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">chatQ.webp</span>
+              ：会呼吸、会跟着鼠标移动视线，情绪也会随对话换成不同的姿态与色温。
             </p>
-            <p>对话仍是内置剧本驱动，角色只会在对话气泡里给出回答，不做动作或表情反应。</p>
-            <p className="flex items-start gap-1.5">
-              <Info className="mt-0.5 h-3 w-3 shrink-0" />
-              DEMO：未接入真实模型，也不会保存任何聊天内容。
+            <p>
+              {hasAiConfig()
+                ? '对话由真实模型按人格提示词生成，仍可能出错，别当结论用。'
+                : '对话目前由内置剧本驱动，未接入真实模型。'}
+              聊天内容只存在这个页面里，刷新即清空，不会保存。
             </p>
           </CardContent>
         </Card>

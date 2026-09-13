@@ -772,3 +772,32 @@ html.dark .cm-editor {
   .animate-float, .animate-aurora, .animate-aurora-slow { animation: none; }
   .ai-ring { animation: none; }
 }
+
+/* 小Q 立绘：呼吸 / 空闲微动 / 情绪色温。
+   素材是单张全身立绘，幅度必须压在 1% / 0.4deg 量级，再大就看出是图片在缩放。 */
+.lq-stage { perspective: 900px; transition: filter 600ms ease; }
+.lq-gaze, .lq-idle, .lq-breathe { transform-origin: 50% 100%; will-change: transform; }
+
+@keyframes lq-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scaleY(1); }
+  50% { transform: translate3d(0, -3px, 0) scaleY(1.006); }
+}
+.lq-breathe { animation: lq-breathe var(--lq-breath, 3.6s) ease-in-out infinite; }
+
+/* 11s 长周期与 3.6s 呼吸错开，避免出现明显的循环节拍 */
+@keyframes lq-idle {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25% { transform: translate3d(-2px, 0, 0) rotate(0.35deg); }
+  50% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  75% { transform: translate3d(2px, 0, 0) rotate(-0.3deg); }
+}
+.lq-idle { animation: lq-idle 11s ease-in-out infinite; }
+
+.lq-stage[data-emotion='happy'] { --lq-breath: 3.1s; filter: saturate(1.06) brightness(1.02); }
+.lq-stage[data-emotion='concerned'] { --lq-breath: 4.2s; filter: saturate(0.94) brightness(0.98); }
+.lq-stage[data-emotion='thinking'] { --lq-breath: 3.9s; filter: saturate(1) brightness(0.99); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lq-breathe, .lq-idle { animation: none; }
+  .lq-stage { transition: none; }
+}

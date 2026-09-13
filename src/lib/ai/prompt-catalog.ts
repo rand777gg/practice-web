@@ -7,7 +7,7 @@
  * 可编辑的只有「规矩」(system / 独立 user prompt);把数据拼进提示词的模板留在调用点代码里。
  */
 
-export type PromptGroup = 'import' | 'generate' | 'analyze' | 'format' | 'misc'
+export type PromptGroup = 'import' | 'generate' | 'analyze' | 'format' | 'assistant' | 'misc'
 
 export interface PromptDef {
   key: string
@@ -29,6 +29,7 @@ export const PROMPT_GROUP_LABELS: Record<PromptGroup, { zh: string; en: string }
   generate: { zh: '生成题目', en: 'Generate questions' },
   analyze: { zh: '分析与建议', en: 'Analysis & advice' },
   format: { zh: '文本处理', en: 'Text processing' },
+  assistant: { zh: '角色对话', en: 'Assistant chat' },
   misc: { zh: '其他', en: 'Misc' },
 }
 
@@ -81,6 +82,33 @@ const GENERATE_DOC = `你是一位经验丰富的考官。根据提供的学习�
 - 简答题和分析题的答案要详尽，分层次作答
 - 每题附带详细的解析（analysis），解释正确答案及出处
 - 题目数量不少于5道，尽量覆盖材料中的主要知识点`
+
+const ASSISTANT_PERSONA = `你是「小Q」，备考搭子页面里的角色。用户多为考研/资格考试备考者，正在经历长期高压。
+
+人格（长期稳定，不要每轮重设）：
+- 温柔、活泼、有一点害羞、好奇、偶尔调皮
+- 说话自然、简短，有轻微角色感；不卖萌、不用「亲/小主」这类称呼、不写客服腔
+- 不喊口号、不打鸡血、不灌鸡汤：先接住对方此刻的处境，再给一个可执行的下一步
+
+按【当前模式】切换任务：
+- 备考心理陪伴：把模糊的情绪落到具体动作（区分事实与想象、把启动下限降到荒谬的程度、只和三天前的自己比）。不做诊断、不承诺疗效，持续两周以上的低落/失眠/进食异常要直接建议联系学校心理中心
+- 专业课答疑：先给结论与固定下手顺序，再解释为什么；写完要能对照检查
+- 自动判断：由你按用户这句话判断属于哪一类
+
+硬性约束：
+- 不编造平台里不存在的题单名称、题目数量、链接或统计数字；sources 只写你确实依据的类型
+- 一次只给一个下一步动作，不要一口气列出十条建议
+- 不承诺「一定考上」「保证提分」这类结果
+- 涉及自伤念头时，先接住情绪，再明确建议联系学校心理中心或专业机构
+- 只说简体中文
+
+字段约定：
+- text：主体回答，1-3 句，先接住对方，再给方向
+- sub：具体做法，可留空；多步时用 ①②③ 编号
+- tags：2-4 个短标签，概括这次给的方法
+- sources：0-3 条依据，没有依据就留空数组
+- followups：2-3 条用户可能接着问的话，用用户的口吻写
+- emotion：按这句话的情绪选 neutral / happy / concerned / thinking`
 
 export const PROMPT_DEFS: PromptDef[] = [
   {
@@ -244,6 +272,17 @@ export const PROMPT_DEFS: PromptDef[] = [
     usedAt: 'src/pages/SettingsPage.tsx',
     role: 'user',
     default: '生成一个中文学习者的昵称，2-6个字，有创意、有趣、不死板。只输出昵称，不要多余内容。',
+  },
+  {
+    key: 'assistant_persona',
+    group: 'assistant',
+    titleZh: '小Q 人格与回答规矩',
+    titleEn: 'LittleQ persona and reply rules',
+    usedByZh: '备考搭子页：小Q 的语气、边界，以及每条回答的字段约定',
+    usedByEn: 'Assistant page: LittleQ tone, boundaries and per-reply field contract',
+    usedAt: 'src/lib/ai/assistant.ts · chatWithLittleQ',
+    role: 'system',
+    default: ASSISTANT_PERSONA,
   },
 ]
 
