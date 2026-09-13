@@ -39,10 +39,12 @@ export function HeaderPlanMenu() {
   const navigate = useNavigate()
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const planMode = searchParams.get("mode") === "random" ? "random" as const : "sequential" as const
-  const handlePlanModeChange = (m: "sequential" | "random") => {
+  // 练习模式: seq=顺序刷题 / random=随机抽题 / review=复习错题与收藏
+  const urlMode = searchParams.get("mode")
+  const planMode = urlMode === "random" ? "random" as const : urlMode === "review" ? "review" as const : "sequential" as const
+  const handlePlanModeChange = (m: "sequential" | "random" | "review") => {
     setDialogOpen(false)
-    navigate(`/practice?mode=${m === "sequential" ? "seq" : "random"}`)
+    navigate(`/practice?mode=${m === "sequential" ? "seq" : m}`)
   }
 
   const longDone = plan.longTerm.reduce((s, r) => s + r.doneAll, 0)
@@ -202,9 +204,14 @@ export function HeaderPlanMenu() {
                 <>
                   {plan.dailyGoal > 0 && (
                     <span className="flex shrink-0 items-center gap-1">
-                      <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.longTerm")}</span>
+                      <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.today")}</span>
                       <Progress value={longPct} className="h-2 w-10 [&>div]:bg-blue-500" />
                       <span className="shrink-0 tabular-nums text-[10px]">{plan.todayDone}/{plan.dailyGoal}</span>
+                      {plan.reviewCount > 0 && (
+                        <span className="shrink-0 text-[10px] text-pink-500 dark:text-pink-400">
+                          +{plan.reviewCount}
+                        </span>
+                      )}
                     </span>
                   )}
                   {goalTotal > 0 && (
@@ -249,6 +256,13 @@ export function HeaderPlanMenu() {
             </div>
           ) : (
             <p className="py-4 text-center text-[11px] text-muted-foreground">{t("plan.notSet")}</p>
+          )}
+
+          {plan.reviewCount > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {t("plan.today")} {plan.todayDone}/{plan.dailyGoal} {t("plan.questions")}
+              {' · '}{t("plan.reviewIncluded")} <b className="text-pink-500 dark:text-pink-400">{plan.reviewCount}</b> {t("plan.questions")}
+            </p>
           )}
 
           <Separator />

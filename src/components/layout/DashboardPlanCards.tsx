@@ -54,6 +54,8 @@ export function DashboardPlanCards() {
 
   const [acc, setAcc] = useState<{ today: number; pct: number; delta: number | null } | null>(null)
   const [streak, setStreak] = useState<number | null>(null)
+  /** 错题 ∪ 收藏 去重后的题数(计划学科范围内) */
+  const [reviewCount, setReviewCount] = useState<number | null>(null)
 
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
@@ -133,11 +135,24 @@ export function DashboardPlanCards() {
       if (cancelled) return
       setRounds(roundStats ? buildRoundItems(roundList, roundStats) : [])
       setGoals(goalStats ? buildGoalItems(goalList, goalStats) : [])
-
     }
     load()
     return () => { cancelled = true }
   }, [user?.id, deadline, planResetAt, planSubjects.join(','), version, roundList, goalList])
+
+  // 错题 ∪ 收藏 的去重题数(计划学科范围内), 用于把复习量并进今日任务
+  useEffect(() => {
+    if (!user) return
+    let live = true
+    const subs = [...new Set([...planSubjects, ...goalList.map((g) => g.subject)])]
+    void supabase.rpc('get_review_count', {
+      p_user_id: user.id,
+      p_subjects: subs.length > 0 ? subs : null,
+    }).then(({ data }) => {
+      if (live) setReviewCount(data == null ? null : Number(data))
+    })
+    return () => { live = false }
+  }, [user?.id, planSubjects.join(','), goalList, version])
 
   if (!user) return null
 
@@ -148,6 +163,11 @@ export function DashboardPlanCards() {
   const goalRest = goals.filter((g) => g.state !== 'done').reduce((sum, g) => sum + Math.max(g.quantity - g.done, 0), 0)
   const goalDoneCount = goals.filter((g) => g.state === 'done').length
   const goalPct = goals.length > 0 ? Math.round((goalDoneCount / goals.length) * 100) : 0
+  // 自定义计划也按排期算每天的量: 每批剩余 ÷ 到该批目标日的天数, 再相加
+  const goalPerDay = goals.filter((g) => g.state !== 'done').reduce((sum, g) => {
+    const days = Math.max(Math.ceil((new Date(`${g.target}T23:59:59`).getTime() - nowMs) / 86400000), 1)
+    return sum + Math.ceil(Math.max(g.quantity - g.done, 0) / days)
+  }, 0)
   const dayLeft = deadline ? Math.max(Math.ceil((new Date(deadline).getTime() - nowMs) / 86400000), 0) : null
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const yestSegPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
@@ -194,6 +214,10 @@ export function DashboardPlanCards() {
     goalSubjectMap.set(g.subject, cur)
   }
   const goalSubjectRows = [...goalSubjectMap.values()]
+
+  // 错题 ∪ 收藏(按题目去重, 计划学科范围内) —— 也算进今日任务
+  const reviewSubjects = [...new Set([...roundSubjects, ...goalSubjectMap.keys()])]
+  const reviewGoal = reviewCount ?? 0
 
   const stateTone = (state?: PlanItem['state']) => state === 'done'
     ? 'text-emerald-600 dark:text-emerald-400'
@@ -242,6 +266,7 @@ export function DashboardPlanCards() {
                   <span className="tabular-nums">
                     {t('plan.batchRest')} <b className="text-sm font-semibold text-foreground">{goalRest}</b> {t('plan.questions')}
                     {' · '}{t('plan.roundStateDone')} {goalDoneCount}/{goals.length}{t('plan.batchesUnit')}
+                    {' · '}{t('plan.aboutPerDay')} <b className="text-foreground">{goalPerDay}</b> {t('plan.perDay')}
                   </span>
                   <span>{t('plan.dailyTarget')}</span>
                 </div>
@@ -389,6 +414,14 @@ export function DashboardPlanCards() {
                 )
               })}
               {!deadline && <p className="text-muted-foreground/70">{t('plan.notSet')}</p>}
+              {reviewGoal > 0 && (
+                <p className="text-muted-foreground">
+                  {t('plan.reviewIncluded')} <b className="text-foreground">{reviewGoal}</b> {t('plan.questions')}
+                  <span className="ml-1 text-[10px] text-muted-foreground/70">
+                    ({reviewSubjects.join(' · ')})
+                  </span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1 border-t pt-2.5">

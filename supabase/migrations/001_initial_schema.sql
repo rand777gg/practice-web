@@ -3053,3 +3053,43 @@ DROP POLICY IF EXISTS user_plugins_own ON public.user_plugins;
 CREATE POLICY user_plugins_own ON public.user_plugins FOR ALL
   USING (user_id = auth.uid() OR public.is_admin())
   WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+-- ============================================================================
+-- Section 44: 复习题量(错题 ∪ 收藏, 按题目去重) —— "今日任务"要把这部分也算进去
+--   一道题既错过又收藏了只算一次; 排除"太简单"题; 可按学科过滤(计划范围内)。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_review_count(
+  p_user_id  UUID,
+  p_subjects TEXT[] DEFAULT NULL
+)
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT COUNT(*)::BIGINT
+  FROM (
+    SELECT ua.question_id
+    FROM public.user_answers ua
+    JOIN public.questions q ON q.id = ua.question_id
+    WHERE ua.user_id = p_user_id
+      AND NOT ua.is_correct
+      AND (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ue
+        WHERE ue.question_id = ua.question_id AND ue.user_id = p_user_id
+      )
+    UNION  -- UNION 自带去重: 同一题既错过又收藏只算一次
+    SELECT f.question_id
+    FROM public.favorites f
+    JOIN public.questions q ON q.id = f.question_id
+    WHERE f.user_id = p_user_id
+      AND (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ue
+        WHERE ue.question_id = f.question_id AND ue.user_id = p_user_id
+      )
+  ) t;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_review_count(UUID, TEXT[]) TO authenticated;

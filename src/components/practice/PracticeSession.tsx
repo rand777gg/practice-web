@@ -150,6 +150,7 @@ export function PracticeSession() {
   useEffect(() => { searchParamsRef.current = searchParams }, [searchParams])
   const { t } = useT()
   const profile = useAuthStore((s) => s.profile)
+  const authUser = useAuthStore((s) => s.user)
   const isAdmin = profile?.role === 'admin'
   // Restore cached question on mount for instant display
   const [question, setQuestionState] = useState<Question | null>(() => {
@@ -238,6 +239,21 @@ export function PracticeSession() {
   planSubjectSetRef.current = planSubjectSet
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
 
+  // 错题 ∪ 收藏 的去重题数(计划学科范围内) —— 今日任务要把它算进去, 前端也展示这个数
+  const [reviewCount, setReviewCount] = useState<number | null>(null)
+  useEffect(() => {
+    if (!authUser) return
+    let live = true
+    const subs = [...planSubjectSet]
+    void supabase.rpc('get_review_count', {
+      p_user_id: authUser.id,
+      p_subjects: subs.length > 0 ? subs : null,
+    }).then(({ data }) => {
+      if (live) setReviewCount(data == null ? null : Number(data))
+    })
+    return () => { live = false }
+  }, [authUser, planSessionScope, question?.id])
+
   const initRef = useRef(false)
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(saved.current?.selectedSubjects ?? [])
   const [selectedCategory, setSelectedCategory] = useState(saved.current?.selectedCategory ?? '')
@@ -250,7 +266,7 @@ export function PracticeSession() {
     if (urlMode === 'random') return 'new'
     return (saved.current?.questionMode as any) ?? 'sequential'
   })
-  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong'>((saved.current?.questionScope as any) ?? 'all')
+  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong' | 'review'>((saved.current?.questionScope as any) ?? 'all')
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
   const [planDialogOpen, setPlanDialogOpen] = useState(false)
   const subjectPosRef = useRef<Record<string, number>>({})
@@ -485,17 +501,26 @@ export function PracticeSession() {
     if (user) saveFiltersToDb(user.id, filters)
   }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
 
-  // Sync questionMode ↔ URL param (URL wins on external navigation, state wins otherwise)
+  // Sync 练习模式 ↔ URL: seq(顺序刷题) / random(随机抽题) / review(复习错题与收藏)
   useEffect(() => {
     const urlMode = searchParams.get('mode')
     if (urlMode === 'seq' && questionMode !== 'sequential') { switchMode('sequential'); return }
-    if (urlMode === 'random' && questionMode === 'sequential') { switchMode('new'); return }
-    const want = questionMode === 'sequential' ? 'seq' : 'random'
+    if (urlMode === 'random' && (questionMode === 'sequential' || questionScope === 'review')) {
+      switchMode('new')
+      setQuestionScope('all')
+      return
+    }
+    if (urlMode === 'review' && (questionMode === 'sequential' || questionScope !== 'review')) {
+      switchMode('new')
+      setQuestionScope('review')
+      return
+    }
+    const want = questionMode === 'sequential' ? 'seq' : questionScope === 'review' ? 'review' : 'random'
     if (urlMode !== want) {
       setSearchParams(prev => { prev.set('mode', want); return prev }, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, questionMode])
+  }, [searchParams, questionMode, questionScope])
 
   // Sync active sequential session short id to URL so refresh/deep-link can restore it
   useEffect(() => {
@@ -618,6 +643,38 @@ export function PracticeSession() {
         if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
         if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
         if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
+        if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+      }
+    }
+
+    // Scope: review — 错题 ∪ 收藏, 同一题只算一次(去重后再随机抽)
+    if (!pickedId && currentUser && questionScope === 'review') {
+      const [wrongRes, favRes] = await Promise.all([
+        supabase.from('user_answers')
+          .select('question_id, questions!inner(subject, category, question_type, key_points)')
+          .eq('user_id', currentUser.id).eq('is_correct', false)
+          .order('answered_at', { ascending: false }).limit(300),
+        supabase.from('favorites')
+          .select('question_id, questions!inner(subject, category, question_type, key_points)')
+          .eq('user_id', currentUser.id)
+          .order('created_at', { ascending: false }).limit(300),
+      ])
+      if (fetchGenRef.current !== myGen) return
+      type ReviewRow = {
+        question_id: string
+        questions: { subject?: string | null; category?: string | null; categories?: string[] | null; question_type?: string | null; key_points?: string | null } | null
+      }
+      const byId = new Map<string, ReviewRow>()
+      const rows = [...(wrongRes.data ?? []), ...(favRes.data ?? [])] as unknown as ReviewRow[]
+      for (const r of rows) {
+        if (r?.question_id && !byId.has(r.question_id)) byId.set(r.question_id, r)
+      }
+      if (byId.size > 0) {
+        let filtered = [...byId.values()]
+        if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.questions?.subject ?? ''))
+        if (selectedCategory) filtered = filtered.filter((r) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
+        if (selectedType) filtered = filtered.filter((r) => r.questions?.question_type === selectedType)
+        if (selectedKeyPoint) filtered = filtered.filter((r) => (r.questions?.key_points ?? '').includes(selectedKeyPoint))
         if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
       }
     }
@@ -1435,8 +1492,13 @@ export function PracticeSession() {
       <PlanDialog
         open={planDialogOpen}
         onOpenChange={setPlanDialogOpen}
-        mode={questionMode === 'sequential' ? 'sequential' : 'random'}
-        onModeChange={(m) => { switchMode(m === 'sequential' ? 'sequential' : 'new'); setPlanDialogOpen(false) }}
+        mode={questionMode === 'sequential' ? 'sequential' : questionScope === 'review' ? 'review' : 'random'}
+        onModeChange={(m) => {
+          setPlanDialogOpen(false)
+          if (m === 'sequential') { switchMode('sequential'); return }
+          switchMode('new')
+          setQuestionScope(m === 'review' ? 'review' : 'all')
+        }}
       />
 
       <AlertDialog open={blockSkipOpen} onOpenChange={setBlockSkipOpen}>
@@ -1560,7 +1622,11 @@ export function PracticeSession() {
 
       {questionMode !== 'sequential' && (
         <div className="flex flex-wrap gap-2">
-          <FilterBtn label={({ all: '全部', favorites: '仅收藏', wrong: '仅错题' } as Record<string, string>)[questionScope]}>
+          <FilterBtn label={({ all: '全部', favorites: '仅收藏', wrong: '仅错题', review: `错题与收藏${reviewCount != null ? ` ${reviewCount}` : ''}` } as Record<string, string>)[questionScope]}>
+            <DropdownMenuItem onClick={() => setQuestionScope('review')}>
+              错题与收藏{reviewCount != null && <span className="ml-1 text-muted-foreground tabular-nums">{reviewCount}</span>}
+              {questionScope === 'review' && <Check className="h-4 w-4 ml-auto" />}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('all')}>全部{questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>仅收藏{questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>仅错题{questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>

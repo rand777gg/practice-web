@@ -58,8 +58,11 @@ export interface PlanCompletion {
   loading: boolean
   hasPlan: boolean
   deadline: string | null
+  /** 今日任务 = 计划每天的量 + 错题/收藏去重后的复习量 */
   dailyGoal: number
   todayDone: number
+  /** 错题 ∪ 收藏 去重后的题数(计划学科范围内), 已计入 dailyGoal */
+  reviewCount: number
   longTerm: PlanSubjectProgress[]
   rounds: PlanItem[]
   goals: PlanItem[]
@@ -327,6 +330,7 @@ export function usePlanCompletion(): PlanCompletion {
 
   const [loading, setLoading] = useState(true)
   const [dailyGoal, setDailyGoal] = useState(0)
+  const [reviewCount, setReviewCount] = useState(0)
   const [todayDone, setTodayDone] = useState(0)
   const [longTerm, setLongTerm] = useState<PlanSubjectProgress[]>([])
   const [rounds, setRounds] = useState<PlanItem[]>([])
@@ -389,7 +393,19 @@ export function usePlanCompletion(): PlanCompletion {
         for (const r of ltRows ?? []) {
           if (!scheduled.has(r.subject)) unscheduled += Math.max(Number(r.total) - Number(r.done_all), 0)
         }
-        setDailyGoal(dailyPace(roundItems, deadline ? unscheduled : 0, deadline))
+        // 错题 ∪ 收藏(去重, 计划学科范围内)也算进今日任务
+        const planSubs = [...new Set([
+          ...getPlanSubjects(profile),
+          ...goalList.map((g) => g.subject),
+        ])]
+        const reviewRes = await supabase.rpc('get_review_count', {
+          p_user_id: uid,
+          p_subjects: planSubs.length > 0 ? planSubs : null,
+        })
+        if (cancelled) return
+        const review = reviewRes.data == null ? 0 : Number(reviewRes.data)
+        setReviewCount(review)
+        setDailyGoal(dailyPace(roundItems, deadline ? unscheduled : 0, deadline) + review)
 
         if (!cancelled) setLoading(false)
       } catch (e) {
@@ -423,6 +439,7 @@ export function usePlanCompletion(): PlanCompletion {
     deadline: profile?.deadline ?? null,
     dailyGoal,
     todayDone,
+    reviewCount,
     longTerm,
     rounds,
     goals,

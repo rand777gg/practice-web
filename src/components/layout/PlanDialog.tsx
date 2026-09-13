@@ -57,8 +57,8 @@ import { useT } from '@/i18n/use-t'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-  mode?: 'sequential' | 'random'
-  onModeChange?: (mode: 'sequential' | 'random') => void
+  mode?: 'sequential' | 'random' | 'review'
+  onModeChange?: (mode: 'sequential' | 'random' | 'review') => void
 }
 
 export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChange }: Props) {
@@ -788,6 +788,12 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                                 {item?.done}/{item?.quantity}{t('plan.questions')}
                               </span>
                             )}
+                            {/* 这一批"每天要刷多少"是算出来的: 剩余题数 ÷ 到目标日的天数 */}
+                            {!doneAt && daysLeft !== null && daysLeft > 0 && (
+                              <span className="shrink-0 text-[10px] tabular-nums text-pink-600 dark:text-pink-400">
+                                ≈ {Math.ceil(Math.max(g.count - (item?.done ?? 0), 0) / daysLeft)} {t('plan.perDay')}
+                              </span>
+                            )}
                             <Button variant="ghost" size="sm" className="ml-auto h-6 w-6 shrink-0 p-0 text-destructive" onClick={() => removeGoal(g.id)} disabled={saving}>
                               <X className="h-3 w-3" />
                             </Button>
@@ -914,15 +920,16 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
           {onModeChange && (
             <div className="flex items-center gap-1">
               <div className="inline-flex rounded-md border p-0.5">
-                <Button variant={mode === 'sequential' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-3" onClick={() => onModeChange('sequential')}>学习</Button>
-                <Button variant={mode !== 'sequential' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-3" onClick={() => onModeChange('random')}>复习</Button>
+                <Button variant={mode === 'sequential' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-2.5" onClick={() => onModeChange('sequential')}>{t('plan.modeSequential')}</Button>
+                <Button variant={mode === 'random' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-2.5" onClick={() => onModeChange('random')}>{t('plan.modeRandom')}</Button>
+                <Button variant={mode === 'review' ? 'default' : 'ghost'} size="sm" className="h-7 text-xs px-2.5" onClick={() => onModeChange('review')}>{t('plan.modeReview')}</Button>
               </div>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button type="button" className="text-muted-foreground hover:text-foreground"><HelpCircle className="h-3.5 w-3.5" /></button>
                   </TooltipTrigger>
-                  <TooltipContent>学习 = 按知识点顺序刷题；复习 = 自由随机刷（可筛错题/收藏）</TooltipContent>
+                  <TooltipContent>{t('plan.modeHint')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
