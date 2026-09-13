@@ -163,18 +163,23 @@ export function PlanWatcher() {
   const [count, setCount] = useState(0)
   const busy = useRef(false)
 
-  // 老数据一次性搬家(搬完把旧列清空, 避免重复触发)
+  // 老数据一次性搬家。旧列无论如何都要清空 —— 留着的话, 用户把计划删空之后
+  // 下一次加载又会被搬回来(凭空复活已删掉的记录)。
   useEffect(() => {
     if (!user || !profile) return
     const patch: Record<string, unknown> = {}
-    if (profile.milestones && normalizePlanRounds(profile.plan_rounds).length === 0) {
-      const migrated = migrateMilestonesToRounds(profile.milestones, todayStr())
-      patch.plan_rounds = migrated.length > 0 ? migrated : null
+    if (profile.milestones) {
+      if (normalizePlanRounds(profile.plan_rounds).length === 0) {
+        const migrated = migrateMilestonesToRounds(profile.milestones, todayStr())
+        patch.plan_rounds = migrated.length > 0 ? migrated : null
+      }
       patch.milestones = null
     }
-    if (profile.daily_targets && normalizePlanGoals(profile.plan_goals).length === 0) {
-      const migrated = migrateDailyTargetsToGoals(profile.daily_targets, todayStr())
-      patch.plan_goals = migrated.length > 0 ? migrated : null
+    if (profile.daily_targets) {
+      if (normalizePlanGoals(profile.plan_goals).length === 0) {
+        const migrated = migrateDailyTargetsToGoals(profile.daily_targets, todayStr())
+        patch.plan_goals = migrated.length > 0 ? migrated : null
+      }
       patch.daily_targets = null
     }
     if (Object.keys(patch).length === 0) return
