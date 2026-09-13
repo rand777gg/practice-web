@@ -50,15 +50,10 @@ function AiBadge() {
 }
 
 /** 题目标签徽章行:类型 / 验证状态 / 科目 / 分类(年份真题·AI生成等) / 知识点 / 作答次数 */
-export function QuestionTags({ question, attemptCount, wrongCount, collapseAiTags }: {
+export function QuestionTags({ question, attemptCount, wrongCount }: {
   question: Question
   attemptCount?: number
   wrongCount?: number
-  /**
-   * 练习与考试场景下设为 true：把 AI 生成的知识点折叠成一个「N 个知识点」的悬停入口。
-   * 知识点是 AI 抽取出来的，直接铺开会提示这道题在考什么，也把标签行挤得很长。
-   */
-  collapseAiTags?: boolean
 }) {
   const { t } = useT()
   const type = question.question_type
@@ -114,25 +109,7 @@ export function QuestionTags({ question, attemptCount, wrongCount, collapseAiTag
           <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>
         )))
       )}
-      {kps.length > 0 && (collapseAiTags ? (
-        <HoverCard openDelay={120} closeDelay={80}>
-          <HoverCardTrigger asChild>
-            <span className="inline-flex cursor-pointer select-none items-center gap-1 rounded-full border border-dashed border-primary/40 px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary">
-              <Sparkles className="h-3 w-3" />
-              {kps.length} 个知识点
-            </span>
-          </HoverCardTrigger>
-          <HoverCardContent side="bottom" align="start" className="w-auto max-w-[min(90vw,340px)] px-3 py-2">
-            <p className="mb-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Sparkles className="h-3 w-3 text-primary" />
-              AI 生成的知识点（悬停查看，避免影响作答）
-            </p>
-            <div className="flex flex-wrap gap-1">{kpBadges}</div>
-          </HoverCardContent>
-        </HoverCard>
-      ) : (
-        kpBadges
-      ))}
+      {kpBadges}
       {attemptCount != null && (
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <span>{t('practice.attempts')}: {attemptCount}</span>

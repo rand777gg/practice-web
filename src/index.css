@@ -402,6 +402,12 @@
   z-index: 1;
 }
 
+/* 题目标签里的 AI 徽章：平时熄灯，hover 才跑彩虹流光（落地页/助手页的常亮圆环不受影响） */
+.ai-badge.ai-ring:not(:hover) {
+  background: none;
+  animation: none;
+}
+
 .ai-badge .gemini-star {
   display: inline-flex;
   align-items: center;

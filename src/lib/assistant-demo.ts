@@ -6,7 +6,7 @@
 
 export type AssistantMode = 'auto' | 'psych' | 'study'
 
-/** 小Q 的情绪姿态, 驱动 Live2D 角色的头部角度与嘴型 */
+/** 小Q 的情绪状态, 目前只用于状态文案 */
 export type LittleQEmotion = 'neutral' | 'happy' | 'concerned' | 'thinking'
 
 export interface AssistantSource {

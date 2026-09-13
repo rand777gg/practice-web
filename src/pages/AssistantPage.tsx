@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  BookOpen, GraduationCap, HeartHandshake, Info, Library, MousePointer2, RotateCcw, Send, ShieldCheck,
+  BookOpen, GraduationCap, HeartHandshake, Info, Library, RotateCcw, Send, ShieldCheck,
   Sparkles, TriangleAlert,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -56,8 +56,6 @@ export function Component() {
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<AssistantMode>('auto')
   const [emotion, setEmotion] = useState<LittleQEmotion>('happy')
-  const [nudge, setNudge] = useState(0)
-  const [listening, setListening] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<number | null>(null)
   const idRef = useRef(1)
@@ -81,7 +79,6 @@ export function Component() {
     timerRef.current = window.setTimeout(() => {
       setTyping(false)
       setEmotion(nextEmotion)
-      setNudge((value) => value + 1)
       setTurns((prev) => [
         ...prev,
         {
@@ -104,7 +101,6 @@ export function Component() {
     setInput('')
     setTyping(true)
     setEmotion('thinking')
-    setNudge((value) => value + 1)
     respond(value)
   }
 
@@ -145,13 +141,7 @@ export function Component() {
               aria-hidden
               className="pointer-events-none absolute -right-8 bottom-6 h-44 w-44 rounded-full bg-rose-300/20 blur-3xl"
             />
-            <LittleQAvatar
-              speaking={typing}
-              listening={listening}
-              emotion={emotion}
-              nudge={nudge}
-              className="h-[340px] sm:h-[400px] lg:h-[440px]"
-            />
+            <LittleQAvatar className="h-[340px] sm:h-[400px] lg:h-[440px]" />
             <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
               <span
                 className={cn(
@@ -168,9 +158,8 @@ export function Component() {
               </div>
             </div>
           </div>
-          <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
-            <MousePointer2 className="h-3 w-3" />
-            她一直在呼吸和眨眼；你打字时她会专注听，她思考时食指会抵在嘴边，讲到开心处会捂嘴笑。
+          <p className="px-1 text-[11px] text-muted-foreground">
+            她是小Q的形象参考图，说话的是右边那个对话框。
           </p>
         </div>
 
@@ -317,8 +306,6 @@ export function Component() {
               <Textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                onFocus={() => setListening(true)}
-                onBlur={() => setListening(false)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
@@ -408,9 +395,9 @@ export function Component() {
             <p>
               左侧的小Q是平台品牌形象
               <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">littleQ.webp</span>
-              实时渲染的 Live2D 皮套：眨眼、呼吸、口型和跟随鼠标的转头都是实时算出来的。
+              的静态图。
             </p>
-            <p>对话仍是内置剧本驱动，角色反应只反映「正在思考 / 正在回答」这类状态，不代表真实情绪判断。</p>
+            <p>对话仍是内置剧本驱动，角色只会在对话气泡里给出回答，不做动作或表情反应。</p>
             <p className="flex items-start gap-1.5">
               <Info className="mt-0.5 h-3 w-3 shrink-0" />
               DEMO：未接入真实模型，也不会保存任何聊天内容。
