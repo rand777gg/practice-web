@@ -27,6 +27,8 @@ import {
  DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { ProviderIcon } from '@/components/ui/provider-icon'
+import { UserAvatar } from '@/components/ui/user-avatar'
+import { AvatarPickerDialog } from '@/components/settings/AvatarPickerDialog'
 import { SyncSettingsCard } from '@/components/settings/SyncSettingsCard'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
 import { AboutProjectCard } from '@/components/settings/AboutProjectCard'
@@ -39,9 +41,10 @@ import { TrustedDevicesDialog } from '@/components/auth/TrustedDevicesDialog'
 import { getMfaStatus, getDeviceToken, type MfaStatus } from '@/lib/mfa'
 import { getDeviceInfoSync } from '@/lib/device-info'
 import { Icon } from '@/lib/icons'
-import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, FileText, Columns2, LayoutGrid } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, FileText, Columns2, LayoutGrid, ImagePlus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
+import { isGitHubAvatarUrl, resolveAvatar, selfAvatarOwner } from '@/lib/avatar'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { langDisplay, LANG_ICONS } from '@/lib/lang-names'
@@ -83,6 +86,7 @@ export function Component() {
  const [nickValue, setNickValue] = useState(profile?.nickname || '')
  const [nickSaving, setNickSaving] = useState(false)
  const [aiNickLoading, setAiNickLoading] = useState(false)
+ const [avatarOpen, setAvatarOpen] = useState(false)
  const [linkingGitHub, setLinkingGitHub] = useState(false)
  const [githubLinkError, setGithubLinkError] = useState('')
  const [unlinkingGitHub, setUnlinkingGitHub] = useState(false)
@@ -98,6 +102,7 @@ export function Component() {
  const [devicesOpen, setDevicesOpen] = useState(false)
  const isGitHubLinked = user?.app_metadata?.provider === 'github' || user?.identities?.some((i: any) => i.provider === 'github')
  const hasMultipleIdentities = user?.identities && user.identities.length > 1
+ const myAvatar = resolveAvatar(selfAvatarOwner(user, profile))
 
  // MFA validity + verified sessions
  const [mfaValidity, setMfaValidity] = useState(profile?.mfa_validity_days ?? 7)
@@ -325,6 +330,23 @@ export function Component() {
        </div>
        <table className="w-full text-sm">
         <tbody>
+         <tr>
+          <td className="py-1.5 pr-4 text-muted-foreground w-[80px]">{t('settings.avatar')}</td>
+          <td className="py-1.5">
+           <div className="flex items-center gap-3">
+            <UserAvatar owner={selfAvatarOwner(user, profile)} size="lg" className="ring-1 ring-border" />
+            <div className="space-y-1">
+             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setAvatarOpen(true)}>
+              <ImagePlus className="h-3 w-3" />
+              {t('settings.avatarPick')}
+             </Button>
+             <p className="text-[11px] text-muted-foreground">
+              {myAvatar.kind === 'github' ? t('settings.avatarFromGithub') : t('settings.avatarFromGenerated')}
+             </p>
+            </div>
+           </div>
+          </td>
+         </tr>
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground w-[80px]">{t('settings.nickname')}</td>
           <td className="py-1.5">
@@ -563,6 +585,10 @@ export function Component() {
                 if (error) {
                  setGithubLinkError(error.message || '解绑失败')
                 } else {
+                 // 解绑后 GitHub 头像不再可用, 清掉回落到生成头像
+                 if (isGitHubAvatarUrl(profile?.avatar_url)) {
+                  await supabase.from('profiles').update({ avatar_url: null }).eq('id', user!.id)
+                 }
                  const { data: { session } } = await supabase.auth.getSession()
                  if (session) {
                   await supabase.auth.refreshSession({ refresh_token: session.refresh_token })
@@ -1167,6 +1193,7 @@ export function Component() {
     onPickTotp={() => setOtpSetupOpen(true)}
    />
    <TrustedDevicesDialog open={devicesOpen} onOpenChange={setDevicesOpen} />
+   <AvatarPickerDialog open={avatarOpen} onOpenChange={setAvatarOpen} />
   </div>
  )
 }

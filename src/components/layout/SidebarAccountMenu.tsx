@@ -5,7 +5,7 @@ import {
   Monitor, Moon, Settings, Sparkles, Sun,
 } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { UserAvatar } from "@/components/ui/user-avatar"
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ import { AiSummaryDialog } from "@/components/ai/AiSummaryDialog"
 import { QrScanner } from "@/components/auth/QrScanner"
 import { ShortcutSettings } from "@/components/settings/ShortcutSettings"
 import { hasAiConfig } from "@/lib/ai"
+import { selfAvatarOwner } from "@/lib/avatar"
 import { useAuthStore } from "@/stores/auth-store"
 import { useLangStore } from "@/stores/lang-store"
 import { useSettingsStore, EYE_CARE_PALETTES } from "@/stores/settings-store"
@@ -62,7 +63,7 @@ export function SidebarAccountMenu() {
   const activePalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
   const email = user?.email ?? ""
   const name = profile?.nickname || email.split("@")[0] || "User"
-  const initials = name.slice(0, 2).toUpperCase()
+  const avatarOwner = selfAvatarOwner(user, profile)
 
   const openDialog = (setter: (open: boolean) => void) => () => {
     setOpenMobile(false)
@@ -79,11 +80,7 @@ export function SidebarAccountMenu() {
                 size="lg"
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               >
-                <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg bg-sidebar-primary text-xs text-sidebar-primary-foreground">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar owner={avatarOwner} className="size-8 rounded-lg" />
                 <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                   <span className="truncate font-medium">{name}</span>
                   <span className="truncate text-xs text-sidebar-foreground/60">{email}</span>
@@ -99,9 +96,7 @@ export function SidebarAccountMenu() {
             >
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                  <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
-                  </Avatar>
+                  <UserAvatar owner={avatarOwner} className="size-8 rounded-lg" />
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-medium">{name}</span>
                     <span className="truncate text-xs text-sidebar-foreground/60">{email}</span>

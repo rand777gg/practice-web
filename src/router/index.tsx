@@ -179,6 +179,14 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/AiSettingsPage'),
               },
               {
+                path: 'skills',
+                lazy: () => import('@/pages/SkillsPage'),
+              },
+              {
+                path: 'mcp',
+                lazy: () => import('@/pages/McpPage'),
+              },
+              {
                 path: 'data-center',
                 lazy: () => import('@/pages/DataCenterPage'),
               },

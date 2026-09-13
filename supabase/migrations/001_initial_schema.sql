@@ -2916,3 +2916,81 @@ AS $$
   ORDER BY tot.subject;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 41: 用户头像 (profiles.avatar_url / profiles.avatar_preset)
+--   avatar_url    显式选定的头像地址 —— 绑定 GitHub 的账号在登录时自动写入 GitHub 头像
+--   avatar_preset 显式选定的"生成头像", 格式 <样式>:<配色索引>:<种子>, 如 aurora:3:12345;
+--                 客户端据此本地画 SVG(data URI), 不占存储也不依赖外部图片服务
+--   两列都为空 = 没选过: 已绑定 GitHub 用 GitHub 头像, 否则按用户 ID 生成一张固定的
+-- ============================================================================
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS avatar_preset TEXT;
+
+COMMENT ON COLUMN public.profiles.avatar_preset IS
+  '生成的预设头像, 格式 <样式>:<配色索引>:<种子>, 如 aurora:3:12345; NULL=未显式选择';
+
+-- 公开笔记/自习室要显示他人的昵称与头像, 但 profiles 的 RLS 只放行本人和管理员
+CREATE OR REPLACE FUNCTION public.get_profile_cards(user_ids UUID[])
+RETURNS TABLE(id UUID, nickname TEXT, avatar_url TEXT, avatar_preset TEXT)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT p.id, p.nickname, p.avatar_url, p.avatar_preset
+  FROM public.profiles p WHERE p.id = ANY(user_ids);
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_profile_cards(UUID[]) TO authenticated;
+
+-- ============================================================================
+-- Section 42: 自习室公开资料 (profiles.target_school / exam_status / profile_visibility)
+--   自习室成员自己决定公开哪些备考资料:
+--     profile_visibility 形如 {"goal_type":true,"exam_status":true,"target_school":false}
+--     缺键或 false = 不公开; 未公开的字段在 get_public_profiles 里直接回 NULL,
+--     客户端根本拿不到值, 不靠前端隐藏。
+--   昵称与头像不在开关范围内: 自习室/公开笔记靠它们认人。
+-- ============================================================================
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS target_school TEXT;
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS exam_status TEXT
+  CHECK (exam_status IN ('school', 'full', 'working', 'repeat', 'done') OR exam_status IS NULL);
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS profile_visibility JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+COMMENT ON COLUMN public.profiles.target_school IS '目标院校, 自由文本; NULL=未填写';
+COMMENT ON COLUMN public.profiles.exam_status IS
+  '备考状态: school=在校备考,full=全职备考,working=在职备考,repeat=二战及以后,done=已上岸; NULL=未填写';
+COMMENT ON COLUMN public.profiles.profile_visibility IS
+  '公开开关 {goal_type,exam_status,target_school}; 缺键或 false=不公开';
+
+-- 自习室按成员的公开设置取资料; 未公开的字段一律回 NULL
+CREATE OR REPLACE FUNCTION public.get_public_profiles(user_ids UUID[])
+RETURNS TABLE(
+  id UUID,
+  nickname TEXT,
+  avatar_url TEXT,
+  avatar_preset TEXT,
+  goal_type TEXT,
+  exam_status TEXT,
+  target_school TEXT
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT
+    p.id,
+    p.nickname,
+    p.avatar_url,
+    p.avatar_preset,
+    CASE WHEN p.profile_visibility -> 'goal_type' = 'true'::jsonb THEN p.goal_type END,
+    CASE WHEN p.profile_visibility -> 'exam_status' = 'true'::jsonb THEN p.exam_status END,
+    CASE WHEN p.profile_visibility -> 'target_school' = 'true'::jsonb THEN p.target_school END
+  FROM public.profiles p
+  WHERE p.id = ANY(user_ids);
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_public_profiles(UUID[]) TO authenticated;

@@ -19,3 +19,9 @@ entrypoint = "./functions/study-room/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/notify-exam/index.ts"
+
+[functions.mcp]
+enabled = true
+# 自己校验 token(auth.getUser),这样 401 能回 MCP 客户端看得懂的 JSON-RPC 错误
+verify_jwt = false
+entrypoint = "./functions/mcp/index.ts"

@@ -7,8 +7,8 @@ export interface Database {
     Tables: {
       profiles: {
         Row: Profile
-        Insert: { id: string; role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null; plan_rounds?: PlanRound[] | null; plan_goals?: PlanGoal[] | null; goal_type?: string | null; totp_enabled?: boolean }
-        Update: { role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null; plan_rounds?: PlanRound[] | null; plan_goals?: PlanGoal[] | null; goal_type?: string | null; totp_enabled?: boolean }
+        Insert: { id: string; role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null; plan_rounds?: PlanRound[] | null; plan_goals?: PlanGoal[] | null; goal_type?: string | null; target_school?: string | null; exam_status?: string | null; profile_visibility?: Record<string, boolean> | null; totp_enabled?: boolean }
+        Update: { role?: 'admin' | 'user'; nickname?: string | null; deadline?: string | null; plan_subjects?: string | null; daily_targets?: string | null; daily_deadline?: string | null; plan_rounds?: PlanRound[] | null; plan_goals?: PlanGoal[] | null; goal_type?: string | null; target_school?: string | null; exam_status?: string | null; profile_visibility?: Record<string, boolean> | null; totp_enabled?: boolean }
       }
       questions: {
         Row: Question

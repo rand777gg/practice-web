@@ -27,6 +27,8 @@ import { isAnswerCorrect } from '@/lib/answer-utils'
 import { OPTION_LABELS } from '@/lib/constants'
 import type { UserAnswer, Question, QuestionType, CorrectAnswer } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { UserAvatar } from '@/components/ui/user-avatar'
+import type { AvatarOwner } from '@/lib/avatar'
 import { useT } from '@/i18n/use-t'
 
 type NoteWithQuestion = UserAnswer & { questions: Question }
@@ -39,6 +41,7 @@ interface NoteCardProps {
  editingNoteId: string | null
  editText: string
  userNicknames: Record<string, string>
+ userAvatars: Record<string, AvatarOwner>
  onEditText: (v: string) => void
  onStartEdit: (note: NoteWithQuestion) => void
  onCancelEdit: () => void
@@ -103,7 +106,7 @@ function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
 
 function NoteCard({
  note, showAuthor, style,
- editingNoteId, editText, userNicknames,
+ editingNoteId, editText, userNicknames, userAvatars,
  onEditText, onStartEdit, onCancelEdit, onSaveEdit,
  onTogglePublic, onDeleteRequest,
 }: NoteCardProps) {
@@ -148,7 +151,10 @@ function NoteCard({
       {note.is_public ? t('notes.publicLabel') : t('notes.privateLabel')}
      </span>
      {showAuthor && (
-      <span>{t('notes.author')}: {userNicknames[note.user_id] || t('notes.anonymous')}</span>
+      <span className="inline-flex items-center gap-1.5">
+       {userAvatars[note.user_id] && <UserAvatar owner={userAvatars[note.user_id]} size="xs" />}
+       {t('notes.author')}: {userNicknames[note.user_id] || t('notes.anonymous')}
+      </span>
      )}
      <span>{new Date(note.answered_at).toLocaleDateString()}</span>
     </div>
@@ -238,6 +244,7 @@ export function Component() {
  const [publicNotes, setPublicNotes] = useState<NoteWithQuestion[]>([])
  const [publicNotesLoading, setPublicNotesLoading] = useState(true)
  const [userNicknames, setUserNicknames] = useState<Record<string, string>>({})
+ const [userAvatars, setUserAvatars] = useState<Record<string, AvatarOwner>>({})
 
  useEffect(() => {
   async function loadFilters() {
@@ -341,16 +348,19 @@ export function Component() {
   const filtered = pubSubject ? result.filter((n) => n.questions?.subject === pubSubject) : result
   const userIds = [...new Set(result.map((n) => n.user_id))]
   const nicknames: Record<string, string> = {}
+  const avatars: Record<string, AvatarOwner> = {}
   if (userIds.length > 0) {
-   const { data: profiles } = await supabase.rpc('get_profile_nicknames', { user_ids: userIds })
-   for (const p of (profiles ?? []) as { id: string; nickname: string | null }[]) {
+   const { data: cards } = await supabase.rpc('get_profile_cards', { user_ids: userIds })
+   for (const p of (cards ?? []) as { id: string; nickname: string | null; avatar_url: string | null; avatar_preset: string | null }[]) {
     nicknames[p.id] = p.nickname || `用户${p.id.slice(0, 6)}`
+    avatars[p.id] = { id: p.id, name: p.nickname, avatarUrl: p.avatar_url, avatarPreset: p.avatar_preset }
    }
    for (const uid of userIds) { if (!nicknames[uid]) nicknames[uid] = `用户${uid.slice(0, 6)}` }
   }
   if (pubGenRef.current !== gen) return
   setPublicNotes(filtered)
   setUserNicknames(nicknames)
+  setUserAvatars(avatars)
   setPublicNotesLoading(false)
  }, [pubSubject])
 
@@ -394,7 +404,7 @@ export function Component() {
      ) : (
       <div className="space-y-3">
        {publicNotes.filter((n) => !pubCategory || n.questions?.category === pubCategory || (n.questions?.categories as string[])?.includes(pubCategory))
-        .map((note) => <NoteCard key={note.id} note={note} showAuthor style="public" editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames}
+        .map((note) => <NoteCard key={note.id} note={note} showAuthor style="public" editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames} userAvatars={userAvatars}
        onEditText={setEditText} onStartEdit={handleStartEdit} onCancelEdit={() => { setEditingNoteId(null); setEditText('') }}
        onSaveEdit={handleSaveEdit} onTogglePublic={handleTogglePublic} onDeleteRequest={setDeleteNoteId} />)}
       </div>
@@ -444,7 +454,7 @@ export function Component() {
           .filter((n) => !mySubject || n.questions?.subject === mySubject)
           .filter((n) => !myCategory || n.questions?.category === myCategory || (n.questions?.categories as string[])?.includes(myCategory))
           .filter((n) => !myType || n.questions?.question_type === myType)
-          .map((note) => <NoteCard key={note.id} note={note} style="my" editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames}
+          .map((note) => <NoteCard key={note.id} note={note} style="my" editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames} userAvatars={userAvatars}
        onEditText={setEditText} onStartEdit={handleStartEdit} onCancelEdit={() => { setEditingNoteId(null); setEditText('') }}
        onSaveEdit={handleSaveEdit} onTogglePublic={handleTogglePublic} onDeleteRequest={setDeleteNoteId} />)}
         </div>

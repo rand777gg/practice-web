@@ -1,7 +1,9 @@
 import { useEffect, type ReactNode } from 'react'
 import { RouterProvider } from 'react-router-dom'
+import type { User } from '@supabase/supabase-js'
 import { router } from '@/router'
 import { supabase } from '@/lib/supabase'
+import { githubAvatarOf, hasGitHubIdentity } from '@/lib/avatar'
 import { useAuthStore } from '@/stores/auth-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useSettingsStore, FONT_OPTIONS } from '@/stores/settings-store'
@@ -105,7 +107,8 @@ function AuthInitializer({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
 
-    async function loadProfile(userId: string) {
+    async function loadProfile(user: User) {
+      const userId = user.id
       let profile = await fetchProfile(userId)
       if (!profile) {
         profile = await createProfile(userId)
@@ -119,6 +122,15 @@ function AuthInitializer({ children }: { children: ReactNode }) {
           profile = { ...profile, nickname }
         }
       }
+      // 绑定 GitHub 的账号默认用 GitHub 头像: 没自己挑过(avatar_preset 为空)就把 GitHub 头像落库,
+      // 这样管理员列表、公开笔记里其他人也能看到同一张头像
+      const ghAvatar = hasGitHubIdentity(user) ? githubAvatarOf(user) : null
+      if (profile && ghAvatar && !profile.avatar_preset && profile.avatar_url !== ghAvatar) {
+        const { error } = await supabase.from('profiles').update({ avatar_url: ghAvatar }).eq('id', userId)
+        if (!error) {
+          profile = { ...profile, avatar_url: ghAvatar }
+        }
+      }
       if (!cancelled) {
         setProfile(profile)
       }
@@ -130,7 +142,7 @@ function AuthInitializer({ children }: { children: ReactNode }) {
         const user = session?.user ?? null
         if (!cancelled) setUser(user)
         if (user) {
-          await loadProfile(user.id)
+          await loadProfile(user)
         } else {
           if (!cancelled) setProfile(null)
         }
@@ -171,7 +183,7 @@ function AuthInitializer({ children }: { children: ReactNode }) {
         if (user && currentProfile && currentProfile.id === user.id) return
         if (!cancelled) setUser(user)
         if (user) {
-          await loadProfile(user.id)
+          await loadProfile(user)
         } else {
           if (!cancelled) setProfile(null)
         }

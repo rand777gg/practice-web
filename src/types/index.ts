@@ -379,6 +379,10 @@ export interface Profile {
   id: string
   role: UserRole
   nickname: string | null
+  /** 显式选定的头像 URL(绑定 GitHub 的账号登录时自动写入 GitHub 头像) */
+  avatar_url?: string | null
+  /** 显式选定的生成头像, 格式 <样式>:<配色索引>:<种子> */
+  avatar_preset?: string | null
   deadline: string | null
   plan_subjects: string | null
   /** 长期计划下的轮次(JSONB 列, PostgREST 直接回数组), 见 PlanRound */
@@ -392,6 +396,12 @@ export interface Profile {
   milestones?: unknown
   /** 备考目标类型:kaoyan 考研 / gongkao 考公 / final 期末考 / other 其他考试 */
   goal_type?: string | null
+  /** 备考状态:school 在校/full 全职/working 在职/repeat 二战及以后/done 已上岸 */
+  exam_status?: string | null
+  /** 目标院校, 自由文本 */
+  target_school?: string | null
+  /** 自习室公开开关 {goal_type,exam_status,target_school}, 缺键=不公开 */
+  profile_visibility?: Record<string, boolean> | null
   plan_reset_at: string | null
   /** 计划学科 -> 认领知识点数组的映射。如 {"数学":["一元二次方程"]}。NULL 或缺省=该学科全部知识点 */
   plan_scope: PlanScope | null

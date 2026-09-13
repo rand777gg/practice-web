@@ -3,8 +3,8 @@ import { Link, useLocation } from "react-router-dom"
 import {
   Award, Bookmark, BookOpen, Bot, Bug, CalendarClock, ChartPie, ChevronRight, ClipboardList,
   Clock, Compass, Database, FileDown, FileQuestion, FileText, FileWarning, GitMerge,
-  GraduationCap, HardDrive, HeartHandshake, History, LayoutDashboard, LayoutGrid, LayoutTemplate,
-  Library, List, PenLine, Pencil, Plus, RotateCcw, Route, Settings2, Sparkles, Star, Swords,
+  GraduationCap, HardDrive, History, LayoutDashboard, LayoutGrid, LayoutTemplate,
+  Library, List, PenLine, Pencil, Plug, Plus, Puzzle, RotateCcw, Route, Settings2, Sparkles, Star, Swords,
   Terminal, Trophy, Users, UsersRound,
 } from "lucide-react"
 
@@ -339,23 +339,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const smartItems: NavItem[] = [
     { id: "assistant", title: t("nav.assistant"), url: "/assistant", icon: Sparkles, tone: "demo", label: t("nav.demo") },
     { id: "aiSettings", title: t("nav.aiSettings"), url: "/ai", icon: Bot, tone: "beta", label: t("nav.beta") },
+    { id: "skills", title: t("nav.skills"), url: "/skills", icon: Puzzle, tone: "beta", label: t("nav.beta") },
+    { id: "mcp", title: t("nav.mcp"), url: "/mcp", icon: Plug, tone: "beta", label: t("nav.beta") },
   ]
 
   const communityItems: NavItem[] = [
-    {
-      id: "community",
-      title: t("nav.sectionCommunity"),
-      url: "/arena",
-      icon: HeartHandshake,
-      tone: "demo",
-      label: t("nav.demo"),
-      items: [
-        { title: t("nav.arena"), url: "/arena", icon: Swords },
-        { title: t("nav.achievements"), url: "/achievements", icon: Award },
-        { title: t("nav.mentors"), url: "/mentors", icon: GraduationCap },
-        { title: t("nav.feedback"), url: "/feedback", icon: Bug },
-      ],
-    },
+    { id: "arena", title: t("nav.arena"), url: "/arena", icon: Swords },
+    { id: "achievements", title: t("nav.achievements"), url: "/achievements", icon: Award },
+    { id: "mentors", title: t("nav.mentors"), url: "/mentors", icon: GraduationCap },
+    { id: "feedback", title: t("nav.feedback"), url: "/feedback", icon: Bug },
   ]
 
   const adminItems: NavItem[] = [

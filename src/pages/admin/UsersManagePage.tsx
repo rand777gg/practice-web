@@ -12,6 +12,8 @@ import {
 import { Trash2, Loader2 } from 'lucide-react'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import type { Profile } from '@/types'
+import { UserAvatar } from '@/components/ui/user-avatar'
+import { avatarOwnerFromProfile } from '@/lib/avatar'
 import { useT } from '@/i18n/use-t'
 import { useOnlineStore } from '@/stores/online-store'
 
@@ -148,7 +150,10 @@ export function Component() {
       {profiles.map((p) => (
        <TableRow key={p.id}>
         <TableCell>
-         <span className={`online-dot ${onlineIds.has(p.id) ? '' : 'offline'}`} />
+         <div className="relative w-fit">
+          <UserAvatar owner={avatarOwnerFromProfile(p)} size="md" />
+          <span className={`online-dot absolute -right-0.5 -bottom-0.5 ring-2 ring-background ${onlineIds.has(p.id) ? '' : 'offline'}`} />
+         </div>
         </TableCell>
         <TableCell className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
          {p.providers?.includes('github') && (

@@ -24,8 +24,13 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
 
   { id: 'assistant', group: 'smart', labelZh: '小Q', labelEn: 'Xiao Q' },
   { id: 'aiSettings', group: 'smart', labelZh: 'AI 设置', labelEn: 'AI Settings' },
+  { id: 'skills', group: 'smart', labelZh: 'SKILL 技能', labelEn: 'Skills' },
+  { id: 'mcp', group: 'smart', labelZh: 'MCP 服务', labelEn: 'MCP Server' },
 
-  { id: 'community', group: 'community', labelZh: '社区', labelEn: 'Community' },
+  { id: 'arena', group: 'community', labelZh: '竞赛', labelEn: 'Arena' },
+  { id: 'achievements', group: 'community', labelZh: '成就', labelEn: 'Achievements' },
+  { id: 'mentors', group: 'community', labelZh: '引路人', labelEn: 'Mentors' },
+  { id: 'feedback', group: 'community', labelZh: '问题反馈', labelEn: 'Feedback' },
 
   { id: 'adminQuestions', group: 'admin', labelZh: '题目管理', labelEn: 'Questions' },
   { id: 'adminLearningRoutes', group: 'admin', labelZh: '学习路线', labelEn: 'Learning Routes' },

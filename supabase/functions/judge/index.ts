@@ -119,22 +119,24 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
   // 3) 整理判定
   const results = test_cases.map((tc, i) => {
     const run = all[i]!
-    const st = j0Status(run.status?.id ?? 13)
+    let st = j0Status(run.status?.id ?? 13)
     const actualOut = j0Trim(run.stdout)
     const expOut = tc.expected.trim()
-    const outputOk = st === 'accepted' && j0Match(actualOut, expOut)
+    // Judge0 报 accepted 只代表跑通了,输出对不对还得自己比:
+    // 少了这一步,逐点 status 与顶层 status 都会把答案错误报成 accepted(而顶层正是取 failed.status)
+    if (st === 'accepted' && !j0Match(actualOut, expOut)) st = 'wrong_answer'
     let error: string | undefined
     if (st === 'compile_error') error = run.compile_output || '编译错误'
     else if (st === 'runtime_error') error = run.stderr || '运行错误'
     else if (st === 'timeout') error = '超出时间限制'
     return {
       testCaseIndex: i,
-      passed: outputOk,
+      passed: st === 'accepted',
       input: tc.input,
       expected: tc.expected,
       actual: actualOut,
       error,
-      status: outputOk ? 'accepted' : st,
+      status: st,
       time_ms: run.time != null ? Math.round(Number(run.time) * 1000) : null,
       memory_kb: run.memory ?? null,
     }
