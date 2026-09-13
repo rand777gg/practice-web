@@ -3093,3 +3093,57 @@ AS $$
   ) t;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_review_count(UUID, TEXT[]) TO authenticated;
+
+-- ============================================================================
+-- Section 45: 复习池按"轮次时间窗"统计 —— 复习模式自己选学科+轮次, 单独算
+--   p_windows = [{ "subject":"医学史", "since":"2026-09-14", "until":"2026-09-30" }]
+--   since/until 都按北京时间当天 00:00 起算; until 为空 = 至今。
+--   池子 = 窗口内答错的题 ∪ 窗口内收藏的题, 按题目去重。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_review_pool_count(
+  p_user_id UUID,
+  p_windows JSONB
+)
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  WITH win AS (
+    SELECT (e.value->>'subject')                AS subject,
+           (e.value->>'since')::DATE            AS since,
+           NULLIF(e.value->>'until', '')::DATE  AS until
+    FROM jsonb_array_elements(COALESCE(p_windows, '[]'::jsonb)) AS e(value)
+    WHERE COALESCE(e.value->>'subject', '') <> ''
+      AND COALESCE(e.value->>'since', '') <> ''
+  )
+  SELECT COUNT(*)::BIGINT
+  FROM (
+    SELECT ua.question_id
+    FROM public.user_answers ua
+    JOIN public.questions q ON q.id = ua.question_id
+    JOIN win w ON w.subject = q.subject
+    WHERE ua.user_id = p_user_id
+      AND NOT ua.is_correct
+      AND ua.answered_at >= (w.since::text || ' 00:00:00+08')::TIMESTAMPTZ
+      AND (w.until IS NULL OR ua.answered_at < ((w.until + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ue
+        WHERE ue.question_id = ua.question_id AND ue.user_id = p_user_id
+      )
+    UNION  -- 去重
+    SELECT f.question_id
+    FROM public.favorites f
+    JOIN public.questions q ON q.id = f.question_id
+    JOIN win w ON w.subject = q.subject
+    WHERE f.user_id = p_user_id
+      AND f.created_at >= (w.since::text || ' 00:00:00+08')::TIMESTAMPTZ
+      AND (w.until IS NULL OR f.created_at < ((w.until + 1)::text || ' 00:00:00+08')::TIMESTAMPTZ)
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ue
+        WHERE ue.question_id = f.question_id AND ue.user_id = p_user_id
+      )
+  ) t;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_review_pool_count(UUID, JSONB) TO authenticated;

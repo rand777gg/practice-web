@@ -53,11 +53,12 @@ import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerT
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { cn, naturalSort } from '@/lib/utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
-import { resolveGoals } from '@/types'
+import { resolveGoals, resolveRounds } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
@@ -85,6 +86,8 @@ interface PracticeFilters {
   selectedKeyPoint: string
   questionMode: string
   questionScope: string
+  /** 复习模式的轮次范围(学科|轮次), 单独选 */
+  reviewRounds?: string[]
 }
 
 function loadFilters(): PracticeFilters | null {
@@ -239,22 +242,46 @@ export function PracticeSession() {
   planSubjectSetRef.current = planSubjectSet
   const otherSubjects = useMemo(() => subjects.filter((s) => !planSubjectSet.has(s)), [subjects, planSubjectSet])
 
-  // 错题 ∪ 收藏 的去重题数(计划学科范围内) —— 今日任务要把它算进去, 前端也展示这个数
-  const [reviewCount, setReviewCount] = useState<number | null>(null)
+  // 复习模式的复习池(错题 ∪ 收藏)是单独选的: 学科 + 轮次 → 按各轮时间窗统计
+  const [reviewPool, setReviewPool] = useState<number | null>(null)
+  const [reviewScopeOpen, setReviewScopeOpen] = useState(false)
+  const planRounds = useMemo(() => resolveRounds(profile), [profile])
+  const [reviewRounds, setReviewRounds] = useState<string[]>(saved.current?.reviewRounds ?? [])
+
+  // 复习池题数(按选中的 学科×轮次 时间窗, 去重)
+  const reviewWindows = useMemo(() => planRounds
+    .filter((r) => reviewRounds.includes(`${r.subject}|${r.round}`))
+    .map((r) => ({ subject: r.subject, round: r.round, since: r.createdAt, until: r.target })), [planRounds, reviewRounds])
+
   useEffect(() => {
     if (!authUser) return
     let live = true
-    const subs = [...planSubjectSet]
-    void supabase.rpc('get_review_count', {
+    void supabase.rpc('get_review_pool_count', {
       p_user_id: authUser.id,
-      p_subjects: subs.length > 0 ? subs : null,
+      p_windows: reviewWindows.map((w) => ({ subject: w.subject, since: w.since, until: w.until })),
     }).then(({ data }) => {
-      if (live) setReviewCount(data == null ? null : Number(data))
+      if (live) setReviewPool(data == null ? null : Number(data))
     })
     return () => { live = false }
-  }, [authUser, planSessionScope, question?.id])
+  }, [authUser, reviewRounds.join(','), planRounds, question?.id])
+
+  const toggleReviewRound = (key: string) => {
+    setReviewRounds((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }
+
+  const roundsByPlanSubject = useMemo(() => {
+    const map = new Map<string, typeof planRounds>()
+    for (const r of planRounds) {
+      const list = map.get(r.subject)
+      if (list) list.push(r)
+      else map.set(r.subject, [r])
+    }
+    for (const list of map.values()) list.sort((a, b) => a.round - b.round)
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'zh-CN'))
+  }, [planRounds])
 
   const initRef = useRef(false)
+
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(saved.current?.selectedSubjects ?? [])
   const [selectedCategory, setSelectedCategory] = useState(saved.current?.selectedCategory ?? '')
   const [selectedType, setSelectedType] = useState<QuestionType | ''>((saved.current?.selectedType as QuestionType) ?? '')
@@ -267,6 +294,11 @@ export function PracticeSession() {
     return (saved.current?.questionMode as any) ?? 'sequential'
   })
   const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong' | 'review'>((saved.current?.questionScope as any) ?? 'all')
+
+  // 切到复习模式但还没选范围 → 弹出来重新选学科 + 轮次
+  useEffect(() => {
+    if (questionScope === 'review' && reviewRounds.length === 0) setReviewScopeOpen(true)
+  }, [questionScope, reviewRounds.length])
   const [sequentialDialogOpen, setSequentialDialogOpen] = useState(false)
   const [planDialogOpen, setPlanDialogOpen] = useState(false)
   const subjectPosRef = useRef<Record<string, number>>({})
@@ -495,11 +527,11 @@ export function PracticeSession() {
 
   // Persist filters to localStorage + DB
   useEffect(() => {
-    const filters = { selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope }
+    const filters = { selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope, reviewRounds }
     saveFilters(filters)
     const user = useAuthStore.getState().user
     if (user) saveFiltersToDb(user.id, filters)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, questionMode, questionScope, reviewRounds])
 
   // Sync 练习模式 ↔ URL: seq(顺序刷题) / random(随机抽题) / review(复习错题与收藏)
   useEffect(() => {
@@ -647,27 +679,44 @@ export function PracticeSession() {
       }
     }
 
-    // Scope: review — 错题 ∪ 收藏, 同一题只算一次(去重后再随机抽)
+    // Scope: review — 错题 ∪ 收藏, 只取选中"学科×轮次"时间窗内的, 同一题只算一次
     if (!pickedId && currentUser && questionScope === 'review') {
+      // 时间窗: 各轮 [createdAt, target] 的本地时间边界
+      const winBounds = reviewWindows.map((w) => ({
+        subject: w.subject,
+        from: new Date(`${w.since}T00:00:00`).getTime(),
+        to: new Date(`${w.until}T23:59:59.999`).getTime(),
+      }))
+      const inWindow = (subject: string | null | undefined, at: string | null | undefined) => {
+        if (!subject || !at) return false
+        const t = new Date(at).getTime()
+        return winBounds.some((w) => w.subject === subject && t >= w.from && t <= w.to)
+      }
       const [wrongRes, favRes] = await Promise.all([
         supabase.from('user_answers')
-          .select('question_id, questions!inner(subject, category, question_type, key_points)')
+          .select('question_id, answered_at, questions!inner(subject, category, question_type, key_points)')
           .eq('user_id', currentUser.id).eq('is_correct', false)
-          .order('answered_at', { ascending: false }).limit(300),
+          .order('answered_at', { ascending: false }).limit(500),
         supabase.from('favorites')
-          .select('question_id, questions!inner(subject, category, question_type, key_points)')
+          .select('question_id, created_at, questions!inner(subject, category, question_type, key_points)')
           .eq('user_id', currentUser.id)
-          .order('created_at', { ascending: false }).limit(300),
+          .order('created_at', { ascending: false }).limit(500),
       ])
       if (fetchGenRef.current !== myGen) return
       type ReviewRow = {
         question_id: string
+        answered_at?: string | null
+        created_at?: string | null
         questions: { subject?: string | null; category?: string | null; categories?: string[] | null; question_type?: string | null; key_points?: string | null } | null
       }
       const byId = new Map<string, ReviewRow>()
-      const rows = [...(wrongRes.data ?? []), ...(favRes.data ?? [])] as unknown as ReviewRow[]
-      for (const r of rows) {
-        if (r?.question_id && !byId.has(r.question_id)) byId.set(r.question_id, r)
+      const wrongRows = (wrongRes.data ?? []) as unknown as ReviewRow[]
+      const favRows = (favRes.data ?? []) as unknown as ReviewRow[]
+      for (const r of wrongRows) {
+        if (r?.question_id && inWindow(r.questions?.subject, r.answered_at) && !byId.has(r.question_id)) byId.set(r.question_id, r)
+      }
+      for (const r of favRows) {
+        if (r?.question_id && inWindow(r.questions?.subject, r.created_at) && !byId.has(r.question_id)) byId.set(r.question_id, r)
       }
       if (byId.size > 0) {
         let filtered = [...byId.values()]
@@ -1620,17 +1669,76 @@ export function PracticeSession() {
         onOpenChange={(o) => { if (!o) setKpExplainView(null) }}
       />
 
+      {/* 复习错题与收藏: 单独选学科 + 轮次(各轮时间窗), 按新范围再进练习 */}
+      <Dialog open={reviewScopeOpen} onOpenChange={setReviewScopeOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('practice.reviewScopeTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-[11px] text-muted-foreground">{t('practice.reviewScopeHint')}</p>
+          <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
+            {roundsByPlanSubject.length === 0 ? (
+              <p className="py-4 text-center text-[11px] text-muted-foreground">{t('practice.reviewNoRounds')}</p>
+            ) : roundsByPlanSubject.map(([subject, rounds]) => (
+              <div key={subject} className="space-y-1 rounded-lg border p-2">
+                <p className="text-[11px] font-medium">{subject}</p>
+                {rounds.map((r) => {
+                  const key = `${r.subject}|${r.round}`
+                  return (
+                    <label key={key} className="flex cursor-pointer items-center gap-2 text-[11px]">
+                      <Checkbox checked={reviewRounds.includes(key)} onCheckedChange={() => toggleReviewRound(key)} />
+                      <span className="shrink-0">{t('plan.roundPrefix')}{r.round}{t('plan.roundsUnit')}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {r.createdAt.slice(5)} → {r.target.slice(5)}
+                      </span>
+                      {r.doneAt && <span className="text-emerald-600 dark:text-emerald-400">{t('plan.completedAt')} {r.doneAt.slice(5)}</span>}
+                    </label>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="flex-row items-center gap-2">
+            <span className="mr-auto text-[11px] text-muted-foreground">
+              {t('practice.reviewPool')} <b className="text-foreground tabular-nums">{reviewPool ?? '—'}</b> {t('plan.questions')}
+            </span>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setReviewScopeOpen(false)}>{t('plan.cancel')}</Button>
+            <Button
+              size="sm"
+              className="text-xs"
+              disabled={reviewWindows.length === 0}
+              onClick={() => {
+                setReviewScopeOpen(false)
+                switchMode('new')
+                setQuestionScope('review')
+                setSelectedSubjects([...new Set(reviewWindows.map((w) => w.subject))])
+                answeredThisSession.current.clear()
+                setAnsweredSessionSnapshot(new Set())
+              }}
+            >
+              {t('practice.startReview')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {questionMode !== 'sequential' && (
         <div className="flex flex-wrap gap-2">
-          <FilterBtn label={({ all: '全部', favorites: '仅收藏', wrong: '仅错题', review: `错题与收藏${reviewCount != null ? ` ${reviewCount}` : ''}` } as Record<string, string>)[questionScope]}>
-            <DropdownMenuItem onClick={() => setQuestionScope('review')}>
-              错题与收藏{reviewCount != null && <span className="ml-1 text-muted-foreground tabular-nums">{reviewCount}</span>}
+          <FilterBtn label={({ all: '全部', favorites: '仅收藏', wrong: '仅错题', review: `${t('plan.modeReview')}${reviewPool != null ? ` ${reviewPool}` : ''}` } as Record<string, string>)[questionScope]}>
+            <DropdownMenuItem onClick={() => { setQuestionScope('review'); setReviewScopeOpen(true) }}>
+              {t('plan.modeReview')}{reviewPool != null && <span className="ml-1 text-muted-foreground tabular-nums">{reviewPool}</span>}
               {questionScope === 'review' && <Check className="h-4 w-4 ml-auto" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('all')}>全部{questionScope === 'all' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('favorites')}>仅收藏{questionScope === 'favorites' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setQuestionScope('wrong')}>仅错题{questionScope === 'wrong' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
           </FilterBtn>
+          {questionScope === 'review' && (
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setReviewScopeOpen(true)}>
+              {t('practice.reviewReselect')}
+              {reviewWindows.length > 0 && <span className="ml-1 text-muted-foreground tabular-nums">{reviewWindows.length}</span>}
+            </Button>
+          )}
           <FilterBtn label={selectedSubjects.length > 0 ? `学科(${selectedSubjects.length})` : '学科'}>
             {planSubjects.length > 0 && <><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">{t('plan.longTerm')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{planSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}
             {dailyTargetSubjects.length > 0 && <><DropdownMenuSeparator /><DropdownMenuSub><DropdownMenuSubTrigger className="text-xs">{t('plan.dailyTarget')}</DropdownMenuSubTrigger><DropdownMenuSubContent className="max-h-64 overflow-y-auto">{dailyTargetSubjects.map((s) => (<DropdownMenuCheckboxItem key={s} checked={selectedSubjects.includes(s)} onCheckedChange={() => setSelectedSubjects((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}>{s}</DropdownMenuCheckboxItem>))}</DropdownMenuSubContent></DropdownMenuSub></>}

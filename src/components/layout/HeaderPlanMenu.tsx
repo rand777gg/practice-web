@@ -207,11 +207,6 @@ export function HeaderPlanMenu() {
                       <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.today")}</span>
                       <Progress value={longPct} className="h-2 w-10 [&>div]:bg-blue-500" />
                       <span className="shrink-0 tabular-nums text-[10px]">{plan.todayDone}/{plan.dailyGoal}</span>
-                      {plan.reviewCount > 0 && (
-                        <span className="shrink-0 text-[10px] text-pink-500 dark:text-pink-400">
-                          +{plan.reviewCount}
-                        </span>
-                      )}
                     </span>
                   )}
                   {goalTotal > 0 && (
@@ -264,7 +259,6 @@ export function HeaderPlanMenu() {
               {' · '}{t("plan.reviewIncluded")} <b className="text-pink-500 dark:text-pink-400">{plan.reviewCount}</b> {t("plan.questions")}
             </p>
           )}
-
           <Separator />
           <FocusTimer />
           <Separator />

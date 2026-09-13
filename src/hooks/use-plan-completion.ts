@@ -393,7 +393,7 @@ export function usePlanCompletion(): PlanCompletion {
         for (const r of ltRows ?? []) {
           if (!scheduled.has(r.subject)) unscheduled += Math.max(Number(r.total) - Number(r.done_all), 0)
         }
-        // 错题 ∪ 收藏(去重, 计划学科范围内)也算进今日任务
+        // 错题 ∪ 收藏(去重, 计划学科范围内)单独算: 不进今日任务, 只作为独立信息展示
         const planSubs = [...new Set([
           ...getPlanSubjects(profile),
           ...goalList.map((g) => g.subject),
@@ -403,9 +403,8 @@ export function usePlanCompletion(): PlanCompletion {
           p_subjects: planSubs.length > 0 ? planSubs : null,
         })
         if (cancelled) return
-        const review = reviewRes.data == null ? 0 : Number(reviewRes.data)
-        setReviewCount(review)
-        setDailyGoal(dailyPace(roundItems, deadline ? unscheduled : 0, deadline) + review)
+        setReviewCount(reviewRes.data == null ? 0 : Number(reviewRes.data))
+        setDailyGoal(dailyPace(roundItems, deadline ? unscheduled : 0, deadline))
 
         if (!cancelled) setLoading(false)
       } catch (e) {
