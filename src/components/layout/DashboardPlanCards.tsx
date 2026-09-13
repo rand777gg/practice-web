@@ -4,13 +4,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 
 
-import { ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
+import { PlanGanttChart } from './PlanGanttChart'
+import { Progress } from '@/components/ui/progress'
 import type { DailyTarget } from '@/types'
 import { normalizeDailyTargets, normalizeMilestones } from '@/types'
 import { fetchMilestoneProgress, buildMilestoneProgress, type PlanMilestoneProgress, type PlanSubjectProgress, type PlanTargetGroup } from '@/hooks/use-plan-completion'
-import { PlanProgressOverview } from './PlanProgressOverview'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
 
@@ -51,7 +51,8 @@ export function DashboardPlanCards() {
   )
   const [milestones, setMilestones] = useState<PlanMilestoneProgress[]>([])
   const [longTermRows, setLongTermRows] = useState<PlanSubjectProgress[]>([])
-  const [showDetail, setShowDetail] = useState(false)
+  const [tab, setTab] = useState<'long-term' | 'custom'>('long-term')
+  const [selectedMilestoneId, setSelectedMilestoneId] = useState<string | null>(null)
 
   const [totalScope, setTotalScope] = useState(0)
   const [totalDone, setTotalDone] = useState(0)
@@ -220,7 +221,6 @@ export function DashboardPlanCards() {
   const todayDelta = totalDone - yesterdayDone
   const doneDaily = targetProgress.reduce((s, t) => s + t.totalDone, 0)
 
-  // 自定义计划: 交给总览矩阵的"今日"列(组内学科合并)
   const overviewTargets: PlanTargetGroup[] = targetProgress.map((g, i) => ({
     deadline: dailyTargets[i]?.deadline ?? null,
     subjects: g.subjects.map((s) => ({ subject: s.subject, count: s.count, done: s.done })),
@@ -236,97 +236,162 @@ export function DashboardPlanCards() {
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const yestSegPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
   const todaySegPct = totalScope > 0 ? (todayDelta / totalScope) * 100 : 0
+  const longDailyGoal = dayLeft && dayLeft > 0 && totalScope > 0 ? Math.ceil(Math.max(totalScope - totalDone, 0) / dayLeft) : 0
+
+  const currentMilestone = milestones.find((m) => m.progress < 1 && !m.passed) ?? milestones[milestones.length - 1]
+  const activeMilestone = milestones.find((m) => m.id === selectedMilestoneId) ?? currentMilestone
+  const showCustom = (tab === 'custom' || !deadline) && dailyTargets.length > 0
 
   if (!deadline && dailyTargets.length === 0) return null
 
   return (
     <>
-      <Card
-        className="min-w-0 cursor-pointer border-0 shadow-none transition-colors hover:bg-accent/30"
-        onClick={() => setDialogOpen(true)}
-      >
-        <CardHeader className="pb-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="flex items-center gap-1.5 text-sm">
-              {t('plan.title')}
-              <span className="text-[10px] font-normal text-muted-foreground">{t('plan.clickToEdit')}</span>
-            </CardTitle>
-            {deadline && (
-              <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-                {t('plan.examIn')}
-                <b className="text-lg font-semibold leading-none text-foreground">{dayLeft}</b>
-                {t('plan.daysUnit')}
-                <span className="text-muted-foreground/70">{deadline}</span>
-              </span>
-            )}
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-3">
-          {/* 长期计划 — 蓝 */}
-          {deadline && (
-            <div className="space-y-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+      <div className="grid gap-4 lg:grid-cols-5">
+        <Card className="min-w-0 border-0 shadow-none lg:col-span-3">
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-sm">{t('plan.progressTitle')}</CardTitle>
+              <div className="inline-flex rounded-md border p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setTab('long-term')}
+                  className={cn('rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors', !showCustom ? 'bg-blue-500 text-white' : 'text-muted-foreground hover:text-foreground')}
+                >
                   {t('plan.longTerm')}
-                </span>
-                <span className="text-[11px] tabular-nums text-muted-foreground">
-                  <b className="text-sm font-semibold text-foreground">{totalDone}</b>/{totalScope} {t('plan.questions')}
-                  {' · '}{overallPct}%
-                  {todayDelta > 0 && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">{t('plan.today')} +{todayDelta}</span>}
-                </span>
-              </div>
-              <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
-                {yestSegPct > 0 && <div className="h-full bg-blue-500 transition-all duration-700" style={{ width: `${yestSegPct}%` }} />}
-                {todaySegPct > 0 && <div className="h-full bg-emerald-400 transition-all duration-700" style={{ width: `${todaySegPct}%` }} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('custom')}
+                  disabled={dailyTargets.length === 0}
+                  className={cn('rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-40', showCustom ? 'bg-pink-500 text-white' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  {t('plan.dailyTarget')}
+                </button>
               </div>
             </div>
-          )}
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            {showCustom ? (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-muted-foreground">
+                  <span className="tabular-nums">{t('plan.today')} <b className="text-sm font-semibold text-foreground">{todayDone}</b>/{todayGoal} {t('plan.questions')} · {todayPct}%</span>
+                  <span>{t('plan.dailyTarget')}</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-pink-500 transition-all duration-700" style={{ width: `${todayPct}%` }} />
+                </div>
+              </div>
+            ) : deadline ? (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-muted-foreground">
+                  <span className="tabular-nums">
+                    <b className="text-sm font-semibold text-foreground">{totalDone}</b>/{totalScope} {t('plan.questions')} · {overallPct}%
+                    {todayDelta > 0 && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">{t('plan.today')} +{todayDelta}</span>}
+                  </span>
+                  <span className="tabular-nums">{t('plan.examIn')} <b className="font-semibold text-foreground">{dayLeft}</b> {t('plan.daysUnit')} · {deadline}</span>
+                </div>
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                  {yestSegPct > 0 && <div className="h-full bg-blue-500 transition-all duration-700" style={{ width: `${yestSegPct}%` }} />}
+                  {todaySegPct > 0 && <div className="h-full bg-emerald-400 transition-all duration-700" style={{ width: `${todaySegPct}%` }} />}
+                </div>
+              </div>
+            ) : null}
 
-          {/* 里程碑旗帜时间轴 */}
-          {milestones.length > 0 && (
-            <div className={cn(deadline && 'border-t pt-2.5')}>
-              <PlanProgressOverview
+            {showCustom && <PlanGanttChart mode="custom" targets={overviewTargets} />}
+            {!showCustom && milestones.length > 0 && (
+              <PlanGanttChart
+                mode="long-term"
                 milestones={milestones}
                 planDeadline={deadline}
                 longTerm={longTermRows}
-                targets={overviewTargets}
-                compact={!showDetail}
+                selectedMilestoneId={activeMilestone?.id ?? null}
+                onSelectMilestone={setSelectedMilestoneId}
               />
-            </div>
-          )}
+            )}
+            {!showCustom && milestones.length === 0 && (
+              <p className="py-6 text-center text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>
+            )}
 
-          {/* 自定义计划 — 粉 */}
-          {dailyTargets.length > 0 && (
-            <div className={cn((deadline || milestones.length > 0) && 'border-t pt-2.5', 'space-y-1')}>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-pink-600 dark:text-pink-400">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-pink-500" />
-                  {t('plan.dailyTarget')}
-                </span>
-                <span className="text-[11px] tabular-nums text-muted-foreground">
-                  {t('plan.today')} <b className="text-sm font-semibold text-foreground">{todayDone}</b>/{todayGoal} {t('plan.questions')} · {todayPct}%
-                </span>
+            {!showCustom && activeMilestone && (
+              <div className="space-y-1 rounded-lg border bg-muted/20 p-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px]">
+                  <span className="font-medium">
+                    {t('plan.milestone')} {milestones.findIndex((x) => x.id === activeMilestone.id) + 1} · {activeMilestone.deadline}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {activeMilestone.passed && activeMilestone.progress < 1
+                      ? t('plan.deadlinePassed')
+                      : `${t('plan.remaining')} ${activeMilestone.daysLeft} ${t('plan.daysUnit')}`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                  {activeMilestone.subjects.length === 0 ? (
+                    <span className="text-[11px] text-muted-foreground">{t('plan.milestoneNoSubject')}</span>
+                  ) : activeMilestone.subjects.map((s) => (
+                    <div key={s.subject} className="flex items-center gap-2 text-[11px]">
+                      <span className="max-w-[40%] truncate">{s.subject}</span>
+                      <Progress value={s.rounds > 0 ? Math.min((s.roundsDone / s.rounds) * 100, 100) : 0} className="h-1 flex-1 [&>div]:bg-blue-500" />
+                      <span className="shrink-0 tabular-nums text-muted-foreground">{s.roundsDone}/{s.rounds} {t('plan.roundsUnit')}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-pink-500 transition-all duration-700" style={{ width: `${todayPct}%` }} />
-              </div>
-            </div>
-          )}
+            )}
+          </CardContent>
+        </Card>
 
-          {milestones.length > 0 && (
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-1 rounded-md py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-              onClick={(e) => { e.stopPropagation(); setShowDetail((v) => !v) }}
-            >
-              {showDetail ? t('plan.hideDetail') : t('plan.showSubjectDetail')}
-              <ChevronDown className={cn('h-3 w-3 transition-transform', showDetail && 'rotate-180')} />
-            </button>
-          )}
-        </CardContent>
-      </Card>
+        <Card
+          className="min-w-0 cursor-pointer border-0 shadow-none transition-colors hover:bg-accent/30 lg:col-span-2"
+          onClick={() => setDialogOpen(true)}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm">{t('plan.goalTitle')}</CardTitle>
+              <span className="text-[10px] text-muted-foreground">{t('plan.clickToEdit')}</span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 text-[11px]">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 font-medium text-blue-600 dark:text-blue-400">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                {t('plan.longTerm')}
+                {deadline && <span className="ml-auto font-normal tabular-nums text-muted-foreground">{deadline}</span>}
+              </div>
+              <p className="text-muted-foreground">
+                {t('plan.subjectCol')} <span className="text-foreground/80">{planSubjects.length > 0 ? planSubjects.join(' · ') : t('plan.selectHint')}</span>
+              </p>
+              {deadline && totalScope > 0 && (
+                <p className="text-muted-foreground">
+                  {t('plan.aboutPerDay')} <b className="text-foreground">{longDailyGoal}</b> {t('plan.questions')}
+                  {' · '}{t('plan.remaining')} <b className="text-foreground">{Math.max(totalScope - totalDone, 0)}</b> {t('plan.questions')}
+                </p>
+              )}
+              {milestones.map((m) => (
+                <p key={m.id} className="flex gap-1.5 text-muted-foreground">
+                  <span className="shrink-0 tabular-nums">{m.deadline}</span>
+                  <span className="truncate text-foreground/80">{m.subjects.map((s) => `${s.subject} ${s.rounds}${t('plan.roundsUnit')}`).join(' · ')}</span>
+                </p>
+              ))}
+              {!deadline && <p className="text-muted-foreground/70">{t('plan.notSet')}</p>}
+            </div>
+
+            <div className="space-y-1 border-t pt-2.5">
+              <div className="flex items-center gap-1.5 font-medium text-pink-600 dark:text-pink-400">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-pink-500" />
+                {t('plan.dailyTarget')}
+              </div>
+              {dailyTargets.length === 0 ? (
+                <p className="text-muted-foreground/70">{t('plan.noCustomHint')}</p>
+              ) : dailyTargets.map((target, i) => (
+                <p key={i} className="flex flex-wrap gap-x-1.5 text-foreground/80">
+                  {target.deadline && <span className="shrink-0 tabular-nums text-muted-foreground">{target.deadline} 前</span>}
+                  <span>{target.subjects.map((s) => `${s.subject} ${s.count}${t('plan.questions')}`).join(' · ')}</span>
+                </p>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-xl border bg-card px-4 py-3">
@@ -342,6 +407,7 @@ export function DashboardPlanCards() {
           <p className="mt-0.5 text-[11px] text-muted-foreground">{t('plan.streakHint')}</p>
         </div>
       </div>
+
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   )

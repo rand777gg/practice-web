@@ -48,7 +48,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 import type { DailyTarget, PlanMilestone } from '@/types'
 import { normalizeDailyTargets, normalizeMilestones, newMilestoneId } from '@/types'
 import { fetchMilestoneProgress, buildMilestoneProgress, type MilestoneProgressRow } from '@/hooks/use-plan-completion'
-import { PlanProgressOverview } from './PlanProgressOverview'
+import { PlanGanttChart } from './PlanGanttChart'
 import { useT } from '@/i18n/use-t'
 
 /** 本地时区的 YYYY-MM-DD（不能用 toISOString, 会把东八区的当天零点倒退一天） */
@@ -163,6 +163,9 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     milestones.filter((m) => !!m.deadline),
     milestoneRows,
   )
+  const previewDaysLeft = deadline
+    ? Math.max(Math.ceil((new Date(deadline + 'T23:59:59').getTime() - Date.now()) / 86400000), 1)
+    : 0
 
   const toggleSubject = (s: string) => {
     setSelectedSubjects((prev) =>
@@ -394,12 +397,14 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl mx-4 sm:mx-auto">
+      <DialogContent className="max-w-4xl mx-4 sm:mx-auto">
         <DialogHeader className="sm:text-center">
           <DialogTitle>{t('plan.title')}</DialogTitle>
         </DialogHeader>
 
-        <div className="max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1 space-y-3">
+        <div className="grid max-h-[58vh] gap-4 overflow-y-auto overflow-x-hidden pr-1 lg:grid-cols-2">
+          {/* 左: 设置 */}
+          <div className="min-w-0 space-y-3">
           <div className="inline-flex rounded-lg bg-muted p-0.5 w-full">
             {(['long-term', 'daily'] as const).map((v) => (
               <button
@@ -556,11 +561,6 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               </HoverCard>
             </div>
 
-            {previewMilestones.length > 0 && (
-              <div className="rounded-lg border bg-muted/20 px-2.5 py-2">
-                <PlanProgressOverview milestones={previewMilestones} planDeadline={deadline || null} compact />
-              </div>
-            )}
 
             <div className="space-y-1.5">
               {orderedMilestones.map((m, i) => {
@@ -808,6 +808,94 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
           </div>
           )}
 
+          </div>
+
+          {/* 右: 实时预览 */}
+          <div className="min-w-0 space-y-3 lg:border-l lg:pl-4">
+            <div className="text-sm font-semibold">{t('plan.preview')}</div>
+
+            {planTab === 'long-term' ? (
+              <>
+                <div className="space-y-1 rounded-lg border bg-muted/20 p-2.5">
+                  <p className="text-[11px] text-muted-foreground">{t('plan.schedulePreview')}</p>
+                  {deadline ? (
+                    <>
+                      <p className="text-[12px] tabular-nums">
+                        {t('plan.remaining')} <b>{remaining}</b> {t('plan.questions')} ÷ <b>{previewDaysLeft}</b> {t('plan.daysUnit')}
+                        {' ≈ '}
+                        <b className="text-blue-600 dark:text-blue-400">{dailyGoal}</b> {t('plan.perDay')}
+                      </p>
+                      {selectedSubjects.length > 0 && (
+                        <ul className="space-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
+                          {selectedSubjects.map((s) => {
+                            const p = subjectProgress.get(s)
+                            const rem = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
+                            return (
+                              <li key={s} className="flex justify-between gap-2">
+                                <span className="truncate">{s}</span>
+                                <span className="shrink-0 tabular-nums">
+                                  {t('plan.remaining')} {rem} · {t('plan.aboutPerDay')} {Math.ceil(rem / previewDaysLeft)} {t('plan.questions')}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t('plan.pickDate')}</p>
+                  )}
+                </div>
+
+                {previewMilestones.length > 0 ? (
+                  <div className="rounded-lg border p-2">
+                    <PlanGanttChart mode="long-term" milestones={previewMilestones} planDeadline={deadline || null} />
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>
+                )}
+              </>
+            ) : (
+              <div className="space-y-1 rounded-lg border bg-muted/20 p-2.5">
+                <p className="text-[11px] text-muted-foreground">{t('plan.schedulePreview')}</p>
+                {dailyTargets.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">{t('plan.noCustomHint')}</p>
+                ) : (
+                  <>
+                    <p className="text-[12px]">
+                      {t('plan.perDayTotal')}
+                      {' '}
+                      <b className="text-pink-600 dark:text-pink-400">{dailyTargets.reduce((sum, target) => sum + target.subjects.reduce((s, subj) => s + (target.deadline ? (() => {
+                        const days = Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1)
+                        const p = subjectProgress.get(subj.subject)
+                        return Math.ceil(Math.max((p?.total ?? 0) - (p?.done ?? 0), 0) / days)
+                      })() : subj.count), 0), 0)}</b>
+                      {' '}
+                      {t('plan.questions')}
+                    </p>
+                    <ul className="space-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
+                      {dailyTargets.flatMap((target, gi) => target.subjects.map((subj) => {
+                        const p = subjectProgress.get(subj.subject)
+                        const rem = Math.max((p?.total ?? 0) - (p?.done ?? 0), 0)
+                        const per = target.deadline
+                          ? Math.ceil(rem / Math.max(Math.ceil((new Date(target.deadline).getTime() - Date.now()) / 86400000), 1))
+                          : subj.count
+                        return (
+                          <li key={`${gi}-${subj.subject}`} className="flex justify-between gap-2">
+                            <span className="truncate">{subj.subject}</span>
+                            <span className="shrink-0 tabular-nums">
+                              {target.deadline ? <>{target.deadline} 前 · </> : null}
+                              {t('plan.aboutPerDay')} {per} {t('plan.questions')}
+                            </span>
+                          </li>
+                        )
+                      }))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="flex-row flex-wrap gap-2">

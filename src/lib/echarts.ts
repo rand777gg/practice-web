@@ -8,6 +8,7 @@ import { LineChart } from 'echarts/charts'
 import { PieChart } from 'echarts/charts'
 import { ScatterChart } from 'echarts/charts'
 import { HeatmapChart } from 'echarts/charts'
+import { CustomChart } from 'echarts/charts'
 
 import { SankeyChart } from 'echarts/charts'
 import { GaugeChart } from 'echarts/charts'
@@ -32,6 +33,7 @@ echarts.use([
   PieChart,
   ScatterChart,
   HeatmapChart,
+  CustomChart,
 
   SankeyChart,
   GaugeChart,
