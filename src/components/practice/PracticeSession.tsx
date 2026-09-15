@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
-import { useSequentialStore, markPracticeSync } from '@/stores/sequential-store'
+import { useSequentialStore, markPracticeSync, sameSubjects } from '@/stores/sequential-store'
 
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
@@ -66,12 +66,6 @@ const PS_FILTERS = 'practice_filters'
 
 // Module-level KP cache (P3: avoid repeated question_meta_cache queries across mounts)
 let kpCache: { subject: string; keyPoints: string[] }[] | null = null
-
-function sameSubjects(left: string[], right: string[]) {
-  if (left.length !== right.length) return false
-  const rightSet = new Set(right)
-  return left.every((subject) => rightSet.has(subject))
-}
 
 function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets: Record<string, string> | null | undefined, planResetAt: string | null | undefined) {
   const threshold = (subjectResets && subjectResets[subject]) || planResetAt

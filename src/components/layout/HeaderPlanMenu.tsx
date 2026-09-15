@@ -181,7 +181,7 @@ export function HeaderPlanMenu() {
   if (plan.loading) return null
 
   const longPct = plan.dailyGoal > 0 ? Math.min(Math.round((plan.todayDone / plan.dailyGoal) * 100), 100) : 0
-  const targetPct = goalTotal > 0 ? Math.min(Math.round((goalDone / goalTotal) * 100), 100) : 0
+  const targetPct = plan.goalPerDay > 0 ? Math.min(Math.round((plan.goalTodayDone / plan.goalPerDay) * 100), 100) : 0
   const allDone = (plan.dailyGoal === 0 || plan.todayDone >= plan.dailyGoal)
     && (plan.goals.length === 0 || plan.goals.every((g) => g.state === 'done'))
 
@@ -209,11 +209,11 @@ export function HeaderPlanMenu() {
                       <span className="shrink-0 tabular-nums text-[10px]">{plan.todayDone}/{plan.dailyGoal}</span>
                     </span>
                   )}
-                  {goalTotal > 0 && (
+                  {plan.goalPerDay > 0 && (
                     <span className="flex shrink-0 items-center gap-1">
                       <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.daily")}</span>
                       <Progress value={targetPct} className="h-2 w-10 [&>div]:bg-pink-500" />
-                      <span className="shrink-0 tabular-nums text-[10px]">{goalDone}/{goalTotal}</span>
+                      <span className="shrink-0 tabular-nums text-[10px]">{plan.goalTodayDone}/{plan.goalPerDay}</span>
                     </span>
                   )}
                 </>

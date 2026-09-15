@@ -52,6 +52,13 @@ let syncChannel: RealtimeChannel | null = null
 let syncTimeout: ReturnType<typeof setTimeout> | null = null
 let gLastLocalSave = 0
 
+/** 学科范围是否一致(顺序无关): 会话是按"计划学科范围"认领的, 范围内涵变了就得换会话 */
+export function sameSubjects(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  const rightSet = new Set(right)
+  return left.every((subject) => rightSet.has(subject))
+}
+
 function makeSessionKey(kps: string[], subjects: string[], type: string): string {
   return JSON.stringify({
     planSubjects: [...new Set(subjects)].sort(),

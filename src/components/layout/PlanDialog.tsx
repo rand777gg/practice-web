@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { useSequentialStore } from '@/stores/sequential-store'
+import { useSequentialStore, sameSubjects } from '@/stores/sequential-store'
 
 
 import { Link } from 'react-router-dom'
@@ -411,31 +411,16 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
       .eq('id', user.id)
     await refreshProfile()
 
-    // Preserve the old plan's session as history. A changed plan gets its own
-    // session scope instead of rewriting the old question sequence.
+    // 学科的"计划范围" = 长期计划学科 ∪ 自定义计划的学科。注意别拿会话自己的 planSubjects 比:
+    // 用户可能只挑了部分学科的知识点, 会话范围本来就可以是计划范围的子集。
+    const oldPlanSubs = [...new Set([...savedSubjects, ...savedGoals.map((g) => g.subject)])]
+    const newPlanSubs = [...new Set([...selectedSubjects, ...sortedGoals.map((g) => g.subject)])]
+    // 范围没变(只改了轮次/批次/目标日)时, 正在刷的会话照样有效: 留着它, 用户接着往下刷, 不用重选知识点;
+    // 范围变了才把旧会话存进历史并清掉, 由练习页按新范围重新认领会话
     const activeSession = useSequentialStore.getState()
     if (activeSession.isActive && activeSession.sessionKey) {
       await activeSession.saveToDb(user.id)
-      activeSession.reset()
-    }
-
-    // Sync active sequential session with new plan subjects
-    const allPlanSubs = [...new Set([...selectedSubjects, ...sortedGoals.map((g) => g.subject)])]
-    if (allPlanSubs.length > 0) {
-      const s = useSequentialStore.getState()
-      if (s.isActive && s.sessionKey) {
-        // Fetch all KPs for the new plan subjects
-        const { data: kpRows } = await supabase.from('questions').select('key_points').in('subject', allPlanSubs).not('key_points', 'is', null)
-        const planKps = new Set<string>()
-        for (const r of (kpRows ?? []) as { key_points: string }[]) {
-          for (const k of r.key_points.split(/[,，;；]/).map(x => x.trim()).filter(Boolean)) planKps.add(k)
-        }
-        // Merge: keep existing session KPs that are still in plan, add new ones
-        const newPlanKps = [...planKps].sort()
-        if (newPlanKps.length > 0) {
-          await s.mergeKps(user.id, newPlanKps, allPlanSubs, '')
-        }
-      }
+      if (!sameSubjects(oldPlanSubs, newPlanSubs)) activeSession.reset()
     }
 
     setSaving(false)

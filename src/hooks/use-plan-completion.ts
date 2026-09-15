@@ -61,6 +61,10 @@ export interface PlanCompletion {
   /** 今日任务 = 计划每天的量 + 错题/收藏去重后的复习量 */
   dailyGoal: number
   todayDone: number
+  /** 自定义计划每天要刷的题数 */
+  goalPerDay: number
+  /** 自定义计划学科今天已经刷掉的题数 */
+  goalTodayDone: number
   /** 错题 ∪ 收藏 去重后的题数(计划学科范围内), 已计入 dailyGoal */
   reviewCount: number
   longTerm: PlanSubjectProgress[]
@@ -294,6 +298,15 @@ export function dailyPace(
   return total
 }
 
+/**
+ * 自定义计划每天要刷的题数 = 每个还没刷完的批次"还差多少题 ÷ 到该批目标日还剩几天", 再加起来。
+ */
+export function goalPace(items: PlanItem[], now = Date.now()): number {
+  return items
+    .filter((g) => g.state !== 'done')
+    .reduce((sum, g) => sum + Math.ceil(Math.max(g.quantity - g.done, 0) / daysUntil(g.target, now)), 0)
+}
+
 type ProgressRow = { subject: string; total: number; done_all: number; done_today: number }
 
 function todayStart(): string {
@@ -335,6 +348,8 @@ export function usePlanCompletion(): PlanCompletion {
   const [longTerm, setLongTerm] = useState<PlanSubjectProgress[]>([])
   const [rounds, setRounds] = useState<PlanItem[]>([])
   const [goals, setGoals] = useState<PlanItem[]>([])
+  const [goalPerDay, setGoalPerDay] = useState(0)
+  const [goalTodayDone, setGoalTodayDone] = useState(0)
 
   const roundList = useMemo<PlanRound[]>(() => resolveRounds(profile), [profile])
   const goalList = useMemo<PlanGoal[]>(() => resolveGoals(profile), [profile])
@@ -349,6 +364,7 @@ export function usePlanCompletion(): PlanCompletion {
         const today = todayStart()
         const deadline = profile.deadline ?? null
         const planSubjects = getPlanSubjects(profile)
+        const goalSubjects = [...new Set(goalList.map((g) => g.subject))]
         const subjectResets = (profile.subject_reset_at ?? null) as Record<string, string> | null
 
         const ltRows = deadline
@@ -378,14 +394,29 @@ export function usePlanCompletion(): PlanCompletion {
           setLongTerm([])
         }
 
-        const [roundStats, goalStats] = await Promise.all([
+        const [roundStats, goalStats, goalTodayRows] = await Promise.all([
           roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList)) : Promise.resolve(null),
           goalList.length > 0 ? fetchPlanStats(uid, goalPlanSpec(goalList)) : Promise.resolve(null),
+          // 自定义计划那几科今天刷了多少, 给顶部菜单的"每天"进度条用
+          goalSubjects.length > 0
+            ? fetchProgress({
+                p_user_id: uid,
+                p_plan_reset_at: profile.plan_reset_at || null,
+                p_today_since: today,
+                p_subjects: goalSubjects,
+                p_subject_resets: subjectResets,
+              })
+            : Promise.resolve(null),
         ])
         if (cancelled) return
         const roundItems = roundStats ? buildRoundItems(roundList, roundStats) : []
+        const goalItems = goalStats ? buildGoalItems(goalList, goalStats) : []
         setRounds(roundItems)
-        setGoals(goalStats ? buildGoalItems(goalList, goalStats) : [])
+        setGoals(goalItems)
+        setGoalPerDay(goalPace(goalItems))
+        let goalDoneToday = 0
+        for (const r of goalTodayRows ?? []) goalDoneToday += Number(r.done_today)
+        setGoalTodayDone(goalDoneToday)
 
         // 每天题数按排期算(见 dailyPace); 只有完全没排轮次的学科才退回"剩余 ÷ 剩余天数"
         const scheduled = new Set(roundItems.map((r) => r.subject))
@@ -438,6 +469,8 @@ export function usePlanCompletion(): PlanCompletion {
     deadline: profile?.deadline ?? null,
     dailyGoal,
     todayDone,
+    goalPerDay,
+    goalTodayDone,
     reviewCount,
     longTerm,
     rounds,

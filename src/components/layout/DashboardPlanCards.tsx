@@ -10,7 +10,7 @@ import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
 import { Progress } from '@/components/ui/progress'
 import { resolveGoals, resolveRounds } from '@/types'
 import {
-  buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPlanSpec, roundPlanSpec, subjectPaces,
+  buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPace, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanItem,
 } from '@/hooks/use-plan-completion'
 import { useT } from '@/i18n/use-t'
@@ -163,11 +163,8 @@ export function DashboardPlanCards() {
   const goalRest = goals.filter((g) => g.state !== 'done').reduce((sum, g) => sum + Math.max(g.quantity - g.done, 0), 0)
   const goalDoneCount = goals.filter((g) => g.state === 'done').length
   const goalPct = goals.length > 0 ? Math.round((goalDoneCount / goals.length) * 100) : 0
-  // 自定义计划也按排期算每天的量: 每批剩余 ÷ 到该批目标日的天数, 再相加
-  const goalPerDay = goals.filter((g) => g.state !== 'done').reduce((sum, g) => {
-    const days = Math.max(Math.ceil((new Date(`${g.target}T23:59:59`).getTime() - nowMs) / 86400000), 1)
-    return sum + Math.ceil(Math.max(g.quantity - g.done, 0) / days)
-  }, 0)
+  // 自定义计划也按排期算每天的量(和顶部菜单同一个口径)
+  const goalPerDay = goalPace(goals, nowMs)
   const dayLeft = deadline ? Math.max(Math.ceil((new Date(deadline).getTime() - nowMs) / 86400000), 0) : null
   const overallPct = totalScope > 0 ? Math.round((totalDone / totalScope) * 100) : 0
   const yestSegPct = totalScope > 0 ? (yesterdayDone / totalScope) * 100 : 0
