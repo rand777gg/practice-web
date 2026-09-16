@@ -311,18 +311,18 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   }
 
   /**
-   * 逾期顺延: 按这一轮原本的时长, 从今天重新排一遍 —— 这一轮的新窗口 = 今天 → 今天+原时长,
-   * 同学科后面几轮整体平移同样的天数(间隔不变)。还没刷完的轮次才会用到, 保存后才落库。
+   * 逾期顺延: 只动目标完成日 —— 这一轮的新期限 = 今天 + 原本的时长, 同学科后面几轮的目标日
+   * 一起后移同样的天数(间隔不变)。起始日是你定的排期窗口左端, 顺延不动它。保存后才落库。
    */
   const postponeRound = (id: string) => {
     setRoundError('')
     setRounds((prev) => {
-      const target = prev.find((r) => r.id === id)
-      if (!target) return prev
-      const span = Math.max(target.start ? daysBetweenDays(target.start, target.target) : 7, 1)
-      const delta = daysBetweenDays(target.target, addDays(todayStr(), span))
-      return prev.map((r) => (r.subject === target.subject && r.round >= target.round
-        ? { ...r, start: r.start ? addDays(r.start, delta) : null, target: addDays(r.target, delta) }
+      const round = prev.find((r) => r.id === id)
+      if (!round) return prev
+      const span = Math.max(round.start ? daysBetweenDays(round.start, round.target) : 7, 1)
+      const delta = daysBetweenDays(round.target, addDays(todayStr(), span))
+      return prev.map((r) => (r.subject === round.subject && r.round >= round.round
+        ? { ...r, target: addDays(r.target, delta) }
         : r))
     })
   }
