@@ -3269,8 +3269,9 @@ GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;
 --   新建一轮更是把整科题量当成新账重记一遍(0/580)。
 --   现在跟练习页同一个口径:
 --     total      = 会话队列里属于该科的题数(Section 46 的口径)
---     attempts   = 这一遍答过的题数(按题去重, 只数顺序学习的作答)
---     done_dates = 这一遍把该科所有题都答过的那一刻(最多一条; 没刷满就是空)
+--     attempts   = 这一遍做过的题数(按题去重; 练习、复习、考试做过的都算做过 ——
+--                  练习页那份"本次会话已作答"就是这么数的, 两边必须是同一个数)
+--     done_dates = 这一遍把该科所有题都过了一遍的那一刻(最多一条; 没刷满就是空)
 --   "这一遍"的起点由客户端算好放在 since 里: 该科上一个已完成轮次实际刷完的那天(按当天零点),
 --   和学科重置日 / 计划重置日 —— 和练习页判断"本次会话已作答"的规则完全一致, 取晚的那个;
 --   都没有 = 不限起点。since 可以是 ISO 时刻(重置)也可以是 YYYY-MM-DD(按当天 00:00 北京)。
@@ -3332,20 +3333,19 @@ AS $$
     FROM scope sc
     GROUP BY sc.subject, sc.since, sc.size, sc.steps
   ),
-  -- 这一遍的作答(只数顺序学习)
-  answers AS (
-    SELECT sc.subject, ua.question_id, ua.id AS answer_id, ua.answered_at
+  -- 这一遍的作答: 不限模式、不限来源 —— 和练习页"本次会话已作答"同一个口径;
+  -- 复习刷到的、考试里做过的, 都算"这题这一遍过了一遍"
+  answered AS (
+    SELECT sc.subject, ua.question_id, ua.id AS answer_id, ua.answered_at, ua.mode, ua.source
     FROM scope sc
     JOIN public.user_answers ua ON ua.question_id = sc.id
     WHERE ua.user_id = p_user_id
-      AND ua.mode = 'practice'
-      AND ua.source IS DISTINCT FROM 'random'
       AND (sc.since IS NULL OR ua.answered_at >= sc.since)
   ),
   -- 轮次: 同一题在这一遍里重复刷只算一道, 取最早那次
   q_once AS (
     SELECT a.subject, a.question_id, MIN(a.answered_at) AS answered_at
-    FROM answers a
+    FROM answered a
     GROUP BY a.subject, a.question_id
   ),
   q_rank AS (
@@ -3353,11 +3353,12 @@ AS $$
            ROW_NUMBER() OVER (PARTITION BY q.subject ORDER BY q.answered_at, q.question_id) AS rn
     FROM q_once q
   ),
-  -- 自定义批次: 仍然数作答次数
+  -- 自定义批次: 题量是自己定的, 只认练习作答(考试不算), 仍然数作答次数
   evt AS (
     SELECT a.subject, a.answered_at,
            ROW_NUMBER() OVER (PARTITION BY a.subject ORDER BY a.answered_at, a.answer_id) AS rn
-    FROM answers a
+    FROM answered a
+    WHERE a.mode = 'practice' AND a.source IS DISTINCT FROM 'random'
   ),
   -- 批次完成时刻 = 起点以来第 (前 k 批题数之和) 次作答
   mark_goal AS (
