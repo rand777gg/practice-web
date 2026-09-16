@@ -28,6 +28,8 @@ export interface PlanItem {
   index: number
   /** 这一批的目标题数 */
   quantity: number
+  /** 这一轮的起始日(统计起点, 甘特图左端); 自定义批次没有 = null */
+  start: string | null
   target: string
   createdAt: string
   /** 实际刷完的那天: 落库值优先, 没有就用作答记录算出来的 */
@@ -84,6 +86,8 @@ interface PlanRecord {
   index: number
   /** null = 用该学科题量 */
   quantity: number | null
+  /** 轮次的起始日; 批次传 null */
+  start: string | null
   target: string
   createdAt: string
   doneAt: string | null
@@ -100,15 +104,15 @@ export function planBaselines(records: { subject: string; createdAt: string }[])
 }
 
 /**
- * 长期计划的轮次换成统计参数。轮次的一遍 = 把这一遍里该科的题都答过, 所以只给"这一遍的起点":
- *   - 该科上一个已经刷完的轮次实际刷完的那天(按当天零点);
- *   - 和学科重置时刻 / 计划重置时刻(练习页判断"本次会话已作答"用的就是它)取晚的那个 ——
- *     重置了就是这一遍从头再来, 重置之前刷的不能算;
- *   - 两者都没有 = 不限起点(从头累计)。
- * 起点之后的作答按题去重, 除以该科题量就是这一遍的进度 —— 和练习页显示的是同一个数。
+ * 每个学科"当前这一遍"的起点(毫秒时间戳): 取下面三个里最晚的那个 ——
+ *   - 该科第一个还没完成的轮次的**起始日**(用户自己定的这一轮从哪天开始);
+ *   - 上一轮实际刷完的那天(那之前的作业属于上一遍);
+ *   - 学科重置时刻 / 计划重置时刻(重置 = 这一遍从头再来)。
+ * 一条都没占上的学科(没起始日、没刷完过、也没重置过)不出现在表里 = 不限起点(从头累计)。
+ * 计划侧的轮次统计和练习页的"本次会话已作答"都用它, 两边显示的就永远是同一个数。
  */
-export function roundPlanSpec(rounds: PlanRound[], resets?: PlanResets | null): Record<string, PlanSpecEntry> {
-  const spec: Record<string, PlanSpecEntry> = {}
+export function passStartBySubject(rounds: PlanRound[], resets?: PlanResets | null): Record<string, number> {
+  const out: Record<string, number> = {}
   const bySubject = new Map<string, PlanRound[]>()
   for (const r of rounds) {
     const list = bySubject.get(r.subject)
@@ -118,10 +122,32 @@ export function roundPlanSpec(rounds: PlanRound[], resets?: PlanResets | null): 
   for (const [subject, list] of bySubject) {
     const ordered = [...list].sort((a, b) => a.round - b.round)
     const open = ordered.findIndex((r) => !r.doneAt)
-    const prevDone = (open < 0 ? ordered[ordered.length - 1] : ordered[open - 1])?.doneAt ?? null
-    const doneMs = prevDone ? new Date(`${prevDone}T00:00:00`).getTime() : null
-    const resetMs = resetAt(resets, subject)
-    const since = doneMs == null ? resetMs : resetMs == null ? doneMs : Math.max(doneMs, resetMs)
+    const days = [
+      (open < 0 ? ordered[ordered.length - 1] : ordered[open - 1])?.doneAt ?? null,
+      (open < 0 ? null : ordered[open].start),
+    ]
+    let ms: number | null = null
+    for (const day of days) {
+      if (!day) continue
+      const t = new Date(`${day}T00:00:00`).getTime()
+      if (Number.isFinite(t) && (ms == null || t > ms)) ms = t
+    }
+    const reset = resetAt(resets, subject)
+    if (reset != null && (ms == null || reset > ms)) ms = reset
+    if (ms != null) out[subject] = ms
+  }
+  return out
+}
+
+/**
+ * 长期计划的轮次换成统计参数。轮次的一遍 = 把这一遍里该科的题都答过, 所以只给"这一遍的起点"
+ * (见 passStartBySubject); 起点之后的作答按题去重, 除以该科题量就是这一遍的进度。
+ */
+export function roundPlanSpec(rounds: PlanRound[], resets?: PlanResets | null): Record<string, PlanSpecEntry> {
+  const starts = passStartBySubject(rounds, resets)
+  const spec: Record<string, PlanSpecEntry> = {}
+  for (const subject of new Set(rounds.map((r) => r.subject))) {
+    const since = starts[subject]
     spec[subject] = since == null ? {} : { since: new Date(since).toISOString() }
   }
   return spec
@@ -207,6 +233,7 @@ function toPlanItems(kind: PlanItemKind, rows: PlanRecord[], stats: Map<string, 
         kind,
         index: row.index,
         quantity,
+        start: row.start,
         target: row.target,
         createdAt: row.createdAt,
         doneAt,
@@ -230,6 +257,7 @@ export function buildRoundItems(rounds: PlanRound[], stats: Map<string, PlanStat
     subject: r.subject,
     index: r.round,
     quantity: null,
+    start: r.start,
     target: r.target,
     createdAt: r.createdAt,
     doneAt: r.doneAt,
@@ -246,6 +274,7 @@ export function buildGoalItems(goals: PlanGoal[], stats: Map<string, PlanStat>):
       subject: g.subject,
       index,
       quantity: g.count,
+      start: null,
       target: g.target,
       createdAt: g.createdAt,
       doneAt: g.doneAt,

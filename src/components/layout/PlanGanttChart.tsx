@@ -81,8 +81,8 @@ export function PlanGanttChart({
 
   const model = useMemo(() => {
     const today = todayStart()
-    // 一圈一行。条形左端 = 创建这条的那天(或上一条实际完成日), 右端 = 目标完成日,
-    // 旗子插在实际刷够的那天 —— 没有时间窗, 也不需要"窗口起点"。
+    // 一圈一行。条形左端 = 这一轮的起始日(没设过就退回创建这条的那天 / 上一条实际完成日),
+    // 右端 = 目标完成日, 旗子插在实际刷够的那天。
     const bySubject = new Map<string, PlanItem[]>()
     for (const it of items) {
       const list = bySubject.get(it.subject)
@@ -104,7 +104,9 @@ export function PlanGanttChart({
       lastSubject = it.subject
       const list = bySubject.get(it.subject) ?? []
       const prev = list.find((x) => x.index === it.index - 1)
-      const startTs = prev ? parseDay(prev.doneAt ?? prev.target) : parseDay(it.createdAt)
+      const startTs = it.start
+        ? parseDay(it.start)
+        : prev ? parseDay(prev.doneAt ?? prev.target) : parseDay(it.createdAt)
       const endTs = parseDay(it.target)
       barStart.set(it.id, Math.min(startTs, endTs))
       barEnd.set(it.id, endTs)

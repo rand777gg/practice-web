@@ -51,6 +51,8 @@ interface KpNavProps {
   onJump: (index: number) => void
   subjectResets?: Record<string, string> | null
   planResetAt?: string | null
+  /** 每科"这一遍"的起点(毫秒), 见 passStartBySubject */
+  passStarts?: Record<string, number> | null
   subject?: string | null
   selectedKps?: string[]
   onExcludedRestored?: () => void

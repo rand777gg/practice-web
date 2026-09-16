@@ -41,7 +41,6 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
@@ -263,27 +262,33 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   }
 
   // ==== 轮次 ====
-  /** 新加一轮的默认目标日: 排在上一轮之后一周, 且不超过长期计划的最后一天 */
-  const suggestTarget = (subject: string): string => {
+  /** 新加一轮的默认起始日: 接着上一轮的目标日往后排, 上一轮已经过期就从今天起 */
+  const suggestStart = (subject: string): string => {
     const list = roundsBySubject.get(subject) ?? []
     const last = list[list.length - 1]
-    const base = last?.target && last.target > todayStr() ? last.target : todayStr()
-    const d = new Date(`${base}T00:00:00`)
+    return last?.target && last.target > todayStr() ? last.target : todayStr()
+  }
+
+  /** 默认目标完成日: 起始日之后一周, 且不超过长期计划的最后一天 */
+  const suggestTarget = (start: string): string => {
+    const d = new Date(`${start}T00:00:00`)
     d.setDate(d.getDate() + 7)
     let next = toDateStr(d)
     if (deadline && next > deadline) next = deadline
-    if (next < todayStr()) next = todayStr()
+    if (next < start) next = start
     return next
   }
 
   const addRound = (subject: string) => {
     setRoundError('')
     const list = roundsBySubject.get(subject) ?? []
+    const start = suggestStart(subject)
     setRounds((prev) => [...prev, {
       id: newRoundId(),
       subject,
       round: (list[list.length - 1]?.round ?? 0) + 1,
-      target: suggestTarget(subject),
+      start,
+      target: suggestTarget(start),
       createdAt: todayStr(),
       doneAt: null,
     }])
@@ -294,14 +299,21 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     setRounds((prev) => prev.filter((r) => r.id !== id))
   }
 
+  /** 起始日可以留空: 空 = 沿用"上一轮刷完那天 / 重置时刻"推出来的起点 */
+  const updateRoundStart = (id: string, start: string) => {
+    setRoundError('')
+    setRounds((prev) => prev.map((r) => (r.id === id ? { ...r, start: start || null } : r)))
+  }
+
   const updateRoundTarget = (id: string, target: string) => {
     setRoundError('')
     setRounds((prev) => prev.map((r) => (r.id === id ? { ...r, target } : r)))
   }
 
-  /** 校验: 每轮都要有目标日, 不超过长期计划最后一天, 同学科按轮次递增 */
+  /** 校验: 每轮都要有目标完成日(起始日可选), 起止顺序正确, 不超过计划最后一天, 同学科按轮次递增 */
   const validateRounds = (list: PlanRound[]): string => {
     if (list.some((r) => !r.target)) return t('plan.roundNeedDate')
+    if (list.some((r) => r.start && r.start > r.target)) return t('plan.roundRangeOrder')
     if (deadline && list.some((r) => r.target > deadline)) return t('plan.roundAfterDeadline')
     const bySubject = new Map<string, PlanRound[]>()
     for (const r of list) {
@@ -514,7 +526,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
               </div>
 
               {/* Deadline */}
-              <DateTimePicker
+              <DatePicker
                 date={deadline ? new Date(deadline + 'T00:00:00') : undefined}
                 onSelect={(d) => setDeadline(d ? toDateStr(d) : '')}
                 placeholder={t('plan.pickDate')}
@@ -627,12 +639,21 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                               {doneAt} {t('plan.roundDone')}
                             </span>
                           ) : (
-                            <DatePicker
-                              date={r.target ? new Date(`${r.target}T00:00:00`) : undefined}
-                              onSelect={(d) => updateRoundTarget(r.id, d ? toDateStr(d) : '')}
-                              placeholder={t('plan.roundTarget')}
-                              className="w-auto min-w-[112px] h-7 text-[11px] px-2"
-                            />
+                            <>
+                              <DatePicker
+                                date={r.start ? new Date(`${r.start}T00:00:00`) : undefined}
+                                onSelect={(d) => updateRoundStart(r.id, d ? toDateStr(d) : '')}
+                                placeholder={t('plan.roundStart')}
+                                className="w-auto min-w-[104px] h-7 text-[11px] px-2"
+                              />
+                              <span className="shrink-0 text-[10px] text-muted-foreground">→</span>
+                              <DatePicker
+                                date={r.target ? new Date(`${r.target}T00:00:00`) : undefined}
+                                onSelect={(d) => updateRoundTarget(r.id, d ? toDateStr(d) : '')}
+                                placeholder={t('plan.roundTarget')}
+                                className="w-auto min-w-[104px] h-7 text-[11px] px-2"
+                              />
+                            </>
                           )}
                           {!doneAt && daysLeft !== null && (
                             <span className={cn('shrink-0 text-[10px] tabular-nums', daysLeft === 0 ? 'text-destructive' : 'text-muted-foreground')}>

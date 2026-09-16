@@ -7,6 +7,7 @@ import { useRefreshStore } from '@/stores/refresh-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useSequentialStore, markPracticeSync, sameSubjects } from '@/stores/sequential-store'
 import { earliestPassStart, fetchAnsweredRows } from '@/lib/answered-rows'
+import { passStartBySubject } from '@/hooks/use-plan-completion'
 
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
@@ -68,10 +69,13 @@ const PS_FILTERS = 'practice_filters'
 // Module-level KP cache (P3: avoid repeated question_meta_cache queries across mounts)
 let kpCache: { subject: string; keyPoints: string[] }[] | null = null
 
-function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets: Record<string, string> | null | undefined, planResetAt: string | null | undefined) {
-  const threshold = (subjectResets && subjectResets[subject]) || planResetAt
-  if (!threshold) return true
-  return new Date(answeredAt).getTime() >= new Date(threshold).getTime()
+// 本遍门槛: 优先用轮次算出来的本遍起点(轮次起始日/上一轮完成日, 见 passStartBySubject),
+// 没有轮次记录时才退回学科重置时刻 / 计划重置时刻
+function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets: Record<string, string> | null | undefined, planResetAt: string | null | undefined, passStartMs?: number | null) {
+  const reset = (subjectResets && subjectResets[subject]) || planResetAt
+  const threshold = passStartMs ?? (reset ? new Date(reset).getTime() : null)
+  if (threshold == null) return true
+  return new Date(answeredAt).getTime() >= threshold
 }
 
 interface PracticeFilters {
@@ -250,7 +254,7 @@ export function PracticeSession() {
       .map((k) => ({ subject: k.slice(0, -4), round: 0, since: '1970-01-01', until: '' }))
     const byRound = planRounds
       .filter((r) => reviewRounds.includes(`${r.subject}|${r.round}`))
-      .map((r) => ({ subject: r.subject, round: r.round, since: r.createdAt, until: r.target }))
+      .map((r) => ({ subject: r.subject, round: r.round, since: r.start ?? r.createdAt, until: r.target }))
     return [...alls, ...byRound]
   }, [planRounds, reviewRounds])
 
@@ -388,7 +392,10 @@ export function PracticeSession() {
 
   const seqQuestionSubjects = useSequentialStore((s) => s.questionSubjects)
 
-  // 会话加载/恢复时，从数据库回填"本次会话已作答"集合（按重置阈值过滤），
+  // 每科"这一遍"的起点(轮次起始日 / 上一轮完成日 与 重置时刻取晚的那个, 和计划里的轮次同一个口径)
+  const passStarts = useMemo(() => passStartBySubject(planRounds, profile), [planRounds, profile])
+
+  // 会话加载/恢复时，从数据库回填"本次会话已作答"集合（按本遍门槛过滤），
   // 使恢复的会话中所有已作答题目都显示"本题此次会话已作答过"
   useEffect(() => {
     const user = useAuthStore.getState().user
@@ -397,7 +404,7 @@ export function PracticeSession() {
     const CHUNK = 200
     const chunks: string[][] = []
     for (let i = 0; i < seqQuestionIds.length; i += CHUNK) chunks.push(seqQuestionIds.slice(i, i + CHUNK))
-    const since = earliestPassStart(seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at)
+    const since = earliestPassStart(seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at, passStarts)
     Promise.all(chunks.map(chunk => fetchAnsweredRows(user.id, chunk, since))).then(results => {
       if (cancelled) return
       const latest = new Map<string, string>()
@@ -413,7 +420,8 @@ export function PracticeSession() {
         if (answeredThisSession.current.has(id)) continue
         const at = latest.get(id)
         if (!at) continue
-        if (isAnsweredAfterReset(at, seqQuestionSubjects[i] ?? '', profile?.subject_reset_at ?? null, profile?.plan_reset_at ?? null)) {
+        const subject = seqQuestionSubjects[i] ?? ''
+        if (isAnsweredAfterReset(at, subject, profile?.subject_reset_at ?? null, profile?.plan_reset_at ?? null, passStarts[subject])) {
           answeredThisSession.current.add(id)
           changed = true
         }
@@ -421,7 +429,7 @@ export function PracticeSession() {
       if (changed) setAnsweredSessionSnapshot(new Set(answeredThisSession.current))
     })
     return () => { cancelled = true }
-  }, [seqActive, seqQuestionIds, seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at])
+  }, [seqActive, seqQuestionIds, seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at, passStarts])
 
   const subjectBlocks = useMemo(() => {
     if (!seqActive || seqQuestionKps.length === 0) return [] as { subject: string; start: number; end: number; count: number }[]
@@ -1517,6 +1525,7 @@ export function PracticeSession() {
                   onJump={(index) => { loadSequentialQuestion(index); setTocOpen(false) }}
                   subjectResets={profile?.subject_reset_at ?? null}
                   planResetAt={profile?.plan_reset_at ?? null}
+                  passStarts={passStarts}
                   subject={currentSubject}
                   selectedKps={seqSelectedKps}
                   onExcludedRestored={handleKpsRestored}
@@ -1934,6 +1943,7 @@ export function PracticeSession() {
             onJump: loadSequentialQuestion,
             subjectResets: profile?.subject_reset_at ?? null,
             planResetAt: profile?.plan_reset_at ?? null,
+            passStarts,
             subject: currentSubject,
             selectedKps: seqSelectedKps,
             onExcludedRestored: handleKpsRestored,
@@ -2108,6 +2118,7 @@ export function PracticeSession() {
                   onJump={loadSequentialQuestion}
                   subjectResets={profile?.subject_reset_at ?? null}
                   planResetAt={profile?.plan_reset_at ?? null}
+                  passStarts={passStarts}
                   subject={currentSubject}
                   selectedKps={seqSelectedKps}
                   onExcludedRestored={handleKpsRestored}

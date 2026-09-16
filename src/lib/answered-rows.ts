@@ -39,17 +39,21 @@ export async function fetchAnsweredRows(
 }
 
 /**
- * 本遍最早的重置起点 = 各学科门槛(学科重置时刻, 没有就用计划重置时刻)里最早的那个。
- * 有任何一个学科压根没有门槛(那就等于"不限时间"), 返回 null —— 不能拿时间下限去砍它的作答。
+ * 本遍最早的重置起点 = 各学科门槛里最早的那个。学科门槛 = 该科"本遍起点"(上一轮完成日 与
+ * 完成日 与 重置时刻取晚的那个, 见 passStartBySubject); 没有轮次记录的学科就退回学科重置时刻 /
+ * 计划重置时刻。有任何一个学科压根没门槛(等于"不限时间"), 返回 null —— 不能拿时间下限砍它的作答。
  */
 export function earliestPassStart(
   subjects: (string | null)[],
   subjectResets?: Record<string, string> | null,
   planResetAt?: string | null,
+  passStarts?: Record<string, number> | null,
 ): string | null {
   const names = [...new Set(subjects.filter((s): s is string => !!s))]
   const marks: number[] = []
   for (const name of names) {
+    const declared = passStarts?.[name]
+    if (declared != null) { marks.push(declared); continue }
     const at = (subjectResets && subjectResets[name]) || planResetAt
     if (!at) return null
     const ms = new Date(at).getTime()

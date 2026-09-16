@@ -141,6 +141,7 @@ export function PlanWatcher() {
   const planDeadline = profile?.deadline ?? null
 
   const [ask, setAsk] = useState<CompletedBatch | null>(null)
+  const [start, setStart] = useState('')
   const [target, setTarget] = useState('')
   const [count, setCount] = useState(0)
   const busy = useRef(false)
@@ -216,6 +217,7 @@ export function PlanWatcher() {
         const prev = goals.filter((g) => g.subject === latest!.subject)
         setCount(prev[prev.length - 1]?.count ?? 0)
       }
+      setStart(latest.kind === 'round' ? latest.doneAt : '')
       setTarget(suggestNextTarget(latestDates, latest.kind === 'round' ? planDeadline : null))
       setAsk(latest)
     })()
@@ -234,6 +236,7 @@ export function PlanWatcher() {
           id: newRoundId(),
           subject: ask.subject,
           round: nextRound,
+          start,
           target,
           createdAt: todayStr(),
           doneAt: null,
@@ -284,6 +287,17 @@ export function PlanWatcher() {
                 />
               </label>
             )}
+            {ask.kind === 'round' && (
+              <label className="flex items-center gap-2">
+                <span className="w-14 shrink-0 text-muted-foreground">{t('plan.roundStart')}</span>
+                <DatePicker
+                  date={start ? new Date(`${start}T00:00:00`) : undefined}
+                  onSelect={(d) => setStart(d ? toDateStr(d) : '')}
+                  placeholder={t('plan.roundStart')}
+                  className="h-8 flex-1 text-xs"
+                />
+              </label>
+            )}
             <DatePicker
               date={target ? new Date(`${target}T00:00:00`) : undefined}
               onSelect={(d) => setTarget(d ? toDateStr(d) : '')}
@@ -297,7 +311,7 @@ export function PlanWatcher() {
           <Button variant="outline" size="sm" className="text-xs" onClick={() => setAsk(null)}>
             {t('plan.roundAskLater')}
           </Button>
-          <Button size="sm" className="text-xs" onClick={confirmNext} disabled={!target}>
+          <Button size="sm" className="text-xs" onClick={confirmNext} disabled={!target || (ask?.kind === 'round' && !start)}>
             {t('plan.save')}
           </Button>
         </DialogFooter>

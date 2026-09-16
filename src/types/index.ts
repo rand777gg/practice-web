@@ -109,18 +109,19 @@ export function todayStr(): string {
 
 /**
  * 长期计划下的一轮 = 某学科刷完一遍题。只认真实记录:
- * 目标完成日由用户设定, 实际完成日由刷题数据检测出来后落库。
- * 没有统计窗口 —— 相邻轮次不需要首尾相接, 同一学科也不会因为在多个里程碑里
- * 被重复勾选而把时间叠加到一起。
+ * 起始日与目标完成日由用户设定, 实际完成日由刷题数据检测出来后落库。
+ * 一轮的统计窗口 = [起始日, 目标完成日]: 起始日之后做过的题才算这一遍。
  */
 export interface PlanRound {
   id: string
   subject: string
   /** 该学科第几轮, 从 1 开始 */
   round: number
+  /** YYYY-MM-DD 这一轮的起始日(统计起点, 也是甘特图条形左端); null = 没设过, 沿用旧规则 */
+  start: string | null
   /** YYYY-MM-DD 计划完成日, 不超过长期计划 deadline */
   target: string
-  /** YYYY-MM-DD 创建这轮的那天 —— 这轮统计的起点, 也是甘特图条形左端 */
+  /** YYYY-MM-DD 创建这轮的那天 */
   createdAt: string
   /** YYYY-MM-DD 实际刷完的那天; 未完成 = null */
   doneAt: string | null
@@ -150,6 +151,7 @@ export function normalizePlanRounds(raw: unknown): PlanRound[] {
       id: typeof r.id === 'string' && r.id ? r.id : newRoundId(),
       subject: r.subject as string,
       round: Math.max(1, Math.round(Number(r.round) || 1)),
+      start: isDayStr(r.start) ? r.start : null,
       target: r.target as string,
       createdAt: isDayStr(r.createdAt) ? r.createdAt : todayStr(),
       doneAt: isDayStr(r.doneAt) ? r.doneAt : null,
@@ -168,8 +170,9 @@ export function daysBetweenDays(from: string, to: string): number {
 }
 
 /**
- * 一次性把旧的时间窗里程碑搬成轮次: "D 之前刷 N 轮" 展开成第 1..N 轮各自的目标完成日,
- * 在 (计划起点, D] 上按轮次均分, 最后一轮正好落在 D。统计起点统一为今天 ——
+ * 一次性把旧的时间窗里程碑搬成轮次: "D 之前刷 N 轮" 展开成第 1..N 轮各自的完成日,
+ * 在 (计划起点, D] 上按轮次均分, 最后一轮正好落在 D。老模型本来就有时间窗,
+ * 所以每轮的起始日就是它那一段的左端。统计起点统一为今天 ——
  * 旧模型只存了目标、没有历史完成记录, 从今天重新起算才不会凭空冒出一堆已完成轮次。
  * 截止日已经过去的里程碑直接丢掉(那是上一版计划的残留)。
  */
@@ -202,6 +205,7 @@ export function migrateMilestonesToRounds(raw: unknown, planStart: string): Plan
           id: newRoundId(),
           subject,
           round,
+          start: addDays(segStart, Math.ceil((span * (i - 1)) / n)),
           target: addDays(segStart, Math.ceil((span * i) / n)),
           createdAt: planStart,
           doneAt: null,

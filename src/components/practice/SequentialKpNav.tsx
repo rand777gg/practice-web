@@ -44,6 +44,8 @@ interface Props {
   onJump: (index: number) => void
   subjectResets?: Record<string, string> | null
   planResetAt?: string | null
+  /** 每科"这一遍"的起点(毫秒): 上一轮完成日 与 重置时刻取晚的那个 */
+  passStarts?: Record<string, number> | null
   subject?: string | null
   selectedKps?: string[]
   onExcludedRestored?: () => void
@@ -56,10 +58,11 @@ interface Props {
   variant?: 'list' | 'dots'
 }
 
-function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets?: Record<string, string> | null, planResetAt?: string | null) {
-  const threshold = (subjectResets && subjectResets[subject]) || planResetAt
-  if (!threshold) return true
-  return new Date(answeredAt).getTime() >= new Date(threshold).getTime()
+function isAnsweredAfterReset(answeredAt: string, subject: string, subjectResets?: Record<string, string> | null, planResetAt?: string | null, passStartMs?: number | null) {
+  const reset = (subjectResets && subjectResets[subject]) || planResetAt
+  const threshold = passStartMs ?? (reset ? new Date(reset).getTime() : null)
+  if (threshold == null) return true
+  return new Date(answeredAt).getTime() >= threshold
 }
 
 interface ExclStat {
@@ -72,7 +75,7 @@ interface ExclStatRow extends ExclStat {
   kp: string
 }
 
-function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<string, string>, latestCorrectMap: Map<string, boolean>, sessionDist: Map<string, SessionDistEntry> | undefined, subjectResets?: Record<string, string> | null, planResetAt?: string | null): GroupDist {
+function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<string, string>, latestCorrectMap: Map<string, boolean>, sessionDist: Map<string, SessionDistEntry> | undefined, subjectResets?: Record<string, string> | null, planResetAt?: string | null, passStarts?: Record<string, number> | null): GroupDist {
   const statuses: DistStatus[] = []
   const seen = new Set<string>()
   for (let j = g.start; j <= g.end; j++) {
@@ -81,7 +84,7 @@ function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<st
     const entry = sessionDist?.get(id)
     if (entry) { statuses.push(entry.status); continue }
     const at = answeredMap.get(id)
-    if (at != null && isAnsweredAfterReset(at, g.subject, subjectResets, planResetAt)) {
+    if (at != null && isAnsweredAfterReset(at, g.subject, subjectResets, planResetAt, passStarts?.[g.subject])) {
       const ok = latestCorrectMap.get(id)
       statuses.push(ok === undefined ? 'unanswered' : ok ? 'correct' : 'wrong')
     } else {
@@ -101,7 +104,7 @@ function computeGroupDist(g: KpGroup, questionIds: string[], answeredMap: Map<st
   return { statuses, ...counts, total: statuses.length }
 }
 
-export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, subject, selectedKps, onExcludedRestored, answeredThisSession, sessionDist, showDist, onShowDistChange, onCurrentKpDist, variant = 'list' }: Props) {
+export function SequentialKpNav({ userId, questionIds, questionKps, questionSubjects, currentIndex, onJump, subjectResets, planResetAt, passStarts, subject, selectedKps, onExcludedRestored, answeredThisSession, sessionDist, showDist, onShowDistChange, onCurrentKpDist, variant = 'list' }: Props) {
   const isDots = variant === 'dots'
   const [answeredMap, setAnsweredMap] = useState<Map<string, string>>(new Map())
   const [latestCorrectMap, setLatestCorrectMap] = useState<Map<string, boolean>>(new Map())
@@ -119,8 +122,8 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     const id = questionIds[index]
     if (answeredThisSession?.has(id)) return true
     const at = answeredMap.get(id)
-    return at != null && isAnsweredAfterReset(at, subject, subjectResets, planResetAt)
-  }, [questionIds, answeredThisSession, answeredMap, subjectResets, planResetAt])
+    return at != null && isAnsweredAfterReset(at, subject, subjectResets, planResetAt, passStarts?.[subject])
+  }, [questionIds, answeredThisSession, answeredMap, subjectResets, planResetAt, passStarts])
 
   const jumpIndexForGroup = useCallback((g: KpGroup): number => {
     for (let j = g.start; j <= g.end; j++) {
@@ -147,7 +150,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     answeredRef.current = new Map()
     correctRef.current = new Map()
     const CHUNK = 600
-    const since = earliestPassStart(questionSubjects, subjectResets, planResetAt)
+    const since = earliestPassStart(questionSubjects, subjectResets, planResetAt, passStarts)
     const chunks: string[][] = []
     for (let i = 0; i < questionIds.length; i += CHUNK) chunks.push(questionIds.slice(i, i + CHUNK))
     for (const chunk of chunks) {
@@ -165,7 +168,7 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
       })
     }
     return () => { cancelled = true }
-  }, [userId, questionIds, questionSubjects, subjectResets, planResetAt])
+  }, [userId, questionIds, questionSubjects, subjectResets, planResetAt, passStarts])
 
   const groups = useMemo<KpGroup[]>(() => {
     const out: KpGroup[] = []
@@ -249,10 +252,10 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
   const groupDists = useMemo(() => {
     const m = new Map<KpGroup, GroupDist>()
     for (const g of filteredGroups) {
-      m.set(g, computeGroupDist(g, questionIds, answeredMap, latestCorrectMap, sessionDist, subjectResets, planResetAt))
+      m.set(g, computeGroupDist(g, questionIds, answeredMap, latestCorrectMap, sessionDist, subjectResets, planResetAt, passStarts))
     }
     return m
-  }, [filteredGroups, questionIds, answeredMap, latestCorrectMap, sessionDist, subjectResets, planResetAt])
+  }, [filteredGroups, questionIds, answeredMap, latestCorrectMap, sessionDist, subjectResets, planResetAt, passStarts])
 
   const distTotals = useMemo(() => {
     const t = { correct: 0, wrong: 0, tooEasy: 0, unanswered: 0 }
