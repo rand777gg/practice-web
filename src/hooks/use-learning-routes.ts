@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import type { Question } from '@/types'
 import type {
-  LearningRoute, RouteDetail, RouteListEntry, RouteStage, RouteStageWithQuestions,
+  LearningRoute, RouteDetail, RouteListEntry, RouteNodeStyle, RouteStage, RouteStageWithQuestions,
 } from '@/types/learning-routes'
 
 /** 棰樼洰甯哥敤瀛楁(缁冧範鏃?QuestionCard 闇€瑕佸畬鏁撮闈? 鍥犳鍙栧叏閲忓瓧娈? */
@@ -154,17 +154,19 @@ export async function fetchLearningRouteDetail(routeId: string): Promise<RouteDe
   for (const stage of stages) {
     const { data: linkRows } = await supabase
       .from('learning_route_questions')
-      .select('question_id, position')
+      .select('id, question_id, position, node_style')
       .eq('stage_id', stage.id)
-    const links = sortByPosition((linkRows ?? []) as { question_id: string; position: number }[])
+    const links = sortByPosition((linkRows ?? []) as { question_id: string; position: number; node_style: RouteNodeStyle | null }[])
     const ids = links.map(l => l.question_id)
+    const itemStyles: Record<string, RouteNodeStyle> = {}
+    for (const l of links) itemStyles[l.question_id] = l.node_style ?? {}
     let questions: Question[] = []
     if (ids.length > 0) {
       const { data: qRows } = await supabase.from('questions').select('*').in('id', ids)
       const byId = new Map((qRows ?? []).map((x: Question) => [x.id, x]))
       questions = ids.map(id => byId.get(id)).filter(Boolean) as Question[]
     }
-    out.push({ ...stage, questions })
+    out.push({ ...stage, questions, itemStyles })
     questionIds.push(...ids)
   }
 
@@ -271,22 +273,24 @@ export async function fetchRouteStages(routeId: string): Promise<RouteStageWithQ
   for (const stage of stages) {
     const { data: linkRows } = await supabase
       .from('learning_route_questions')
-      .select('question_id, position')
+      .select('id, question_id, position, node_style')
       .eq('stage_id', stage.id)
-    const links = sortByPosition((linkRows ?? []) as { question_id: string; position: number }[])
+    const links = sortByPosition((linkRows ?? []) as { question_id: string; position: number; node_style: RouteNodeStyle | null }[])
     const ids = links.map(l => l.question_id)
+    const itemStyles: Record<string, RouteNodeStyle> = {}
+    for (const l of links) itemStyles[l.question_id] = l.node_style ?? {}
     let questions: Question[] = []
     if (ids.length > 0) {
       const { data: qRows } = await supabase.from('questions').select('*').in('id', ids)
       const byId = new Map((qRows ?? []).map((x: Question) => [x.id, x]))
       questions = ids.map(id => byId.get(id)).filter(Boolean) as Question[]
     }
-    out.push({ ...stage, questions })
+    out.push({ ...stage, questions, itemStyles })
   }
   return out
 }
 
-export async function createRouteStage(routeId: string, title: string, description = ''): Promise<string> {
+export async function createRouteStage(routeId: string, title: string, description = '', nodeStyle: RouteNodeStyle = {}): Promise<string> {
   const { data: maxRow } = await supabase
     .from('learning_route_stages')
     .select('position')
@@ -296,14 +300,14 @@ export async function createRouteStage(routeId: string, title: string, descripti
   const position = ((maxRow?.[0]?.position as number | undefined) ?? -1) + 1
   const { data, error } = await supabase
     .from('learning_route_stages')
-    .insert({ route_id: routeId, position, title: title.trim(), description })
+    .insert({ route_id: routeId, position, title: title.trim(), description, node_style: nodeStyle })
     .select('id')
     .single()
   if (error) throw error
   return (data as { id: string }).id
 }
 
-export async function updateRouteStage(stageId: string, patch: { title?: string; description?: string; position?: number }) {
+export async function updateRouteStage(stageId: string, patch: { title?: string; description?: string; position?: number; node_style?: RouteNodeStyle }) {
   const { error } = await supabase.from('learning_route_stages').update(patch).eq('id', stageId)
   if (error) throw error
 }
@@ -314,7 +318,7 @@ export async function deleteRouteStage(stageId: string) {
 }
 
 /** 寰€闃舵杩藉姞棰樼洰(杩藉姞鍒扮幇鏈夐鐩箣鍚? */
-export async function addRouteQuestions(stageId: string, questionIds: string[]) {
+export async function addRouteQuestions(stageId: string, questionIds: string[], nodeStyleByQid?: Record<string, RouteNodeStyle>) {
   if (questionIds.length === 0) return
   const { data: maxRow } = await supabase
     .from('learning_route_questions')
@@ -323,13 +327,18 @@ export async function addRouteQuestions(stageId: string, questionIds: string[]) 
     .order('position', { ascending: false })
     .limit(1)
   let position = ((maxRow?.[0]?.position as number | undefined) ?? -1) + 1
-  const rows = questionIds.map(qid => ({ stage_id: stageId, question_id: qid, position: position++ }))
+  const rows = questionIds.map(qid => ({ stage_id: stageId, question_id: qid, position: position++, node_style: nodeStyleByQid?.[qid] ?? {} }))
   const { error } = await supabase.from('learning_route_questions').insert(rows)
   if (error) throw error
 }
 
 export async function removeRouteQuestion(itemId: string) {
   const { error } = await supabase.from('learning_route_questions').delete().eq('id', itemId)
+  if (error) throw error
+}
+
+export async function updateRouteQuestionItem(itemId: string, patch: { node_style?: RouteNodeStyle; position?: number }) {
+  const { error } = await supabase.from('learning_route_questions').update(patch).eq('id', itemId)
   if (error) throw error
 }
 

@@ -3403,3 +3403,20 @@ AS $$
   ORDER BY tot.subject;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 48: 路线节点样式与手动拖拽坐标 (learning route node style)
+--   管理端把阶段 / 阶段内的题渲染成可拖拽画布, 每个节点可以单独存样式:
+--     accent   —— 强调色 (amber / emerald / sky / violet / rose / slate)
+--     size     —— 节点尺寸 (sm / md / lg)
+--     emphasis —— 是否高亮该节点
+--     x / y    —— 手动拖拽后的画布坐标(缺省 = 跟随客户端自动布局)
+--   样式以 jsonb 挂在节点自己那一行上: 阶段 = learning_route_stages.node_style,
+--   阶段内的题 = learning_route_questions.node_style。默认 '{}' 表示没改过样式,
+--   前台照旧按自动布局画。复用 Section 36 的 lrs_/lrq_ 策略, 无需新增 RLS。
+-- ============================================================================
+alter table public.learning_route_stages
+  add column if not exists node_style jsonb not null default '{}'::jsonb;
+
+alter table public.learning_route_questions
+  add column if not exists node_style jsonb not null default '{}'::jsonb;

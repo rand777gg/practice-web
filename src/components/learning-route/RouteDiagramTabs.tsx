@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DrawioFigure, type DrawioFigureHandle } from '@/components/learning-route/DrawioFigure'
-import { RoadmapCanvas, type RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
+import { RoadmapCanvas, type RoadmapEditor, type RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
 import { RouteMapFigure, type RouteMapNodeState, type RouteMapStageNode } from '@/components/learning-route/RouteMapFigure'
 import { buildRouteDiagramXml, diagramFileName } from '@/lib/route-map/drawio'
 
@@ -16,6 +16,8 @@ interface Props {
   state?: Record<string, RouteMapNodeState>
   /** roadmap.sh 风格视图的数据; 不传则由 stages 退化成纯阶段图 */
   roadmap?: RoadmapStage[]
+  /** 传了就把路线图变成可视化编辑器(右击菜单/拖拽/样式面板) */
+  roadmapEditor?: RoadmapEditor
   onSelectStage?: (stageId: string) => void
   onSelectQuestion?: (stageId: string, questionId: string) => void
   /** 已保存的 draw.io 数据(learning_routes.diagram_xml) */
@@ -36,7 +38,7 @@ interface Props {
  * archify 也只需编译一次。
  */
 export function RouteDiagramTabs({
-  title, stages, state, roadmap, onSelectStage, onSelectQuestion,
+  title, stages, state, roadmap, roadmapEditor, onSelectStage, onSelectQuestion,
   diagramXml, editable = false, onSaveDiagram, editorRef, height = 620, className,
 }: Props) {
   const [tab, setTab] = useState('roadmap')
@@ -173,11 +175,14 @@ export function RouteDiagramTabs({
       <TabsContent value="roadmap" forceMount={keepMounted('roadmap')} className="mt-3">
         <RoadmapCanvas
           stages={roadmapStages}
+          editor={roadmapEditor}
           onSelectStage={onSelectStage}
           onSelectQuestion={onSelectQuestion}
         />
         <p className="mt-2 text-xs text-muted-foreground">
-          点阶段胶囊练习整段，点题目胶囊直接跳到那道题；已通过的节点会变绿。
+          {roadmapEditor
+            ? '改动先留在本地，点页面底部「保存路线」才会写库。'
+            : '点阶段胶囊练习整段，点题目胶囊直接跳到那道题；已通过的节点会变绿。'}
         </p>
       </TabsContent>
 

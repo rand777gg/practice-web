@@ -14,6 +14,15 @@ export interface LearningRoute {
   updated_at: string
 }
 
+/** 画布节点样式; x/y 为手动拖拽后的画布坐标(缺省表示跟随自动布局) */
+export interface RouteNodeStyle {
+  accent?: 'amber' | 'emerald' | 'sky' | 'violet' | 'rose' | 'slate'
+  size?: 'sm' | 'md' | 'lg'
+  emphasis?: boolean
+  x?: number
+  y?: number
+}
+
 /** 路线内的一个阶段(阶段内题目有序) */
 export interface RouteStage {
   id: string
@@ -22,11 +31,14 @@ export interface RouteStage {
   title: string
   description: string
   created_at?: string
+  node_style?: RouteNodeStyle | null
 }
 
 /** 阶段详情:阶段 + 其有序题目 */
 export interface RouteStageWithQuestions extends RouteStage {
   questions: Question[]
+  /** question_id -> 该关联行的节点样式 */
+  itemStyles?: Record<string, RouteNodeStyle>
 }
 
 /** 路线详情(含阶段与题目) */

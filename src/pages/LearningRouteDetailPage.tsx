@@ -55,10 +55,12 @@ export function Component() {
         label: s.title || `阶段 ${si + 1}`,
         meta: `${doneCount}/${s.questions.length} 题`,
         done: s.questions.length > 0 && doneCount === s.questions.length,
+        style: s.node_style ?? undefined,
         questions: s.questions.map(q => ({
           id: q.id,
           label: questionPreview(q),
           passed: !!detail?.passByQuestion[q.id],
+          style: s.itemStyles?.[q.id],
         })),
       }
     })

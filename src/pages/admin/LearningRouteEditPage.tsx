@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import {
@@ -11,9 +11,10 @@ import {
   removeRouteQuestion,
   saveLearningRoute,
   saveRouteDiagram,
+  updateRouteQuestionItem,
   updateRouteStage,
 } from '@/hooks/use-learning-routes'
-import type { LearningRoute } from '@/types/learning-routes'
+import type { LearningRoute, RouteNodeStyle } from '@/types/learning-routes'
 import type { Question } from '@/types'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
@@ -22,15 +23,20 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { QuestionPicker } from '@/components/question-bank/QuestionPicker'
 import { RouteDiagramTabs } from '@/components/learning-route/RouteDiagramTabs'
 import type { DrawioFigureHandle } from '@/components/learning-route/DrawioFigure'
+import type { RoadmapEditor, RoadmapNodeTarget, RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
 import { ArrowDown, ArrowLeft, ArrowUp, Map as MapIcon, Plus, Save, Trash2 } from 'lucide-react'
 
 interface LocalQuestionItem {
   itemId?: string
   questionId: string
   question?: Question
+  nodeStyle?: RouteNodeStyle
 }
 
 interface LocalStage {
@@ -39,6 +45,7 @@ interface LocalStage {
   title: string
   description: string
   items: LocalQuestionItem[]
+  nodeStyle?: RouteNodeStyle
 }
 
 interface ServerItemRec {
@@ -57,6 +64,20 @@ function questionPreview(q: Question): string {
   return q.question_text.replace(/[#*`>[\]!-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
 }
 
+/** 画布上还没落库的阶段用本地 key 当节点 id */
+function stageKey(s: LocalStage, i: number) {
+  return s.id ?? `local-${s.localKey ?? i}`
+}
+
+/** patch 里值为 undefined 表示「恢复默认」, 要真删掉这个键而不是留个 undefined */
+function mergeNodeStyle(prev: RouteNodeStyle | undefined, patch: RouteNodeStyle): RouteNodeStyle {
+  const next: RouteNodeStyle = { ...prev, ...patch }
+  for (const key of Object.keys(patch) as (keyof RouteNodeStyle)[]) {
+    if (patch[key] === undefined) delete next[key]
+  }
+  return next
+}
+
 export function Component() {
   const { routeId } = useParams<{ routeId: string }>()
   const navigate = useNavigate()
@@ -73,6 +94,10 @@ export function Component() {
   const [showMap, setShowMap] = useState(Boolean(routeId))
   const [diagramXml, setDiagramXml] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  /** 画布右击「编辑标题与简介」打开的阶段下标 */
+  const [contentStage, setContentStage] = useState<number | null>(null)
+  /** 画布右击「换一道题」的目标 */
+  const [replaceTarget, setReplaceTarget] = useState<{ stage: number; questionId: string } | null>(null)
 
   const serverRef = useRef<Map<string, ServerItemRec[]>>(new Map())
   const localKeyRef = useRef(0)
@@ -96,29 +121,31 @@ export function Component() {
       const stageList = await fetchRouteStages(rid)
 
       const stageIds = stageList.map((s) => s.id)
-      const itemIdByStageQid = new Map<string, Map<string, string>>()
+      const linkByStageQid = new Map<string, Map<string, { itemId: string; nodeStyle: RouteNodeStyle }>>()
       if (stageIds.length > 0) {
         const { data: linkRows } = await supabase
           .from('learning_route_questions')
-          .select('id, stage_id, question_id')
+          .select('id, stage_id, question_id, node_style')
           .in('stage_id', stageIds)
-        for (const row of (linkRows ?? []) as { id: string; stage_id: string; question_id: string }[]) {
-          let m = itemIdByStageQid.get(row.stage_id)
+        for (const row of (linkRows ?? []) as {
+          id: string; stage_id: string; question_id: string; node_style: RouteNodeStyle | null
+        }[]) {
+          let m = linkByStageQid.get(row.stage_id)
           if (!m) {
             m = new Map()
-            itemIdByStageQid.set(row.stage_id, m)
+            linkByStageQid.set(row.stage_id, m)
           }
-          m.set(row.question_id, row.id)
+          m.set(row.question_id, { itemId: row.id, nodeStyle: row.node_style ?? {} })
         }
       }
 
       const map = new Map<string, ServerItemRec[]>()
       for (const st of stageList) {
-        const qidMap = itemIdByStageQid.get(st.id) ?? new Map<string, string>()
+        const qidMap = linkByStageQid.get(st.id) ?? new Map<string, { itemId: string; nodeStyle: RouteNodeStyle }>()
         const items: ServerItemRec[] = []
         for (const q of st.questions) {
-          const itemId = qidMap.get(q.id)
-          if (itemId) items.push({ itemId, questionId: q.id })
+          const rec = qidMap.get(q.id)
+          if (rec) items.push({ itemId: rec.itemId, questionId: q.id })
         }
         map.set(st.id, items)
       }
@@ -133,15 +160,18 @@ export function Component() {
       })
       setStages(
         stageList.map((st) => {
+          const qidMap = linkByStageQid.get(st.id) ?? new Map<string, { itemId: string; nodeStyle: RouteNodeStyle }>()
           const qById = new Map(st.questions.map((q) => [q.id, q]))
           return {
             id: st.id,
             title: st.title,
             description: st.description,
+            nodeStyle: st.node_style ?? {},
             items: (map.get(st.id) ?? []).map((it) => ({
               itemId: it.itemId,
               questionId: it.questionId,
               question: qById.get(it.questionId),
+              nodeStyle: qidMap.get(it.questionId)?.nodeStyle ?? {},
             })),
           }
         }),
@@ -225,28 +255,130 @@ export function Component() {
       ),
     )
 
+  const stageIndexById = (stageId: string) => stages.findIndex((s, i) => stageKey(s, i) === stageId)
+
+  const patchNodeStyle = (target: RoadmapNodeTarget, patch: RouteNodeStyle) =>
+    setStages((prev) =>
+      prev.map((s, i) => {
+        if (stageKey(s, i) !== target.stageId) return s
+        if (!target.questionId) return { ...s, nodeStyle: mergeNodeStyle(s.nodeStyle, patch) }
+        return {
+          ...s,
+          items: s.items.map((it) =>
+            it.questionId === target.questionId ? { ...it, nodeStyle: mergeNodeStyle(it.nodeStyle, patch) } : it,
+          ),
+        }
+      }),
+    )
+
+  const moveNode = (target: RoadmapNodeTarget, pos: { x: number; y: number } | null) =>
+    patchNodeStyle(target, pos ? { x: Math.round(pos.x), y: Math.round(pos.y) } : { x: undefined, y: undefined })
+
+  const resetLayout = () =>
+    setStages((prev) =>
+      prev.map((s) => ({
+        ...s,
+        nodeStyle: mergeNodeStyle(s.nodeStyle, { x: undefined, y: undefined }),
+        items: s.items.map((it) => ({ ...it, nodeStyle: mergeNodeStyle(it.nodeStyle, { x: undefined, y: undefined }) })),
+      })),
+    )
+
+  const roadmapStages: RoadmapStage[] = useMemo(
+    () =>
+      stages.map((s, si) => ({
+        id: stageKey(s, si),
+        label: s.title || `阶段 ${si + 1}`,
+        meta: `${s.items.length} 题`,
+        done: false,
+        style: s.nodeStyle,
+        questions: s.items.map((it) => ({
+          id: it.questionId,
+          label: it.question ? questionPreview(it.question) : it.questionId,
+          passed: false,
+          style: it.nodeStyle,
+        })),
+      })),
+    [stages],
+  )
+
+  const roadmapEditor: RoadmapEditor = {
+    onAddStage: (pos) => {
+      localKeyRef.current += 1
+      setStages((prev) => [
+        ...prev,
+        { localKey: localKeyRef.current, title: '新阶段', description: '', items: [], nodeStyle: { x: pos.x, y: pos.y } },
+      ])
+    },
+    onEditStageContent: (stageId) => {
+      const i = stageIndexById(stageId)
+      if (i >= 0) setContentStage(i)
+    },
+    onAddQuestion: (stageId) => {
+      const i = stageIndexById(stageId)
+      if (i < 0) return
+      setReplaceTarget(null)
+      setPickerStage(i)
+    },
+    onRemoveStage: (stageId) => {
+      const i = stageIndexById(stageId)
+      if (i >= 0) removeStage(i)
+    },
+    onMoveStage: (stageId, dir) => {
+      const i = stageIndexById(stageId)
+      if (i >= 0) moveStage(i, dir)
+    },
+    onRemoveQuestion: (stageId, questionId) => {
+      const i = stageIndexById(stageId)
+      const ii = stages[i]?.items.findIndex((it) => it.questionId === questionId) ?? -1
+      if (i >= 0 && ii >= 0) removeItem(i, ii)
+    },
+    onReplaceQuestion: (stageId, questionId) => {
+      const i = stageIndexById(stageId)
+      if (i < 0) return
+      setReplaceTarget({ stage: i, questionId })
+      setPickerStage(i)
+    },
+    onMoveQuestion: (stageId, questionId, dir) => {
+      const i = stageIndexById(stageId)
+      const ii = stages[i]?.items.findIndex((it) => it.questionId === questionId) ?? -1
+      if (i >= 0 && ii >= 0) moveItem(i, ii, dir)
+    },
+    onPatchStyle: patchNodeStyle,
+    onMoveNode: moveNode,
+    onResetLayout: resetLayout,
+  }
+
   const handlePickerAdd = async (questionIds: string[]) => {
     if (pickerStage === null || questionIds.length === 0) return
     const idx = pickerStage
+    const replace = replaceTarget
     setSavingQids(new Set(questionIds))
     try {
       const { data } = await supabase.from('questions').select('*').in('id', questionIds)
       const byId = new Map<string, Question>()
       for (const row of (data ?? []) as Question[]) byId.set(row.id, row)
       setStages((prev) =>
-        prev.map((s, i) =>
-          i !== idx
-            ? s
-            : {
-                ...s,
-                items: [
-                  ...s.items,
-                  ...questionIds.map((qid) => ({ questionId: qid, question: byId.get(qid) })),
-                ],
-              },
-        ),
+        prev.map((s, i) => {
+          if (i !== idx) return s
+          if (replace) {
+            const at = s.items.findIndex((it) => it.questionId === replace.questionId)
+            const picked = byId.get(questionIds[0])
+            if (at < 0 || !picked) return s
+            const items = [...s.items]
+            items[at] = { questionId: questionIds[0], question: picked, nodeStyle: items[at].nodeStyle }
+            return { ...s, items }
+          }
+          return {
+            ...s,
+            items: [
+              ...s.items,
+              ...questionIds.map((qid) => ({ questionId: qid, question: byId.get(qid) })),
+            ],
+          }
+        }),
       )
       setPickerStage(null)
+      setReplaceTarget(null)
     } catch (err) {
       console.error(err)
       setError('添加题目失败，请稍后重试')
@@ -288,10 +420,11 @@ export function Component() {
       })
 
       for (const stage of working) {
+        const style = stage.nodeStyle ?? {}
         if (!stage.id) {
-          stage.id = await createRouteStage(rid, stage.title, stage.description)
+          stage.id = await createRouteStage(rid, stage.title, stage.description, style)
         } else if (serverRef.current.has(stage.id)) {
-          await updateRouteStage(stage.id, { title: stage.title, description: stage.description })
+          await updateRouteStage(stage.id, { title: stage.title, description: stage.description, node_style: style })
         }
       }
 
@@ -304,16 +437,21 @@ export function Component() {
         for (const item of stage.items) {
           if (!item.itemId) item.itemId = prevQidMap.get(item.questionId)
         }
+        const styleByQid: Record<string, RouteNodeStyle> = {}
+        for (const it of stage.items) styleByQid[it.questionId] = it.nodeStyle ?? {}
         const toAdd = stage.items
           .filter((it) => !prevQidMap.has(it.questionId))
           .map((it) => it.questionId)
-        if (toAdd.length > 0) await addRouteQuestions(sid, toAdd)
+        if (toAdd.length > 0) await addRouteQuestions(sid, toAdd, styleByQid)
         const keptItemIds = new Set(stage.items.filter((it) => it.itemId).map((it) => it.itemId as string))
         for (const it of prevItems) {
           if (!keptItemIds.has(it.itemId)) await removeRouteQuestion(it.itemId)
         }
         const knownItemIds = stage.items.filter((it) => it.itemId).map((it) => it.itemId as string)
         if (knownItemIds.length > 0) await reorderRouteQuestions(sid, knownItemIds)
+        for (const it of stage.items) {
+          if (it.itemId) await updateRouteQuestionItem(it.itemId, { node_style: it.nodeStyle ?? {} })
+        }
       }
 
       for (const stageId of serverRef.current.keys()) {
@@ -424,6 +562,8 @@ export function Component() {
             label: s.title || `阶段${i + 1}`,
             sublabel: `${s.items.length} 题`,
           }))}
+          roadmap={roadmapStages}
+          roadmapEditor={roadmapEditor}
           diagramXml={diagramXml}
           editable
           editorRef={drawioRef}
@@ -587,11 +727,43 @@ export function Component() {
 
       <QuestionPicker
         open={pickerStage !== null}
-        onOpenChange={(open) => { if (!open) setPickerStage(null) }}
+        onOpenChange={(open) => { if (!open) { setPickerStage(null); setReplaceTarget(null) } }}
         onAdd={handlePickerAdd}
         existingIds={pickerExistingIds}
         savingIds={savingQids}
       />
+
+      <Dialog open={contentStage !== null} onOpenChange={(open) => { if (!open) setContentStage(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>阶段内容</DialogTitle>
+            <DialogDescription>改动先留在本地，点底部「保存路线」才会写库。</DialogDescription>
+          </DialogHeader>
+          {contentStage !== null && stages[contentStage] && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">阶段标题</Label>
+                <Input
+                  value={stages[contentStage].title}
+                  onChange={(e) => updateStage(contentStage, { title: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">阶段简介</Label>
+                <Textarea
+                  rows={3}
+                  value={stages[contentStage].description}
+                  placeholder="这个阶段讲什么、适合谁…"
+                  onChange={(e) => updateStage(contentStage, { description: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button size="sm" onClick={() => setContentStage(null)}>完成</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
