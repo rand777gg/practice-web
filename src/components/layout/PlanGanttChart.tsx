@@ -157,7 +157,6 @@ export function PlanGanttChart({
 
   const option = useMemo(() => {
     const { rows, bars, flags, lines, start, end } = model
-    const todayTs = todayStart()
 
     const barRenderer = (params: CustomSeriesRenderItemParams, api: CustomSeriesRenderItemAPI) => {
       const data = bars[params.dataIndex]
@@ -168,14 +167,14 @@ export function PlanGanttChart({
       const x = from[0]
       const y = from[1] - BAR_H / 2
       const w = Math.max(to[0] - x, 3)
-      // 到今天为止的一段用实色, 今天之后(还没到的时间)用浅色
-      const pastX = api.coord([Math.min(todayTs, Number(api.value(2))), row])[0]
-      const pastW = Math.min(Math.max(pastX - x, 0), w)
+      // 填充的是"实际完成 / 这一轮题量", 不是时间过了多少 —— 条形的长短才是排期窗口
+      const pct = data.total > 0 ? Math.min(Math.max(data.done / data.total, 0), 1) : 0
+      const doneW = w * pct
       const children: unknown[] = [
         { type: 'rect', shape: { x, y, width: w, height: BAR_H, r: 3 }, style: { fill: data.soft } },
       ]
-      if (pastW > 0) {
-        children.push({ type: 'rect', shape: { x, y, width: pastW, height: BAR_H, r: 3 }, style: { fill: data.color } })
+      if (doneW > 0) {
+        children.push({ type: 'rect', shape: { x, y, width: doneW, height: BAR_H, r: 3 }, style: { fill: data.color } })
       }
       if (data.selected) {
         children.push({
