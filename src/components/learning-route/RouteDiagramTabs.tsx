@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Download, Loader2, Network, RotateCw, Save, Shapes } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Download, Loader2, Map as MapIcon, Network, RotateCw, Save, Shapes } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DrawioFigure, type DrawioFigureHandle } from '@/components/learning-route/DrawioFigure'
+import { RoadmapCanvas, type RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
 import { RouteMapFigure, type RouteMapNodeState, type RouteMapStageNode } from '@/components/learning-route/RouteMapFigure'
 import { buildRouteDiagramXml, diagramFileName } from '@/lib/route-map/drawio'
 
@@ -13,6 +14,10 @@ interface Props {
   stages: RouteMapStageNode[]
   /** archify 侧节点着色(阶段 id -> 状态) */
   state?: Record<string, RouteMapNodeState>
+  /** roadmap.sh 风格视图的数据; 不传则由 stages 退化成纯阶段图 */
+  roadmap?: RoadmapStage[]
+  onSelectStage?: (stageId: string) => void
+  onSelectQuestion?: (stageId: string, questionId: string) => void
   /** 已保存的 draw.io 数据(learning_routes.diagram_xml) */
   diagramXml?: string | null
   /** 内嵌 draw.io 编辑器(管理员); false = 只读浏览 */
@@ -26,15 +31,16 @@ interface Props {
 }
 
 /**
- * 学习路线图区: draw.io 为主视图, 原 archify 路线图作为并列 tab 保留(开发中)。
- * 两个 tab 一旦访问过就常驻挂载 —— 切 tab 不会丢掉 draw.io 未保存的改动,
+ * 学习路线图区: roadmap.sh 风格路线图为主视图, draw.io 自绘图与 archify 图作为并列 tab。
+ * 三个 tab 一旦访问过就常驻挂载 —— 切 tab 不会丢掉 draw.io 未保存的改动,
  * archify 也只需编译一次。
  */
 export function RouteDiagramTabs({
-  title, stages, state, diagramXml, editable = false, onSaveDiagram, editorRef, height = 620, className,
+  title, stages, state, roadmap, onSelectStage, onSelectQuestion,
+  diagramXml, editable = false, onSaveDiagram, editorRef, height = 620, className,
 }: Props) {
-  const [tab, setTab] = useState('drawio')
-  const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({ drawio: true })
+  const [tab, setTab] = useState('roadmap')
+  const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({ roadmap: true })
   const savedXml = diagramXml ?? null
   /** 本地草稿只在来源版本未变时生效, 库里数据刷新后自动作废 */
   const [draft, setDraft] = useState<{ from: string | null; xml: string } | null>(null)
@@ -110,7 +116,18 @@ export function RouteDiagramTabs({
 
   const keepMounted = (value: string) => (mountedTabs[value] ? true : undefined)
 
-  const actions: ReactNode = editable ? (
+  const roadmapStages: RoadmapStage[] = useMemo(
+    () => roadmap ?? stages.map(s => ({
+      id: s.id,
+      label: s.label,
+      meta: s.sublabel,
+      done: state?.[s.id] === 'done',
+      questions: [],
+    })),
+    [roadmap, stages, state],
+  )
+
+  const actions: ReactNode = editable && tab === 'drawio' ? (
     <div className="flex flex-wrap items-center gap-2">
       {status && <span className="text-xs text-muted-foreground">{status}</span>}
       {onSaveDiagram && (
@@ -134,9 +151,13 @@ export function RouteDiagramTabs({
     <Tabs value={tab} onValueChange={(v) => void handleTabChange(v)} className={className}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <TabsList>
+          <TabsTrigger value="roadmap">
+            <MapIcon className="mr-1.5 h-3.5 w-3.5" />
+            路线图
+          </TabsTrigger>
           <TabsTrigger value="drawio">
             <Shapes className="mr-1.5 h-3.5 w-3.5" />
-            draw.io 路线图
+            {editable ? 'draw.io 自绘图' : '自绘图'}
           </TabsTrigger>
           <TabsTrigger value="archify">
             <Network className="mr-1.5 h-3.5 w-3.5" />
@@ -148,6 +169,17 @@ export function RouteDiagramTabs({
         </TabsList>
         {actions}
       </div>
+
+      <TabsContent value="roadmap" forceMount={keepMounted('roadmap')} className="mt-3">
+        <RoadmapCanvas
+          stages={roadmapStages}
+          onSelectStage={onSelectStage}
+          onSelectQuestion={onSelectQuestion}
+        />
+        <p className="mt-2 text-xs text-muted-foreground">
+          点阶段胶囊练习整段，点题目胶囊直接跳到那道题；已通过的节点会变绿。
+        </p>
+      </TabsContent>
 
       <TabsContent value="drawio" forceMount={keepMounted('drawio')} className="mt-3">
         <DrawioFigure
@@ -166,7 +198,7 @@ export function RouteDiagramTabs({
           </p>
         ) : !diagramXml && stages.length > 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">
-            该路线还没配置专属路线图，当前展示按阶段自动生成的示意图。
+            该路线还没配置专属自绘图，当前展示按阶段自动生成的示意图。
           </p>
         ) : null}
       </TabsContent>
@@ -174,7 +206,7 @@ export function RouteDiagramTabs({
       <TabsContent value="archify" forceMount={keepMounted('archify')} className="mt-3">
         <RouteMapFigure title={title} stages={stages} state={state} height={height} />
         <p className="mt-2 text-xs text-muted-foreground">
-          archify 路线图仍在开发中，进度着色与交互可能与最终形态有差异，正式版以 draw.io 路线图为准。
+          archify 路线图仍在开发中，进度着色与交互可能与最终形态有差异，正式版以「路线图」为准。
         </p>
       </TabsContent>
     </Tabs>

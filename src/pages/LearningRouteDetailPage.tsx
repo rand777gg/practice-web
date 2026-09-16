@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RouteDiagramTabs } from '@/components/learning-route/RouteDiagramTabs'
 import type { RouteMapStageNode } from '@/components/learning-route/RouteMapFigure'
+import type { RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
 import { useLearningRouteDetail } from '@/hooks/use-learning-routes'
 import { useAuthStore } from '@/stores/auth-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
@@ -45,6 +46,27 @@ export function Component() {
     }
     return out
   }, [detail])
+
+  const roadmapStages: RoadmapStage[] = useMemo(() => {
+    return (detail?.stages ?? []).map((s, si) => {
+      const doneCount = s.questions.filter(q => detail?.passByQuestion[q.id]).length
+      return {
+        id: s.id,
+        label: s.title || `阶段 ${si + 1}`,
+        meta: `${doneCount}/${s.questions.length} 题`,
+        done: s.questions.length > 0 && doneCount === s.questions.length,
+        questions: s.questions.map(q => ({
+          id: q.id,
+          label: questionPreview(q),
+          passed: !!detail?.passByQuestion[q.id],
+        })),
+      }
+    })
+  }, [detail])
+
+  const openStage = (stageId: string) => navigate(`/learning-routes/${routeId}/practice?stage=${stageId}`)
+  const openQuestion = (stageId: string, questionId: string) =>
+    navigate(`/learning-routes/${routeId}/practice?stage=${stageId}&start=${questionId}`)
 
   if (isLoading) {
     return (
@@ -110,6 +132,9 @@ export function Component() {
           title={route.title || '学习路线'}
           stages={stageNodes}
           state={stageState}
+          roadmap={roadmapStages}
+          onSelectStage={openStage}
+          onSelectQuestion={openQuestion}
           diagramXml={route.diagram_xml}
           height={Math.min(900, 420 + stages.length * 46)}
         />
