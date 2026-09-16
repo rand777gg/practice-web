@@ -129,7 +129,7 @@ export function DashboardPlanCards() {
       }
 
       const [roundStats, goalStats] = await Promise.all([
-        roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList)) : Promise.resolve(null),
+        roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList, profile)) : Promise.resolve(null),
         goalList.length > 0 ? fetchPlanStats(uid, goalPlanSpec(goalList)) : Promise.resolve(null),
       ])
       if (cancelled) return
@@ -138,7 +138,7 @@ export function DashboardPlanCards() {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, deadline, planResetAt, planSubjects.join(','), version, roundList, goalList])
+  }, [user?.id, deadline, planResetAt, subjectResetAt, planSubjects.join(','), version, roundList, goalList])
 
   // 错题 ∪ 收藏 的去重题数(计划学科范围内), 用于把复习量并进今日任务
   useEffect(() => {

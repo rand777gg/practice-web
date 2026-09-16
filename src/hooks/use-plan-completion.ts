@@ -18,8 +18,7 @@ export type PlanItemState = 'done' | 'overdue' | 'current' | 'upcoming'
 export type PlanItemKind = 'round' | 'goal'
 
 /**
- * 一条计划记录。长期计划的一轮和自定义计划的一批是同一个东西:
- * "从创建那天起累计刷够 quantity 题", 只是 quantity 的来源不同。
+ * 一条计划记录。长期计划的一轮 = 把这一遍里该科的题都刷一遍, 自定义计划的一批 = 刷够自己定的题数。
  */
 export interface PlanItem {
   id: string
@@ -31,7 +30,7 @@ export interface PlanItem {
   quantity: number
   target: string
   createdAt: string
-  /** 实际刷够的那天: 落库值优先, 没有就用作答记录算出来的 */
+  /** 实际刷完的那天: 落库值优先, 没有就用作答记录算出来的 */
   doneAt: string | null
   state: PlanItemState
   /** 这一批已经刷了多少题 */
@@ -39,19 +38,26 @@ export interface PlanItem {
 }
 
 export interface PlanStat {
-  /** 该学科题量 */
+  /** 轮次 = 会话队列里该科的题数; 批次 = 整科题量 */
   total: number
-  /** 统计起点以来"顺序学习"模式的作答次数 */
+  /** 轮次 = 这一遍答过的题数(按题去重); 批次 = 起点以来的作答次数 */
   attempts: number
-  /** 第 1..k 批的实际完成日 */
+  /** 轮次最多一条(这一遍刷满的那天); 批次是第 1..k 批的实际完成日 */
   doneDates: string[]
 }
 
 /** 传给 get_plan_stats 的每科参数: 起点 + 每批题数(steps) 或统一的 size(缺省 = 题量) */
 export interface PlanSpecEntry {
-  since: string
+  /** 这一遍的起点: ISO 时刻(重置) 或 YYYY-MM-DD(按当天零点); 空 = 不限起点 */
+  since?: string
   size?: number
   steps?: number[]
+}
+
+/** 重置时刻: 学科级的优先, 没有就用计划级的(和练习页判断"本次会话已作答"同一规则) */
+export interface PlanResets {
+  subject_reset_at?: Record<string, string> | null
+  plan_reset_at?: string | null
 }
 
 export interface PlanCompletion {
@@ -94,12 +100,39 @@ export function planBaselines(records: { subject: string; createdAt: string }[])
 }
 
 /**
- * 长期计划的轮次换成统计参数: 每批题量 = 该学科题量, 所以只给起点。
+ * 长期计划的轮次换成统计参数。轮次的一遍 = 把这一遍里该科的题都答过, 所以只给"这一遍的起点":
+ *   - 该科上一个已经刷完的轮次实际刷完的那天(按当天零点);
+ *   - 和学科重置时刻 / 计划重置时刻(练习页判断"本次会话已作答"用的就是它)取晚的那个 ——
+ *     重置了就是这一遍从头再来, 重置之前刷的不能算;
+ *   - 两者都没有 = 不限起点(从头累计)。
+ * 起点之后的作答按题去重, 除以该科题量就是这一遍的进度 —— 和练习页显示的是同一个数。
  */
-export function roundPlanSpec(rounds: PlanRound[]): Record<string, PlanSpecEntry> {
+export function roundPlanSpec(rounds: PlanRound[], resets?: PlanResets | null): Record<string, PlanSpecEntry> {
   const spec: Record<string, PlanSpecEntry> = {}
-  for (const [subject, since] of Object.entries(planBaselines(rounds))) spec[subject] = { since }
+  const bySubject = new Map<string, PlanRound[]>()
+  for (const r of rounds) {
+    const list = bySubject.get(r.subject)
+    if (list) list.push(r)
+    else bySubject.set(r.subject, [r])
+  }
+  for (const [subject, list] of bySubject) {
+    const ordered = [...list].sort((a, b) => a.round - b.round)
+    const open = ordered.findIndex((r) => !r.doneAt)
+    const prevDone = (open < 0 ? ordered[ordered.length - 1] : ordered[open - 1])?.doneAt ?? null
+    const doneMs = prevDone ? new Date(`${prevDone}T00:00:00`).getTime() : null
+    const resetMs = resetAt(resets, subject)
+    const since = doneMs == null ? resetMs : resetMs == null ? doneMs : Math.max(doneMs, resetMs)
+    spec[subject] = since == null ? {} : { since: new Date(since).toISOString() }
+  }
   return spec
+}
+
+/** 重置时刻(学科级优先, 没有就用计划级的 —— 和练习页 isAnsweredAfterReset 同一优先级) */
+function resetAt(resets: PlanResets | null | undefined, subject: string): number | null {
+  const at = resets?.subject_reset_at?.[subject] ?? resets?.plan_reset_at
+  if (!at) return null
+  const ms = new Date(at).getTime()
+  return Number.isFinite(ms) ? ms : null
 }
 
 /** 自定义计划的批次换成统计参数: 每批题数自己定, 交给 SQL 累加成阈值 */
@@ -153,12 +186,17 @@ function toPlanItems(kind: PlanItemKind, rows: PlanRecord[], stats: Map<string, 
   for (const [subject, list] of bySubject) {
     const stat = stats.get(subject)
     const attempts = stat?.attempts ?? 0
-    // 前面几批的题数之和: 当前这批的进度 = 总作答次数 - 前面已刷掉的
+    const ordered = [...list].sort((a, b) => a.index - b.index)
+    // 轮次: 统计只讲"当前这一遍"(第一个还没完成的轮次), 后面的都还没轮到;
+    // 批次: 阈值是各批题数的累加, 所以当前这批的进度 = 总作答次数 - 前面已刷掉的
+    const openIndex = kind === 'round' ? ordered.findIndex((r) => !r.doneAt) : -1
     let prefix = 0
     let metCurrent = false
-    ;[...list].sort((a, b) => a.index - b.index).forEach((row, i) => {
+    ordered.forEach((row, i) => {
       const quantity = row.quantity ?? stat?.total ?? 0
-      const doneAt = row.doneAt ?? stat?.doneDates[i] ?? null
+      const doneAt = kind === 'round'
+        ? row.doneAt ?? (i === openIndex ? stat?.doneDates[0] ?? null : null)
+        : row.doneAt ?? stat?.doneDates[i] ?? null
       const state: PlanItemState = doneAt
         ? 'done'
         : row.target < today ? 'overdue' : metCurrent ? 'upcoming' : 'current'
@@ -173,7 +211,11 @@ function toPlanItems(kind: PlanItemKind, rows: PlanRecord[], stats: Map<string, 
         createdAt: row.createdAt,
         doneAt,
         state,
-        done: doneAt ? quantity : Math.min(Math.max(attempts - prefix, 0), quantity),
+        done: doneAt
+          ? quantity
+          : kind === 'round'
+            ? (i === openIndex ? Math.min(attempts, quantity) : 0)
+            : Math.min(Math.max(attempts - prefix, 0), quantity),
       })
       prefix += quantity
     })
@@ -395,7 +437,7 @@ export function usePlanCompletion(): PlanCompletion {
         }
 
         const [roundStats, goalStats, goalTodayRows] = await Promise.all([
-          roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList)) : Promise.resolve(null),
+          roundList.length > 0 ? fetchPlanStats(uid, roundPlanSpec(roundList, profile)) : Promise.resolve(null),
           goalList.length > 0 ? fetchPlanStats(uid, goalPlanSpec(goalList)) : Promise.resolve(null),
           // 自定义计划那几科今天刷了多少, 给顶部菜单的"每天"进度条用
           goalSubjects.length > 0

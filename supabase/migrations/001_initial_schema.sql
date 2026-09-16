@@ -3261,3 +3261,144 @@ AS $$
   ORDER BY tot.subject;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 47: 轮次的进度 = 会话"这一遍"的进度(覆盖 Section 46 里的同一个函数)
+--   轮次 = 某学科刷完一遍。原来这一遍是按"自该轮创建日起的作答次数"累计推的:
+--   排期里第 1 轮显示 6/580, 练习页这一遍却早答了 301/580 —— 两个数字对不上,
+--   新建一轮更是把整科题量当成新账重记一遍(0/580)。
+--   现在跟练习页同一个口径:
+--     total      = 会话队列里属于该科的题数(Section 46 的口径)
+--     attempts   = 这一遍答过的题数(按题去重, 只数顺序学习的作答)
+--     done_dates = 这一遍把该科所有题都答过的那一刻(最多一条; 没刷满就是空)
+--   "这一遍"的起点由客户端算好放在 since 里: 该科上一个已完成轮次实际刷完的那天(按当天零点),
+--   和学科重置日 / 计划重置日 —— 和练习页判断"本次会话已作答"的规则完全一致, 取晚的那个;
+--   都没有 = 不限起点。since 可以是 ISO 时刻(重置)也可以是 YYYY-MM-DD(按当天 00:00 北京)。
+--   配套改动: PlanWatcher 只把 done_dates[0] 记到"第一个还没完成的轮次"上, 不再按
+--   累计阈值凭空补轮次; 客户端算 since 的地方见 roundPlanSpec。
+--   自定义计划的批次(steps 非空)口径不变: 题量自己定, 进度数作答次数。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_plan_stats(
+  p_user_id UUID,
+  -- { "学科": { "since": "2026-08-14T11:36:50.375Z", "size": 128, "steps": [128, 50] } }
+  --   since 这一遍的起点(可空 = 不限); size/steps 都不给 = 长期计划的轮次(跟会话走)
+  --   steps 给的是每批题数, 内部累加成阈值(自定义计划的批次可以每批题数不同)
+  p_plan    JSONB
+)
+RETURNS TABLE(subject TEXT, total BIGINT, attempts BIGINT, done_dates JSONB)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  WITH base AS (
+    SELECT e.key AS subject,
+           -- 起点: ISO 时刻(重置) 或 日期(按当天 00:00 北京)
+           CASE
+             WHEN COALESCE(e.value->>'since', '') = '' THEN NULL
+             WHEN (e.value->>'since') ~ '^\d{4}-\d{2}-\d{2}$'
+               THEN ((e.value->>'since') || ' 00:00:00+08')::TIMESTAMPTZ
+             ELSE (e.value->>'since')::TIMESTAMPTZ
+           END                                     AS since,
+           NULLIF(e.value->>'size', '')::BIGINT    AS size,
+           COALESCE(e.value->'steps', '[]'::jsonb) AS steps
+    FROM jsonb_each(COALESCE(p_plan, '{}'::jsonb)) AS e
+  ),
+  -- 当前顺序刷题会话的题目队列; 没有会话时下面退回整科口径
+  sess AS (
+    SELECT s.question_ids
+    FROM public.practice_sequential_state s
+    WHERE s.user_id = p_user_id
+    ORDER BY s.updated_at DESC
+    LIMIT 1
+  ),
+  -- 每个学科"这一遍要刷的题": 自定义批次不跟会话走; 有会话就只看会话里的题
+  scope AS (
+    SELECT q.id, q.subject, b.since, b.size, b.steps
+    FROM base b
+    JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) > 0
+       OR (SELECT question_ids FROM sess) IS NULL
+       OR q.id = ANY(COALESCE((SELECT question_ids FROM sess), '{}'::UUID[]))
+  ),
+  tot AS (
+    SELECT sc.subject, sc.since, sc.size, sc.steps, COUNT(sc.id)::BIGINT AS total
+    FROM scope sc
+    GROUP BY sc.subject, sc.since, sc.size, sc.steps
+  ),
+  -- 这一遍的作答(只数顺序学习)
+  answers AS (
+    SELECT sc.subject, ua.question_id, ua.id AS answer_id, ua.answered_at
+    FROM scope sc
+    JOIN public.user_answers ua ON ua.question_id = sc.id
+    WHERE ua.user_id = p_user_id
+      AND ua.mode = 'practice'
+      AND ua.source IS DISTINCT FROM 'random'
+      AND (sc.since IS NULL OR ua.answered_at >= sc.since)
+  ),
+  -- 轮次: 同一题在这一遍里重复刷只算一道, 取最早那次
+  q_once AS (
+    SELECT a.subject, a.question_id, MIN(a.answered_at) AS answered_at
+    FROM answers a
+    GROUP BY a.subject, a.question_id
+  ),
+  q_rank AS (
+    SELECT q.subject, q.question_id, q.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY q.subject ORDER BY q.answered_at, q.question_id) AS rn
+    FROM q_once q
+  ),
+  -- 自定义批次: 仍然数作答次数
+  evt AS (
+    SELECT a.subject, a.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY a.subject ORDER BY a.answered_at, a.answer_id) AS rn
+    FROM answers a
+  ),
+  -- 批次完成时刻 = 起点以来第 (前 k 批题数之和) 次作答
+  mark_goal AS (
+    SELECT b.subject, SUM(x.v) OVER (PARTITION BY b.subject ORDER BY x.ord) AS rn
+    FROM tot b
+    CROSS JOIN LATERAL (
+      SELECT (v.value)::BIGINT AS v, v.ord
+      FROM jsonb_array_elements_text(b.steps) WITH ORDINALITY AS v(value, ord)
+    ) x
+  ),
+  -- 一轮完成时刻 = 这一遍把该科的题都答过的那一刻(最多一条)
+  mark_round AS (
+    SELECT d.subject, d.rn, d.answered_at
+    FROM q_rank d
+    JOIN tot b ON b.subject = d.subject
+    WHERE jsonb_array_length(b.steps) = 0
+      AND COALESCE(b.size, b.total) > 0
+      AND d.rn = COALESCE(b.size, b.total)
+  ),
+  dated AS (
+    SELECT g.subject, e.answered_at
+    FROM mark_goal g
+    JOIN evt e ON e.subject = g.subject AND e.rn = g.rn
+    UNION ALL
+    SELECT r.subject, r.answered_at FROM mark_round r
+  )
+  SELECT
+    tot.subject,
+    tot.total,
+    CASE WHEN jsonb_array_length(tot.steps) > 0
+      THEN COALESCE((SELECT COUNT(*) FROM evt e WHERE e.subject = tot.subject), 0)
+      ELSE LEAST(COALESCE((SELECT COUNT(*) FROM q_once q WHERE q.subject = tot.subject), 0), tot.total)
+    END AS attempts,
+    COALESCE((
+      SELECT jsonb_agg(
+               to_char((d.answered_at AT TIME ZONE 'Asia/Shanghai')::DATE, 'YYYY-MM-DD')
+               ORDER BY d.answered_at
+             )
+      FROM dated d WHERE d.subject = tot.subject
+    ), '[]'::jsonb) AS done_dates
+  FROM tot
+  ORDER BY tot.subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;

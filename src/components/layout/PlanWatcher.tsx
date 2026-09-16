@@ -37,8 +37,9 @@ interface CompletedBatch {
 
 /**
  * 把"真的刷完了"的记录同步进计划:
- *   - 长期计划的轮次: 阈值(该科题量)是已知的, 所以已经刷完但计划里没有的轮次也补上
- *     —— 旗子就插在实际刷完的那天; 计划里有、还没落库完成日的, 补上完成日。
+ *   - 长期计划的轮次: 统计讲的永远是"当前这一遍"什么时候把该科的题都过完了(done_dates[0]),
+ *     而这一遍对应的就是该科第一个还没完成的轮次 —— 给它插旗子, 旗子插在这一遍刷满的那天。
+ *     这一遍还没刷满就什么都不做(轮次不再按累计作答次数凭空补出来)。
  *   - 自定义计划的批次: 每批题数由用户定, 没定过的批次无从判定, 只补已计划那几批的完成日。
  * 返回 null 表示没有变化。只有该学科没有"还没刷完的记录"时, 才算这一条刷完、该问下次了。
  */
@@ -56,36 +57,17 @@ function syncCompletedRounds(
       .sort((a, b) => a.round - b.round)
     if (ordered.length === 0) continue
 
-    let newest: CompletedBatch | null = null
-    const newer = (c: CompletedBatch) => { if (!newest || c.doneAt > newest.doneAt) newest = c }
+    const open = ordered.find((r) => !r.doneAt)
+    if (!open) continue
+    const doneAt = stat.doneDates[0]
+    if (!doneAt) continue
 
-    for (let i = ordered.length; i < stat.doneDates.length; i++) {
-      const doneAt = stat.doneDates[i]
-      const rec: PlanRound = {
-        id: newRoundId(),
-        subject,
-        round: ordered[ordered.length - 1].round + 1,
-        target: doneAt,
-        createdAt: doneAt,
-        doneAt,
-      }
-      next.push(rec)
-      ordered.push(rec)
-      changed = true
-      newer({ kind: 'round', subject, index: rec.round, doneAt })
+    open.doneAt = doneAt
+    changed = true
+    // 后面还排着没完成的轮次 -> 不用问下次, 用户早就安排好了
+    if (!ordered.some((r) => !r.doneAt)) {
+      candidates.push({ kind: 'round', subject, index: open.round, doneAt })
     }
-
-    ordered.forEach((r, i) => {
-      const doneAt = stat.doneDates[i]
-      if (doneAt && !r.doneAt) {
-        r.doneAt = doneAt
-        changed = true
-        newer({ kind: 'round', subject, index: r.round, doneAt })
-      }
-    })
-
-    // 前面还有排好队的记录 -> 不用问下次, 用户早就安排好了
-    if (newest && !ordered.some((r) => !r.doneAt)) candidates.push(newest)
   }
 
   if (!changed) return { rounds: null, latest: null }
@@ -191,7 +173,7 @@ export function PlanWatcher() {
     let cancelled = false
     void (async () => {
       const [roundStats, goalStats] = await Promise.all([
-        rounds.length > 0 ? fetchPlanStats(user.id, roundPlanSpec(rounds)) : Promise.resolve(null),
+        rounds.length > 0 ? fetchPlanStats(user.id, roundPlanSpec(rounds, profile)) : Promise.resolve(null),
         goals.length > 0 ? fetchPlanStats(user.id, goalPlanSpec(goals)) : Promise.resolve(null),
       ])
       if (cancelled || busy.current) return

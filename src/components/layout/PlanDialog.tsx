@@ -140,7 +140,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     const savedGoals = resolveGoals(profile)
     let cancelled = false
     void Promise.all([
-      savedRounds.length > 0 ? fetchPlanStats(user.id, roundPlanSpec(savedRounds)) : Promise.resolve(null),
+      savedRounds.length > 0 ? fetchPlanStats(user.id, roundPlanSpec(savedRounds, profile)) : Promise.resolve(null),
       savedGoals.length > 0 ? fetchPlanStats(user.id, goalPlanSpec(savedGoals)) : Promise.resolve(null),
     ]).then(([r, g]) => {
       if (cancelled) return
