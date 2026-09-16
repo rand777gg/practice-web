@@ -104,11 +104,12 @@ export function planBaselines(records: { subject: string; createdAt: string }[])
 }
 
 /**
- * 每个学科"当前这一遍"的起点(毫秒时间戳): 取下面三个里最晚的那个 ——
- *   - 该科第一个还没完成的轮次的**起始日**(用户自己定的这一轮从哪天开始);
+ * 每个学科"当前这一遍"的起点(毫秒时间戳): 取下面两个里最晚的那个 ——
  *   - 上一轮实际刷完的那天(那之前的作业属于上一遍);
  *   - 学科重置时刻 / 计划重置时刻(重置 = 这一遍从头再来)。
- * 一条都没占上的学科(没起始日、没刷完过、也没重置过)不出现在表里 = 不限起点(从头累计)。
+ * 轮次上填的起始日**不参与**统计 —— 那只是这一轮排期窗口的左端(甘特图/排期展示用),
+ * 不然给某轮设个晚一点的起始日会把这一遍之前做过的题凭空排除掉。
+ * 一条都没占上的学科不出现在表里 = 不限起点(从头累计)。
  * 计划侧的轮次统计和练习页的"本次会话已作答"都用它, 两边显示的就永远是同一个数。
  */
 export function passStartBySubject(rounds: PlanRound[], resets?: PlanResets | null): Record<string, number> {
@@ -122,15 +123,11 @@ export function passStartBySubject(rounds: PlanRound[], resets?: PlanResets | nu
   for (const [subject, list] of bySubject) {
     const ordered = [...list].sort((a, b) => a.round - b.round)
     const open = ordered.findIndex((r) => !r.doneAt)
-    const days = [
-      (open < 0 ? ordered[ordered.length - 1] : ordered[open - 1])?.doneAt ?? null,
-      (open < 0 ? null : ordered[open].start),
-    ]
+    const prevDone = (open < 0 ? ordered[ordered.length - 1] : ordered[open - 1])?.doneAt ?? null
     let ms: number | null = null
-    for (const day of days) {
-      if (!day) continue
-      const t = new Date(`${day}T00:00:00`).getTime()
-      if (Number.isFinite(t) && (ms == null || t > ms)) ms = t
+    if (prevDone) {
+      const t = new Date(`${prevDone}T00:00:00`).getTime()
+      if (Number.isFinite(t)) ms = t
     }
     const reset = resetAt(resets, subject)
     if (reset != null && (ms == null || reset > ms)) ms = reset

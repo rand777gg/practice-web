@@ -110,16 +110,17 @@ export function todayStr(): string {
 /**
  * 长期计划下的一轮 = 某学科刷完一遍题。只认真实记录:
  * 起始日与目标完成日由用户设定, 实际完成日由刷题数据检测出来后落库。
- * 一轮的统计窗口 = [起始日, 目标完成日]: 起始日之后做过的题才算这一遍。
+ * 起始日/目标日只是这一轮的排期窗口(甘特图条形、逾期判断);
+ * "这一遍的进度"另算: 起点 = 上一轮实际刷完那天 / 学科重置时刻, 见 passStartBySubject。
  */
 export interface PlanRound {
   id: string
   subject: string
   /** 该学科第几轮, 从 1 开始 */
   round: number
-  /** YYYY-MM-DD 这一轮的起始日(统计起点, 也是甘特图条形左端); null = 没设过, 沿用旧规则 */
+  /** YYYY-MM-DD 这一轮的起始日(排期窗口左端, 甘特图条形左端); null = 没设过 */
   start: string | null
-  /** YYYY-MM-DD 计划完成日, 不超过长期计划 deadline */
+  /** YYYY-MM-DD 计划完成日(排期窗口右端), 不超过长期计划 deadline */
   target: string
   /** YYYY-MM-DD 创建这轮的那天 */
   createdAt: string
