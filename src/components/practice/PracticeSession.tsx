@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useSequentialStore, markPracticeSync, sameSubjects } from '@/stores/sequential-store'
+import { earliestPassStart, fetchAnsweredRows } from '@/lib/answered-rows'
 
 import { useUserAnswers } from '@/hooks/use-user-answers'
 import { useFavorites } from '@/hooks/use-favorites'
@@ -396,16 +397,12 @@ export function PracticeSession() {
     const CHUNK = 200
     const chunks: string[][] = []
     for (let i = 0; i < seqQuestionIds.length; i += CHUNK) chunks.push(seqQuestionIds.slice(i, i + CHUNK))
-    Promise.all(chunks.map(chunk =>
-      supabase.from('user_answers')
-        .select('question_id, answered_at')
-        .eq('user_id', user.id)
-        .in('question_id', chunk)
-    )).then(results => {
+    const since = earliestPassStart(seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at)
+    Promise.all(chunks.map(chunk => fetchAnsweredRows(user.id, chunk, since))).then(results => {
       if (cancelled) return
       const latest = new Map<string, string>()
-      for (const r of results) {
-        for (const row of (r.data ?? []) as { question_id: string; answered_at: string }[]) {
+      for (const rows of results) {
+        for (const row of rows) {
           const prev = latest.get(row.question_id)
           if (!prev || row.answered_at > prev) latest.set(row.question_id, row.answered_at)
         }

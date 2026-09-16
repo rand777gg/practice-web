@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { cn, naturalSort } from '@/lib/utils'
+import { earliestPassStart, fetchAnsweredRows } from '@/lib/answered-rows'
 import { ExcludedQuestionsDialog } from '@/components/practice/ExcludedQuestionsDialog'
 import { SubjectExplanationDialog } from '@/components/practice/SubjectExplanationDialog'
 import { useSubjectExplanations } from '@/hooks/use-subject-explanations'
@@ -146,29 +147,25 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
     answeredRef.current = new Map()
     correctRef.current = new Map()
     const CHUNK = 600
+    const since = earliestPassStart(questionSubjects, subjectResets, planResetAt)
     const chunks: string[][] = []
     for (let i = 0; i < questionIds.length; i += CHUNK) chunks.push(questionIds.slice(i, i + CHUNK))
     for (const chunk of chunks) {
-      supabase.from('user_answers')
-        .select('question_id, answered_at, is_correct')
-        .eq('user_id', userId)
-        .in('question_id', chunk)
-        .then(({ data }) => {
-          if (cancelled) return
-          const rows = (data ?? []) as { question_id: string; answered_at: string; is_correct: boolean }[]
-          for (const row of rows) {
-            const prev = answeredRef.current.get(row.question_id)
-            if (!prev || row.answered_at > prev) {
-              answeredRef.current.set(row.question_id, row.answered_at)
-              correctRef.current.set(row.question_id, row.is_correct)
-            }
+      fetchAnsweredRows(userId, chunk, since).then((rows) => {
+        if (cancelled) return
+        for (const row of rows) {
+          const prev = answeredRef.current.get(row.question_id)
+          if (!prev || row.answered_at > prev) {
+            answeredRef.current.set(row.question_id, row.answered_at)
+            correctRef.current.set(row.question_id, row.is_correct)
           }
-          setAnsweredMap(new Map(answeredRef.current))
-          setLatestCorrectMap(new Map(correctRef.current))
-        })
+        }
+        setAnsweredMap(new Map(answeredRef.current))
+        setLatestCorrectMap(new Map(correctRef.current))
+      })
     }
     return () => { cancelled = true }
-  }, [userId, questionIds])
+  }, [userId, questionIds, questionSubjects, subjectResets, planResetAt])
 
   const groups = useMemo<KpGroup[]>(() => {
     const out: KpGroup[] = []
