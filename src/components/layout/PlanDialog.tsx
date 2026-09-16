@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Check, ChevronDown, HelpCircle, Plus, X } from 'lucide-react'
+import { Check, ChevronDown, HelpCircle, Plus, X, CalendarClock } from 'lucide-react'
 import {
   Dialog,
   DialogClose,
@@ -45,7 +45,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { PlanGoal, PlanRound } from '@/types'
-import { resolveGoals, resolveRounds, newRoundId, addDays, toDateStr, todayStr } from '@/types'
+import { resolveGoals, resolveRounds, newRoundId, addDays, daysBetweenDays, toDateStr, todayStr } from '@/types'
 import {
   buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanStat,
@@ -308,6 +308,23 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const updateRoundTarget = (id: string, target: string) => {
     setRoundError('')
     setRounds((prev) => prev.map((r) => (r.id === id ? { ...r, target } : r)))
+  }
+
+  /**
+   * 逾期顺延: 按这一轮原本的时长, 从今天重新排一遍 —— 这一轮的新窗口 = 今天 → 今天+原时长,
+   * 同学科后面几轮整体平移同样的天数(间隔不变)。还没刷完的轮次才会用到, 保存后才落库。
+   */
+  const postponeRound = (id: string) => {
+    setRoundError('')
+    setRounds((prev) => {
+      const target = prev.find((r) => r.id === id)
+      if (!target) return prev
+      const span = Math.max(target.start ? daysBetweenDays(target.start, target.target) : 7, 1)
+      const delta = daysBetweenDays(target.target, addDays(todayStr(), span))
+      return prev.map((r) => (r.subject === target.subject && r.round >= target.round
+        ? { ...r, start: r.start ? addDays(r.start, delta) : null, target: addDays(r.target, delta) }
+        : r))
+    })
   }
 
   /** 校验: 每轮都要有目标完成日(起始日可选), 起止顺序正确, 不超过计划最后一天, 同学科按轮次递增 */
@@ -665,7 +682,32 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                               {p?.done}/{p?.quantity}{t('plan.questions')}
                             </span>
                           )}
-                          <Button variant="ghost" size="sm" className="ml-auto h-6 w-6 shrink-0 p-0 text-destructive" onClick={() => removeRound(r.id)} disabled={saving}>
+                          {!doneAt && r.target < todayStr() && (
+                            <TooltipProvider delayDuration={200}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="ml-auto h-6 shrink-0 gap-1 px-1.5 text-[10px]"
+                                    onClick={() => postponeRound(r.id)}
+                                    disabled={saving}
+                                  >
+                                    <CalendarClock className="h-3 w-3" />
+                                    {t('plan.roundPostpone')}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-[220px] text-[11px]">{t('plan.roundPostponeHint')}</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn('h-6 w-6 shrink-0 p-0 text-destructive', !doneAt && r.target < todayStr() ? '' : 'ml-auto')}
+                            onClick={() => removeRound(r.id)}
+                            disabled={saving}
+                          >
                             <X className="h-3 w-3" />
                           </Button>
                         </div>
