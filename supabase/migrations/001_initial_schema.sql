@@ -3147,3 +3147,117 @@ AS $$
   ) t;
 $$;
 GRANT EXECUTE ON FUNCTION public.get_review_pool_count(UUID, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 46: 轮次的"一遍"以当前顺序刷题会话为准
+--   轮次 = 某学科刷完一遍。这一遍到底有多少题, 原来按"整科题量"算, 和用户实际
+--   在刷的那条会话队列对不上: 会话是按认领的知识点组出来的(还可能少几道没有
+--   知识点的题), 题量比整科少, 于是轮次永远卡在 60/100 这类进度上, 也不会
+--   在被判"刷完"的时机落完成日。
+--   现在改成: 该科这一轮的题量 = 当前会话队列里属于该科的题数, 作答也只数
+--   会话里那几道题。"当前会话" = 该用户最近更新的一条 practice_sequential_state
+--   (练习页每次作答/翻页都会更新它)。没有会话时(计划刚建、会话被删)退回整科
+--   口径, 与旧行为一致。
+--   自定义计划的批次(steps 非空)题量由用户自己定, 不跟会话走, 沿用旧口径。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_plan_stats(
+  p_user_id UUID,
+  -- { "学科": { "since": "YYYY-MM-DD", "size": 128, "steps": [128, 50] } }
+  --   since 统计起点(该科第一批的创建日); size/steps 都不给 = 每批一科一遍(长期计划的轮次, 跟会话走)
+  --   steps 给的是每批题数, 内部累加成阈值(自定义计划的批次可以每批题数不同)
+  p_plan    JSONB
+)
+RETURNS TABLE(subject TEXT, total BIGINT, attempts BIGINT, done_dates JSONB)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  WITH base AS (
+    SELECT e.key AS subject,
+           (e.value->>'since')::DATE              AS since,
+           NULLIF(e.value->>'size', '')::BIGINT   AS size,
+           COALESCE(e.value->'steps', '[]'::jsonb) AS steps
+    FROM jsonb_each(COALESCE(p_plan, '{}'::jsonb)) AS e
+  ),
+  -- 当前顺序刷题会话的题目队列; 没有会话时下面退回整科口径
+  sess AS (
+    SELECT s.question_ids
+    FROM public.practice_sequential_state s
+    WHERE s.user_id = p_user_id
+    ORDER BY s.updated_at DESC
+    LIMIT 1
+  ),
+  -- 每个学科"这一遍要刷的题": 自定义批次不跟会话走; 有会话就只看会话里的题
+  scope AS (
+    SELECT q.id, q.subject, b.since, b.size, b.steps
+    FROM base b
+    JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) > 0
+       OR (SELECT question_ids FROM sess) IS NULL
+       OR q.id = ANY(COALESCE((SELECT question_ids FROM sess), '{}'::UUID[]))
+  ),
+  tot AS (
+    SELECT sc.subject, sc.since, sc.size, sc.steps, COUNT(sc.id)::BIGINT AS total
+    FROM scope sc
+    GROUP BY sc.subject, sc.since, sc.size, sc.steps
+  ),
+  att AS (
+    SELECT t.id, t.subject, t.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY t.subject ORDER BY t.answered_at, t.id) AS rn
+    FROM (
+      SELECT ua.id, ua.answered_at, sc.subject
+      FROM public.user_answers ua
+      JOIN scope sc ON sc.id = ua.question_id
+      WHERE ua.user_id = p_user_id
+        AND ua.mode = 'practice'
+        AND ua.source IS DISTINCT FROM 'random'
+        -- 起点按北京时间当天 00:00 算(与客户端"今日"的 UTC 16:00 口径一致)
+        AND ua.answered_at >= (sc.since::text || ' 00:00:00+08')::TIMESTAMPTZ
+    ) t
+  ),
+  -- 第 k 批刷够的时刻 = 起点以来第 (前 k 批题数之和) 次作答
+  mark AS (
+    SELECT b.subject, SUM(s.v) OVER (PARTITION BY b.subject ORDER BY s.ord) AS rn
+    FROM tot b
+    CROSS JOIN LATERAL (
+      SELECT (x.value)::BIGINT AS v, x.ord
+      FROM jsonb_array_elements_text(b.steps) WITH ORDINALITY AS x(value, ord)
+    ) s
+    UNION ALL
+    -- 没给每批题数: 按 size(缺省 = 这一遍的题量)的整数倍算
+    SELECT a.subject, a.rn
+    FROM att a
+    JOIN tot b ON b.subject = a.subject
+    WHERE jsonb_array_length(b.steps) = 0
+      AND COALESCE(b.size, b.total) > 0
+      AND a.rn % COALESCE(b.size, b.total) = 0
+  )
+  SELECT
+    tot.subject,
+    tot.total,
+    COALESCE(cnt.attempts, 0) AS attempts,
+    COALESCE(dd.dates, '[]'::jsonb) AS done_dates
+  FROM tot
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS attempts
+    FROM att WHERE att.subject = tot.subject
+  ) cnt ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT jsonb_agg(
+             to_char((a.answered_at AT TIME ZONE 'Asia/Shanghai')::DATE, 'YYYY-MM-DD')
+             ORDER BY a.rn
+           ) AS dates
+    FROM att a
+    JOIN mark m ON m.subject = a.subject AND m.rn = a.rn
+    WHERE a.subject = tot.subject
+  ) dd ON TRUE
+  ORDER BY tot.subject;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_plan_stats(UUID, JSONB) TO authenticated;
