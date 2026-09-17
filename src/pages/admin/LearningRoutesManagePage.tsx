@@ -179,6 +179,16 @@ export function Component() {
                       编辑
                     </Button>
                     <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      title="全屏画布，右击加节点、拖动摆位置"
+                      onClick={() => navigate(`/admin/learning-routes/${route.id}/canvas`)}
+                    >
+                      <Map className="mr-1 h-3.5 w-3.5" />
+                      画布
+                    </Button>
+                    <Button
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"

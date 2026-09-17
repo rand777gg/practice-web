@@ -51,6 +51,10 @@ interface Props {
   onSelectStage?: (stageId: string) => void
   onSelectQuestion?: (stageId: string, questionId: string) => void
   editor?: RoadmapEditor
+  /** 撑满父容器高度(大画布页用), 空白处也能右击加节点 */
+  fill?: boolean
+  /** 画布宽度上限; 大画布页给大值, 好把节点拖到主干旁边 */
+  maxWidth?: number
   className?: string
 }
 
@@ -58,6 +62,8 @@ const MARGIN = 20
 const MIN_W = 820
 const MAX_W = 1180
 const DEFAULT_W = 1040
+/** 自动布局铺开的最大宽度; 画布再宽也只是留白给手动摆放 */
+const AUTO_BAND = MAX_W
 /** 手动坐标按这个基准宽度存储, 换宽度时按比例还原 */
 const CANON_W = 1180
 const STAGE_W = 320
@@ -183,7 +189,9 @@ function curveBetween(a: { x: number; y: number; w: number; h: number }, b: { x:
   return `M ${from.x} ${from.y} C ${from.x} ${mid}, ${to.x} ${mid}, ${to.x} ${to.y}`
 }
 
-export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor, className }: Props) {
+export function RoadmapCanvas({
+  stages, onSelectStage, onSelectQuestion, editor, fill = false, maxWidth = MAX_W, className,
+}: Props) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '')
   const arrowId = `rm-arrow-${uid}`
   const arrowDoneId = `rm-arrow-done-${uid}`
@@ -191,6 +199,7 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const [hostW, setHostW] = useState(0)
+  const [hostH, setHostH] = useState(0)
   /** 指针停在哪个节点上: 该节点到主干的路径点亮, 其余淡出 */
   const [hover, setHover] = useState<RoadmapNodeTarget | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -200,18 +209,22 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
   useEffect(() => {
     const el = hostRef.current
     if (!el) return
-    setHostW(Math.round(el.getBoundingClientRect().width))
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width
-      if (typeof w === 'number') setHostW(Math.round(w))
+    // ResizeObserver 观察时会立刻回调一次当前尺寸, 不用在 effect 里同步量一遍
+    const ro = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect()
+      setHostW(Math.round(rect.width))
+      setHostH(Math.round(rect.height))
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
 
-  const width = Math.max(MIN_W, Math.min(MAX_W, hostW || DEFAULT_W))
+  const width = Math.max(MIN_W, Math.min(maxWidth, hostW || DEFAULT_W))
   const cx = width / 2
-  const baseChildW = childWidth(width)
+  /** 自动布局只在这个舒服的宽度内铺开, 更宽的画布留给手动摆放 */
+  const bandW = Math.min(width, AUTO_BAND)
+  const bandLeft = (width - bandW) / 2
+  const baseChildW = childWidth(bandW)
 
   const layout = useMemo(() => {
     const rows: PlacedStage[] = []
@@ -246,7 +259,7 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
         let cy = colTop
         list.forEach((q, i) => {
           q.index = i
-          q.x = side === 'left' ? MARGIN : width - MARGIN - q.w
+          q.x = side === 'left' ? bandLeft + MARGIN : bandLeft + bandW - MARGIN - q.w
           q.y = cy
           cy += q.h + CHILD_GAP
         })
@@ -295,9 +308,11 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
       rows,
       height: Math.max(STAGE_H, y - BAND_GAP, manualBottom) + BOTTOM_PAD,
     }
-  }, [stages, width, cx, baseChildW])
+  }, [stages, width, cx, baseChildW, bandLeft, bandW])
 
   const questionCount = stages.reduce((n, s) => n + s.questions.length, 0)
+  /** 大画布: 画布至少铺满容器, 空白处也能右击加节点 */
+  const canvasH = fill ? Math.max(layout.height, hostH - 16) : layout.height
 
   const sameTarget = (a: RoadmapNodeTarget | null, b: RoadmapNodeTarget) =>
     !!a && a.stageId === b.stageId && (a.questionId ?? '') === (b.questionId ?? '')
@@ -344,7 +359,7 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
       const commit = (node: { x: number; y: number; w: number; h: number }, target: RoadmapNodeTarget) => {
         editor.onMoveNode(target, {
           x: normalizeX(Math.min(Math.max(node.x + drag.dx, 0), width - node.w), width),
-          y: Math.round(Math.min(Math.max(node.y + drag.dy, 0), Math.max(0, layout.height - node.h))),
+          y: Math.round(Math.min(Math.max(node.y + drag.dy, 0), Math.max(0, canvasH - node.h))),
         })
       }
       if (drag.target.questionId) {
@@ -457,7 +472,7 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
     const current: RouteNodeStyle = (q ?? row.stage).style ?? {}
     const manual = current.x !== undefined && current.y !== undefined
     const left = Math.min(Math.max(geom.x + geom.w - 40, 4), Math.max(4, width - 268))
-    const top = Math.min(geom.y + geom.h + 8, Math.max(4, layout.height - 190))
+    const top = Math.min(geom.y + geom.h + 8, Math.max(4, canvasH - 190))
     return (
       <div
         data-roadmap-popup
@@ -589,7 +604,7 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
     }
 
     const left = Math.min(menu.x, Math.max(4, width - 190))
-    const top = Math.min(menu.y, Math.max(4, layout.height - items.length * 30 - 16))
+    const top = Math.min(menu.y, Math.max(4, canvasH - items.length * 30 - 16))
     return (
       <div
         data-roadmap-popup
@@ -615,8 +630,8 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
   })()
 
   return (
-    <div className={className}>
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+    <div className={cn(fill && 'flex h-full min-h-0 flex-col', className)}>
+      <div className={cn('mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground', fill && 'shrink-0')}>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-7 rounded border-2 border-amber-500/50 bg-amber-100/80 dark:border-amber-400/40 dark:bg-amber-400/10" />
           阶段
@@ -641,11 +656,11 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
         )}
       </div>
 
-      <div ref={hostRef} className="overflow-x-auto rounded-xl border bg-muted/20 p-2">
+      <div ref={hostRef} className={cn('overflow-auto rounded-xl border bg-muted/20 p-2', fill && 'min-h-0 flex-1')}>
         <div
           ref={canvasRef}
           className="relative mx-auto"
-          style={{ width, height: layout.height }}
+          style={{ width, height: canvasH }}
           onContextMenu={(e) => {
             if (!editor) return
             e.preventDefault()
@@ -657,8 +672,8 @@ export function RoadmapCanvas({ stages, onSelectStage, onSelectQuestion, editor,
           <svg
             className="pointer-events-none absolute inset-0"
             width={width}
-            height={layout.height}
-            viewBox={`0 0 ${width} ${layout.height}`}
+            height={canvasH}
+            viewBox={`0 0 ${width} ${canvasH}`}
             aria-hidden
           >
             <defs>

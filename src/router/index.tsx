@@ -271,6 +271,10 @@ export const router = createBrowserRouter([
                     path: 'learning-routes/:routeId/edit',
                     lazy: () => import('@/pages/admin/LearningRouteEditPage'),
                   },
+                  {
+                    path: 'learning-routes/:routeId/canvas',
+                    lazy: () => import('@/pages/admin/LearningRouteCanvasPage'),
+                  },
                 ],
               },
             ],
