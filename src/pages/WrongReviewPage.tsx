@@ -65,8 +65,11 @@ function SkeletonCard() {
 }
 
 type FilterMode = 'all' | 'practice' | 'exam'
-type SortMode = 'wrongCount' | 'latest'
+type SortMode = 'wrongCount' | 'latest' | 'keyPoint'
 const BATCH = 20
+
+const splitKeyPoints = (keyPoints: string | null) =>
+  (keyPoints || '').split(/[,，;；]/).map(s => s.trim()).filter(Boolean)
 
 export function Component() {
   const { t } = useT()
@@ -98,7 +101,7 @@ export function Component() {
       if (!q) continue
       const subj = q.subject || '其他'
       if (!map.has(subj)) map.set(subj, new Set())
-      if (q.key_points) for (const k of String(q.key_points).split(/[,，;；]/)) { const t = k.trim(); if (t) map.get(subj)!.add(t) }
+      for (const k of splitKeyPoints(q.key_points)) map.get(subj)!.add(k)
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).map(([s, kps]) => ({ subject: s, keyPoints: [...kps].sort(naturalSort) }))
   }, [answers])
@@ -115,15 +118,32 @@ export function Component() {
     return true
   }), [answers, selectedSubject, selectedCategory, selectedType, selectedKp])
 
+  // 各知识点在当前筛选范围内的错题道数(answers 已按题目去重)
+  const kpWrongCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const a of filtered) {
+      for (const kp of splitKeyPoints(a.questions?.key_points ?? null)) counts[kp] = (counts[kp] ?? 0) + 1
+    }
+    return counts
+  }, [filtered])
+
+  // 一道题归到它最薄弱的那个知识点上, 多知识点时取最大值
+  const topKpWrongCount = useCallback((q?: Question) => {
+    let max = 0
+    for (const kp of splitKeyPoints(q?.key_points ?? null)) max = Math.max(max, kpWrongCounts[kp] ?? 0)
+    return max
+  }, [kpWrongCounts])
+
   const sorted = useMemo(() => {
     const list = [...filtered]
-    if (sortBy === 'wrongCount') {
-      list.sort((a, b) => (wrongCounts[b.question_id] ?? 0) - (wrongCounts[a.question_id] ?? 0) || new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime())
-    } else {
-      list.sort((a, b) => new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime())
-    }
+    const byWrongCount = (a: WrongWithQuestion, b: WrongWithQuestion) => (wrongCounts[b.question_id] ?? 0) - (wrongCounts[a.question_id] ?? 0)
+    const byLatest = (a: WrongWithQuestion, b: WrongWithQuestion) => new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime()
+    const byKp = (a: WrongWithQuestion, b: WrongWithQuestion) => topKpWrongCount(b.questions) - topKpWrongCount(a.questions)
+    if (sortBy === 'wrongCount') list.sort((a, b) => byWrongCount(a, b) || byLatest(a, b))
+    else if (sortBy === 'keyPoint') list.sort((a, b) => byKp(a, b) || byWrongCount(a, b) || byLatest(a, b))
+    else list.sort(byLatest)
     return list
-  }, [filtered, sortBy, wrongCounts])
+  }, [filtered, sortBy, wrongCounts, topKpWrongCount])
 
   const fetchGenRef = useRef(0)
 
@@ -196,9 +216,10 @@ export function Component() {
             <DropdownMenuItem onClick={() => setMode('exam')}>考试{ mode === 'exam' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-1 text-xs">{sortBy === 'wrongCount' ? '错误次数最多' : '最近出错'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant={sortBy === 'keyPoint' ? 'default' : 'outline'} size="sm" className="gap-1 text-xs">{sortBy === 'wrongCount' ? '错误次数最多' : sortBy === 'keyPoint' ? '薄弱知识点优先' : '最近出错'}<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem onClick={() => setSortBy('wrongCount')}>错误次数最多{sortBy === 'wrongCount' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSortBy('keyPoint')}>薄弱知识点优先{sortBy === 'keyPoint' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setSortBy('latest')}>最近出错{sortBy === 'latest' && <Check className="h-4 w-4 ml-auto" />}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -252,9 +273,14 @@ export function Component() {
                   <div className="flex flex-wrap gap-1">
                     {q.subject && <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{q.subject}</span>}
                     {q.categories?.length ? q.categories.map((cat: string) => <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">{cat}</span>) : null}
-                    {q.key_points && q.key_points.split(',').filter(Boolean).map((kp, i) => (
-                      <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]}>{kp.trim()}</Badge>
-                    ))}
+                    {splitKeyPoints(q.key_points).map((kp, i) => {
+                      const n = kpWrongCounts[kp] ?? 0
+                      return (
+                        <Badge key={i} variant="secondary" className={POINT_COLORS[i % POINT_COLORS.length]} title={n > 0 ? `该知识点共 ${n} 道错题` : undefined}>
+                          {kp}{n > 0 && <span className="ml-1 opacity-70">错 {n} 题</span>}
+                        </Badge>
+                      )
+                    })}
                   </div>
                   <div className="text-sm font-medium leading-relaxed"><MarkdownRenderer content={q.question_text} className="[&_p]:my-0" /></div>
                   <AnswerInfo q={q} selected={a.selected_answer} />
