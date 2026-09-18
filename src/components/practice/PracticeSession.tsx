@@ -6,7 +6,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { useSequentialStore, markPracticeSync, sameSubjects } from '@/stores/sequential-store'
-import { earliestPassStart, fetchAnsweredRows } from '@/lib/answered-rows'
+import { earliestPassStart, fetchAnsweredRows, fetchSessionsAnswered, passStartIso } from '@/lib/answered-rows'
 import { passStartBySubject } from '@/hooks/use-plan-completion'
 
 import { useUserAnswers } from '@/hooks/use-user-answers'
@@ -310,6 +310,8 @@ export function PracticeSession() {
   const subjectPosRef = useRef<Record<string, number>>({})
   const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /** 会话列表里每个会话"本轮已作答"的题数(key = session_key), null = 还在算 */
+  const [sessionAnswered, setSessionAnswered] = useState<Map<string, number> | null>(null)
   const [tocOpen, setTocOpen] = useState(false)
   const [tocVisible, setTocVisible] = useState(true)
   const answeredThisSession = useRef<Set<string>>(new Set())
@@ -430,6 +432,24 @@ export function PracticeSession() {
     })
     return () => { cancelled = true }
   }, [seqActive, seqQuestionIds, seqQuestionSubjects, profile?.subject_reset_at, profile?.plan_reset_at, passStarts])
+
+  // 会话列表的"已作答": current_index 只是光标(含跳过没答的题、也含这一遍之前的旧作答),
+  // 所以打开抽屉时按本遍门槛实算一次每个会话真正做过的题数, 和计划/主进度条对得上
+  useEffect(() => {
+    if (!drawerOpen || questionMode !== 'sequential') return
+    const uid = useAuthStore.getState().user?.id
+    if (!uid || seqSessions.length === 0) return
+    let cancelled = false
+    setSessionAnswered(null)
+    // 门槛只认学科, 把会话涉及到的学科(加上重置记录里的)一起算出来交给服务端
+    const subjects = [...new Set([
+      ...seqSessions.flatMap((s) => [...s.planSubjects, ...Object.keys(s.subjectPositions)]),
+      ...Object.keys(profile?.subject_reset_at ?? {}),
+    ])]
+    const starts = passStartIso(subjects, profile?.subject_reset_at, profile?.plan_reset_at, passStarts)
+    fetchSessionsAnswered(uid, starts).then((map) => { if (!cancelled) setSessionAnswered(map) })
+    return () => { cancelled = true }
+  }, [drawerOpen, questionMode, seqSessions, profile?.subject_reset_at, profile?.plan_reset_at, passStarts])
 
   const subjectBlocks = useMemo(() => {
     if (!seqActive || seqQuestionKps.length === 0) return [] as { subject: string; start: number; end: number; count: number }[]
@@ -1459,7 +1479,9 @@ export function PracticeSession() {
                   ) : (
                     <div className="space-y-1.5">
                       {seqSessions.map(s => {
-                        const progress = s.questionIds.length > 0 ? Math.round((s.currentIndex / s.questionIds.length) * 100) : 0
+                        const total = s.questionIds.length
+                        const answered = sessionAnswered?.get(s.sessionKey)
+                        const progress = answered != null && total > 0 ? Math.min(Math.round((answered / total) * 100), 100) : 0
                         const isActive = s.sessionKey === seqSessionKey
                         const subjCounts: Record<string, number> = {}
                         for (const kp of s.selectedKps) { const subj = kpToSubjectRef.current.get(kp); if (subj) subjCounts[subj] = (subjCounts[subj] || 0) + 1 }
@@ -1488,7 +1510,14 @@ export function PracticeSession() {
                             <div className="flex items-center gap-2">
                               <Progress value={progress} className="h-1 flex-1" />
                               <span className="text-[10px] text-muted-foreground tabular-nums">{progress}%</span>
-                              <span className="text-[10px] text-muted-foreground tabular-nums">{s.currentIndex}/{s.questionIds.length}</span>
+                              <span
+                                className="text-[10px] text-muted-foreground tabular-nums"
+                                title={answered != null
+                                  ? `本轮已作答 ${answered}/${total} 题 · 上次刷到第 ${s.currentIndex} 题`
+                                  : `上次刷到第 ${s.currentIndex}/${total} 题`}
+                              >
+                                {answered != null ? `${answered}/${total}` : `统计中…`}
+                              </span>
                               <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-destructive/60 hover:text-destructive"
                                 onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); setDeleteSessionKey(s.sessionKey) }}
                                 title="删除会话">

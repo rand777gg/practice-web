@@ -3420,3 +3420,39 @@ alter table public.learning_route_stages
 
 alter table public.learning_route_questions
   add column if not exists node_style jsonb not null default '{}'::jsonb;
+
+-- ============================================================================
+-- Section 50: 会话列表的"本轮已作答"计数 (session answered counts)
+--   练习页的会话列表原来显示 current_index(光标走到第几题), 很容易被读成"完成数", 和计划 /
+--   练习页主进度条的"本轮已作答"对不上。这里按和 isAnsweredAfterReset 同一口径实算:
+--   每个会话的题, 只要在该科本轮起点(p_starts, 客户端按 passStartBySubject 算好)之后作答过
+--   就算一题(按题去重); p_starts 里没有的学科 = 没有门槛, 做过就算。
+--   服务端一次算完所有会话: 题量表 + 作答表都在库里, 不用把上千个 UUID 传到前端再分页拉。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_sessions_answered(
+  p_user_id UUID,
+  p_starts  JSONB DEFAULT '{}'::jsonb   -- { "学科": "2026-08-14T11:38:38.533Z" }, 缺 = 不限时间
+)
+RETURNS TABLE(session_key TEXT, answered BIGINT)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT s.session_key, COUNT(DISTINCT q.id) AS answered
+  FROM public.practice_sequential_state s
+  CROSS JOIN LATERAL unnest(s.question_ids) AS ids(question_id)
+  JOIN public.questions q ON q.id = ids.question_id
+  WHERE s.user_id = p_user_id
+    -- 该科有门槛就只认门槛之后的作答; 没门槛(不在 p_starts 里) = 做过就算
+    AND EXISTS (
+      SELECT 1 FROM public.user_answers ua
+      WHERE ua.question_id = q.id
+        AND ua.user_id = p_user_id
+        AND (NULLIF(p_starts->>q.subject, '') IS NULL
+             OR ua.answered_at >= (p_starts->>q.subject)::TIMESTAMPTZ)
+    )
+  GROUP BY s.session_key;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_sessions_answered(UUID, JSONB) TO authenticated;
