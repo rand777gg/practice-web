@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 import { FocusTimer } from "./FocusTimer"
 import { PlanDialog } from "./PlanDialog"
-import { usePlanCompletion } from "@/hooks/use-plan-completion"
+import { subjectDailyProgress, usePlanCompletion } from "@/hooks/use-plan-completion"
 import { useFocusStore } from "@/stores/focus-store"
 import { useT } from "@/i18n/use-t"
 
@@ -90,6 +91,15 @@ export function HeaderPlanMenu() {
     return list
   }, [plan.longTerm, plan.goals, longDone, longTotal, longToday, goalDone, goalTotal, t])
 
+  /**
+   * 长期计划下每个学科"今天该刷多少 / 今天已经刷了多少": 一科一层文字 + 一层进度条,
+   * 和计划设置里那些学科行同一个排布(名字/数字一行, 下面一条全宽进度条)。
+   */
+  const subjectBars = useMemo(
+    () => subjectDailyProgress(plan.longTerm, plan.rounds, plan.deadline),
+    [plan.longTerm, plan.rounds, plan.deadline],
+  )
+
   const option = useMemo(() => {
     if (rows.length === 0) return null
     const pct = (done: number, total: number) => (total > 0 ? Math.round((done / total) * 100) : 0)
@@ -99,7 +109,7 @@ export function HeaderPlanMenu() {
       animation: true,
       animationDuration: 420,
       animationEasing: "cubicOut" as const,
-      grid: { left: 0, right: 46, top: 4, bottom: 4, containLabel: true },
+      grid: { left: 0, right: 54, top: 4, bottom: 4, containLabel: true },
       tooltip: {
         trigger: "axis" as const,
         axisPointer: { type: "shadow" as const },
@@ -230,7 +240,7 @@ export function HeaderPlanMenu() {
             </button>
           )}
         </PopoverTrigger>
-        <PopoverContent align="start" sideOffset={6} className="w-[360px] space-y-3 p-3">
+        <PopoverContent align="start" sideOffset={6} className="max-h-[70vh] w-[360px] space-y-3 overflow-y-auto p-3">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-xs font-medium">{t("nav.planCompletion")}</span>
             {plan.deadline && (
@@ -241,7 +251,7 @@ export function HeaderPlanMenu() {
           </div>
 
           {option ? (
-            <div className="h-[104px] w-full">
+            <div className="w-full" style={{ height: Math.max(104, rows.length * 34 + 14) }}>
               <ReactECharts
                 echarts={echarts}
                 option={option}
@@ -251,6 +261,39 @@ export function HeaderPlanMenu() {
             </div>
           ) : (
             <p className="py-4 text-center text-[11px] text-muted-foreground">{t("plan.notSet")}</p>
+          )}
+
+          {/* 长期计划下每个学科的每天的量: 文字一层(学科 + 排期, 右边今日题数), 进度条一层 */}
+          {subjectBars.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground">
+                {t("plan.longTerm")} · {t("plan.bySchedule")}
+              </p>
+              {subjectBars.map((s) => {
+                const perDay = s.perDay
+                const pct = perDay > 0 ? Math.min(Math.round((s.doneToday / perDay) * 100), 100) : 0
+                const pace = perDay > 0
+                  ? `${s.round === null ? "" : `${t("plan.roundPrefix")}${s.round}${t("plan.roundsUnit")} · `}${t("plan.remaining")}${s.remaining}${t("plan.questions")} ÷ ${s.days}${t("plan.daysUnit")} ≈ ${perDay}${t("plan.perDay")}`
+                  : t("plan.roundsAllDone")
+                return (
+                  <div key={s.subject} className="space-y-0.5">
+                    <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                      <span className="min-w-0 truncate text-muted-foreground">
+                        <span className="text-foreground">{s.subject}</span>
+                        {' · '}{pace}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {s.doneToday}/{perDay}{t("plan.questions")}
+                      </span>
+                    </div>
+                    <Progress
+                      value={pct}
+                      className={cn('h-1.5', perDay > 0 ? '[&>div]:bg-blue-500' : '[&>div]:bg-emerald-500')}
+                    />
+                  </div>
+                )
+              })}
+            </div>
           )}
 
           {plan.reviewCount > 0 && (
