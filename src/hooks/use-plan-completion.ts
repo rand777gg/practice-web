@@ -303,10 +303,10 @@ function daysUntil(day: string, now = Date.now()): number {
   return Math.max(Math.ceil((new Date(`${day}T23:59:59`).getTime() - now) / 86400000), 1)
 }
 
-/** 某学科当前最卡进度的那一条: 还差多少题、到目标日还有几天、平均每天多少题 */
+/** 某学科当前这一轮: 还差多少题、到它的目标日还有几天、平均每天多少题 */
 export interface SubjectPace {
   subject: string
-  /** 卡进度的是第几轮 / 第几批 */
+  /** 当前是第几轮 / 第几批 */
   index: number
   target: string
   remaining: number
@@ -315,9 +315,9 @@ export interface SubjectPace {
 }
 
 /**
- * 每天要刷多少题按排期反推: 逐个学科看还没完成的记录, 算"到这一条的目标日为止累计还差
- * 多少题 ÷ 还剩几天", 取最紧的那一条(后面排得紧, 今天就得开始还账)。
- * 题量大的学科自然权重大 —— 剩余题数就是它的量。
+ * 每天要刷多少题按排期反推: 只看每个学科"第一个还没刷完的轮次"—— 这一轮自己还差多少题
+ * ÷ 到它目标日还剩几天。后面的轮次不进这一笔账: 它们有各自的窗口, 到自己的窗口才开始还,
+ * 提前并进来会把剩余题数算成两轮之和(183+742=925), 还会把标签跳到一个还没开始的轮次上。
  */
 export function subjectPaces(items: PlanItem[], now = Date.now()): SubjectPace[] {
   const bySubject = new Map<string, PlanItem[]>()
@@ -329,28 +329,74 @@ export function subjectPaces(items: PlanItem[], now = Date.now()): SubjectPace[]
 
   const out: SubjectPace[] = []
   for (const [subject, list] of bySubject) {
-    const ordered = [...list].sort((a, b) => a.index - b.index)
-    const current = ordered.findIndex((r) => r.state !== 'done')
-    if (current < 0) continue
-    // 当前这一条已经刷掉的部分, 后面几条的账要连着它一起算
-    let need = 0
-    let tightest: SubjectPace | null = null
-    for (let i = current; i < ordered.length; i++) {
-      const r = ordered[i]
-      need += r.quantity - (i === current ? r.done : 0)
-      const days = daysUntil(r.target, now)
-      const perDay = Math.ceil(need / days)
-      if (!tightest || perDay > tightest.perDay) {
-        tightest = { subject, index: r.index, target: r.target, remaining: need, days, perDay }
-      }
-    }
-    if (tightest) out.push(tightest)
+    const current = [...list].sort((a, b) => a.index - b.index).find((r) => r.state !== 'done')
+    if (!current) continue
+    const remaining = Math.max(current.quantity - current.done, 0)
+    const days = daysUntil(current.target, now)
+    out.push({
+      subject,
+      index: current.index,
+      target: current.target,
+      remaining,
+      days,
+      perDay: Math.ceil(remaining / days),
+    })
   }
   return out.sort((a, b) => b.perDay - a.perDay)
 }
 
+/** 长期计划里一个学科"今天该刷多少 / 今天已经刷了多少": 一科一根分进度条 */
+export interface SubjectDailyProgress {
+  subject: string
+  /** 当前这一轮的序号; 完全没排轮次的学科 = null */
+  round: number | null
+  remaining: number
+  /** 到当前这一轮目标日还剩几天 */
+  days: number
+  /** 今天要刷的题数; 全部轮次都刷完 = 0 */
+  perDay: number
+  doneToday: number
+}
+
 /**
- * 每天需要刷多少题 = 各学科最紧那条的速度之和。
+ * 长期计划的学科分进度条数据。排了轮次的学科看当前这一轮(见 subjectPaces),
+ * 完全没排轮次的学科退回"整科剩余 ÷ 计划剩余天数"。
+ */
+export function subjectDailyProgress(
+  longTerm: PlanSubjectProgress[],
+  rounds: PlanItem[],
+  planDeadline: string | null,
+  now = Date.now(),
+): SubjectDailyProgress[] {
+  const paces = new Map(subjectPaces(rounds, now).map((p) => [p.subject, p]))
+  // 排了轮次的学科按排期算; 没排轮次的学科只能按计划总剩余天数平摊
+  const planDays = planDeadline ? daysUntil(planDeadline, now) : 0
+  return longTerm.map((row) => {
+    const pace = paces.get(row.subject)
+    if (pace) {
+      return {
+        subject: row.subject,
+        round: pace.index,
+        remaining: pace.remaining,
+        days: pace.days,
+        perDay: pace.perDay,
+        doneToday: row.doneToday,
+      }
+    }
+    const remaining = Math.max(row.total - row.doneAll, 0)
+    return {
+      subject: row.subject,
+      round: null,
+      remaining,
+      days: planDays,
+      perDay: planDays > 0 ? Math.ceil(remaining / planDays) : 0,
+      doneToday: row.doneToday,
+    }
+  })
+}
+
+/**
+ * 每天需要刷多少题 = 各学科当前这一轮的速度之和。
  * 完全没排轮次的学科没法按排期算, 回退成"整科剩余 ÷ 计划剩余天数"。
  */
 export function dailyPace(
