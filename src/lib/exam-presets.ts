@@ -112,6 +112,36 @@ export const BUILTIN_EXAM_TEMPLATES: ExamTemplate[] = [
       section('coding', 1, 5),
     ],
   },
+  /**
+   * 英语（一）真题卷。
+   *
+   * 两处不能改：
+   *   - `sample_mode: 'seq'` —— 真题必须按卷面原序抽题。分区内随机抽会让"完形第 3 题"变成别的题，
+   *     自动涂卡直接涂错位（真实答题卡的格位是卷面题号，不是抽题顺序）。
+   *   - 每个分区带 `categories` —— 完形/阅读/新题型都是 single_choice，只靠题型分不开；
+   *     compose_exam 的分区过滤是 `q.categories ?| 分区categories`，靠这个标签切。
+   */
+  {
+    id: `${BUILTIN_PREFIX}english1`,
+    user_id: null,
+    name: '英语（一）真题卷',
+    subject: ['英语一'],
+    duration_min: 180,
+    order_mode: 'section',
+    sample_mode: 'seq',
+    sort_order: 5,
+    created_at: '',
+    updated_at: '',
+    builtin: true,
+    sections: [
+      { ...section('single_choice', 20, 0.5), categories: ['完形填空'] },
+      { ...section('single_choice', 20, 2), categories: ['阅读理解 Text 1', '阅读理解 Text 2', '阅读理解 Text 3', '阅读理解 Text 4'] },
+      { ...section('single_choice', 5, 2), categories: ['新题型'] },
+      { ...section('analysis', 5, 2), categories: ['翻译'] },
+      { ...section('analysis', 1, 10), categories: ['应用文写作'] },
+      { ...section('analysis', 1, 20), categories: ['短文写作'] },
+    ],
+  },
 ]
 
 export function isBuiltinTemplate(id: string): boolean {

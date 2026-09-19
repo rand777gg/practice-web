@@ -145,32 +145,47 @@ function parseCloze(body: string): { questions: EnglishQuestion[]; warnings: str
   return { questions, warnings }
 }
 
-/** 翻译：`(46) English sentence` 一直到 `(47)` 之前 */
+/**
+ * 翻译：`(46) English sentence` —— **只取紧跟编号的那一句**。
+ *
+ * 不能取到下一个编号为止：划线段落之间还夹着没编号的正文，
+ * 按「到下一个 (47) 为止」会一次吞进两三句，题干就错了。
+ */
 function parseTranslation(body: string): EnglishQuestion[] {
   const out: EnglishQuestion[] = []
   const re = /\((\d{1,2})\)\s*/g
   const marks: { no: number; start: number; end: number }[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(body))) marks.push({ no: Number(m[1]), start: m.index, end: m.index + m[0].length })
-  marks.forEach((mk, i) => {
-    if (mk.no < 46 || mk.no > 50) return
-    const stop = i + 1 < marks.length ? marks[i + 1].start : body.length
-    out.push({ no: mk.no, type: 'short_answer', stem: flat(body.slice(mk.end, stop)), options: [], note: '把划线段落译成中文' })
-  })
+  for (const mk of marks) {
+    if (mk.no < 46 || mk.no > 50) continue
+    const rest = body.slice(mk.end, mk.end + 1200)
+    // 第一个句末标点（后跟空白或行尾）就是这句的终点
+    const stop = rest.search(/[.?!](?=["”')\]]?\s|["”')\]]?$)/)
+    const sentence = stop >= 0 ? rest.slice(0, stop + 1) : rest.slice(0, 300)
+    out.push({ no: mk.no, type: 'short_answer', stem: flat(sentence), options: [], note: '把划线段落译成中文（英语一 Part C）' })
+  }
   return out
 }
 
-/** 写作：`51. Directions: …` / `52. Directions: …` 整段要求 */
+/**
+ * 写作：`51. Directions: … (10 points)` —— 到分值标记为止。
+ *
+ * 不能取到下一题为止：图表标签、小作文的邮件原文在 OCR 的文字流里可能排在
+ * 下一题的 Directions 之后，会把别的题的材料混进本题题干。
+ */
 function parseWriting(body: string): EnglishQuestion[] {
   const out: EnglishQuestion[] = []
   const re = /(?:^|\n)\s*(5[12])\.\s*Directions?:\s*/g
   const marks: { no: number; start: number; end: number }[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(body))) marks.push({ no: Number(m[1]), start: m.index, end: m.index + m[0].length })
-  marks.forEach((mk, i) => {
-    const stop = i + 1 < marks.length ? marks[i + 1].start : body.length
-    out.push({ no: mk.no, type: 'short_answer', stem: flat(body.slice(mk.end, stop)), options: [] })
-  })
+  for (const mk of marks) {
+    const rest = body.slice(mk.end, mk.end + 1500)
+    const stop = rest.search(/\(\s*\d+\s*points?\s*\)/i)
+    const text = stop >= 0 ? rest.slice(0, stop + rest.slice(stop).match(/\(\s*\d+\s*points?\s*\)/i)![0].length) : rest.slice(0, 500)
+    out.push({ no: mk.no, type: 'short_answer', stem: flat(text), options: [] })
+  }
   return out
 }
 

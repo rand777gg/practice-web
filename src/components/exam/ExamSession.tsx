@@ -313,8 +313,14 @@ export function ExamSession() {
   const [gradings, setGradings] = useState<Record<string, GradingResult>>({})
   const [gradingIds, setGradingIds] = useState<Record<string, boolean>>({})
 
+  /**
+   * 这道主观题该用哪套评分标准。
+   *
+   * 优先用题目自带的 `seq_number`（入库时写的就是卷面题号），**不依赖答题卡绑定**：
+   * 绑定要求 20/20/5/5/1/1 齐全，把建议分挂在它上面，一缺题就整块消失。
+   */
   const writtenKindFor = useCallback((q: Question): WrittenKind | null => {
-    const no = cardNumberMap?.noByQuestionId.get(q.id)
+    const no = q.seq_number ?? cardNumberMap?.noByQuestionId.get(q.id) ?? null
     if (no == null) return null
     if (no >= 46 && no <= 50) return 'translation'
     if (no === 51) return 'writing_small'
