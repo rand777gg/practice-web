@@ -880,6 +880,11 @@ export const zh = {
     analysis: '分析题',
     coding: '编程题',
     case_analysis: '案例分析题',
+    cloze: '完形填空',
+    reading_set: '阅读理解',
+    sentence_order: '新题型（排序）',
+    translation: '翻译',
+    writing: '写作',
   },
   codeLanguages: {
     javascript: 'JavaScript',
@@ -2199,6 +2204,11 @@ export const en = {
     analysis: 'Analysis',
     coding: 'Coding',
     case_analysis: 'Case Analysis',
+    cloze: 'Cloze',
+    reading_set: 'Reading Comprehension',
+    sentence_order: 'Paragraph Ordering',
+    translation: 'Translation',
+    writing: 'Writing',
   },
   codeLanguages: {
     javascript: 'JavaScript',
