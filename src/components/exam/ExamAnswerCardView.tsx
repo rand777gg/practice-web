@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { AnswerSheetPrintSurface } from '@/components/templates/AnswerSheetPrintSurface'
 import { OfficialAnswerCardStack, OfficialAnswerCardStyles } from '@/components/templates/OfficialAnswerCard'
 import { A3_SHEET, textToIdDigits, type OfficialCardDraft } from '@/lib/answer-sheet-official'
-import { buildCardAnswers, type EnglishCardBinding, type NumberMap } from '@/lib/exam-answer-sheet'
+import { buildCardAnswers, columnToAnswerIndex, sectionByNo, type EnglishCardBinding, type NumberMap } from '@/lib/exam-answer-sheet'
 import type { CorrectAnswer } from '@/types'
 
 const MM_TO_PX = 96 / 25.4
@@ -42,6 +42,8 @@ export function ExamAnswerCardView({
   candidateNo = '',
   candidateName = '',
   institution = '',
+  onAnswer,
+  onIdentityChange,
   scale,
   className,
 }: {
@@ -51,6 +53,10 @@ export function ExamAnswerCardView({
   candidateNo?: string
   candidateName?: string
   institution?: string
+  /** 在卡上直接点格子作答：回调给出 questionId 与应用里的选项下标 */
+  onAnswer?: (questionId: string, optionIndex: number) => void
+  /** 卷面信息就地编辑（写回会话的封面字段） */
+  onIdentityChange?: (patch: { institution?: string; candidateName?: string; candidateNo?: string }) => void
   /** 传了就固定缩放（外层自己量宽度）；不传则按容器宽度自适应 */
   scale?: number
   className?: string
@@ -96,8 +102,40 @@ export function ExamAnswerCardView({
 
       <div ref={boxRef} className="max-h-[70vh] overflow-auto border bg-neutral-100 p-3 dark:bg-neutral-900">
         <OfficialAnswerCardStyles />
-        <OfficialAnswerCardStack card={binding.card} scale={effectiveScale} draft={draft} />
+        <OfficialAnswerCardStack
+          card={binding.card}
+          scale={effectiveScale}
+          draft={draft}
+          onToggleAnswer={onAnswer ? (no, column) => {
+            const id = numberMap.questionIdByNo.get(no)
+            const section = sectionByNo(binding, no)
+            if (!id || !section) return
+            // 列号必须先换算成选项下标：Part B 的 A、B、D、E、G 不连续
+            const idx = columnToAnswerIndex(column, section)
+            if (idx !== null) onAnswer(id, idx)
+          } : undefined}
+        />
       </div>
+
+      {onIdentityChange && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {([
+            { key: 'institution' as const, label: '报考单位', value: institution, placeholder: '如 重庆大学' },
+            { key: 'candidateName' as const, label: '考生姓名', value: candidateName, placeholder: '如 张三丰' },
+            { key: 'candidateNo' as const, label: '准考证号', value: candidateNo, placeholder: '15 位数字' },
+          ]).map((f) => (
+            <label key={f.key} className="block text-[11px] text-muted-foreground">
+              {f.label}
+              <input
+                value={f.value}
+                placeholder={f.placeholder}
+                onChange={(e) => onIdentityChange({ [f.key]: e.target.value })}
+                className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </label>
+          ))}
+        </div>
+      )}
 
       {printing && (
         <AnswerSheetPrintSurface

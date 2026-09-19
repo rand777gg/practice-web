@@ -187,6 +187,20 @@ export function sectionByNo(binding: EnglishCardBinding, no: number): EnglishPap
 }
 
 /**
+ * 卡上列号 → 应用里的选项下标。`answerColumns` 的逆运算。
+ *
+ * 在卡上直接点格子作答时必须走这里：Part B 的可选字母是 A、B、D、E、G，
+ * 卡上的第 4 列（D）对应的是应用里第 3 个选项（下标 2），拿列号当下标会错位。
+ * 点到了不可选的列（Part B 的 C、F）返回 null，调用方忽略即可。
+ */
+export function columnToAnswerIndex(column: number, section: EnglishPaperSection): number | null {
+  const labels = section.optionLabels ?? ['A', 'B', 'C', 'D']
+  const letter = String.fromCharCode(65 + column)
+  const i = labels.indexOf(letter)
+  return i >= 0 ? i : null
+}
+
+/**
  * 会话作答 → 答题卡草稿（题号 → 要涂的列号）。
  * 主观题（翻译 / 写作）在卡上是手写框，这里不出格子。
  */

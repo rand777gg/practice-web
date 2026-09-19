@@ -293,14 +293,19 @@ export function ExamSession() {
     [cardBinding, questions, template],
   )
   /** 封面信息表里填过的姓名 / 编号 / 单位，直接叠印到卡上 */
-  const cardIdentity = useMemo(() => {
+  const cardIdentityRows = useMemo(() => {
     const rows = (template?.cover?.infoTable ?? []) as { label?: string }[]
-    const pick = (re: RegExp) => {
-      const i = rows.findIndex((r) => re.test(r.label ?? ''))
-      return i >= 0 ? (candidateValues[i] ?? '') : ''
+    const idx = (re: RegExp) => rows.findIndex((r) => re.test(r.label ?? ''))
+    return { name: idx(/姓名/), no: idx(/编号|准考证/), unit: idx(/单位|学校/) }
+  }, [template])
+  const cardIdentity = useMemo(() => {
+    const pick = (i: number) => (i >= 0 ? (candidateValues[i] ?? '') : '')
+    return {
+      candidateName: pick(cardIdentityRows.name),
+      candidateNo: pick(cardIdentityRows.no),
+      institution: pick(cardIdentityRows.unit),
     }
-    return { candidateName: pick(/姓名/), candidateNo: pick(/编号|准考证/), institution: pick(/单位|学校/) }
-  }, [template, candidateValues])
+  }, [cardIdentityRows, candidateValues])
 
   /**
    * 主观题的建议分。
@@ -1254,9 +1259,11 @@ export function ExamSession() {
         </aside>
 
 
-      {cardViewOpen && cardBinding && cardNumberMap && (
+      {paperMode && (
         <div className="flex min-w-0 flex-1">
-          <div style={{ width: splitWidth }} className="shrink-0 overflow-y-auto border-r bg-neutral-100 p-2 dark:bg-neutral-900">
+          {cardViewOpen && cardBinding && cardNumberMap && (
+            <>
+              <div style={{ width: splitWidth }} className="shrink-0 overflow-y-auto border-r bg-neutral-100 p-2 dark:bg-neutral-900">
             <ExamAnswerCardView
               binding={cardBinding}
               numberMap={cardNumberMap}
@@ -1264,6 +1271,17 @@ export function ExamSession() {
               candidateNo={cardIdentity.candidateNo}
               candidateName={cardIdentity.candidateName}
               institution={cardIdentity.institution}
+              onAnswer={(id, i) => answerQuestion(id, i)}
+              onIdentityChange={(patch) => {
+                if (!patch) return
+                setCandidateValues((vals) => {
+                  const next = [...vals]
+                  if (patch.institution !== undefined && cardIdentityRows.unit >= 0) next[cardIdentityRows.unit] = patch.institution
+                  if (patch.candidateName !== undefined && cardIdentityRows.name >= 0) next[cardIdentityRows.name] = patch.candidateName
+                  if (patch.candidateNo !== undefined && cardIdentityRows.no >= 0) next[cardIdentityRows.no] = patch.candidateNo
+                  return next
+                })
+              }}
             />
           </div>
           {/* 分隔条：按住拖动调左右比例 */}
@@ -1285,6 +1303,8 @@ export function ExamSession() {
               if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
             }}
           />
+            </>
+          )}
       {paperMode && activeSnapshot && cardNumberMap && (
         <div key="real-paper" className="wb-slide-in-right min-w-0 flex-1 overflow-y-auto p-4">
           <EnglishRealPaper
