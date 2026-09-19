@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/webp" href="/logo-192.webp" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>答题卡模板 · 临时预览页（免登录）</title>
+  </head>
+  <body>
+    <div
+      style="
+        font: 12px/1.6 system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        background: #fef3c7; color: #713f12; border-bottom: 1px solid #fcd34d;
+        padding: 8px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline;
+      "
+    >
+      <b>临时预览页（免登录）</b>
+      <span>答题卡模板 · 与登录后 <code>/templates/answer-sheet</code> 是同一个页面组件</span>
+      <span>
+        打印时记得：尺寸选 B4 横向 / A3 横向，<b>边距「无」</b>，缩放 100%（别选“适合页面”），勾上<b>背景图形</b>
+      </span>
+      <span style="margin-left: auto; opacity: 0.75">验完可删：<code>answer-sheet-preview.html</code> + <code>src/dev/</code></span>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/dev/answer-sheet-preview.tsx"></script>
+  </body>
+</html>
