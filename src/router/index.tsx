@@ -115,6 +115,14 @@ export const router = createBrowserRouter([
                 lazy: () => import('@/pages/StudyRoomsPage'),
               },
               {
+                path: 'resource-library',
+                lazy: () => import('@/pages/ResourceLibraryPage'),
+              },
+              {
+                path: 'resource-library/:documentId',
+                lazy: () => import('@/pages/ResourceDetailPage'),
+              },
+              {
                 path: 'topics',
                 lazy: () => import('@/pages/TopicsOverviewPage'),
               },
@@ -250,6 +258,10 @@ export const router = createBrowserRouter([
                   {
                     path: 'crawler',
                     lazy: () => import('@/pages/admin/CrawlerPage'),
+                  },
+                  {
+                    path: 'resource-library',
+                    lazy: () => import('@/pages/admin/ResourceManagePage'),
                   },
                   {
                     path: 'organize-exam',

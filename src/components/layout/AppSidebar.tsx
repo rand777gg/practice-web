@@ -4,7 +4,7 @@ import {
   Award, Blocks, Bookmark, BookOpen, Bot, Bug, CalendarClock, ChartPie, ChevronRight, ClipboardList,
   Clock, Compass, Database, FileDown, FileQuestion, FileText, FileWarning, GitMerge,
   GraduationCap, HardDrive, History, LayoutDashboard, LayoutGrid, LayoutTemplate,
-  Library, List, PenLine, Pencil, Plug, Plus, Puzzle, RotateCcw, Route, Settings2, Sparkles, Star, Swords,
+  Library, LibraryBig, List, PenLine, Pencil, Plug, Plus, Puzzle, RotateCcw, Route, Settings2, Sparkles, Star, Swords,
   Terminal, Trophy, Users, UsersRound, Wand2,
 } from "lucide-react"
 
@@ -333,6 +333,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
     { id: "learningRoutes", title: t("nav.learningRoutes"), url: "/learning-routes", icon: Route, tone: "beta", label: t("nav.beta") },
     { id: "notes", title: t("nav.publicNotes"), url: "/notes", icon: BookOpen },
+    { id: "resourceLibrary", title: t("nav.resourceLibrary"), url: "/resource-library", icon: LibraryBig, tone: "beta", label: t("nav.beta") },
     { id: "studyRooms", title: t("nav.studyRooms"), url: "/study-rooms", icon: UsersRound, tone: "rc", label: t("nav.rc") },
   ]
 

@@ -20,6 +20,7 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: 'topics', group: 'learn', labelZh: '专业专题', labelEn: 'Topics' },
   { id: 'learningRoutes', group: 'learn', labelZh: '学习路线', labelEn: 'Learning Routes' },
   { id: 'notes', group: 'learn', labelZh: '公开笔记', labelEn: 'Public Notes' },
+  { id: 'resourceLibrary', group: 'learn', labelZh: '资料库', labelEn: 'Resource Library' },
   { id: 'studyRooms', group: 'learn', labelZh: '自习室', labelEn: 'Study Rooms' },
 
   { id: 'assistant', group: 'smart', labelZh: '小Q', labelEn: 'Xiao Q' },

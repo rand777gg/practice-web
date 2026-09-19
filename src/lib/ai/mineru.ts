@@ -60,26 +60,17 @@ export class MinerUClient {
     return headers
   }
 
-  // Lightweight parsing — v1 agent API, no token required
-  async uploadAndParse(
-    file: File,
+  // Lightweight parsing over an already-public URL — v1 agent API, no token required.
+  // Kept separate from uploadAndParse so callers that already host the PDF somewhere
+  // cheap (R2) don't have to bounce it through Supabase Storage first.
+  async parseUrlLightweight(
+    url: string,
     options?: { pageRanges?: string },
     onProgress?: (msg: string) => void,
     onStatus?: (status: MinerULightweightStatus) => void,
-  ): Promise<DocumentParseResult> {
-    onProgress?.('正在上传文档...')
-    const filePath = `mineru-temp/${Date.now()}-${file.name}`
-    const { error: uploadErr } = await supabase.storage
-      .from('files')
-      .upload(filePath, file, { upsert: true })
-
-    if (uploadErr) throw new Error(`Supabase upload failed: ${uploadErr.message}`)
-
-    const { data: urlData } = supabase.storage.from('files').getPublicUrl(filePath)
-    const publicUrl = urlData.publicUrl
-
+  ): Promise<{ markdown: string; taskId: string }> {
     onProgress?.('正在创建解析任务...')
-    const v1Body: Record<string, string> = { url: publicUrl, language: 'ch' }
+    const v1Body: Record<string, string> = { url, language: 'ch' }
     if (options?.pageRanges) v1Body.page_ranges = options.pageRanges
 
     const res = await fetch(`${PROXY_BASE}/parse/url`, {
@@ -104,18 +95,43 @@ export class MinerUClient {
       if (pollData.data.state === 'done' && pollData.data.markdown_url) {
         const mdRes = await fetch(`${PROXY_BASE}/download?url=${encodeURIComponent(pollData.data.markdown_url)}`, { headers: { ...AUTH_HEADER } })
         const mdJson = await mdRes.json() as { text: string }
-        // Keep file for history viewer
-        return { markdown: mdJson.text, fileName: file.name, pdfUrl: publicUrl }
+        return { markdown: mdJson.text, taskId: task_id }
       }
       if (pollData.data.state === 'failed') {
-        supabase.storage.from('files').remove([filePath]).catch(() => {})
         throw new Error(`MinerU parsing failed: ${pollData.data.err_msg}`)
       }
       if (i % 5 === 0) onProgress?.(`文档解析中... ${pollData.data.state}`)
     }
 
-    supabase.storage.from('files').remove([filePath]).catch(() => {})
     throw new Error('MinerU parsing timed out')
+  }
+
+  // Lightweight parsing — v1 agent API, no token required
+  async uploadAndParse(
+    file: File,
+    options?: { pageRanges?: string },
+    onProgress?: (msg: string) => void,
+    onStatus?: (status: MinerULightweightStatus) => void,
+  ): Promise<DocumentParseResult> {
+    onProgress?.('正在上传文档...')
+    const filePath = `mineru-temp/${Date.now()}-${file.name}`
+    const { error: uploadErr } = await supabase.storage
+      .from('files')
+      .upload(filePath, file, { upsert: true })
+
+    if (uploadErr) throw new Error(`Supabase upload failed: ${uploadErr.message}`)
+
+    const { data: urlData } = supabase.storage.from('files').getPublicUrl(filePath)
+    const publicUrl = urlData.publicUrl
+
+    try {
+      const { markdown } = await this.parseUrlLightweight(publicUrl, options, onProgress, onStatus)
+      // Keep file for history viewer
+      return { markdown, fileName: file.name, pdfUrl: publicUrl }
+    } catch (err) {
+      supabase.storage.from('files').remove([filePath]).catch(() => {})
+      throw err
+    }
   }
 
   // Precision parsing — v4 API with token

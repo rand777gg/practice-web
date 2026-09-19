@@ -11,7 +11,7 @@ export interface PageUrl {
   src: string
 }
 
-const RENDER_SCALE = 2.0
+export const RENDER_SCALE = 2.0
 
 function parsePageNumbers(ranges: string | undefined, totalPages: number): number[] {
   if (!ranges || !ranges.trim()) {
@@ -93,6 +93,41 @@ export async function renderAndUploadPdfPages(
       console.warn(`Page ${pageNum} render/upload failed:`, err)
       onPageDone?.(i + 1, total, { p: pageNum, w: 0, h: 0, src: '' })
     }
+  }
+
+  pdf.destroy()
+  return results
+}
+
+// Render every page to an in-memory data URL. Used as a fallback when the pre-rendered
+// R2 page images are missing (parse ran before page upload succeeded, or R2 is unreachable).
+export async function renderPdfPagesLocally(
+  pdfUrl: string,
+  pageRanges?: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<PageUrl[]> {
+  const pdf = await pdfjsLib.getDocument(pdfUrl).promise
+  const targetPages = parsePageNumbers(pageRanges, pdf.numPages)
+  const results: PageUrl[] = []
+
+  for (let i = 0; i < targetPages.length; i++) {
+    const pageNum = targetPages[i]
+    try {
+      const page = await pdf.getPage(pageNum)
+      const vp = page.getViewport({ scale: RENDER_SCALE })
+      const cvs = document.createElement('canvas')
+      cvs.width = vp.width
+      cvs.height = vp.height
+      const ctx = cvs.getContext('2d')!
+      await page.render({ canvasContext: ctx, viewport: vp }).promise
+      page.cleanup()
+      results.push({ p: pageNum, w: vp.width, h: vp.height, src: cvs.toDataURL('image/jpeg', 0.82) })
+    } catch (err) {
+      console.warn(`Local render failed for page ${pageNum}:`, err)
+    }
+    onProgress?.(i + 1, targetPages.length)
+    // Yield to the UI so a long book doesn't freeze the tab
+    if (i % 3 === 2) await new Promise((r) => setTimeout(r, 0))
   }
 
   pdf.destroy()

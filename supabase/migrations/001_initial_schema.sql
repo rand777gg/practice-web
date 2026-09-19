@@ -3422,6 +3422,239 @@ alter table public.learning_route_questions
   add column if not exists node_style jsonb not null default '{}'::jsonb;
 
 -- ============================================================================
+-- Section 49: 资料库 (resource library) —— 管理员录入原始文献, MinerU 解析产物存 R2
+--   resource_documents —— 文献元数据 + R2 上的 PDF / 预渲染页图地址 + full.md 正文
+--   resource_blocks    —— MinerU layout.json 扁平化后的区块, 带页码与 bbox
+--     区块表是 PDF ↔ Markdown 双向定位的唯一锚点: Markdown 上显示的一段 = 表里的一行,
+--     PDF 上高亮那个框 = 同一行的 bbox。它同时是检索的最小单元。
+--   检索用 pg_trgm 而不是分词器: 中文没有空格, 子串匹配本来就是对的模型。
+--   但 pg_trgm 对 2 字词(「死锁」「调度」)生成不出内部 trigram, GIN 索引根本用不上,
+--   所以另存一份"逐字加空格"的 search_text 并只对它建索引:
+--     text = '进程调度'  →  search_text = '进 程 调 度 '
+--   查询侧做同样变换后按 '%调 度 %' 匹配, 2 字词也能走索引, 语义与原字串匹配完全一致。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.resource_documents (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title           TEXT NOT NULL,
+  authors         TEXT NOT NULL DEFAULT '',
+  source          TEXT NOT NULL DEFAULT '',
+  pub_year        INTEGER,
+  doc_type        TEXT NOT NULL DEFAULT '论文',
+  subject         TEXT NOT NULL DEFAULT '',
+  tags            TEXT[] NOT NULL DEFAULT '{}',
+  abstract        TEXT NOT NULL DEFAULT '',
+  doi             TEXT NOT NULL DEFAULT '',
+  language        TEXT NOT NULL DEFAULT 'ch',
+  pdf_url         TEXT NOT NULL DEFAULT '',
+  pdf_key         TEXT NOT NULL DEFAULT '',
+  pdf_total_pages INTEGER,
+  pdf_page_urls   TEXT,
+  markdown        TEXT NOT NULL DEFAULT '',
+  parse_mode      TEXT NOT NULL DEFAULT 'precision',
+  parse_status    TEXT NOT NULL DEFAULT 'pending',
+  parse_error     TEXT,
+  is_published    BOOLEAN NOT NULL DEFAULT true,
+  uploaded_by     UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 生成列只能调用 immutable 函数, 而拼 tags 要用的 array_to_string / anyarray::text 都是
+-- STABLE, 所以这一份改用触发器维护(区块表只有 lower + regexp_replace, 用生成列即可)。
+ALTER TABLE public.resource_documents ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+CREATE OR REPLACE FUNCTION public.resource_documents_sync_search_text()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.search_text := regexp_replace(
+    lower(NEW.title || ' ' || NEW.authors || ' ' || NEW.source || ' ' || NEW.subject || ' '
+          || NEW.doc_type || ' ' || NEW.doi || ' ' || coalesce(array_to_string(NEW.tags, ' '), '')
+          || ' ' || NEW.abstract),
+    '(.)', '\1 ', 'g');
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_rd_search_text ON public.resource_documents;
+CREATE TRIGGER trg_rd_search_text
+  BEFORE INSERT OR UPDATE ON public.resource_documents
+  FOR EACH ROW EXECUTE FUNCTION public.resource_documents_sync_search_text();
+
+CREATE TABLE IF NOT EXISTS public.resource_blocks (
+  id            BIGSERIAL PRIMARY KEY,
+  document_id   UUID NOT NULL REFERENCES public.resource_documents(id) ON DELETE CASCADE,
+  block_index   INTEGER NOT NULL,
+  page_no       INTEGER NOT NULL,
+  bbox          REAL[],
+  block_type    TEXT NOT NULL DEFAULT 'text',
+  heading_level SMALLINT NOT NULL DEFAULT 0,
+  text          TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.resource_blocks
+  ADD COLUMN IF NOT EXISTS search_text TEXT GENERATED ALWAYS AS (
+    regexp_replace(lower(text), '(.)', '\1 ', 'g')
+  ) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_rd_created      ON public.resource_documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rd_subject      ON public.resource_documents(subject) WHERE subject <> '';
+CREATE INDEX IF NOT EXISTS idx_rd_tags         ON public.resource_documents USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_rd_search_trgm  ON public.resource_documents USING GIN (search_text gin_trgm_ops);
+-- (document_id, block_index) 既是定位锚点也是目录查询路径: 唯一索引顺带做约束
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rb_doc_index ON public.resource_blocks(document_id, block_index);
+CREATE INDEX IF NOT EXISTS idx_rb_search_trgm  ON public.resource_blocks USING GIN (search_text gin_trgm_ops);
+
+ALTER TABLE public.resource_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resource_blocks    ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rd_select ON public.resource_documents;
+CREATE POLICY rd_select ON public.resource_documents FOR SELECT
+  USING (auth.role() = 'authenticated' AND (is_published OR public.is_admin()));
+DROP POLICY IF EXISTS rd_insert ON public.resource_documents;
+CREATE POLICY rd_insert ON public.resource_documents FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS rd_update ON public.resource_documents;
+CREATE POLICY rd_update ON public.resource_documents FOR UPDATE USING (public.is_admin());
+DROP POLICY IF EXISTS rd_delete ON public.resource_documents;
+CREATE POLICY rd_delete ON public.resource_documents FOR DELETE USING (public.is_admin());
+
+DROP POLICY IF EXISTS rb_select ON public.resource_blocks;
+CREATE POLICY rb_select ON public.resource_blocks FOR SELECT
+  USING (EXISTS (SELECT 1 FROM public.resource_documents d
+                 WHERE d.id = document_id AND (d.is_published OR public.is_admin())));
+DROP POLICY IF EXISTS rb_insert ON public.resource_blocks;
+CREATE POLICY rb_insert ON public.resource_blocks FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS rb_update ON public.resource_blocks;
+CREATE POLICY rb_update ON public.resource_blocks FOR UPDATE USING (public.is_admin());
+DROP POLICY IF EXISTS rb_delete ON public.resource_blocks;
+CREATE POLICY rb_delete ON public.resource_blocks FOR DELETE USING (public.is_admin());
+
+-- 区块检索: 知识点 / 关键字命中后要能直接落到 PDF 页 + 区块。
+-- p_document_id 为 NULL 时全库检索, 否则限定单篇(阅读页内的检索)。
+DROP FUNCTION IF EXISTS public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER);
+CREATE OR REPLACE FUNCTION public.search_resource_blocks(
+  p_query       TEXT,
+  p_document_id UUID    DEFAULT NULL,
+  p_subject     TEXT    DEFAULT NULL,
+  p_doc_type    TEXT    DEFAULT NULL,
+  p_tag         TEXT    DEFAULT NULL,
+  p_limit       INTEGER DEFAULT 50
+) RETURNS TABLE (
+  document_id   UUID,
+  doc_title     TEXT,
+  page_no       INTEGER,
+  block_index   INTEGER,
+  bbox          REAL[],
+  block_type    TEXT,
+  heading_level SMALLINT,
+  snippet       TEXT,
+  score         REAL,
+  total_hits    BIGINT
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  q      TEXT := btrim(coalesce(p_query, ''));
+  padded TEXT;
+BEGIN
+  IF q = '' THEN RETURN; END IF;
+  padded := regexp_replace(q, '(.)', '\1 ', 'g');
+
+  RETURN QUERY
+  WITH hit AS (
+    SELECT b.document_id AS doc_id,
+           d.title       AS d_title,
+           b.page_no     AS p_no,
+           b.block_index AS b_idx,
+           b.bbox        AS b_box,
+           b.block_type  AS b_type,
+           b.heading_level AS b_level,
+           b.text        AS b_text,
+           (CASE WHEN b.heading_level > 0 THEN 2.0 ELSE 0.0 END
+            + CASE WHEN d.title ILIKE '%' || q || '%' THEN 1.5 ELSE 0.0 END
+            + CASE WHEN b.text ILIKE q || '%' THEN 0.5 ELSE 0.0 END)::REAL AS sc
+    FROM public.resource_blocks b
+    JOIN public.resource_documents d ON d.id = b.document_id
+    WHERE b.search_text ILIKE '%' || padded || '%'
+      AND (p_document_id IS NULL OR b.document_id = p_document_id)
+      AND (p_subject     IS NULL OR d.subject  = p_subject)
+      AND (p_doc_type    IS NULL OR d.doc_type = p_doc_type)
+      AND (p_tag         IS NULL OR p_tag = ANY(d.tags))
+  )
+  SELECT h.doc_id, h.d_title, h.p_no, h.b_idx, h.b_box, h.b_type, h.b_level,
+         substring(h.b_text FROM greatest(1, strpos(lower(h.b_text), lower(q)) - 40) FOR 160),
+         h.sc,
+         count(*) OVER ()
+  FROM hit h
+  ORDER BY h.sc DESC, h.d_title, h.p_no, h.b_idx
+  LIMIT greatest(1, least(coalesce(p_limit, 50), 200));
+END;
+$$;
+
+-- 文献检索: 标题/作者/来源/学科/标签/摘要命中。空关键词 = 按时间浏览全部。
+DROP FUNCTION IF EXISTS public.search_resource_documents(TEXT, TEXT, TEXT, TEXT, INTEGER);
+CREATE OR REPLACE FUNCTION public.search_resource_documents(
+  p_query    TEXT,
+  p_subject  TEXT    DEFAULT NULL,
+  p_doc_type TEXT    DEFAULT NULL,
+  p_tag      TEXT    DEFAULT NULL,
+  p_limit    INTEGER DEFAULT 30,
+  p_offset   INTEGER DEFAULT 0
+) RETURNS TABLE (
+  id              UUID,
+  title           TEXT,
+  authors         TEXT,
+  source          TEXT,
+  pub_year        INTEGER,
+  doc_type        TEXT,
+  subject         TEXT,
+  tags            TEXT[],
+  abstract        TEXT,
+  pdf_total_pages INTEGER,
+  parse_status    TEXT,
+  created_at      TIMESTAMPTZ,
+  snippet         TEXT,
+  total_hits      BIGINT
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  q TEXT := btrim(coalesce(p_query, ''));
+BEGIN
+  RETURN QUERY
+  WITH hit AS (
+    SELECT d.id AS d_id, d.title AS d_title, d.authors AS d_authors, d.source AS d_source,
+           d.pub_year AS d_year, d.doc_type AS d_type, d.subject AS d_subject, d.tags AS d_tags,
+           d.abstract AS d_abstract, d.pdf_total_pages AS d_pages, d.parse_status AS d_status,
+           d.created_at AS d_created,
+           substring(d.abstract FROM greatest(1, strpos(lower(d.abstract), lower(q)) - 30) FOR 120) AS d_snippet,
+           (CASE WHEN q <> '' AND d.title ILIKE '%' || q || '%' THEN 0 ELSE 1 END) AS rank
+    FROM public.resource_documents d
+    WHERE (q = '' OR d.search_text ILIKE '%' || regexp_replace(q, '(.)', '\1 ', 'g') || '%')
+      AND (p_subject  IS NULL OR d.subject  = p_subject)
+      AND (p_doc_type IS NULL OR d.doc_type = p_doc_type)
+      AND (p_tag      IS NULL OR p_tag = ANY(d.tags))
+  )
+  SELECT h.d_id, h.d_title, h.d_authors, h.d_source, h.d_year, h.d_type, h.d_subject,
+         h.d_tags, h.d_abstract, h.d_pages, h.d_status, h.d_created, h.d_snippet,
+         count(*) OVER ()
+  FROM hit h
+  ORDER BY h.rank, h.d_created DESC
+  LIMIT greatest(1, least(coalesce(p_limit, 30), 100))
+  OFFSET greatest(0, coalesce(p_offset, 0));
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.search_resource_documents(TEXT, TEXT, TEXT, TEXT, INTEGER, INTEGER) TO authenticated;
+
+-- ============================================================================
 -- Section 50: 会话列表的"本轮已作答"计数 (session answered counts)
 --   练习页的会话列表原来显示 current_index(光标走到第几题), 很容易被读成"完成数", 和计划 /
 --   练习页主进度条的"本轮已作答"对不上。这里按和 isAnsweredAfterReset 同一口径实算:
