@@ -29,7 +29,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, Send } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, Send } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
@@ -38,6 +38,13 @@ import { ExamExportPanel } from './ExamExportPanel'
 import { PaperPreview } from './PaperPreview'
 import { ExamCodingPanel } from './ExamCodingPanel'
 import { buildPaperSections, type PaperSection } from '@/lib/exam-compose'
+import { buildNumberMap, matchEnglishCard } from '@/lib/exam-answer-sheet'
+import { ExamAnswerCardView } from './ExamAnswerCardView'
+import { SubjectiveAnswerInput } from './SubjectiveAnswerInput'
+import { WrittenGradingPanel } from './WrittenGradingPanel'
+import { inkToPng, isWrittenEmpty, type InkStroke, type WrittenAnswer } from '@/lib/written-answer'
+import { gradeHandwrittenAnswer, gradeWrittenAnswer } from '@/lib/ai/written-grade'
+import type { GradingResult, WrittenKind } from '@/lib/written-grading'
 
 import {
   EXAM_DEFAULT_COUNT,
@@ -272,6 +279,62 @@ export function ExamSession() {
   const { setSidebarCollapsed, setExamViewMode } = useSettingsStore()
 
   const viewMode: ExamViewMode = paperMode ? (paperLayout === 'spread' ? 'spread' : 'sheet') : 'card'
+  // 「真实答题卡」是会话级的辅助视图（随时瞄一眼），不塞进持久化的默认视图枚举
+  const [cardViewOpen, setCardViewOpen] = useState(false)
+  /** 试卷结构对得上英语（一）才绑卡；对不上就没有这个视图——宁可不给，也不套一张错位卡 */
+  const cardBinding = useMemo(
+    () => (questions.length ? matchEnglishCard(buildPaperSections(questions, template)) : null),
+    [questions, template],
+  )
+  const cardNumberMap = useMemo(
+    () => (cardBinding ? buildNumberMap(buildPaperSections(questions, template), cardBinding) : null),
+    [cardBinding, questions, template],
+  )
+  /** 封面信息表里填过的姓名 / 编号 / 单位，直接叠印到卡上 */
+  const cardIdentity = useMemo(() => {
+    const rows = (template?.cover?.infoTable ?? []) as { label?: string }[]
+    const pick = (re: RegExp) => {
+      const i = rows.findIndex((r) => re.test(r.label ?? ''))
+      return i >= 0 ? (candidateValues[i] ?? '') : ''
+    }
+    return { candidateName: pick(/姓名/), candidateNo: pick(/编号|准考证/), institution: pick(/单位|学校/) }
+  }, [template, candidateValues])
+
+  /**
+   * 主观题的建议分。
+   *
+   * 作答主体仍存 `CorrectAnswer` 里的 string（计分与"是否作答"的判定一行都不用改），
+   * 手写笔迹另存一张表，只用于展示和识别。
+   *
+   * 只有落到英语（一）卷面 46–52 的题才给建议分：那几题的分档标准（翻译 / 应用文 / 短文）
+   * 是明确写死的；换成别的学科的简答题去套英语评分标准就是瞎判。
+   */
+  const [inkByQuestion, setInkByQuestion] = useState<Record<string, InkStroke[]>>({})
+  const [gradings, setGradings] = useState<Record<string, GradingResult>>({})
+  const [gradingIds, setGradingIds] = useState<Record<string, boolean>>({})
+
+  const writtenKindFor = useCallback((q: Question): WrittenKind | null => {
+    const no = cardNumberMap?.noByQuestionId.get(q.id)
+    if (no == null) return null
+    if (no >= 46 && no <= 50) return 'translation'
+    if (no === 51) return 'writing_small'
+    if (no === 52) return 'writing_large'
+    return null
+  }, [cardNumberMap])
+
+  const runGrading = useCallback(async (q: Question, written: WrittenAnswer, kind: WrittenKind) => {
+    setGradingIds((m) => ({ ...m, [q.id]: true }))
+    try {
+      const input = { kind, prompt: q.question_text, wordHint: undefined }
+      // 有笔迹就先识别再判；纯打字不用过识别
+      const { ocr, result } = written.ink.length > 0
+        ? await gradeHandwrittenAnswer(input, inkToPng(written, 1000, Math.max(300, written.ink.length * 40)))
+        : { ocr: null, result: await gradeWrittenAnswer({ ...input, answer: written.text }) }
+      setGradings((m) => ({ ...m, [q.id]: ocr && ocr.ok ? { ...result, overall: `识别到：${ocr.text}\n\n${result.overall}` } : result }))
+    } finally {
+      setGradingIds((m) => ({ ...m, [q.id]: false }))
+    }
+  }, [])
   const applyViewMode = (next: ExamViewMode) => {
     if (next === viewMode) return
     if (next === 'card') {
@@ -323,26 +386,24 @@ export function ExamSession() {
   }, [])
 
   useEffect(() => {
+    // 没选学科时消费方直接用 categories 兜底, 这里不用回填(回填等于在 effect 里同步 setState, 会多一轮渲染)
+    if (selectedSubjects.length === 0) return
     let cancelled = false
-    if (selectedSubjects.length === 0) {
-      setFilteredCategories(categories)
-    } else {
-      async function loadCats() {
-        const { data } = await supabase
-          .from('questions')
-          .select('category')
-          .in('subject', selectedSubjects)
-        if (cancelled) return
-        const cats = new Set<string>()
-        for (const row of data ?? []) {
-          if (row.category) cats.add(row.category)
-        }
-        setFilteredCategories([...cats].sort())
+    async function loadCats() {
+      const { data } = await supabase
+        .from('questions')
+        .select('category')
+        .in('subject', selectedSubjects)
+      if (cancelled) return
+      const cats = new Set<string>()
+      for (const row of data ?? []) {
+        if (row.category) cats.add(row.category)
       }
-      loadCats()
+      setFilteredCategories([...cats].sort())
     }
+    loadCats()
     return () => { cancelled = true }
-  }, [selectedSubjects, categories])
+  }, [selectedSubjects])
 
   // 续考后回填模板: DB 快照优先; 加列前开的旧会话回退到开考时写入 localStorage 的卷首元信息(标题+分区分值)
   const restoreResumedTemplate = useCallback(() => {
@@ -1029,6 +1090,20 @@ export function ExamSession() {
               <span className="hidden xl:inline">{label}</span>
             </button>
           ))}
+          {cardBinding && (
+            <button
+              type="button"
+              onClick={() => setCardViewOpen((v) => !v)}
+              className={cn(
+                'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
+                cardViewOpen ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
+              )}
+              title="真实答题卡：把作答实时涂到英语（一）的机读卡上"
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              <span className="hidden xl:inline">真实答题卡</span>
+            </button>
+          )}
           <span className="mx-1 h-4 w-px bg-border" />
           <span className="hidden shrink-0 items-center gap-0.5 tabular-nums sm:flex">
             <span className="font-semibold text-emerald-600 dark:text-emerald-500">{answeredCount}</span>
@@ -1114,7 +1189,19 @@ export function ExamSession() {
         </aside>
 
 
-      {paperMode && (
+      {cardViewOpen && cardBinding && cardNumberMap && (
+        <div className="min-w-0 flex-1 overflow-y-auto p-3">
+          <ExamAnswerCardView
+            binding={cardBinding}
+            numberMap={cardNumberMap}
+            answers={answers}
+            candidateNo={cardIdentity.candidateNo}
+            candidateName={cardIdentity.candidateName}
+            institution={cardIdentity.institution}
+          />
+        </div>
+      )}
+      {!cardViewOpen && paperMode && (
         <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
           {/* 单页长卷由外层滚动; 双页摊开由 PaperSpreadView 内部 scroller 滚动, 外层不再滚动, 避免右侧叠两根滚动条 */}
           <div
@@ -1143,7 +1230,7 @@ export function ExamSession() {
           </div>
         </div>
       )}
-      {!paperMode && (
+      {!cardViewOpen && !paperMode && (
         <div
           className="min-w-0 flex-1 flex flex-col lg:flex-row"
           style={{ touchAction: 'pan-y' }}
@@ -1418,12 +1505,36 @@ export function ExamSession() {
                         fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', analysis: '分析题，输入分析内容',
                       }[type] || '请输入答案'}
                     </p>
-                    <textarea
-                      className="w-full min-h-[200px] p-3 rounded-lg border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-                      placeholder="请输入答案..."
-                      value={typeof currentAnswer === 'string' ? currentAnswer : ''}
-                      onChange={(e) => answerQuestion(q.id, e.target.value)}
-                    />
+                    {(() => {
+                      const written: WrittenAnswer = {
+                        text: typeof currentAnswer === 'string' ? currentAnswer : '',
+                        ink: inkByQuestion[q.id] ?? [],
+                      }
+                      const kind = writtenKindFor(q)
+                      return (
+                        <div className="space-y-3">
+                          <SubjectiveAnswerInput
+                            value={written}
+                            onChange={(next) => {
+                              if (next.text !== written.text) answerQuestion(q.id, next.text)
+                              if (next.ink !== written.ink) setInkByQuestion((m) => ({ ...m, [q.id]: next.ink }))
+                              // 作答变了, 旧的建议分就作废, 免得看着像已经重评过
+                              setGradings((m) => { if (!m[q.id]) return m; const c = { ...m }; delete c[q.id]; return c })
+                            }}
+                            minHeightMm={type === 'analysis' ? 70 : 48}
+                            placeholder={type === 'analysis' ? '输入分析内容，或用触控笔在此书写…' : '输入答案，或用触控笔在此书写…'}
+                          />
+                          {kind && (
+                            <WrittenGradingPanel
+                              result={gradings[q.id] ?? null}
+                              grading={gradingIds[q.id]}
+                              onGrade={isWrittenEmpty(written) ? undefined : () => runGrading(q, written, kind)}
+                              onRegrade={isWrittenEmpty(written) ? undefined : () => runGrading(q, written, kind)}
+                            />
+                          )}
+                        </div>
+                      )
+                    })()}
                   </>
                 )}
               </div>
