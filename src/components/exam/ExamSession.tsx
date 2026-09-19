@@ -1260,7 +1260,9 @@ export function ExamSession() {
 
 
       {paperMode && (
-        <div className="flex min-w-0 flex-1">
+        // 不开真实答题卡时用 contents —— 不生成盒子，试卷分支的 DOM 与改动前完全一致，
+        // 免得这层包装把双页摊开需要的高度链弄断
+        <div className={cardViewOpen && cardBinding && cardNumberMap ? 'flex min-w-0 flex-1' : 'contents'}>
           {cardViewOpen && cardBinding && cardNumberMap && (
             <>
               <div style={{ width: splitWidth }} className="shrink-0 overflow-y-auto border-r bg-neutral-100 p-2 dark:bg-neutral-900">
