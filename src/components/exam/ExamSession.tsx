@@ -392,6 +392,8 @@ export function ExamSession() {
   const applyViewMode = (next: ExamViewMode) => {
     if (next === viewMode) return
     if (next === 'card') {
+      // 卡片模式和真实答题卡抢的是同一块左侧面板，不能同选
+      setCardViewOpen(false)
       setPaperMode(false)
     } else {
       setPaperLayout(next)
@@ -399,6 +401,11 @@ export function ExamSession() {
     }
     setExamViewMode(next)
   }
+
+  // 真实答题卡面板宽度（中间分隔条可拖）
+  const [splitWidth, setSplitWidth] = useState(620)
+  const splitDragRef = useRef<{ x: number; w: number } | null>(null)
+  const clampSplit = (w: number) => Math.min(Math.max(w, 300), Math.max(420, window.innerWidth - 420))
 
   // 移动端卡片模式左右滑动切题: 记录触点起点(渲染路径内是纯函数, 无额外 hook)
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -1147,17 +1154,21 @@ export function ExamSession() {
           {cardBinding && (
             <button
               type="button"
-              onClick={() => setCardViewOpen((v) => !v)}
-              className={cn(
-                'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
-                cardViewOpen ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
-              )}
-              title="真实答题卡：把作答实时涂到英语（一）的机读卡上"
-            >
-              <ClipboardList className="h-3.5 w-3.5" />
-              <span className="hidden xl:inline">真实答题卡</span>
-            </button>
+              onClick={() => setCardViewOpen((v) => {
+                // 这块面板本来是卡片模式的题号导航位，进真实答题卡就先退出卡片模式
+                if (!v) setPaperMode(true)
+                return !v
+              })}
+          className={cn(
+            'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
+            cardViewOpen ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
           )}
+          title="真实答题卡：左侧面板换成英语（一）的机读卡，中间的竖条可拖动调比例"
+        >
+          <ClipboardList className="h-3.5 w-3.5" />
+          <span className="hidden xl:inline">真实答题卡</span>
+        </button>
+      )}
           <span className="mx-1 h-4 w-px bg-border" />
           <span className="hidden shrink-0 items-center gap-0.5 tabular-nums sm:flex">
             <span className="font-semibold text-emerald-600 dark:text-emerald-500">{answeredCount}</span>
@@ -1244,19 +1255,38 @@ export function ExamSession() {
 
 
       {cardViewOpen && cardBinding && cardNumberMap && (
-        <div className="min-w-0 flex-1 overflow-y-auto p-3">
-          <ExamAnswerCardView
-            binding={cardBinding}
-            numberMap={cardNumberMap}
-            answers={answers}
-            candidateNo={cardIdentity.candidateNo}
-            candidateName={cardIdentity.candidateName}
-            institution={cardIdentity.institution}
+        <div className="flex min-w-0 flex-1">
+          <div style={{ width: splitWidth }} className="shrink-0 overflow-y-auto border-r bg-neutral-100 p-2 dark:bg-neutral-900">
+            <ExamAnswerCardView
+              binding={cardBinding}
+              numberMap={cardNumberMap}
+              answers={answers}
+              candidateNo={cardIdentity.candidateNo}
+              candidateName={cardIdentity.candidateName}
+              institution={cardIdentity.institution}
+            />
+          </div>
+          {/* 分隔条：按住拖动调左右比例 */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="拖动调整比例"
+            className="w-1.5 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/50"
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId)
+              splitDragRef.current = { x: e.clientX, w: splitWidth }
+            }}
+            onPointerMove={(e) => {
+              const d = splitDragRef.current
+              if (d) setSplitWidth(clampSplit(d.w + (e.clientX - d.x)))
+            }}
+            onPointerUp={(e) => {
+              splitDragRef.current = null
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+            }}
           />
-        </div>
-      )}
-      {!cardViewOpen && paperMode && activeSnapshot && cardNumberMap && (
-        <div key="real-paper" className="wb-slide-in-right flex-1 min-w-0 overflow-y-auto bg-neutral-200/60 p-4 dark:bg-neutral-950/40">
+      {paperMode && activeSnapshot && cardNumberMap && (
+        <div key="real-paper" className="wb-slide-in-right min-w-0 flex-1 overflow-y-auto p-4">
           <EnglishRealPaper
             layout={activeSnapshot}
             questionIdByNo={cardNumberMap.questionIdByNo}
@@ -1267,7 +1297,7 @@ export function ExamSession() {
           />
         </div>
       )}
-      {!cardViewOpen && paperMode && !(activeSnapshot && cardNumberMap) && (
+      {paperMode && !(activeSnapshot && cardNumberMap) && (
         <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
           {/* 单页长卷由外层滚动; 双页摊开由 PaperSpreadView 内部 scroller 滚动, 外层不再滚动, 避免右侧叠两根滚动条 */}
           <div
@@ -1294,6 +1324,8 @@ export function ExamSession() {
               onToggleAutoLocate={() => setAutoLocate((v) => !v)}
             />
           </div>
+        </div>
+      )}
         </div>
       )}
       {!cardViewOpen && !paperMode && (
