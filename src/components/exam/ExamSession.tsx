@@ -1621,9 +1621,9 @@ export function ExamSession() {
                 {type !== 'coding' && (
                   <>
                     <p className="text-xs text-muted-foreground mb-2">
-                      {{
+                      {({
                         fill_blank: '填空题，输入答案', short_answer: '简答题，输入答案', analysis: '分析题，输入分析内容',
-                      }[type] || '请输入答案'}
+                      } as Record<string, string>)[type] || '请输入答案'}
                     </p>
                     {(() => {
                       const written: WrittenAnswer = {

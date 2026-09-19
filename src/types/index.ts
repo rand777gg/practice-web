@@ -13,6 +13,16 @@ export type QuestionType =
   | 'judge_correct'
   | 'coding'
   | 'case_analysis'
+  // ── 真题卷面专用题型 ──
+  // 真实试卷的一整道大题就是一条记录（完形整篇、阅读一篇带 5 问），
+  // 不再拆成一条条独立小题跟通用题型混用。小题挂在该记录的 `case_questions` 上
+  // ——那个字段是通用的「小题容器」，不是案例分析专属，形状对得上就直接复用，
+  // 省掉一次迁移，也让 questionItemCount / 答案形状 { subs } 这些现成机制直接可用。
+  | 'cloze'            // 完形填空：整篇正文（挖空处带题号）+ 每空四个选项
+  | 'reading_set'      // 阅读理解：一篇 Text 正文 + 若干小题
+  | 'sentence_order'   // 新题型（排序）：段落 + 已给定字母 + 顺序骨架
+  | 'translation'      // 翻译：全文 + 若干待译句
+  | 'writing'          // 写作：应用文 / 短文，AI 建议分
 
 export interface TestCase {
   input: string
@@ -673,6 +683,16 @@ export function parseCorrectAnswer(raw: unknown, type: QuestionType): CorrectAns
       return Array.isArray(raw) ? raw.map(String) : [String(raw)]
     case 'analysis':
       return null
+    // 卷面专用题型：一题多小题的四种与 case_analysis 同形，写作是单篇文字
+    case 'cloze':
+    case 'reading_set':
+    case 'sentence_order':
+    case 'translation':
+      return raw && typeof raw === 'object' && !Array.isArray(raw) && 'subs' in (raw as Record<string, unknown>)
+        ? (raw as CaseAnswer)
+        : { subs: [] } as CaseAnswer
+    case 'writing':
+      return String(raw)
     case 'case_analysis':
       return raw && typeof raw === 'object' && !Array.isArray(raw) && 'subs' in (raw as Record<string, unknown>)
         ? (raw as CaseAnswer)
@@ -682,5 +702,7 @@ export function parseCorrectAnswer(raw: unknown, type: QuestionType): CorrectAns
         return raw as CodingAnswer
       }
       return { code: '', language: 'javascript', allPassed: false }
+    default:
+      return ''
   }
 }

@@ -1,4 +1,5 @@
 import type { CaseAnswer, CaseQuestion, CorrectAnswer, Question, QuestionType } from '@/types'
+import { MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
 
 export function isAnswerCorrect(
   selected: CorrectAnswer | null | undefined,
@@ -65,12 +66,20 @@ export function isAnswerCorrect(
       return selected === true ? correct === true : String(selected).trim().toLowerCase() === String(correct).trim().toLowerCase()
     case 'analysis':
       return false
+    case 'cloze':
+    case 'reading_set':
+    case 'sentence_order':
     case 'case_analysis': {
+      // 一条记录挂多个小题的题型共用同一套判分：逐小题判，全对才算对（小题本身可部分计分）
       if (!subs || subs.length === 0) return false
       const results = caseSubResults(subs, selected)
       if (!results) return false
       return results.every(r => r.correct)
     }
+    // 翻译与写作没有标准答案，一律走 AI 建议分，不参与自动判分
+    case 'translation':
+    case 'writing':
+      return false
     case 'coding': {
       const ca = selected as { allPassed?: boolean }
       return ca?.allPassed === true
@@ -102,16 +111,16 @@ export function caseScore(
 
 /** 该题按「小题」展开后的计题数: 案例分析题 = 小题数, 其余 = 1 */
 export function questionItemCount(q: Pick<Question, 'question_type' | 'case_questions'>): number {
-  if (q.question_type === 'case_analysis') {
+  if (MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
     const n = q.case_questions?.length ?? 0
     return Math.max(1, n)
   }
   return 1
 }
 
-/** 该题答对的小题数: 案例分析题 = 答对的小题数(可部分计分), 其余 = 全对 1 / 0 */
+/** 该题答对的小题数: 多小题题型 = 答对的小题数(可部分计分), 其余 = 全对 1 / 0 */
 export function questionCorrectItemCount(q: Question, selected: CorrectAnswer | null | undefined): number {
-  if (q.question_type === 'case_analysis') {
+  if (MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
     return caseScore(q.case_questions ?? [], selected).correct
   }
   return isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
@@ -129,6 +138,11 @@ export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
     case 'short_answer': return ''
     case 'analysis': return null
     case 'case_analysis': return { subs: [] } as CaseAnswer
+    case 'cloze': return { subs: [] } as CaseAnswer
+    case 'reading_set': return { subs: [] } as CaseAnswer
+    case 'sentence_order': return { subs: [] } as CaseAnswer
+    case 'translation': return { subs: [] } as CaseAnswer
+    case 'writing': return ''
     case 'coding': return { code: '', language: 'javascript', allPassed: false }
   }
 }

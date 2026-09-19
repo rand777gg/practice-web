@@ -18,15 +18,29 @@ export const QUESTION_TYPE_OPTIONS = [
   { value: 'analysis' as const, label: '分析题' },
   { value: 'coding' as const, label: '编程题' },
   { value: 'case_analysis' as const, label: '案例分析题' },
+  { value: 'cloze' as const, label: '完形填空' },
+  { value: 'reading_set' as const, label: '阅读理解' },
+  { value: 'sentence_order' as const, label: '新题型（排序）' },
+  { value: 'translation' as const, label: '翻译' },
+  { value: 'writing' as const, label: '写作' },
 ]
 
 export const QUESTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   QUESTION_TYPE_OPTIONS.map(o => [o.value, o.label])
 )
 
-/** 案例分析题允许的小题型(可自动判分, 不包含分析/编程/案例自身) */
+/** 一条记录里挂多个小题的题型（答案形状 { subs }，与 case_analysis 同构） */
+export const MULTI_ITEM_QUESTION_TYPES = [
+  'cloze', 'reading_set', 'sentence_order', 'translation', 'case_analysis',
+] as const
+
+/** 卷面专用题型：它们本身不能当案例分析的小题 */
+const PAPER_ONLY_TYPES = ['cloze', 'reading_set', 'sentence_order', 'translation', 'writing']
+
+/** 案例分析题允许的小题型(可自动判分, 不包含分析/编程/案例自身, 也不含卷面专用题型) */
 export const CASE_SUB_TYPE_OPTIONS = QUESTION_TYPE_OPTIONS.filter(
   (o) => o.value !== 'analysis' && o.value !== 'coding' && o.value !== 'case_analysis'
+    && !PAPER_ONLY_TYPES.includes(o.value)
 )
 
 export const IMPORT_MODE_OPTIONS = [
