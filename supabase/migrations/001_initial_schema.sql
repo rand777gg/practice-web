@@ -3689,3 +3689,32 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_sessions_answered(UUID, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 51: 真题卷面快照 (paper layouts)
+--   英语（一）这类真题要「像真题」地还原卷面: Section 标题、Directions 原文、
+--   整篇完形正文(挖空带题号)、四篇阅读正文、Part B 段落与顺序骨架、翻译全文与待译句、
+--   两篇写作的来信方框与图表数据。
+--   这些是**卷面的东西**, 不是题目本身: 题目在 questions 里仍是一条条独立记录
+--   (完形 20 条、阅读每篇 5 条), 渲染时才合并显示, 所以不塞进 questions。
+--   放库里而不是烤进仓库: 真题原文有版权, 这个仓库是公开的。
+--   layout 的形状见 src/lib/english-paper-layout.ts 的 EnglishPaperLayout。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.paper_layouts (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject     TEXT NOT NULL,
+  category    TEXT NOT NULL,            -- 同一学科下的一份卷子, 如 '2026年真题'
+  title       TEXT NOT NULL,
+  layout      JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (subject, category)
+);
+
+ALTER TABLE public.paper_layouts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pl_select ON public.paper_layouts;
+CREATE POLICY pl_select ON public.paper_layouts FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS pl_write ON public.paper_layouts;
+CREATE POLICY pl_write ON public.paper_layouts FOR ALL TO authenticated USING (true) WITH CHECK (true);

@@ -36,17 +36,30 @@ const ENGLISH_SIGNATURE: { type: EnglishPaperSection['type']; count: number; opt
 const ENGLISH_RANGES: [number, number][] = [[1, 20], [21, 40], [41, 45], [46, 50], [51, 51], [52, 52]]
 
 /**
- * 从选项文本里抠字母前缀（`D. It is undoubtedly true…` → `D`）。
+ * 从选项文本里抠字母。
  *
- * Part B 的选项是段落字母，卷面上是 F/H/C 已给定、只在 ABDEG 里挑，
- * 应用里存的是「下标」，光看下标推不出字母。好在导入的真题选项通常自带字母前缀，
- * 有就按它来；没有就退回顺序字母并报警告——绝不拿下标当列号用。
+ * 两种写法都要认，别只认一种：
+ *   - 字母在前带标点：`D. It is undoubtedly true…`；
+ *   - 字母在后：`段落 D`（Part B 入库时就是这种，选项是段落引用）。
+ * 只认前者的话，Part B 的字母表会退化成 A、B、C、D、E，
+ * 于是答案 E 会被当成下标 3 → 涂到 D 格上（错一格，且很隐蔽）。
  */
+function letterOf(text: string): string | undefined {
+  const s = text.trim()
+  const head = /^([A-Ha-h])\s*[.、)．]/.exec(s)
+  if (head) return head[1].toUpperCase()
+  const tail = /(?:^|\s)([A-Ha-h])$/.exec(s)
+  if (tail) return tail[1].toUpperCase()
+  return undefined
+}
+
 function lettersFromQuestions(questions: { options?: string[] }[]): string[] | undefined {
   const opts = questions[0]?.options ?? []
   if (!opts.length) return undefined
-  const letters = opts.map((o) => /^\s*([A-Ha-h])\s*[.、)．]/.exec(o)?.[1]?.toUpperCase())
-  return letters.every((l): l is string => typeof l === 'string') ? letters : undefined
+  const letters = opts.map(letterOf)
+  if (!letters.every((l): l is string => typeof l === 'string')) return undefined
+  if (new Set(letters).size !== letters.length) return undefined
+  return letters
 }
 
 /** 单选题的选项字母：优先取卷面自带的字母前缀，否则按 A、B、C… 顺序 */

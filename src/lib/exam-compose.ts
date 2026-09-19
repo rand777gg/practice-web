@@ -90,17 +90,25 @@ export function buildPaperSections(questions: Question[], template: ExamTemplate
   const used = new Set<string>()
   for (const s of template.sections) {
     if (!s.type) continue
-    const picked = questions.filter(
+    const matched = questions.filter(
       (q) =>
         q.question_type === s.type &&
         !used.has(q.id) &&
-        (!s.subject?.length || (q.subject != null && s.subject.includes(q.subject))),
+        (!s.subject?.length || (q.subject != null && s.subject.includes(q.subject))) &&
+        // 分区可能靠 categories 区分：英语一的完形 / 阅读 / 新题型同为 single_choice，
+        // 不按它过滤，第一个分区就会把另外两个分区的题一起吞掉
+        (!s.categories?.length || q.categories?.some((c) => s.categories.includes(c))),
     )
+    // 也要按 count 截断。compose_exam 抽题时是按 count 抽的，这里不截断，
+    // 一个分区就会吞掉同题型的全部题目，分区数跟模板对不上，答题卡也就绑不上。
+    const picked = s.count > 0 ? matched.slice(0, s.count) : matched
     if (picked.length === 0) continue
     picked.forEach((q) => used.add(q.id))
     const baseName = QUESTION_TYPE_LABELS[s.type] ?? s.type
     out.push({
-      name: s.subject?.length ? `${baseName}（${s.subject.join('、')}）` : baseName,
+      name: s.categories?.length
+        ? s.categories.join('、')
+        : s.subject?.length ? `${baseName}（${s.subject.join('、')}）` : baseName,
       scorePerQuestion: s.score,
       questions: picked,
     })

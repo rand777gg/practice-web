@@ -45,6 +45,8 @@ import { WrittenGradingPanel } from './WrittenGradingPanel'
 import { inkToPng, isWrittenEmpty, type InkStroke, type WrittenAnswer } from '@/lib/written-answer'
 import { gradeHandwrittenAnswer, gradeWrittenAnswer } from '@/lib/ai/written-grade'
 import type { GradingResult, WrittenKind } from '@/lib/written-grading'
+import type { EnglishPaperLayout } from '@/lib/english-paper-layout'
+import { EnglishRealPaper } from './EnglishRealPaper'
 
 import {
   EXAM_DEFAULT_COUNT,
@@ -341,6 +343,52 @@ export function ExamSession() {
       setGradingIds((m) => ({ ...m, [q.id]: false }))
     }
   }, [])
+
+  /**
+   * 真题卷面快照。
+   *
+   * 卷面标识从题目自带的分区标签取（入库时写的 `2026年真题 · 完形填空`，去掉后缀）。
+   * 不放在模板上：模板是"怎么组卷"，卷面是"卷子长什么样"，两回事，多年份也不会串。
+   */
+  const [paperSnapshot, setPaperSnapshot] = useState<{ key: string; layout: EnglishPaperLayout } | null>(null)
+  const paperCategory = useMemo(() => {
+    const first = questions.find((q) => q.seq_number != null)
+    return first?.category?.split(' · ')[0] ?? null
+  }, [questions])
+
+  useEffect(() => {
+    const subject = template?.subject?.[0]
+    if (!subject || !paperCategory) return
+    let cancelled = false
+    supabase
+      .from('paper_layouts')
+      .select('layout')
+      .eq('subject', subject)
+      .eq('category', paperCategory)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        const layout = data?.layout as EnglishPaperLayout | undefined
+        setPaperSnapshot(layout ? { key: `${subject}|${paperCategory}`, layout } : null)
+      })
+    return () => { cancelled = true }
+  }, [template, paperCategory])
+
+  // 带 key 比对，换卷子时旧快照自动失效——比在 effect 里同步清空干净
+  const paperKey = `${template?.subject?.[0] ?? ''}|${paperCategory ?? ''}`
+  const activeSnapshot = paperSnapshot?.key === paperKey ? paperSnapshot.layout : null
+
+  /** 真题卷面渲染用：作答按题号回写到既有记录 */
+  const pickedByQuestion = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const [id, v] of answers) if (typeof v === 'number') m.set(id, v)
+    return m
+  }, [answers])
+  const textByQuestion = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const [id, v] of answers) if (typeof v === 'string') m.set(id, v)
+    return m
+  }, [answers])
   const applyViewMode = (next: ExamViewMode) => {
     if (next === viewMode) return
     if (next === 'card') {
@@ -1207,7 +1255,19 @@ export function ExamSession() {
           />
         </div>
       )}
-      {!cardViewOpen && paperMode && (
+      {!cardViewOpen && paperMode && activeSnapshot && cardNumberMap && (
+        <div key="real-paper" className="wb-slide-in-right flex-1 min-w-0 overflow-y-auto bg-neutral-200/60 p-4 dark:bg-neutral-950/40">
+          <EnglishRealPaper
+            layout={activeSnapshot}
+            questionIdByNo={cardNumberMap.questionIdByNo}
+            pickedByQuestion={pickedByQuestion}
+            textByQuestion={textByQuestion}
+            onPick={(id, i) => answerQuestion(id, i)}
+            onText={(id, text) => answerQuestion(id, text)}
+          />
+        </div>
+      )}
+      {!cardViewOpen && paperMode && !(activeSnapshot && cardNumberMap) && (
         <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
           {/* 单页长卷由外层滚动; 双页摊开由 PaperSpreadView 内部 scroller 滚动, 外层不再滚动, 避免右侧叠两根滚动条 */}
           <div

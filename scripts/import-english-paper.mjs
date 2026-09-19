@@ -107,7 +107,17 @@ const partBMaterial = (() => {
 const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'warn' })
 try {
   const { parseEnglishQuestions } = await vite.ssrLoadModule('/src/lib/english-questions.ts')
+  const { parseEnglishPaperLayout } = await vite.ssrLoadModule('/src/lib/english-paper-layout.ts')
   const parsed = parseEnglishQuestions(text)
+
+  // 卷面快照：渲染器要的整篇正文、Directions、骨架、图表都在这儿。
+  // 用 dollar-quoting 包住 JSON，单引号和反斜杠都不用转义。
+  const layout = parseEnglishPaperLayout(text)
+  const layoutSql = [
+    `insert into public.paper_layouts (subject, category, title, layout)`,
+    `values (${q(SUBJECT)}, ${q(CATEGORY)}, ${q(layout.title)}, $layout$${JSON.stringify(layout)}$layout$::jsonb)`,
+    `on conflict (subject, category) do update set layout = excluded.layout, title = excluded.title, updated_at = now();`,
+  ].join('\n')
 
   const rows = []
   const review = []
@@ -150,8 +160,8 @@ try {
   }
 
   const sql = [
-    `-- 2026 年考研英语（一）真题入库（1–52）`,
-    `-- 幂等：先按 import_mode 清掉本批次，再整体重插`,
+    `-- 2026 年考研英语（一）真题入库（1–52 + 卷面快照）`,
+    `-- 幂等：先按 import_mode 清掉本批次，再整体重插；卷面快照按 (subject, category) upsert`,
     `delete from questions where import_mode = '${IMPORT_MODE}';`,
     '',
     'insert into questions',
@@ -159,6 +169,8 @@ try {
     '   seq_number, source_page, verified, import_mode)',
     'values',
     rows.join(',\n') + ';',
+    '',
+    layoutSql,
     '',
     `select seq_number, question_type, correct_answer, subject, left(question_text, 30) as head`,
     `from questions where import_mode = '${IMPORT_MODE}' order by seq_number;`,
