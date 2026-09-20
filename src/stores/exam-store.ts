@@ -5,10 +5,20 @@ import {
   isAnswerCorrect,
   questionCorrectItemCount,
   questionItemCount,
+  sessionItemCount,
 } from '@/lib/answer-utils'
 import { composeExamIds, fetchQuestionsByIds } from '@/lib/exam-compose'
 import { MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
 import type { ExamSession, Question, CorrectAnswer, ExamTemplate, ExamSampleMode, ExamComposeStat } from '@/types'
+
+/**
+ * 考试游标的上界：**按小题（卡片）算**。
+ * 卷面题型一条记录含多个小题（完形整篇 20 空 = 20 张卡），按记录数会把游标卡死在第 9 张卡；
+ * 普通题一个记录一张卡，跟记录数一致。
+ */
+function cardCount(questions: Question[]): number {
+  return sessionItemCount(questions)
+}
 
 export interface StartExamParams {
   userId: string
@@ -213,7 +223,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
   nextQuestion: () => {
     const { currentIndex, questions, session } = get()
-    if (currentIndex < questions.length - 1) {
+    // 游标按**小题（卡片）**走：卷面题型一条记录含多个小题，用 questions.length 会卡在第 9 张卡
+    if (currentIndex < cardCount(questions) - 1) {
       const newIndex = currentIndex + 1
       set({ currentIndex: newIndex })
       if (session) {
@@ -235,7 +246,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
   jumpTo: (index) => {
     const { questions, session } = get()
-    if (index >= 0 && index < questions.length) {
+    if (index >= 0 && index < cardCount(questions)) {
       set({ currentIndex: index })
       if (session) {
         supabase.from('exam_sessions').update({ current_index: index }).eq('id', session.id).then()

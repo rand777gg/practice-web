@@ -118,6 +118,16 @@ export function questionItemCount(q: Pick<Question, 'question_type' | 'case_ques
   return 1
 }
 
+/**
+ * 一场考试的**小题总数**，也是考试游标（卡片序号）的上界。
+ *
+ * 卷面题型一条记录含多个小题（完形整篇 20 空 = 20 张卡），拿记录数当上界会把游标
+ * 卡死在第 9 张卡上；普通题一记录一张卡，与记录数一致。
+ */
+export function sessionItemCount(questions: Pick<Question, 'question_type' | 'case_questions'>[]): number {
+  return Math.max(1, questions.reduce((n, q) => n + questionItemCount(q), 0))
+}
+
 /** 该题答对的小题数: 多小题题型 = 答对的小题数(可部分计分), 其余 = 全对 1 / 0 */
 export function questionCorrectItemCount(q: Question, selected: CorrectAnswer | null | undefined): number {
   if (MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {

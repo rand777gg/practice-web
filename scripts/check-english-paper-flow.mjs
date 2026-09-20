@@ -31,7 +31,7 @@ try {
   const { buildPaperSections } = await vite.ssrLoadModule('/src/lib/exam-compose.ts')
   const { matchEnglishCard, buildNumberMap, buildCardAnswers } = await vite.ssrLoadModule('/src/lib/exam-answer-sheet.ts')
   const { buildPaperLayout, buildExamCards, flattenExamCards, examCardNo, cardSub, paperMaterial, recordSlotIds, slotKey, withSlotValue, slotValue } = await vite.ssrLoadModule('/src/lib/exam-paper.ts')
-  const { questionItemCount, isQuestionAnswered } = await vite.ssrLoadModule('/src/lib/answer-utils.ts')
+  const { questionItemCount, isQuestionAnswered, sessionItemCount } = await vite.ssrLoadModule('/src/lib/answer-utils.ts')
   const { BUILTIN_EXAM_TEMPLATES, totalQuestions, totalScore } = await vite.ssrLoadModule('/src/lib/exam-presets.ts')
 
   const template = BUILTIN_EXAM_TEMPLATES.find((t) => t.id.includes('english1'))
@@ -149,6 +149,9 @@ try {
 
   // ── 卡片模式的口径：一张卡 = 一个小题 ──
   check('整卷小题数 52（卡片模式「共 52 题」的来源）', questions.reduce((n, q) => n + questionItemCount(q), 0), 52)
+  // 考试游标（卡片序号）的上界：按记录数会卡死在第 9 张卡（点答题卡题号跳不过去）
+  check('考试游标上界按小题算', sessionItemCount(questions), 52)
+  check('普通题（一个记录一张卡）口径不变', sessionItemCount([{ question_type: 'single_choice' }, { question_type: 'analysis' }]), 2)
   check('已答判定：完形答一空就算这道题作答了', isQuestionAnswered(questions[0], { subs: [{ id: '1', value: 0 }] }), true)
   check('已答判定：一空没答不算', isQuestionAnswered(questions[0], null), false)
 
@@ -190,6 +193,19 @@ try {
 
   // 普通记录（非卷面）拼不出卷面 → 走通用渲染
   check('没有卷面素材就返回 null', buildPaperLayout([{ ...questions[0], paper: null }]), null)
+
+  // ── 考试游标：点答题卡/卷面上的题号能不能真跳过去（这里直接驱动 store）──
+  const { useExamStore } = await vite.ssrLoadModule('/src/stores/exam-store.ts')
+  useExamStore.setState({ questions, session: null, answers: new Map(), currentIndex: 6 })
+  useExamStore.getState().jumpTo(45)
+  check('点第 46 题 → 游标走到第 46 张卡（不是卡在第 7 张）', useExamStore.getState().currentIndex, 45)
+  useExamStore.getState().jumpTo(51)
+  check('点第 52 题 → 走到最后一张卡', useExamStore.getState().currentIndex, 51)
+  useExamStore.getState().jumpTo(cards.length)
+  check('越界不跳（仍是 51）', useExamStore.getState().currentIndex, 51)
+  useExamStore.getState().jumpTo(cards.length - 1)
+  useExamStore.getState().nextQuestion()
+  check('最后一张卡没有下一张', useExamStore.getState().currentIndex, 51)
 
   console.log(failed ? `\n${failed} 项未通过` : '\n全部通过')
   process.exitCode = failed ? 1 : 0
