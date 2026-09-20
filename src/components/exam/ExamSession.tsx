@@ -29,7 +29,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, Send } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Crosshair, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, Send } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
@@ -512,6 +512,12 @@ export function ExamSession() {
     if (closeSheet) setShowSheet(false)
     if (i !== currentIndex) switchTo(i)
     setLocateNonce((n) => n + 1)
+  }
+
+  /** 卷面题号 → 卡片（双向定位：卷面/答题卡上点题号 → 卡片跳到那一小题） */
+  const locateByNo = (no: number) => {
+    const i = cards.findIndex((c) => c.no === no)
+    if (i >= 0) jumpLocate(i)
   }
 
   useEffect(() => {
@@ -1237,6 +1243,22 @@ export function ExamSession() {
           <span className="hidden xl:inline">真实答题卡</span>
         </button>
       )}
+          {/* 真题卷面的「自动定位」：切题时卷面跟着滚到当前小题 */}
+          {paperMode && realPaper && cardNumberMap && (
+            <button
+              type="button"
+              aria-pressed={autoLocate}
+              onClick={() => setAutoLocate((v) => !v)}
+              className={cn(
+                'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
+                autoLocate ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
+              )}
+              title="卷面自动定位：切到哪一小题就滚到卷面上的那一题"
+            >
+              <Crosshair className="h-3.5 w-3.5" />
+              <span className="hidden xl:inline">自动定位</span>
+            </button>
+          )}
           <span className="mx-1 h-4 w-px bg-border" />
           <span className="hidden shrink-0 items-center gap-0.5 tabular-nums sm:flex">
             <span className="font-semibold text-emerald-600 dark:text-emerald-500">{answeredItems}</span>
@@ -1360,6 +1382,8 @@ export function ExamSession() {
               candidateName={cardIdentity.candidateName}
               institution={cardIdentity.institution}
               onAnswer={answerSlot}
+              currentNo={currentCard?.no ?? null}
+              onLocate={locateByNo}
               onIdentityChange={(patch) => {
                 if (!patch) return
                 setCandidateValues((vals) => {
@@ -1402,6 +1426,10 @@ export function ExamSession() {
             textBySlot={textBySlot}
             onPick={answerSlot}
             onText={answerSlot}
+            currentNo={currentCard?.no ?? null}
+            locateNonce={locateNonce}
+            autoLocate={autoLocate}
+            onLocate={locateByNo}
           />
         </div>
       )}

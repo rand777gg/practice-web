@@ -45,6 +45,8 @@ export function ExamAnswerCardView({
   institution = '',
   onAnswer,
   onIdentityChange,
+  currentNo = null,
+  onLocate,
   scale,
   className,
 }: {
@@ -56,6 +58,10 @@ export function ExamAnswerCardView({
   institution?: string
   /** 在卡上直接点格子作答：回调给出该格对应的记录/小题与应用里的选项下标 */
   onAnswer?: (slot: PaperSlot, optionIndex: number) => void
+  /** 当前小题的卷面题号：在卡上圈出这一行（双向定位的「卡片 → 答题卡」方向） */
+  currentNo?: number | null
+  /** 点卡上的题号区 → 回到该小题（「答题卡 → 卡片」方向） */
+  onLocate?: (no: number) => void
   /** 卷面信息就地编辑（写回会话的封面字段） */
   onIdentityChange?: (patch: { institution?: string; candidateName?: string; candidateNo?: string }) => void
   /** 传了就固定缩放（外层自己量宽度）；不传则按容器宽度自适应 */
@@ -115,6 +121,8 @@ export function ExamAnswerCardView({
             const idx = columnToAnswerIndex(column, section)
             if (idx !== null) onAnswer(slot, idx)
           } : undefined}
+          focusQ={currentNo}
+          onLocateQ={onLocate}
         />
       </div>
 

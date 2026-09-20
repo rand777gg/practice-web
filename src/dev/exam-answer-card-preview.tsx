@@ -6,7 +6,7 @@
  * 涂法是「每题涂不同选项」：完形/阅读取 (题号-1)%4，Part B 五个位置故意选不同字母，
  * 这样一旦列号算错（比如拿下标当列号）立刻能看出来。
  */
-import { StrictMode } from 'react'
+import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@/index.css'
 import { ExamAnswerCardView } from '@/components/exam/ExamAnswerCardView'
@@ -86,13 +86,16 @@ const probe = [
   ...['E', 'G', 'A', 'B', 'D'].map((l, i) => `第 ${41 + i} 题 选 ${l} → 第 ${l.charCodeAt(0) - 64} 列`),
 ]
 
-const view = !binding || !numberMap
-  ? <p style={{ padding: 16 }}>没认出英语（一）答题卡</p>
-  : (
+/** 双向定位：卡上圈出当前小题的那一行；点题号区回跳（线上是卡片跳到那一小题） */
+function Preview() {
+  const [currentNo, setCurrentNo] = useState<number | null>(41)
+  if (!binding || !numberMap) return <p style={{ padding: 16 }}>没认出英语（一）答题卡</p>
+  return (
     <div style={{ padding: 16 }}>
       <p style={{ font: '12px/1.7 system-ui', marginBottom: 12, color: '#92400e', background: '#fef3c7', padding: '8px 12px', border: '1px solid #fcd34d' }}>
         <b>临时预览（免登录）</b> · 合成英语（一）卷面 20/20/5/5/1/1 → 考试模式答题卡视图。
-        预期落点：{probe.join('；')}
+        预期落点：{probe.join('；')}<br />
+        当前圈选：第 {currentNo ?? '-'} 题（点在圆圈上是作答，点在题号/空隙上是回跳）
       </p>
       <ExamAnswerCardView
         binding={binding}
@@ -101,8 +104,11 @@ const view = !binding || !numberMap
         institution="重庆大学"
         candidateName="张三丰"
         candidateNo="106112026010001"
+        currentNo={currentNo}
+        onLocate={setCurrentNo}
       />
     </div>
   )
+}
 
-createRoot(document.getElementById('root')!).render(<StrictMode>{view}</StrictMode>)
+createRoot(document.getElementById('root')!).render(<StrictMode><Preview /></StrictMode>)

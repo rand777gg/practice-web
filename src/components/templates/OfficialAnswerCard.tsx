@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import {
-  A3_SHEET, OPTION_LABELS, idCell, objectiveCells,
+  A3_SHEET, OPTION_LABELS, idCell, objectiveCells, questionRows,
   type FieldBox, type ObjectiveCell, type OfficialAnswerCard, type OfficialCardDraft,
 } from '@/lib/answer-sheet-official'
 
@@ -73,13 +73,21 @@ function Overlay({
   draft,
   onToggleAnswer,
   onSetIdDigit,
+  focusQ,
+  onLocateQ,
 }: {
   card: OfficialAnswerCard
   draft?: OfficialCardDraft
   onToggleAnswer?: (q: number, option: number, multi: boolean) => void
   onSetIdDigit?: (pos: number, digit: number) => void
+  /** 当前小题：在卡上圈出它那一行（双向定位的「卡片 → 答题卡」方向） */
+  focusQ?: number | null
+  /** 点题号区 → 回到答题卡的那一小题（「答题卡 → 卡片」方向） */
+  onLocateQ?: (q: number) => void
 }) {
   const l = card.idLattice
+  const rows = focusQ == null && !onLocateQ ? [] : questionRows(card)
+  const focusRow = focusQ == null ? null : rows.find((r) => r.q === focusQ) ?? null
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, width: `${A3_SHEET.width}mm`, height: `${A3_SHEET.height}mm` }}>
       {draft?.institution ? <span style={fieldStyle(card.institutionBox)}>{draft.institution}</span> : null}
@@ -99,6 +107,46 @@ function Overlay({
             />
           )),
         )}
+
+      {/* 当前小题的那一行：套一个圈，扫一眼就知道卡片在问哪一题 */}
+      {focusRow && (
+        <span
+          style={{
+            position: 'absolute',
+            left: `${focusRow.left}mm`,
+            top: `${focusRow.top}mm`,
+            width: `${focusRow.width}mm`,
+            height: `${focusRow.height}mm`,
+            border: '0.5mm solid rgba(37,99,235,.85)',
+            borderRadius: '1mm',
+            boxSizing: 'content-box',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* 每题的整行热区：点在圆圈上是作答, 点在题号/空隙上是回跳卡片 */}
+      {onLocateQ &&
+        rows.map((r) => (
+          <button
+            key={`loc-${r.q}`}
+            type="button"
+            className="official-hit"
+            title={`回到第 ${r.q} 题`}
+            onClick={() => onLocateQ(r.q)}
+            style={{
+              position: 'absolute',
+              left: `${r.hitLeft}mm`,
+              top: `${r.hitTop}mm`,
+              width: `${r.hitWidth}mm`,
+              height: `${r.hitHeight}mm`,
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+            }}
+          />
+        ))}
 
       {draft &&
         objectiveCells(card).map((cell: ObjectiveCell) =>
@@ -127,12 +175,18 @@ export function OfficialAnswerCardStack({
   draft,
   onToggleAnswer,
   onSetIdDigit,
+  focusQ,
+  onLocateQ,
 }: {
   card: OfficialAnswerCard
   scale?: number
   draft?: OfficialCardDraft
   onToggleAnswer?: (q: number, option: number, multi: boolean) => void
   onSetIdDigit?: (pos: number, digit: number) => void
+  /** 当前小题：圈出卡上那一行 */
+  focusQ?: number | null
+  /** 点题号区 → 回到答题卡的那一小题 */
+  onLocateQ?: (q: number) => void
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: `${10 * scale}px`, width: `${A3_SHEET.width * scale}mm` }}>
@@ -167,7 +221,7 @@ export function OfficialAnswerCardStack({
                 transformOrigin: 'top left',
               }}
             >
-              <Overlay card={card} draft={draft} onToggleAnswer={onToggleAnswer} onSetIdDigit={onSetIdDigit} />
+              <Overlay card={card} draft={draft} onToggleAnswer={onToggleAnswer} onSetIdDigit={onSetIdDigit} focusQ={focusQ} onLocateQ={onLocateQ} />
             </div>
           )}
         </div>

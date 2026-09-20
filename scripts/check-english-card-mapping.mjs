@@ -100,7 +100,7 @@ try {
 
   // 涂出来的格子必须真实存在于卡上，且列号就是答案字母在卡上的列序
   // （卡上 A–G 七列按 x 递增排，所以「先取字母、再按字母表算列号」= 涂到字母那一列）
-  const { objectiveCells, officialCardById } = await vite.ssrLoadModule('/src/lib/answer-sheet-official.ts')
+  const { objectiveCells, officialCardById, questionRows } = await vite.ssrLoadModule('/src/lib/answer-sheet-official.ts')
   const cells = objectiveCells(officialCardById('official-english1'))
   const row45 = cells.filter((c) => c.q === 45)
   check('卡上第 45 题一行有 7 列且 x 递增', [row45.length, row45.every((c, i, arr) => i === 0 || c.x > arr[i - 1].x)], [7, true])
@@ -118,6 +118,17 @@ try {
   check('涂的每一格在卡模型里都存在',
     [41, 42, 43, 44, 45].every((no) => cells.some((c) => c.q === no && c.option === partBDraft[no][0])),
     true)
+
+  // ── 双向定位：卡上圈当前题的那一行 + 点题号区回跳 ──
+  const rows = questionRows(officialCardById('official-english1'))
+  check('卡上每题一行（45 道客观题）', rows.length, 45)
+  const row41 = rows.find((r) => r.q === 41)
+  const cells41 = cells.filter((c) => c.q === 41)
+  check('行框包住第 41 题的 7 个圈',
+    [row41.left < Math.min(...cells41.map((c) => c.x)) - 1, row41.width > Math.max(...cells41.map((c) => c.x)) - Math.min(...cells41.map((c) => c.x))],
+    [true, true])
+  check('点题号的热区在圆圈左边（不压住作答区）', row41.hitLeft < row41.left && row41.hitTop > row41.top, true)
+  check('每行都有独立的热区（互不重叠到同一题）', new Set(rows.map((r) => r.q)).size, 45)
 
   // 结构不符时必须拒绝，不硬套
   check('分区数不对 → 不认', matchEnglishCard(paper.slice(0, 5)), null)

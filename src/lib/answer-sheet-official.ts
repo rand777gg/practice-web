@@ -241,6 +241,50 @@ export function allQuestions(card: OfficialAnswerCard): number[] {
   return card.blocks.flatMap((b) => b.aCells.map((a) => a.q)).sort((a, b) => a - b)
 }
 
+/** 一道题在卡上占的那一行：圈选高亮用「行框」，点题号回跳用「整行热区」 */
+export interface QuestionRow {
+  q: number
+  /** 行框（只包住圆圈那一排） */
+  left: number
+  top: number
+  width: number
+  height: number
+  /** 整行热区（从题号左边一直到最后一个圈）——圆圈自带热区叠在上面，所以点圈仍是作答 */
+  hitLeft: number
+  hitTop: number
+  hitWidth: number
+  hitHeight: number
+}
+
+export function questionRows(card: OfficialAnswerCard): QuestionRow[] {
+  const byQ = new Map<number, ObjectiveCell[]>()
+  for (const cell of objectiveCells(card)) {
+    const list = byQ.get(cell.q)
+    if (list) list.push(cell)
+    else byQ.set(cell.q, [cell])
+  }
+  return [...byQ.entries()].map(([q, cells]) => {
+    const xs = cells.map((c) => c.x)
+    const ys = cells.map((c) => c.y)
+    const { boxW, boxH } = cells[0]
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    return {
+      q,
+      left: +(minX - boxW / 2 - 1).toFixed(2),
+      top: +(minY - boxH / 2 - 1).toFixed(2),
+      width: +(maxX - minX + boxW + 2).toFixed(2),
+      height: +(boxH + 2).toFixed(2),
+      // 题号印在第一个圆圈的左侧，热区往左多留一格半
+      hitLeft: +(minX - boxW * 2.5).toFixed(2),
+      hitTop: +(minY - boxH / 2).toFixed(2),
+      hitWidth: +(maxX - minX + boxW * 3.5).toFixed(2),
+      hitHeight: +boxH.toFixed(2),
+    }
+  })
+}
+
 /** 多选题的题号集合 */
 export function multiQuestions(card: OfficialAnswerCard): Set<number> {
   return new Set(card.blocks.filter((b) => b.multi).flatMap((b) => b.aCells.map((a) => a.q)))

@@ -94,11 +94,13 @@ slotByNo.set(52, { questionId: 'q52', subId: '' })
 function Harness() {
   const [picked] = useState(() => new Map<string, number>([['q1#1', 0], ['q1#2', 2], ['q2#21', 1]]))
   const [texts] = useState(() => new Map<string, string>([['q3#46', '这是一句示例译文。']]))
+  // 双向定位：点卷面上的题号 → 高亮跳到那一题（线上是跳到答题卡的那张卡）
+  const [currentNo, setCurrentNo] = useState<number | null>(2)
 
   return (
     <div style={{ padding: 16, background: '#e5e5e5' }}>
       <p style={{ font: '12px/1.7 system-ui', marginBottom: 12, color: '#92400e', background: '#fef3c7', padding: '8px 12px', border: '1px solid #fcd34d' }}>
-        <b>临时预览（免登录）</b> · 英语（一）真题卷面渲染，合成数据。<br />
+        <b>临时预览（免登录）</b> · 英语（一）真题卷面渲染，合成数据。当前高亮：第 {currentNo ?? '-'} 题（点卷面上的题号可切换）<br />
         预期：Times New Roman · 完形整篇一题、挖空处显示题号（1 已作答显示 A）· 选项挨着排 ·
         阅读文章一页/题目另起一页 · Part B 顺序骨架（41→B）· 翻译下划线带号 · 写作两题 canvas 图表
       </p>
@@ -109,6 +111,8 @@ function Harness() {
         textBySlot={texts}
         onPick={() => {}}
         onText={() => {}}
+        currentNo={currentNo}
+        onLocate={setCurrentNo}
       />
     </div>
   )

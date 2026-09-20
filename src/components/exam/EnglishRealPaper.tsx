@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { slotKey, type PaperSlot } from '@/lib/exam-paper'
 import type { EnglishPaperLayout, WritingChart } from '@/lib/english-paper-layout'
@@ -48,6 +48,20 @@ export function EnglishRealPaperStyles() {
       .erp-root .erp-q { font-size: 10.5pt; line-height: 1.55; margin: 0 0 1mm; }
       .erp-root .erp-qn { font-weight: 700; margin-right: 1.5mm; }
       .erp-root .erp-block { margin-bottom: 5mm; }
+      /* 双向定位：当前小题高亮；点题号回跳答题卡 */
+      .erp-root .erp-block, .erp-root .erp-loc { border-radius: 1mm; }
+      .erp-root .erp-cur { outline: 1.5px solid rgba(37,99,235,.5); outline-offset: 2mm; background: rgba(37,99,235,.045); }
+      .erp-root .erp-flash { animation: erp-flash 1.2s ease-out; }
+      @keyframes erp-flash {
+        from { background: rgba(37,99,235,.22); }
+        to { background: rgba(37,99,235,.045); }
+      }
+      .erp-root .erp-locator {
+        font: inherit; font-weight: 700; margin-right: 1.5mm; padding: 0 1mm;
+        border: 0; background: none; color: inherit; cursor: pointer; border-radius: .5mm;
+      }
+      .erp-root .erp-locator:hover { color: #1d4ed8; background: rgba(37,99,235,.12); }
+      .erp-root button.erp-blank { background: none; font: inherit; }
       /* 顺序骨架：F → [41.] → [42.] → H … */
       .erp-root .erp-skel { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin: 0 0 5mm; font-size: 12pt; }
       .erp-root .erp-skel .g { padding: 0 2mm; font-weight: 700; }
@@ -72,8 +86,8 @@ function PaperPage({ children }: { children: React.ReactNode }) {
 
 /** 完形正文：把 [[N]] 画成带题号的空，已作答的显示所选字母 */
 function ClozePassage({
-  passage, pickedByNo,
-}: { passage: string; pickedByNo: Map<number, number> }) {
+  passage, pickedByNo, currentNo, onLocate,
+}: { passage: string; pickedByNo: Map<number, number>; currentNo?: number | null; onLocate?: (no: number) => void }) {
   const parts = passage.split(/(\[\[\d+\]\])/g)
   return (
     <p className="erp-body">
@@ -83,9 +97,15 @@ function ClozePassage({
         const no = Number(m[1])
         const picked = pickedByNo.get(no)
         return (
-          <span key={i} className={cn('erp-blank', picked !== undefined && 'is-answered')}>
+          <Locator
+            key={i}
+            no={no}
+            onLocate={onLocate}
+            className={cn('erp-blank', picked !== undefined && 'is-answered', currentNo === no && 'erp-cur')}
+            data-erp-blank={no}
+          >
             {picked === undefined ? no : OPTION_LETTERS[picked]}
-          </span>
+          </Locator>
         )
       })}
     </p>
@@ -112,6 +132,49 @@ function OptionRow({
         </span>
       ))}
     </div>
+  )
+}
+
+/** 一条小题的容器：标记题号（供定位滚动）、当前题高亮、题号可点回跳卡片 */
+function PaperItem({
+  no, current, flash, className, style, children,
+}: {
+  no: number
+  current?: boolean
+  flash?: boolean
+  className?: string
+  style?: React.CSSProperties
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      data-erp-no={no}
+      style={style}
+      className={cn('erp-block', className, current && 'erp-cur', current && flash && 'erp-flash')}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** 可点的题号：从卷面回跳答题卡的同一小题 */
+function Locator({ no, onLocate, children, className, ...rest }: {
+  no: number
+  onLocate?: (no: number) => void
+  children: React.ReactNode
+  className?: string
+} & Record<`data-${string}`, unknown>) {
+  if (!onLocate) return <span className={className} {...rest}>{children}</span>
+  return (
+    <button
+      type="button"
+      className={cn(className, 'erp-locator')}
+      title={`回到第 ${no} 题`}
+      onClick={(e) => { e.stopPropagation(); onLocate(no) }}
+      {...rest}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -252,13 +315,47 @@ export interface EnglishRealPaperProps {
   textBySlot?: Map<string, string>
   onPick?: (slot: PaperSlot, optionIndex: number) => void
   onText?: (slot: PaperSlot, text: string) => void
+  /** 当前小题的卷面题号：高亮它（双向定位的「卡片 → 卷面」方向） */
+  currentNo?: number | null
+  /** 显式定位令牌：变化时无论 autoLocate 都滚动到当前小题（答题卡/题号格点题） */
+  locateNonce?: number
+  /** 跟随当前小题自动滚动（默认关闭） */
+  autoLocate?: boolean
+  /** 点卷面上的题号 → 回到答题卡的那一小题（「卷面 → 卡片」方向） */
+  onLocate?: (no: number) => void
   className?: string
 }
 
 export function EnglishRealPaper({
-  layout, slotByNo, pickedBySlot, textBySlot, onPick, onText, className,
+  layout, slotByNo, pickedBySlot, textBySlot, onPick, onText,
+  currentNo = null, locateNonce = 0, autoLocate = false, onLocate, className,
 }: EnglishRealPaperProps) {
   const { cloze, reading, partB, partC, writingA, writingB } = layout.sections
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [flash, setFlash] = useState(false)
+
+  /**
+   * 双向定位（卷面侧）：显式跳题（点题号格）总是滚动并闪一下；
+   * 平时只有开着「自动定位」才跟随当前小题滚动——和通用卷面视图同一套语义。
+   */
+  const prevLocateRef = useRef(locateNonce)
+  useEffect(() => {
+    const explicit = locateNonce !== prevLocateRef.current
+    prevLocateRef.current = locateNonce
+    if (!explicit && !autoLocate) return
+    const el = rootRef.current?.querySelector<HTMLElement>(`[data-erp-no="${currentNo}"]`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setFlash(true)
+    const timer = setTimeout(() => setFlash(false), 1200)
+    return () => clearTimeout(timer)
+  }, [currentNo, locateNonce, autoLocate])
+
+  const itemProps = (no: number) => ({
+    no,
+    current: currentNo === no,
+    flash,
+  })
 
   const keyOf = (no: number) => {
     const slot = slotByNo.get(no)
@@ -288,7 +385,7 @@ export function EnglishRealPaper({
   }
 
   return (
-    <div className={cn('erp-root', className)}>
+    <div ref={rootRef} className={cn('erp-root', className)}>
       <EnglishRealPaperStyles />
 
       {/* ── Section I 完形：整篇一个题，挖空带题号，选项挨着排 ── */}
@@ -297,13 +394,13 @@ export function EnglishRealPaper({
           <h1 className="erp-title">{layout.title}</h1>
           <h2 className="erp-sect">{cloze.ordinal} {cloze.title}</h2>
           <p className="erp-dir"><b>Directions:</b> {cloze.directions}</p>
-          <ClozePassage passage={cloze.passage} pickedByNo={pickedByNo} />
+          <ClozePassage passage={cloze.passage} pickedByNo={pickedByNo} currentNo={currentNo} onLocate={onLocate} />
           <div style={{ marginTop: '5mm' }}>
             {cloze.blanks.map((b) => (
-              <div key={b.no} className="erp-block" style={{ marginBottom: '1.5mm' }}>
+              <PaperItem key={b.no} {...itemProps(b.no)} className="erp-loc" style={{ marginBottom: '1.5mm' }}>
                 <div className="erp-options">
                   <span className="erp-opt" style={{ cursor: 'default' }}>
-                    <span className="k" style={{ fontWeight: 700 }}>{b.no}.</span>
+                    <Locator no={b.no} onLocate={onLocate} className="k">{b.no}.</Locator>
                   </span>
                   {b.options.map((text, i) => (
                     <span
@@ -318,7 +415,7 @@ export function EnglishRealPaper({
                     </span>
                   ))}
                 </div>
-              </div>
+              </PaperItem>
             ))}
           </div>
         </PaperPage>
@@ -338,10 +435,10 @@ export function EnglishRealPaper({
           <PaperPage>
             <h3 className="erp-text-head">{t.heading}</h3>
             {t.questions.map((q) => (
-              <div key={q.no} className="erp-block">
-                <p className="erp-q"><span className="erp-qn">{q.no}.</span>{q.stem}</p>
+              <PaperItem key={q.no} {...itemProps(q.no)}>
+                <p className="erp-q"><Locator no={q.no} onLocate={onLocate} className="erp-qn">{q.no}.</Locator>{q.stem}</p>
                 <OptionRow options={q.options} picked={pickedOf(q.no)} onPick={pick(q.no)} />
-              </div>
+              </PaperItem>
             ))}
           </PaperPage>
         </div>
@@ -360,10 +457,10 @@ export function EnglishRealPaper({
           ))}
           <div style={{ marginTop: '4mm' }}>
             {partB.questions.map((q) => (
-              <div key={q.no} className="erp-block">
-                <p className="erp-q"><span className="erp-qn">{q.no}.</span></p>
+              <PaperItem key={q.no} {...itemProps(q.no)}>
+                <p className="erp-q"><Locator no={q.no} onLocate={onLocate} className="erp-qn">{q.no}.</Locator></p>
                 <OptionRow labels={['A', 'B', 'D', 'E', 'G']} options={q.options} picked={pickedOf(q.no)} onPick={pick(q.no)} />
-              </div>
+              </PaperItem>
             ))}
           </div>
         </PaperPage>
@@ -379,8 +476,8 @@ export function EnglishRealPaper({
             {partC.segments.map((s) => {
               const slot = slotByNo.get(s.no)
               return (
-                <div key={s.no} className="erp-block">
-                  <p className="erp-q"><span className="erp-qn">({s.no})</span></p>
+                <PaperItem key={s.no} {...itemProps(s.no)}>
+                  <p className="erp-q"><Locator no={s.no} onLocate={onLocate} className="erp-qn">({s.no})</Locator></p>
                   <textarea
                     value={slot ? textOf(s.no) : ''}
                     onChange={(e) => { if (slot && onText) onText(slot, e.target.value) }}
@@ -390,7 +487,7 @@ export function EnglishRealPaper({
                       font: '10.5pt/1.6 "Times New Roman", Times, serif', padding: '2mm', resize: 'vertical',
                     }}
                   />
-                </div>
+                </PaperItem>
               )
             })}
           </div>
@@ -401,25 +498,27 @@ export function EnglishRealPaper({
       {writingA && (
         <PaperPage>
           <h2 className="erp-sect">{writingA.ordinal} {writingA.title}</h2>
-          <p className="erp-q"><span className="erp-qn">51.</span><b>Directions:</b></p>
+          <p className="erp-q"><Locator no={51} onLocate={onLocate} className="erp-qn">51.</Locator><b>Directions:</b></p>
           <p className="erp-dir">{writingA.directions.replace(/^\s*Read the following email[^.]*\.\s*/i, '')}</p>
           {writingA.letterBox && <div className="erp-letter">{writingA.letterBox}</div>}
-          <textarea
-            value={slotByNo.has(51) ? textOf(51) : ''}
-            onChange={(e) => { const slot = slotByNo.get(51); if (slot && onText) onText(slot, e.target.value) }}
-            placeholder="Write your reply…"
-            style={{
-              width: '100%', minHeight: '70mm', boxSizing: 'border-box',
-              font: '10.5pt/1.9 "Times New Roman", Times, serif', padding: '3mm', resize: 'vertical',
-            }}
-          />
+          <PaperItem {...itemProps(51)}>
+            <textarea
+              value={slotByNo.has(51) ? textOf(51) : ''}
+              onChange={(e) => { const slot = slotByNo.get(51); if (slot && onText) onText(slot, e.target.value) }}
+              placeholder="Write your reply…"
+              style={{
+                width: '100%', minHeight: '70mm', boxSizing: 'border-box',
+                font: '10.5pt/1.9 "Times New Roman", Times, serif', padding: '3mm', resize: 'vertical',
+              }}
+            />
+          </PaperItem>
         </PaperPage>
       )}
 
       {writingB && (
         <PaperPage>
           <h2 className="erp-sect">{writingB.ordinal} {writingB.title}</h2>
-          <p className="erp-q"><span className="erp-qn">52.</span><b>Directions:</b></p>
+          <p className="erp-q"><Locator no={52} onLocate={onLocate} className="erp-qn">52.</Locator><b>Directions:</b></p>
           <p className="erp-dir">{writingB.directions.replace(/^\s*Write an essay based on the charts below\.\s*/i, '')}</p>
           {writingB.charts && (
             <>
@@ -429,15 +528,17 @@ export function EnglishRealPaper({
               {writingB.chartCaption && <p className="erp-caption">{writingB.chartCaption}</p>}
             </>
           )}
-          <textarea
-            value={slotByNo.has(52) ? textOf(52) : ''}
-            onChange={(e) => { const slot = slotByNo.get(52); if (slot && onText) onText(slot, e.target.value) }}
-            placeholder="Write your essay…"
-            style={{
-              width: '100%', minHeight: '80mm', boxSizing: 'border-box', marginTop: '4mm',
-              font: '10.5pt/1.9 "Times New Roman", Times, serif', padding: '3mm', resize: 'vertical',
-            }}
-          />
+          <PaperItem {...itemProps(52)}>
+            <textarea
+              value={slotByNo.has(52) ? textOf(52) : ''}
+              onChange={(e) => { const slot = slotByNo.get(52); if (slot && onText) onText(slot, e.target.value) }}
+              placeholder="Write your essay…"
+              style={{
+                width: '100%', minHeight: '80mm', boxSizing: 'border-box', marginTop: '4mm',
+                font: '10.5pt/1.9 "Times New Roman", Times, serif', padding: '3mm', resize: 'vertical',
+              }}
+            />
+          </PaperItem>
         </PaperPage>
       )}
     </div>
