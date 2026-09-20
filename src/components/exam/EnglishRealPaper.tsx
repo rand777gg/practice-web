@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { slotKey, type PaperSlot } from '@/lib/exam-paper'
 import type { EnglishPaperLayout, WritingChart } from '@/lib/english-paper-layout'
@@ -34,7 +34,10 @@ export function EnglishRealPaperStyles() {
       .erp-root .erp-flow { display: flex; flex-direction: column; align-items: center; }
       .erp-root .erp-flow .erp-page { margin: 0 0 10mm; }
       .erp-root .erp-flow.is-spread {
-        flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+        flex-direction: row; flex-wrap: wrap; justify-content: center;
+        /* 同一摊的两页等高（内容多的那页说了算）：摊开的书两页一样大，
+           不然一页 297mm、另一页被内容撑长，看着像两页纸没对齐 */
+        align-items: stretch;
         gap: ${SPREAD_GAP_MM}mm;
       }
       .erp-root .erp-flow.is-spread .erp-page { margin: 0; }
@@ -453,9 +456,11 @@ export function EnglishRealPaper({
         </PaperPage>
       )}
 
-      {/* ── Section II Part A 阅读：文章占一页，题目选项另起一页 ── */}
+      {/* ── Section II Part A 阅读：文章占一页，题目选项另起一页 ──
+          两页必须**平级**（不能用 div 包起来）：双页摊开时 flex 的直接子元素就是「一页」，
+          包一层会让这一组的两个页面变成一个两页高的格子，跟旁边那页对不齐 */}
       {reading && reading.texts.map((t) => (
-        <div key={t.no}>
+        <Fragment key={t.no}>
           <PaperPage>
             <h2 className="erp-sect">{reading.head.ordinal} {reading.head.title}</h2>
             {t.no === reading.texts[0].no && (
@@ -473,7 +478,7 @@ export function EnglishRealPaper({
               </PaperItem>
             ))}
           </PaperPage>
-        </div>
+        </Fragment>
       ))}
 
       {/* ── Part B 新题型：段落 + 顺序骨架 ── */}
