@@ -42,9 +42,11 @@ export function EnglishRealPaperStyles() {
       }
       .erp-root .erp-flow.is-spread .erp-page { margin: 0; }
       .erp-root .erp-title { text-align: center; font-size: 15pt; font-weight: 700; margin-bottom: 8mm; }
-      .erp-root .erp-sect { font-size: 12pt; font-weight: 700; margin: 0 0 2mm; }
-      .erp-root .erp-dir { font-size: 10.5pt; line-height: 1.5; margin: 0 0 4mm; }
-      .erp-root .erp-body { font-size: 10.5pt; line-height: 1.62; text-align: justify; text-indent: 2em; }
+      /* 分区标题：居中 + 大一号（真题里 Section 标题就是居中的） */
+      .erp-root .erp-sect { text-align: center; font-size: 14pt; font-weight: 700; margin: 0 0 5mm; }
+      .erp-root .erp-dir { font-size: 10.5pt; line-height: 1.7; margin: 0 0 5mm; }
+      /* 原文：行距放宽一点，长段落才读得下去 */
+      .erp-root .erp-body { font-size: 10.5pt; line-height: 1.95; text-align: justify; text-indent: 2em; }
       .erp-root .erp-text-head { font-size: 11pt; font-weight: 700; margin: 0 0 3mm; }
       /* 挖空：真题里就是个空位，这里把题号填进去 */
       .erp-root .erp-blank {
@@ -54,6 +56,12 @@ export function EnglishRealPaperStyles() {
       .erp-root .erp-blank.is-answered { font-weight: 700; border-bottom-width: 2px; }
       /* 选项挨着排（真题是四列，这里让它自然并排换行） */
       .erp-root .erp-options { display: flex; flex-wrap: wrap; gap: 2mm 8mm; margin: 2mm 0 0; text-indent: 0; }
+      /* 完形的选项表：题号一列 + ABCD 四列等宽 —— 每行 ABCD 各自纵向对齐，
+         题号紧挨着 A（不再是 flex 的 8mm 间距） */
+      .erp-root .erp-options.is-grid {
+        display: grid; grid-template-columns: 8mm repeat(4, minmax(0, 1fr));
+        gap: 1.5mm 3mm; align-items: baseline; margin: 0;
+      }
       .erp-root .erp-opt { font-size: 10.5pt; cursor: pointer; white-space: nowrap; }
       .erp-root .erp-opt:hover { background: #f1f5f9; }
       .erp-root .erp-opt .k { display: inline-block; min-width: 4mm; }
@@ -62,20 +70,28 @@ export function EnglishRealPaperStyles() {
       .erp-root .erp-q { font-size: 10.5pt; line-height: 1.55; margin: 0 0 1mm; }
       .erp-root .erp-qn { font-weight: 700; margin-right: 1.5mm; }
       .erp-root .erp-block { margin-bottom: 5mm; }
-      /* 双向定位：当前小题高亮；点题号回跳答题卡 */
+      /* 双向定位：当前小题高亮；点题号回跳答题卡（颜色跟随主题） */
       .erp-root .erp-block, .erp-root .erp-loc { border-radius: 1mm; }
-      .erp-root .erp-cur { outline: 1.5px solid rgba(37,99,235,.5); outline-offset: 2mm; background: rgba(37,99,235,.045); }
+      .erp-root .erp-cur {
+        outline: 1.5px solid hsl(var(--primary) / .55); outline-offset: 2mm;
+        background: hsl(var(--primary) / .06);
+      }
       .erp-root .erp-flash { animation: erp-flash 1.2s ease-out; }
       @keyframes erp-flash {
-        from { background: rgba(37,99,235,.22); }
-        to { background: rgba(37,99,235,.045); }
+        from { background: hsl(var(--primary) / .22); }
+        to { background: hsl(var(--primary) / .06); }
       }
       .erp-root .erp-locator {
         font: inherit; font-weight: 700; margin-right: 1.5mm; padding: 0 1mm;
         border: 0; background: none; color: inherit; cursor: pointer; border-radius: .5mm;
       }
-      .erp-root .erp-locator:hover { color: #1d4ed8; background: rgba(37,99,235,.12); }
-      .erp-root button.erp-blank { background: none; font: inherit; }
+      .erp-root .erp-locator:hover { color: hsl(var(--primary)); background: hsl(var(--primary) / .12); }
+      /* 完形正文里那个空：题号带下划线（.erp-locator 的 border:0 会盖掉，这里按元素+类提权） */
+      .erp-root button.erp-blank {
+        background: none; font: inherit; margin: 0 .5mm; padding: 0 1mm;
+        border: 0; border-bottom: 1px solid #111;
+      }
+      .erp-root button.erp-blank.is-answered { border-bottom-width: 2px; }
       /* 顺序骨架：F → [41.] → [42.] → H … */
       .erp-root .erp-skel { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin: 0 0 5mm; font-size: 12pt; }
       .erp-root .erp-skel .g { padding: 0 2mm; font-weight: 700; }
@@ -85,6 +101,8 @@ export function EnglishRealPaperStyles() {
       .erp-root .erp-caption { font-size: 10pt; text-align: center; margin-top: 2mm; }
       .erp-root .erp-charts { display: flex; gap: 10mm; justify-content: center; align-items: flex-start; margin: 3mm 0; }
       .erp-root .erp-para { margin: 0 0 2mm; }
+      /* 新题型的 8 段正文分两栏（真题的排法），一页放得下 */
+      .erp-root .erp-paras { column-count: 2; column-gap: 8mm; }
       .erp-root .erp-segno { font-weight: 700; }
       @media print {
         .erp-root .erp-page { box-shadow: none; margin: 0; break-after: page; }
@@ -438,7 +456,7 @@ export function EnglishRealPaper({
             <div style={{ marginTop: '3mm' }}>
             {cloze.blanks.map((b) => (
               <PaperItem key={b.no} {...itemProps(b.no)} className="erp-loc" style={{ marginBottom: '1.5mm' }}>
-                <div className="erp-options">
+                <div className="erp-options is-grid">
                   <span className="erp-opt" style={{ cursor: 'default' }}>
                     <Locator no={b.no} onLocate={onLocate} className="k">{b.no}.</Locator>
                   </span>
@@ -487,19 +505,26 @@ export function EnglishRealPaper({
         </Fragment>
       ))}
 
-      {/* ── Part B 新题型：段落正文一页，顺序骨架 + 5 个空另起一页 ──
-          段落正文就有七八段，跟骨架、选项挤一页会超过 A4（实测 ~348mm） */}
+      {/* ── Part B 新题型：段落正文（两栏、平分两页）→ 顺序骨架 + 5 个空 ──
+          八段正文 3300 多字符，两栏也要 ~260mm，一页放不下（会到 304mm） */}
       {partB && (
         <>
-          <PaperPage>
-            <h2 className="erp-sect">{partB.ordinal} {partB.title}</h2>
-            <p className="erp-dir"><b>Directions:</b> {partB.directions}</p>
-            {partB.paragraphs.map((p) => (
-              <p key={p.letter} className="erp-body erp-para" style={{ textIndent: 0 }}>
-                <b>{p.letter}.</b> {p.text}
-              </p>
+          {[partB.paragraphs.slice(0, Math.ceil(partB.paragraphs.length / 2)), partB.paragraphs.slice(Math.ceil(partB.paragraphs.length / 2))]
+            .filter((group) => group.length > 0)
+            .map((group, gi) => (
+              <PaperPage key={`paras-${gi}`}>
+                <h2 className="erp-sect">{partB.ordinal} {partB.title}</h2>
+                {gi === 0 && <p className="erp-dir"><b>Directions:</b> {partB.directions}</p>}
+                {/* 段落分两栏排（真题就是这么省的） */}
+                <div className="erp-paras">
+                  {group.map((p) => (
+                    <p key={p.letter} className="erp-body erp-para" style={{ textIndent: 0 }}>
+                      <b>{p.letter}.</b> {p.text}
+                    </p>
+                  ))}
+                </div>
+              </PaperPage>
             ))}
-          </PaperPage>
           <PaperPage>
             <h2 className="erp-sect">{partB.ordinal} {partB.title}</h2>
             <OrderSkeleton skeleton={partB.skeleton} answersByNo={answeredLetterByNo} />

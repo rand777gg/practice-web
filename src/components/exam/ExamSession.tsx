@@ -61,6 +61,7 @@ import { inkToPng, isWrittenEmpty, type InkStroke, type WrittenAnswer } from '@/
 import { gradeHandwrittenAnswer, gradeWrittenAnswer } from '@/lib/ai/written-grade'
 import type { GradingResult, WrittenKind } from '@/lib/written-grading'
 import { EnglishRealPaper } from './EnglishRealPaper'
+import { CardMaterial } from './CardMaterial'
 
 import {
   EXAM_DEFAULT_COUNT,
@@ -164,6 +165,32 @@ function buildPreviewSections(tpl: ExamTemplate): PaperSection[] {
 }
 
 type ExamViewMode = 'card' | 'sheet' | 'spread'
+
+/**
+ * 卡片模式里的材料区：默认展开，材料里的题号可点回跳。
+ * 用独立组件是为了让「展开/收起」随卡片重置（换一张卡又默认展开）。
+ */
+function MaterialBlock({ question, subId, onLocate }: {
+  question: Question
+  subId: string
+  onLocate?: (no: number) => void
+}) {
+  const [open, setOpen] = useState(true)
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"
+    >
+      <summary className="cursor-pointer text-xs text-muted-foreground">
+        材料{onLocate ? '（题号可点，跳到对应小题）' : ''}
+      </summary>
+      <div className="mt-2 max-h-[45vh] overflow-y-auto text-[13px] leading-relaxed">
+        <CardMaterial question={question} subId={subId} onLocate={onLocate} />
+      </div>
+    </details>
+  )
+}
 
 /**
  * 卡片模式下的小题作答区。
@@ -1495,14 +1522,14 @@ export function ExamSession() {
           {currentCard && (
             <div className="max-w-2xl mx-auto space-y-4 lg:h-full flex flex-col">
               <div className="flex-1 space-y-3">
-                {/* 材料默认收起，看小题时按需展开：卷面题型的材料在 paper 上，案例题在题干里 */}
+                {/* 材料默认展开（看小题时材料就在手边），点材料里的题号能跳到那一小题 */}
                 {materialOf(currentCard) && (
-                  <details className="rounded-lg border bg-background/60 px-3 py-2 text-sm">
-                    <summary className="cursor-pointer text-xs text-muted-foreground">查看材料</summary>
-                    <div className="mt-2 max-h-[40vh] overflow-y-auto text-[13px] leading-relaxed text-muted-foreground">
-                      <MarkdownRenderer content={materialOf(currentCard)} />
-                    </div>
-                  </details>
+                  <MaterialBlock
+                    key={cardKey(currentCard)}
+                    question={currentCard.question}
+                    subId={currentCard.subId}
+                    onLocate={currentCard.no == null ? undefined : locateByNo}
+                  />
                 )}
                 <MarkdownRenderer
                   content={currentSub?.text ?? currentCard.question.question_text}
