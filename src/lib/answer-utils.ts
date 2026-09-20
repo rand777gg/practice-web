@@ -135,7 +135,7 @@ function isJudgeAnswered(value: CorrectAnswer): boolean {
 }
 
 /** 题干中"___"空缺的数量(单空按 1 计) */
-export function blankNumber(text: string): number {
+function blankNumber(text: string): number {
   return (text.match(/_{2,}/g) || []).length || 1
 }
 
@@ -184,23 +184,6 @@ export function isQuestionAnswered(
     })
   }
   return true
-}
-
-/**
- * 已作答的**小题**数: 多小题题型按答了几个小题算(部分作答也照数), 其余整题 0/1。
- * 「共几题 / 已答几题」按这个口径报, 否则一份 52 题的英语卷会显示成 9 道
- * (一条记录 = 卷面的一大题: 完形整篇 20 空)。
- */
-export function questionAnsweredItemCount(
-  q: Pick<Question, 'question_type' | 'question_text' | 'case_questions'>,
-  selected: CorrectAnswer | null | undefined,
-): number {
-  if (!isQuestionAnswered(q, selected)) return 0
-  if (!MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) return 1
-  const answered = ((selected as CaseAnswer).subs ?? [])
-    .filter((s) => !(typeof s.value === 'string' && !s.value.trim()))
-    .length
-  return Math.max(1, answered)
 }
 
 export function getDefaultAnswer(type: QuestionType): CorrectAnswer {

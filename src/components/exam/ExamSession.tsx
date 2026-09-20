@@ -39,8 +39,21 @@ import { PaperPreview } from './PaperPreview'
 import { ExamCodingPanel } from './ExamCodingPanel'
 import { buildPaperSections, type PaperSection } from '@/lib/exam-compose'
 import { buildNumberMap, matchEnglishCard } from '@/lib/exam-answer-sheet'
-import { buildPaperLayout, cardNoLabel, recordSlotIds, slotEntries, slotKey, withSlotValue, type PaperSlot } from '@/lib/exam-paper'
-import { isQuestionAnswered, questionAnsweredItemCount, questionItemCount } from '@/lib/answer-utils'
+import {
+  buildExamCards,
+  buildPaperLayout,
+  cardSub,
+  examCardNo,
+  flattenExamCards,
+  paperMaterial,
+  slotEntries,
+  slotKey,
+  slotValue,
+  withSlotValue,
+  type ExamCard,
+  type PaperSlot,
+} from '@/lib/exam-paper'
+import { isQuestionAnswered } from '@/lib/answer-utils'
 import { ExamAnswerCardView } from './ExamAnswerCardView'
 import { SubjectiveAnswerInput } from './SubjectiveAnswerInput'
 import { WrittenGradingPanel } from './WrittenGradingPanel'
@@ -57,8 +70,8 @@ import {
   EXAM_MIN_DURATION_MIN,
   EXAM_MAX_DURATION_MIN,
 } from '@/lib/constants'
-import type { ExamSession as ExamSessionType, ExamTemplate, ExamTemplateSection, QuestionType, Question, CaseQuestion, CaseAnswer, CorrectAnswer, CodingAnswer } from '@/types'
-import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, MULTI_ITEM_QUESTION_TYPES, OPTION_LABELS, EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
+import type { ExamSession as ExamSessionType, ExamTemplate, ExamTemplateSection, QuestionType, Question, CaseQuestion, CorrectAnswer, CodingAnswer } from '@/types'
+import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, OPTION_LABELS, EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -152,6 +165,111 @@ function buildPreviewSections(tpl: ExamTemplate): PaperSection[] {
 
 type ExamViewMode = 'card' | 'sheet' | 'spread'
 
+/**
+ * 卡片模式下的小题作答区。
+ * 一张卡就是一个小题，所以这里只渲染这一小题：单选/多选给选项，判断给对错，
+ * 填空给输入框，简答/翻译给文本域。
+ */
+function SubAnswerBlock({ sub, value, onChange }: {
+  sub: CaseQuestion
+  value: CorrectAnswer | null
+  onChange: (v: CorrectAnswer) => void
+}) {
+  const isSingle = sub.type === 'single_choice'
+  const isMulti = sub.type === 'multi_select'
+  const isTF = sub.type === 'true_false'
+  const isJudge = sub.type === 'judge_correct'
+  const isFill = sub.type === 'fill_blank'
+  const inputCls = 'w-full h-9 px-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+
+  if (isSingle || isMulti) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">{isMulti ? '多选题，点击选项选中/取消' : '单选题，点击选项选择'}</p>
+        {sub.options.map((opt, i) => {
+          const checked = isSingle ? value === i : Array.isArray(value) && (value as number[]).includes(i)
+          return (
+            <button key={i}
+              onClick={() => {
+                if (isSingle) onChange(i)
+                else {
+                  const arr = Array.isArray(value) ? [...(value as number[])] : []
+                  onChange(arr.includes(i) ? arr.filter((x) => x !== i) : [...arr, i])
+                }
+              }}
+              className={cn('w-full text-left flex items-center gap-3 p-3 rounded-lg border transition-all text-sm',
+                checked ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30 hover:bg-accent/50')}
+            >
+              <span className={cn('w-5 h-5 border-2 flex items-center justify-center shrink-0 text-[10px] font-bold',
+                isMulti ? 'rounded' : 'rounded-full',
+                checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/30')}>
+                {checked ? (isMulti ? '✓' : '●') : OPTION_LABELS[i]}
+              </span>
+              <span>{opt}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (isTF || isJudge) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">{isJudge ? '判断改错题：若错误请写出修正后的表述' : '判断题，点击选择'}</p>
+        <div className="flex gap-3">
+          {[true, false].map((v) => {
+            const on = v ? value === true : isTF ? value === false : value !== null && value !== undefined && value !== true
+            return (
+              <button key={String(v)} onClick={() => onChange(v ? true : (isJudge ? '' : false))}
+                className={cn('flex-1 py-3 rounded-lg border text-sm font-medium transition-all',
+                  on ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30')}>
+                {v ? '✓ 正确' : '✗ 错误'}
+              </button>
+            )
+          })}
+        </div>
+        {isJudge && value !== null && value !== undefined && value !== true && (
+          <input className={inputCls} value={typeof value === 'string' ? value : ''}
+            onChange={(e) => onChange(e.target.value)} placeholder="输入修正后的正确表述" />
+        )}
+      </div>
+    )
+  }
+
+  if (isFill) {
+    const blanks = Math.max(1, (sub.text.match(/_{2,}/g) || []).length)
+    const vals = Array.isArray(value) ? (value as string[]) : value ? [String(value)] : []
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">填空题，共 {blanks} 个空</p>
+        {Array.from({ length: blanks }, (_, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground w-6 shrink-0">({i + 1})</span>
+            <input className={inputCls} value={vals[i] ?? ''} placeholder={`第 ${i + 1} 个空`}
+              onChange={(e) => {
+                const next = [...vals]
+                next[i] = e.target.value
+                onChange(next)
+              }} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // 简答 / 翻译：给足够行数的文本域（译文要能看清整句）
+  return (
+    <textarea
+      className="w-full rounded-lg border bg-background p-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring"
+      style={{ minHeight: '96px', resize: 'vertical' }}
+      placeholder={sub.type === 'short_answer' ? '输入答案…' : '输入作答…'}
+      value={typeof value === 'string' ? value : ''}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
 export function ExamSession() {
   const { t } = useT()
   const { user } = useAuthStore()
@@ -229,14 +347,16 @@ export function ExamSession() {
   const viewMode: ExamViewMode = paperMode ? (paperLayout === 'spread' ? 'spread' : 'sheet') : 'card'
   // 「真实答题卡」是会话级的辅助视图（随时瞄一眼），不塞进持久化的默认视图枚举
   const [cardViewOpen, setCardViewOpen] = useState(false)
+  /** 组好的卷面分区（分区 → 题目记录），答题卡绑定、卡片序列、通用卷面预览共用一份 */
+  const paperSections = useMemo(() => buildPaperSections(questions, template), [questions, template])
   /** 试卷结构对得上英语（一）才绑卡；对不上就没有这个视图——宁可不给，也不套一张错位卡 */
   const cardBinding = useMemo(
-    () => (questions.length ? matchEnglishCard(buildPaperSections(questions, template)) : null),
-    [questions, template],
+    () => (questions.length ? matchEnglishCard(paperSections) : null),
+    [questions, paperSections],
   )
   const cardNumberMap = useMemo(
-    () => (cardBinding ? buildNumberMap(buildPaperSections(questions, template), cardBinding) : null),
-    [cardBinding, questions, template],
+    () => (cardBinding ? buildNumberMap(paperSections, cardBinding) : null),
+    [cardBinding, paperSections],
   )
   /** 封面信息表里填过的姓名 / 编号 / 单位，直接叠印到卡上 */
   const cardIdentityRows = useMemo(() => {
@@ -278,17 +398,22 @@ export function ExamSession() {
     return (q.seq_number ?? 0) >= 52 ? 'writing_large' : 'writing_small'
   }, [])
 
-  const runGrading = useCallback(async (q: Question, written: WrittenAnswer, kind: WrittenKind) => {
-    setGradingIds((m) => ({ ...m, [q.id]: true }))
+  /**
+   * 跑一次建议分。`key` 是「卡片键」（记录 + 小题）：卡片模式一张卡一个小题，
+   * 翻译就得逐句评分，不能只按 questionId 存一份结果。`prompt` 是这一小题的题干。
+   */
+  const runGrading = useCallback(async (q: Question, written: WrittenAnswer, kind: WrittenKind, prompt?: string, key?: string) => {
+    const storeKey = key ?? q.id
+    setGradingIds((m) => ({ ...m, [storeKey]: true }))
     try {
-      const input = { kind, prompt: q.question_text, wordHint: undefined }
+      const input = { kind, prompt: prompt ?? q.question_text, wordHint: undefined }
       // 有笔迹就先识别再判；纯打字不用过识别
       const { ocr, result } = written.ink.length > 0
         ? await gradeHandwrittenAnswer(input, inkToPng(written, 1000, Math.max(300, written.ink.length * 40)))
         : { ocr: null, result: await gradeWrittenAnswer({ ...input, answer: written.text }) }
-      setGradings((m) => ({ ...m, [q.id]: ocr && ocr.ok ? { ...result, overall: `识别到：${ocr.text}\n\n${result.overall}` } : result }))
+      setGradings((m) => ({ ...m, [storeKey]: ocr && ocr.ok ? { ...result, overall: `识别到：${ocr.text}\n\n${result.overall}` } : result }))
     } finally {
-      setGradingIds((m) => ({ ...m, [q.id]: false }))
+      setGradingIds((m) => ({ ...m, [storeKey]: false }))
     }
   }, [])
 
@@ -317,21 +442,37 @@ export function ExamSession() {
   }, [answerQuestion, answers])
 
   /**
-   * 一张卡片 = 卷面的一大题（完形整篇 20 空 / 一篇 Text 5 问），所以「共几题 / 已答几题」
-   * 一律按**小题**口径报——按记录报会让一份 52 题的英语卷显示成 9 道。
+   * 卡片模式的卡片序列：**一张卡 = 一个小题**，按「分区（Section I…）→ 大题（Text 1…）→ 小题」分层。
+   * 完形 20 空 = 20 张卡、阅读一篇 Text 5 问 = 5 张卡、写作 = 1 张卡；
+   * 分区/大题标题取自模板分区与卷面素材，所以导航能一眼看出题在卷面的哪一段。
    */
-  const totalItems = useMemo(() => questions.reduce((n, q) => n + questionItemCount(q), 0), [questions])
-  const answeredItems = useMemo(
-    () => questions.reduce((n, q) => n + questionAnsweredItemCount(q, answers.get(q.id)), 0),
-    [questions, answers],
+  const cardSections = useMemo(
+    () => buildExamCards(paperSections, cardNumberMap?.noBySlot),
+    [paperSections, cardNumberMap],
   )
-  /** 这张卡片覆盖几格（决定题号格要不要放宽） */
-  const cardItemCount = useCallback((q: Question | undefined) => (q ? recordSlotIds(q).length : 1), [])
-  /** 这张卡片的卷面题号（1–20 / 41–45；没绑答题卡时是卡片序号） */
-  const cardNo = useCallback(
-    (q: Question | undefined, i: number) => cardNoLabel(cardNumberMap?.noBySlot, q, i + 1),
-    [cardNumberMap],
-  )
+  const cards = useMemo(() => flattenExamCards(cardSections), [cardSections])
+  const totalItems = cards.length
+  /** 这张卡片是否已作答（小题看它自己的作答，单条记录看整题） */
+  const isCardAnswered = useCallback((card: ExamCard | undefined): boolean => {
+    if (!card) return false
+    const answer = answers.get(card.question.id)
+    if (!card.subId) return isQuestionAnswered(card.question, answer)
+    const v = slotValue(answer, card.subId)
+    if (v === null || v === undefined) return false
+    return typeof v !== 'string' || v.trim().length > 0
+  }, [answers])
+  const answeredItems = useMemo(() => cards.filter(isCardAnswered).length, [cards, isCardAnswered])
+  const cardKey = (card: ExamCard) => slotKey(card.question.id, card.subId)
+  /** 这道小题的材料：卷面题型在 paper 上（整篇正文/段落），案例题这类在题干里 */
+  const materialOf = (card: ExamCard) => paperMaterial(card.question) || (card.subId ? card.question.question_text : '')
+  /** 这张卡在卷面的位置：'Section II Part A 阅读理解 · Text 2' */
+  const whereOf = useCallback((card: ExamCard | undefined): string => {
+    if (!card) return ''
+    const sec = cardSections.find((s) => s.cards.includes(card))
+    if (!sec) return card.question.subject ?? '未分类'
+    const block = sec.blocks.find((b) => b.cards.includes(card))
+    return block?.label ? `${sec.label} · ${block.label}` : sec.label
+  }, [cardSections])
   const applyViewMode = (next: ExamViewMode) => {
     if (next === viewMode) return
     if (next === 'card') {
@@ -569,7 +710,6 @@ export function ExamSession() {
     }
   }, [session, hasStarted, navigate])
 
-  const questionIds = useMemo(() => questions.map((q) => q.id), [questions])
   // 开始页「试卷预览」使用的本地占位卷(选中模板时生成, 不访问题库)
   const previewSections = useMemo(() => (template ? buildPreviewSections(template) : ([] as PaperSection[])), [template])
 
@@ -994,31 +1134,17 @@ export function ExamSession() {
     return <p className="text-muted-foreground">{t('exam.noExam')}</p>
   }
 
-  const currentQuestion = questions[currentIndex]
+  // 当前卡片：一张卡 = 一个小题（卡片模式与答题卡题号都按它走）
+  const currentCard = cards[currentIndex] ?? cards[0]
+  const currentQuestion = currentCard?.question
+  const currentSub = currentCard ? cardSub(currentCard) : null
   const currentAnswer = currentQuestion ? answers.get(currentQuestion.id) ?? null : null
-  const currentAnswered = currentQuestion ? isQuestionAnswered(currentQuestion, currentAnswer) : false
-  // 尚未完成的题目下标(供交卷确认时逐题提醒)
-  const unfinishedIndexes = questions.reduce<number[]>((acc, q, i) => {
-    if (!isQuestionAnswered(q, answers.get(q.id))) acc.push(i)
+  const currentAnswered = isCardAnswered(currentCard)
+  // 尚未完成的卡片下标(供交卷确认时逐题提醒)
+  const unfinishedIndexes = cards.reduce<number[]>((acc, c, i) => {
+    if (!isCardAnswered(c)) acc.push(i)
     return acc
   }, [])
-
-  // 案例分析题计分口径展示: 模板分区「每题分值」均分到小题 (如 15 分 = 3 小题 × 5 分)
-  const caseScoreText = (() => {
-    const q = currentQuestion
-    if (!q || q.question_type !== 'case_analysis' || !template) return ''
-    const subs = q.case_questions ?? []
-    if (subs.length === 0) return ''
-    const sec =
-      template.sections?.find(
-        (s) => s.type === 'case_analysis' && (!s.subject?.length || (q.subject != null && s.subject.includes(q.subject))),
-      ) ?? template.sections?.find((s) => s.type === 'case_analysis')
-    const total = sec?.score ?? 0
-    if (total <= 0) return ''
-    const per = Math.round((total / subs.length) * 100) / 100
-    const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, ''))
-    return `总分 ${fmt(total)} 分 · 每小题 ${fmt(per)} 分`
-  })()
 
   // 移动端卡片模式: 在整个做题区域左右滑动切换上一题/下一题
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -1036,7 +1162,7 @@ export function ExamSession() {
     // 明显横向滑动才切题, 避免与纵向滚动 / 点按冲突
     if (Math.abs(dx) < 64 || Math.abs(dy) > Math.abs(dx) * 1.2) return
     if (dx < 0) {
-      if (currentIndex < questions.length - 1) switchTo(currentIndex + 1)
+      if (currentIndex < cards.length - 1) switchTo(currentIndex + 1)
     } else if (currentIndex > 0) {
       switchTo(currentIndex - 1)
     }
@@ -1161,29 +1287,50 @@ export function ExamSession() {
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted border border-dashed border-muted-foreground/20" />未答</span>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-3">
-                <div className="flex flex-wrap gap-2 content-start">
-                  {questionIds.map((id, i) => {
-                    const q = questions[i]
-                    const isAnswered = q ? isQuestionAnswered(q, answers.get(id)) : false
-                    const isCurrent = i === currentIndex
-                    return (
-                      <button key={id}
-                        onClick={() => jumpLocate(i)}
-                        title={q ? `第 ${cardNo(q, i)} 题` : undefined}
-                        className={cn(
-                          'h-8 rounded text-xs tabular-nums transition-all border border-dashed flex items-center justify-center',
-                          cardItemCount(q) > 1 ? 'min-w-8 px-1.5' : 'w-8',
-                          isCurrent && 'bg-primary text-primary-foreground border-primary',
-                          !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
-                          !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
-                        )}
-                      >
-                        {cardNo(q, i)}
-                      </button>
-                    )
-                  })}
-                </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                {cardSections.map((sec) => {
+                  const secAnswered = sec.cards.filter(isCardAnswered).length
+                  return (
+                    <div key={sec.label} className="space-y-2">
+                      {/* 分区层：Section I 完形填空 */}
+                      <div className="flex items-baseline justify-between gap-2 border-b pb-1">
+                        <span className="text-[11px] font-semibold text-foreground">{sec.label}</span>
+                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                          {secAnswered}/{sec.cards.length}
+                        </span>
+                      </div>
+                      {sec.blocks.map((block, bi) => (
+                        <div key={`${sec.label}-${bi}`} className="space-y-1.5">
+                          {/* 大题层：Text 1 / Text 2 …（完形、写作这类单大题分区不显示） */}
+                          {block.label && (
+                            <p className="text-[10px] text-muted-foreground">{block.label}</p>
+                          )}
+                          <div className="flex flex-wrap gap-1.5 content-start">
+                            {block.cards.map((card) => {
+                              const isCurrent = card.index === currentIndex
+                              const isAnswered = isCardAnswered(card)
+                              const no = examCardNo(card)
+                              return (
+                                <button key={`${card.question.id}-${card.subId}`}
+                                  onClick={() => jumpLocate(card.index)}
+                                  title={`第 ${no} 题 · ${whereOf(card)}`}
+                                  className={cn(
+                                    'h-7 w-7 rounded text-[11px] tabular-nums transition-all border border-dashed flex items-center justify-center',
+                                    isCurrent && 'bg-primary text-primary-foreground border-primary',
+                                    !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
+                                    !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
+                                  )}
+                                >
+                                  {no}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
               </div>
               {/* 进度回填到答题卡底部 */}
               <div className="space-y-1.5 border-t p-3">
@@ -1268,12 +1415,13 @@ export function ExamSession() {
             <PaperPreview
               title={template?.name ?? t('exam.title')}
               meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${totalItems} 题`}
-              sections={buildPaperSections(questions, template)}
+              sections={paperSections}
               answers={answers}
               onAnswer={answerQuestion}
               currentQuestionId={currentQuestion?.id ?? null}
               onFocus={(id) => {
-                const i = questionIds.indexOf(id)
+                // 卷面上点的那道题 → 它名下第一张小卡
+                const i = cards.findIndex((c) => c.question.id === id)
                 if (i >= 0 && i !== currentIndex) jumpTo(i)
               }}
               layout={paperLayout}
@@ -1301,18 +1449,30 @@ export function ExamSession() {
         className="flex-1 flex flex-col min-w-0 lg:overflow-hidden lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0"
       >
         <div className="flex items-center gap-2 px-4 py-2 border-b text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">第 {cardNo(currentQuestion, currentIndex)} 题</span>
+          <span className="font-medium text-foreground">第 {currentCard ? examCardNo(currentCard) : '-'} 题</span>
           <span className="text-border">|</span>
-          <span>{currentQuestion?.subject || '未分类'}</span>
+          <span className="min-w-0 truncate">{whereOf(currentCard)}</span>
           <span className="text-border">|</span>
-          <span>{currentQuestion?.question_type ? t(`questionTypes.${currentQuestion.question_type}` as any) : ''}</span>
+          <span>{currentSub ? '小题' : currentQuestion?.question_type ? t(`questionTypes.${currentQuestion.question_type}` as any) : ''}</span>
           <span className="ml-auto md:hidden">共 {totalItems} 题</span>
         </div>
         <div key={`card-qbody-${cardSlide.id}`} className={cn('flex-1 overflow-y-auto p-4 sm:p-6', cardSlide.cls)}>
-          {currentQuestion && (
-            <div className="max-w-2xl mx-auto space-y-6 lg:h-full flex flex-col">
-              <div className="flex-1">
-                <MarkdownRenderer content={currentQuestion.question_text} className="text-base leading-relaxed" />
+          {currentCard && (
+            <div className="max-w-2xl mx-auto space-y-4 lg:h-full flex flex-col">
+              <div className="flex-1 space-y-3">
+                {/* 材料默认收起，看小题时按需展开：卷面题型的材料在 paper 上，案例题在题干里 */}
+                {materialOf(currentCard) && (
+                  <details className="rounded-lg border bg-background/60 px-3 py-2 text-sm">
+                    <summary className="cursor-pointer text-xs text-muted-foreground">查看材料</summary>
+                    <div className="mt-2 max-h-[40vh] overflow-y-auto text-[13px] leading-relaxed text-muted-foreground">
+                      <MarkdownRenderer content={materialOf(currentCard)} />
+                    </div>
+                  </details>
+                )}
+                <MarkdownRenderer
+                  content={currentSub?.text ?? currentCard.question.question_text}
+                  className="text-base leading-relaxed"
+                />
               </div>
             </div>
           )}
@@ -1323,16 +1483,40 @@ export function ExamSession() {
       <div className="flex-1 min-w-0 lg:border-l bg-muted/20 flex flex-col lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0">
         <div className="p-3 border-b">
           <p className="text-sm font-semibold">作答区</p>
-          <span className="text-xs text-muted-foreground">
-            {currentQuestion && cardItemCount(currentQuestion) > 1
-              ? `本卡片 ${cardItemCount(currentQuestion)} 小题 · 已答 ${questionAnsweredItemCount(currentQuestion, currentAnswer)}`
-              : currentAnswered ? '已作答' : '未作答'}
-          </span>
+          <span className="text-xs text-muted-foreground">{currentAnswered ? '已作答' : '未作答'}</span>
         </div>
         <div key={`card-answer-${cardSlide.id}`} className={cn('flex-1 overflow-y-auto p-3', cardSlide.cls)}>
-          {currentQuestion && (() => {
-            const q = currentQuestion
+          {currentCard && (() => {
+            const q = currentCard.question
             const type = q.question_type
+            const key = cardKey(currentCard)
+
+            // 卡片模式下每个小题各一张卡：完形/阅读/新题型/翻译（以及案例题）都走这里
+            if (currentSub) {
+              const subValue = slotValue(currentAnswer, currentSub.id)
+              const graded: WrittenAnswer = {
+                text: typeof subValue === 'string' ? subValue : '',
+                ink: inkByQuestion[key] ?? [],
+              }
+              return (
+                <div className="space-y-3">
+                  <SubAnswerBlock
+                    sub={currentSub}
+                    value={subValue}
+                    onChange={(v) => answerSlot({ questionId: q.id, subId: currentSub.id }, v)}
+                  />
+                  {/* 翻译没有标准答案，逐句给 AI 建议分 */}
+                  {type === 'translation' && (
+                    <WrittenGradingPanel
+                      result={gradings[key] ?? null}
+                      grading={gradingIds[key]}
+                      onGrade={isWrittenEmpty(graded) ? undefined : () => runGrading(q, graded, 'translation', currentSub.text, key)}
+                      onRegrade={isWrittenEmpty(graded) ? undefined : () => runGrading(q, graded, 'translation', currentSub.text, key)}
+                    />
+                  )}
+                </div>
+              )
+            }
 
             if (type === 'single_choice' || type === 'multi_select') {
               const isMulti = type === 'multi_select'
@@ -1443,126 +1627,8 @@ export function ExamSession() {
               )
             }
 
-            // 一条记录挂多个小题的题型（案例题、以及卷面的完形/阅读/新题型/翻译）共用这套渲染：
-            // 逐小题作答，整题的完成度与计分都按小题算
-            if (MULTI_ITEM_QUESTION_TYPES.includes(type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
-              const subs = q.case_questions ?? []
-              const cur: CaseAnswer =
-                currentAnswer && typeof currentAnswer === 'object' && !Array.isArray(currentAnswer) && 'subs' in currentAnswer
-                  ? (currentAnswer as CaseAnswer)
-                  : { subs: [] }
-              const subValue = (id: string) => cur.subs.find((s) => s.id === id)?.value
-              const setSub = (id: string, value: CorrectAnswer) => {
-                answerQuestion(q.id, { subs: [...cur.subs.filter((s) => s.id !== id), { id, value }] })
-              }
-              const inputCls = 'w-full h-9 px-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-              // 翻译没有标准答案，整题走 AI 建议分：把五个小题的译文合起来喂给评分
-              const translation = type === 'translation'
-                ? {
-                    text: subs.map((s) => { const v = subValue(s.id); return typeof v === 'string' ? v : '' }).filter(Boolean).join('\n\n'),
-                    ink: inkByQuestion[q.id] ?? [],
-                  } satisfies WrittenAnswer
-                : null
-              return (
-                <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    {type === 'case_analysis'
-                      ? `案例分析题 · 共 ${subs.length} 个小题${caseScoreText ? `，${caseScoreText}` : ''}，均基于上方材料作答`
-                      : `${QUESTION_TYPE_LABELS[type] ?? type} · 共 ${subs.length} 个小题`}
-                  </p>
-                  {subs.length === 0 && <p className="text-sm text-muted-foreground">该案例尚未配置小题</p>}
-                  {subs.map((sub, si) => {
-                    const val = subValue(sub.id)
-                    const isSingle = sub.type === 'single_choice'
-                    const isMulti = sub.type === 'multi_select'
-                    const isTF = sub.type === 'true_false'
-                    const isJudge = sub.type === 'judge_correct'
-                    const isFill = sub.type === 'fill_blank'
-                    const isShort = sub.type === 'short_answer'
-                    const choice = isSingle || isMulti
-                    const blanks = isFill ? Math.max(1, (sub.text.match(/_{2,}/g) || []).length) : 0
-                    const blankVals = Array.isArray(val) ? (val as string[]) : val ? [String(val)] : Array(blanks).fill('')
-                    // 卷面题型的小题 id 就是卷面题号，直接当题号显示；案例题的小题 id 不是数字，用 (1)(2)…
-                    const subLabel = /^\d+$/.test(sub.id) ? `${sub.id}.` : `(${si + 1})`
-                    return (
-                      <div key={sub.id} className="space-y-2 rounded-lg border p-3">
-                        <p className="text-sm leading-relaxed"><span className="mr-1.5 font-semibold text-muted-foreground">{subLabel}</span>{sub.text}</p>
-                        {choice && (
-                          <div className="space-y-1.5">
-                            {sub.options.map((opt, oi) => {
-                              const checked = isSingle ? val === oi : Array.isArray(val) && (val as number[]).includes(oi)
-                              return (
-                                <button key={oi} onClick={() => {
-                                  if (isSingle) setSub(sub.id, oi)
-                                  else {
-                                    const arr = Array.isArray(val) ? [...(val as number[])] : []
-                                    setSub(sub.id, arr.includes(oi) ? arr.filter((x) => x !== oi) : [...arr, oi])
-                                  }
-                                }}
-                                  className={cn('w-full text-left flex items-center gap-3 p-2.5 rounded-lg border transition-all text-sm',
-                                    checked ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30 hover:bg-accent/50')}>
-                                  <span className={cn('w-5 h-5 border-2 flex items-center justify-center shrink-0 text-[10px] font-bold',
-                                    isMulti ? 'rounded' : 'rounded-full',
-                                    checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/30')}>
-                                    {checked ? (isMulti ? '✓' : '●') : OPTION_LABELS[oi]}
-                                  </span>
-                                  <span>{opt}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {(isTF || isJudge) && (
-                          <div className="flex gap-3">
-                            {[true, false].map((v) => {
-                              const on = v ? val === true : isTF ? val === false : val !== null && val !== undefined && val !== true
-                              return (
-                                <button key={String(v)} onClick={() => setSub(sub.id, v ? true : (isJudge ? '' : false))}
-                                  className={cn('flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all',
-                                    on ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/30')}>
-                                  {v ? '✓ 正确' : '✗ 错误'}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {isJudge && val !== null && val !== undefined && val !== true && (
-                          <input className={inputCls} value={typeof val === 'string' ? val : ''}
-                            onChange={(e) => setSub(sub.id, e.target.value)} placeholder="输入修正后的正确表述" />
-                        )}
-                        {isFill && (
-                          <div className="space-y-2">
-                            {Array.from({ length: blanks }).map((_, bi) => (
-                              <div key={bi} className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground w-6 shrink-0">({bi + 1})</span>
-                                <input className={inputCls} value={blankVals[bi] ?? ''}
-                                  onChange={(e) => {
-                                    const next = [...(Array.isArray(val) ? (val as string[]) : Array(blanks).fill(''))]
-                                    next[bi] = e.target.value
-                                    setSub(sub.id, next)
-                                  }} placeholder={`第 ${bi + 1} 个空`} />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {isShort && (
-                          <input className={inputCls} value={typeof val === 'string' ? val : ''}
-                            onChange={(e) => setSub(sub.id, e.target.value)} placeholder="输入简答答案" />
-                        )}
-                      </div>
-                    )
-                  })}
-                  {translation && (
-                    <WrittenGradingPanel
-                      result={gradings[q.id] ?? null}
-                      grading={gradingIds[q.id]}
-                      onGrade={isWrittenEmpty(translation) ? undefined : () => runGrading(q, translation, 'translation')}
-                      onRegrade={isWrittenEmpty(translation) ? undefined : () => runGrading(q, translation, 'translation')}
-                    />
-                  )}
-                </div>
-              )
-            }
+            // 一条记录挂多个小题的题型在这里不再整题渲染：卡片模式下每个小题各一张卡，
+            // 上面的 currentSub 分支已经接管（案例题同理）
 
             return (
               <div className="space-y-2">
@@ -1629,7 +1695,7 @@ export function ExamSession() {
             className="w-full"
             disabled={!currentAnswered}
             onClick={() => {
-              if (currentIndex < questions.length - 1) switchTo(currentIndex + 1)
+              if (currentIndex < cards.length - 1) switchTo(currentIndex + 1)
             }}
           >
             {currentAnswered ? '提交本题作答' : '请先作答'}
@@ -1638,8 +1704,8 @@ export function ExamSession() {
             <Button variant="ghost" size="sm" onClick={() => switchTo(currentIndex - 1)} disabled={currentIndex === 0}>
               <ChevronLeft className="h-4 w-4 mr-1" />上一题
             </Button>
-            <span className="text-xs text-muted-foreground">{cardNo(currentQuestion, currentIndex)}/{totalItems}</span>
-            {currentIndex < questions.length - 1 ? (
+            <span className="text-xs text-muted-foreground">{currentCard ? examCardNo(currentCard) : '-'}/{totalItems}</span>
+            {currentIndex < cards.length - 1 ? (
               <Button variant="ghost" size="sm" onClick={() => switchTo(currentIndex + 1)}>
                 下一题<ChevronRight className="h-4 w-4 ml-1" />
               </Button>
@@ -1679,21 +1745,31 @@ export function ExamSession() {
               </div>
               <Progress value={totalItems > 0 ? (answeredItems / totalItems) * 100 : 0} className="h-2 [&>div]:bg-emerald-500" />
             </div>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {questionIds.map((id, i) => {
-                const q = questions[i]
-                const isAnswered = q ? isQuestionAnswered(q, answers.get(id)) : false
-                const isCurrent = i === currentIndex
-                return (
-                  <button key={id} onClick={() => jumpLocate(i, true)}
-                    className={cn('h-8 rounded text-xs tabular-nums border border-dashed flex items-center justify-center transition-all',
-                      cardItemCount(q) > 1 ? 'min-w-8 px-1.5' : 'w-8',
-                      isCurrent && 'bg-primary text-primary-foreground border-primary',
-                      !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
-                      !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20')}>
-                    {cardNo(q, i)}
-                  </button>
-              )})}
+            <div className="space-y-3">
+              {cardSections.map((sec) => (
+                <div key={sec.label} className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-foreground">{sec.label}</p>
+                  <div className="flex flex-wrap gap-1.5 justify-center">
+                    {sec.blocks.map((block, bi) => (
+                      <div key={`${sec.label}-${bi}`} className="flex flex-wrap gap-1.5 justify-center">
+                        {block.cards.map((card) => {
+                          const isCurrent = card.index === currentIndex
+                          const isAnswered = isCardAnswered(card)
+                          return (
+                            <button key={`${card.question.id}-${card.subId}`} onClick={() => jumpLocate(card.index, true)}
+                              className={cn('h-7 w-7 rounded text-[11px] tabular-nums border border-dashed flex items-center justify-center transition-all',
+                                isCurrent && 'bg-primary text-primary-foreground border-primary',
+                                !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
+                                !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20')}>
+                              {examCardNo(card)}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
             <Button size="sm" className="w-full" onClick={openSubmitConfirm} disabled={isSubmitting}>
               {isSubmitting ? t('exam.submitting') : t('exam.submitPaper')}
@@ -1723,11 +1799,11 @@ export function ExamSession() {
                     <div className="flex flex-wrap gap-1.5">
                       {unfinishedIndexes.map((i) => (
                         <span
-                          key={questions[i].id}
+                          key={`${cards[i].question.id}-${cards[i].subId}`}
                           className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-amber-500/50 bg-background px-1 text-[11px] tabular-nums text-amber-600 dark:text-amber-400"
-                          title={questions[i].question_text}
+                          title={cards[i].question.question_text}
                         >
-                          {cardNo(questions[i], i)}
+                          {examCardNo(cards[i])}
                         </span>
                       ))}
                     </div>

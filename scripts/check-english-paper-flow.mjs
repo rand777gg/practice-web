@@ -30,8 +30,8 @@ const PART_B_LETTERS = ['A', 'B', 'D', 'E', 'G']
 try {
   const { buildPaperSections } = await vite.ssrLoadModule('/src/lib/exam-compose.ts')
   const { matchEnglishCard, buildNumberMap, buildCardAnswers } = await vite.ssrLoadModule('/src/lib/exam-answer-sheet.ts')
-  const { buildPaperLayout, recordSlotIds, slotKey, withSlotValue, slotValue, cardNoLabel } = await vite.ssrLoadModule('/src/lib/exam-paper.ts')
-  const { questionItemCount, questionAnsweredItemCount, isQuestionAnswered } = await vite.ssrLoadModule('/src/lib/answer-utils.ts')
+  const { buildPaperLayout, buildExamCards, flattenExamCards, examCardNo, cardSub, paperMaterial, recordSlotIds, slotKey, withSlotValue, slotValue } = await vite.ssrLoadModule('/src/lib/exam-paper.ts')
+  const { questionItemCount, isQuestionAnswered } = await vite.ssrLoadModule('/src/lib/answer-utils.ts')
   const { BUILTIN_EXAM_TEMPLATES, totalQuestions, totalScore } = await vite.ssrLoadModule('/src/lib/exam-presets.ts')
 
   const template = BUILTIN_EXAM_TEMPLATES.find((t) => t.id.includes('english1'))
@@ -147,19 +147,36 @@ try {
   check('写作是单条记录，整条替换', slotValue(withSlotValue('old', '', 'new'), ''), 'new')
   check('槽位键与映射键一致', slotKey('cloze', '7'), 'cloze#7')
 
-  // ── 卡片模式的口径：一张卡 = 卷面的一大题，题数按小题报 ──
+  // ── 卡片模式的口径：一张卡 = 一个小题 ──
   check('整卷小题数 52（卡片模式「共 52 题」的来源）', questions.reduce((n, q) => n + questionItemCount(q), 0), 52)
-  check('一张卡的题号文案',
-    [cardNoLabel(map.noBySlot, questions[0], 1), cardNoLabel(map.noBySlot, questions[5], 3), cardNoLabel(map.noBySlot, questions[8], 9)],
-    ['1–20', '41–45', '52'])
-  check('没绑答题卡时退回卡片序号', cardNoLabel(undefined, questions[0], 7), '7')
+  check('已答判定：完形答一空就算这道题作答了', isQuestionAnswered(questions[0], { subs: [{ id: '1', value: 0 }] }), true)
+  check('已答判定：一空没答不算', isQuestionAnswered(questions[0], null), false)
 
-  // 完形答了 3 空 → 算 3 个小题（不是 1，也不是 20）
-  const clozePartial = { subs: [{ id: '1', value: 0 }, { id: '2', value: 1 }, { id: '7', value: 2 }] }
-  check('已答小题数：完形答 3 空 → 3', questionAnsweredItemCount(questions[0], clozePartial), 3)
-  check('已答小题数：完形一空没答 → 0', questionAnsweredItemCount(questions[0], null), 0)
-  check('已答小题数：写作整题 → 1', questionAnsweredItemCount(questions[8], 'My essay'), 1)
-  check('已答判定：完形答一空就算这道卡作答了', isQuestionAnswered(questions[0], { subs: [{ id: '1', value: 0 }] }), true)
+  // ── 卡片模式：一张卡 = 一个小题，按「分区 → 大题 → 小题」分层 ──
+  const cardSections = buildExamCards(sections, map.noBySlot)
+  const cards = flattenExamCards(cardSections)
+  check('卡片数 = 52 小题', cards.length, 52)
+  check('卡片序号连续且从 0 起（与 current_index 对齐）', [cards[0].index, cards[51].index], [0, 51])
+  check('分区层级', cardSections.map((s) => s.label), [
+    'Section I 完形填空',
+    'Section II Part A 阅读理解',
+    'Section II Part B 新题型（排序）',
+    'Section II Part C 翻译',
+    'Section III Part A 写作',
+    'Section III Part B 写作',
+  ])
+  check('分区内的小题数', cardSections.map((s) => s.cards.length), [20, 20, 5, 5, 1, 1])
+  check('阅读分区按 Text 再分一层', cardSections[1].blocks.map((b) => [b.label, b.cards.length]), [
+    ['Text 1', 5], ['Text 2', 5], ['Text 3', 5], ['Text 4', 5],
+  ])
+  check('完形/新题型只有一层大题（没有 Text 标题）', [cardSections[0].blocks.map((b) => b.label), cardSections[2].blocks.map((b) => b.label)], [[null], [null]])
+  check('卡上题号 = 卷面题号', [examCardNo(cards[0]), examCardNo(cards[20]), examCardNo(cards[40]), examCardNo(cards[51])], [1, 21, 41, 52])
+  check('每张卡都指到自己的小题（id 即题号）',
+    [cardSub(cards[0])?.id, cardSub(cards[40])?.id, cardSub(cards[49])?.id, cardSub(cards[50]), cardSub(cards[51])],
+    ['1', '41', '50', null, null])
+  check('卡片带出材料（完形整篇 / Part B 段落）',
+    [paperMaterial(cards[0].question).includes('___'), paperMaterial(cards[40].question).includes('段落 A'), paperMaterial(cards[51].question)],
+    [true, true, ''])
 
   // ── 卷面：从记录拼出渲染器要的结构 ──
   const layout = buildPaperLayout(questions)

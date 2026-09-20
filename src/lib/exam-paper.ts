@@ -12,6 +12,7 @@
  * 纯函数，无副作用。
  */
 import { MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
+import type { PaperSection } from '@/lib/exam-compose'
 import type { CaseAnswer, CaseQuestion, CorrectAnswer, Question, QuestionType } from '@/types'
 import type {
   ClozeBlock,
@@ -136,23 +137,85 @@ export function paperProse(passage: string): string {
   return passage.replace(/\[\[(\d+)\]\]/g, ' ___ ')
 }
 
+/** 卡片模式每张卡上方的材料（卷面整篇正文 / 段落 / Directions），单条记录的题用题干本身 */
+export function paperMaterial(q: Question): string {
+  const p = q.paper
+  if (!p) return ''
+  if (p.passage) return paperProse(p.passage)
+  if (p.paragraphs?.length) return p.paragraphs.map((x) => `${x.letter}. ${x.text}`).join('\n\n')
+  return ''
+}
+
+// ─────────────────────────── 卡片模式的卡片序列 ───────────────────────────
+
+/** 卡片模式下的一张卡 = 一个小题（单条记录的题型就是它自己） */
+export interface ExamCard {
+  question: Question
+  /** 小题 id；单条记录（写作 / 普通题）是空串 */
+  subId: string
+  /** 卷面题号（没绑答题卡时为 null） */
+  no: number | null
+  /** 在整卷卡片序列里的下标（与 store 的 current_index 对齐） */
+  index: number
+}
+
+/** 分区内的一「大题」（完形整篇 / 一篇 Text）；label 是它的卷面标题 */
+export interface ExamCardBlock {
+  label: string | null
+  cards: ExamCard[]
+}
+
+/** 一个卷面分区（Section I 完形填空 / Section II Part A 阅读理解…） */
+export interface ExamCardSection {
+  /** 'Section I 完形填空'；没有卷面素材时就是模板分区名 */
+  label: string
+  blocks: ExamCardBlock[]
+  cards: ExamCard[]
+}
+
 /**
- * 一张卡片的题号文案：卡片模式里一张卡 = 卷面的一大题，所以标的是它覆盖的卷面题号
- * （完形卡是 `1–20`、写作卡是 `51`）。没绑答题卡时退回卡片序号。
+ * 把组好的题目摊成卡片序列，并按「分区 → 大题 → 小题」分层。
+ *
+ * 卡片模式下**一张卡就是一个小题**：完形 20 空 = 20 张卡，阅读一篇 Text 的 5 问 = 5 张卡，
+ * 写作这类单条记录的题 = 1 张卡。层级来自模板分区（`buildPaperSections`），
+ * 分区标题优先用卷面自带的 `paper.ordinal`（Section I…），大题标题用 `paper.heading`（Text 1）。
  */
-export function cardNoLabel(
-  noBySlot: Map<string, number> | undefined,
-  q: Pick<Question, 'id' | 'question_type' | 'case_questions'> | undefined,
-  fallback: number,
-): string {
-  if (!q || !noBySlot) return String(fallback)
-  const nos = recordSlotIds(q)
-    .map((subId) => noBySlot.get(slotKey(q.id, subId)))
-    .filter((n): n is number => n != null)
-  if (nos.length === 0) return String(fallback)
-  const [first] = nos
-  const last = nos[nos.length - 1]
-  return first === last ? String(first) : `${first}–${last}`
+export function buildExamCards(sections: PaperSection[], noBySlot?: Map<string, number>): ExamCardSection[] {
+  const out: ExamCardSection[] = []
+  let index = 0
+  for (const section of sections) {
+    if (section.questions.length === 0) continue
+    const ordinal = section.questions[0].paper?.ordinal
+    const blocks: ExamCardBlock[] = []
+    const cards: ExamCard[] = []
+    for (const q of section.questions) {
+      const blockCards = recordSlotIds(q).map((subId): ExamCard => {
+        const card = { question: q, subId, no: noBySlot?.get(slotKey(q.id, subId)) ?? null, index }
+        index += 1
+        return card
+      })
+      blocks.push({ label: q.paper?.heading ?? null, cards: blockCards })
+      cards.push(...blockCards)
+    }
+    out.push({ label: ordinal ? `${ordinal} ${section.name}` : section.name, blocks, cards })
+  }
+  return out
+}
+
+/** 分层拍平：整卷的卡片顺序 */
+export function flattenExamCards(sections: ExamCardSection[]): ExamCard[] {
+  return sections.flatMap((s) => s.cards)
+}
+
+/** 卡片上印的题号：卷面题号优先，否则卡片序号（1-based） */
+export function examCardNo(card: ExamCard): number {
+  return card.no ?? card.index + 1
+}
+
+/** 卡片对应的小题（单条记录的题没有） */
+export function cardSub(card: ExamCard): CaseQuestion | null {
+  if (!card.subId) return null
+  return card.question.case_questions?.find((s) => s.id === card.subId) ?? null
 }
 
 const bySeq = (a: Question, b: Question) => (a.seq_number ?? 0) - (b.seq_number ?? 0)
