@@ -39,7 +39,7 @@ import type { SidebarGroup as SidebarNavGroup } from "@/lib/nav-order"
 import { useT } from "@/i18n/use-t"
 import { cn } from "@/lib/utils"
 
-type Tone = "beta" | "test" | "enhance" | "demo" | "rc"
+type Tone = "beta" | "test" | "enhance" | "demo" | "rc" | "alpha"
 
 const toneClass: Record<Tone, string> = {
   beta: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
@@ -47,6 +47,7 @@ const toneClass: Record<Tone, string> = {
   enhance: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
   demo: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
   rc: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
+  alpha: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
 }
 
 const collapsibleAnim =
@@ -333,12 +334,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
     { id: "learningRoutes", title: t("nav.learningRoutes"), url: "/learning-routes", icon: Route, tone: "beta", label: t("nav.beta") },
     { id: "notes", title: t("nav.publicNotes"), url: "/notes", icon: BookOpen },
-    { id: "resourceLibrary", title: t("nav.resourceLibrary"), url: "/resource-library", icon: LibraryBig, tone: "beta", label: t("nav.beta") },
-    { id: "studyRooms", title: t("nav.studyRooms"), url: "/study-rooms", icon: UsersRound, tone: "rc", label: t("nav.rc") },
+    { id: "resourceLibrary", title: t("nav.resourceLibrary"), url: "/resource-library", icon: LibraryBig, tone: "rc", label: t("nav.rc") },
+    { id: "studyRooms", title: t("nav.studyRooms"), url: "/study-rooms", icon: UsersRound },
   ]
 
   const smartItems: NavItem[] = [
-    { id: "assistant", title: t("nav.assistant"), url: "/assistant", icon: Sparkles, tone: "demo", label: t("nav.demo") },
+    { id: "assistant", title: t("nav.assistant"), url: "/assistant", icon: Sparkles, tone: "alpha", label: t("nav.alpha") },
     { id: "aiSettings", title: t("nav.aiSettings"), url: "/ai", icon: Bot, tone: "beta", label: t("nav.beta") },
     { id: "skills", title: t("nav.skills"), url: "/skills", icon: Puzzle, tone: "beta", label: t("nav.beta") },
     { id: "mcp", title: t("nav.mcp"), url: "/mcp", icon: Plug, tone: "beta", label: t("nav.beta") },

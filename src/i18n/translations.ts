@@ -27,6 +27,7 @@ export const zh = {
     learningRoutes: '学习路线',
     test: 'test',
     rc: 'RC',
+    alpha: 'ALPHA',
     enhance: 'enhance',
     groupLearn: '学习',
     groupSmart: '智能',
@@ -63,6 +64,8 @@ export const zh = {
     duplicates: '题目查重',
     planCompletion: '计划完成情况',
     toggleSidebar: '收起/展开侧边栏',
+    searchPlaceholder: '搜索页面…',
+    searchEmpty: '没有匹配的入口',
   },
   auth: {
     login: '登录',
@@ -1350,6 +1353,7 @@ export const en = {
     learningRoutes: 'Learning Routes',
     test: 'test',
     rc: 'RC',
+    alpha: 'ALPHA',
     enhance: 'enhance',
     groupLearn: 'Learn',
     groupSmart: 'Smart',
@@ -1386,6 +1390,8 @@ export const en = {
     duplicates: 'Duplicate Check',
     planCompletion: 'Plan Progress',
     toggleSidebar: 'Toggle sidebar',
+    searchPlaceholder: 'Search pages…',
+    searchEmpty: 'No matching page',
   },
   auth: {
     login: 'Login',
