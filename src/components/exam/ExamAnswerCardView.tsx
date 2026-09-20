@@ -3,7 +3,7 @@ import { Maximize2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AnswerSheetPrintSurface } from '@/components/templates/AnswerSheetPrintSurface'
 import { OfficialAnswerCardStack, OfficialAnswerCardStyles } from '@/components/templates/OfficialAnswerCard'
-import { A3_SHEET, textToIdDigits, type OfficialCardDraft } from '@/lib/answer-sheet-official'
+import { A3_SHEET, objectiveCells, textToIdDigits, type OfficialCardDraft } from '@/lib/answer-sheet-official'
 import { buildCardAnswers, columnToAnswerIndex, sectionByNo, type EnglishCardBinding, type NumberMap } from '@/lib/exam-answer-sheet'
 import type { PaperSlot } from '@/lib/exam-paper'
 import type { CorrectAnswer } from '@/types'
@@ -70,7 +70,12 @@ export function ExamAnswerCardView({
 }) {
   const [fit, setFit] = useState(true)
   const [printing, setPrinting] = useState(false)
-  const { boxRef, scale: fitScale } = useFitScale(A3_SHEET.width, fit)
+  /** 整张 A3 / 单页 A4；单页时按折线裁成 foldPanels 张 A4，一张一张看 */
+  const [a4, setA4] = useState(false)
+  const [page, setPage] = useState(0)
+  const panels = binding.card.foldPanels
+  const lastPage = binding.card.faces.length * panels - 1
+  const { boxRef, scale: fitScale } = useFitScale(a4 ? A3_SHEET.width / panels : A3_SHEET.width, fit)
 
   const draft: OfficialCardDraft = useMemo(() => ({
     institution,
@@ -83,6 +88,13 @@ export function ExamAnswerCardView({
   const objectiveCount = binding.sections.reduce((sum, s) => sum + (s.type === 'single_choice' ? s.count : 0), 0)
   const effectiveScale = scale ?? fitScale
 
+  // 单页模式下跟着当前小题翻页：它在 A3 上落在哪个折页就翻到哪一页
+  useEffect(() => {
+    if (!a4 || currentNo == null) return
+    const cell = objectiveCells(binding.card).find((c) => c.q === currentNo)
+    if (cell) setPage(Math.floor(cell.x / (A3_SHEET.width / panels)))
+  }, [a4, currentNo, binding.card, panels])
+
   return (
     <div className={className}>
       <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
@@ -93,6 +105,34 @@ export function ExamAnswerCardView({
           <span key={w} className="text-amber-600 dark:text-amber-500">· {w}</span>
         ))}
         <div className="ml-auto flex items-center gap-1.5">
+          {/* A3 横版按折线裁成两张 A4：单页看一张，字大一倍 */}
+          <Button size="sm" variant={a4 ? 'outline' : 'secondary'} className="h-7 text-[11px]" onClick={() => setA4(false)}>
+            整张 A3
+          </Button>
+          <Button size="sm" variant={a4 ? 'secondary' : 'outline'} className="h-7 text-[11px]" onClick={() => setA4(true)}>
+            单页 A4
+          </Button>
+          {a4 && (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                className="h-7 rounded border px-1.5 text-[11px] hover:bg-accent disabled:opacity-40"
+                disabled={page <= 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                上一页
+              </button>
+              <span className="tabular-nums">{page + 1}/{lastPage + 1}</span>
+              <button
+                type="button"
+                className="h-7 rounded border px-1.5 text-[11px] hover:bg-accent disabled:opacity-40"
+                disabled={page >= lastPage}
+                onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+              >
+                下一页
+              </button>
+            </span>
+          )}
           <Button size="sm" variant={fit ? 'secondary' : 'outline'} className="h-7 text-[11px]" onClick={() => setFit(true)}>
             <Maximize2 className="mr-1 h-3 w-3" />
             适应宽度
@@ -113,6 +153,7 @@ export function ExamAnswerCardView({
           card={binding.card}
           scale={effectiveScale}
           draft={draft}
+          crop={a4 ? { face: Math.floor(page / panels), panel: page % panels } : undefined}
           onToggleAnswer={onAnswer ? (no, column) => {
             const slot = numberMap.slotByNo.get(no)
             const section = sectionByNo(binding, no)

@@ -168,6 +168,9 @@ function Overlay({
 /**
  * 统考答题卡：原件每一面就是一张 A3 横向底图，按 1:1 mm 摆好，涂卡层叠在上面。
  * 不传 draft 就是空白卡；不传回调就是只读（打印用）。
+ *
+ * `crop` 传了就只显示某一张 A3 的一个折页（A4 单页视图）：A3 横版按折线裁成
+ * `foldPanels` 张 A4 竖版，一页看一张，字号也就跟着大一倍。
  */
 export function OfficialAnswerCardStack({
   card,
@@ -177,6 +180,7 @@ export function OfficialAnswerCardStack({
   onSetIdDigit,
   focusQ,
   onLocateQ,
+  crop,
 }: {
   card: OfficialAnswerCard
   scale?: number
@@ -185,47 +189,62 @@ export function OfficialAnswerCardStack({
   onSetIdDigit?: (pos: number, digit: number) => void
   /** 当前小题：圈出卡上那一行 */
   focusQ?: number | null
-  /** 点题号区 → 回到答题卡的那一小题 */
+  /** 点题号区 → 回到答题卡的那一小題 */
   onLocateQ?: (q: number) => void
+  /** A4 单页：只显示第 `face` 面的第 `panel` 折页 */
+  crop?: { face: number; panel: number }
 }) {
+  const faces = crop ? card.faces.slice(crop.face, crop.face + 1) : card.faces
+  const faceW = A3_SHEET.width / card.foldPanels
+  const viewW = crop ? faceW : A3_SHEET.width
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: `${10 * scale}px`, width: `${A3_SHEET.width * scale}mm` }}>
-      {card.faces.map((src, i) => (
-        <div
-          key={src}
-          className="official-sheet"
-          style={{
-            position: 'relative',
-            width: `${A3_SHEET.width * scale}mm`,
-            height: `${A3_SHEET.height * scale}mm`,
-            overflow: 'hidden',
-            background: '#fff',
-            outline: '1px solid hsl(var(--border))',
-          }}
-        >
-          <img
-            src={src}
-            alt={`${card.name} 第 ${i + 1} 面`}
-            draggable={false}
-            style={{ display: 'block', width: '100%', height: '100%' }}
-          />
-          {i === 0 && (
-            <div
+    <div style={{ display: 'flex', flexDirection: 'column', gap: `${10 * scale}px`, width: `${viewW * scale}mm` }}>
+      {faces.map((src, fi) => {
+        const faceIndex = crop ? crop.face : fi
+        const shift = crop ? crop.panel * faceW : 0
+        return (
+          <div
+            key={src}
+            className="official-sheet"
+            style={{
+              position: 'relative',
+              width: `${viewW * scale}mm`,
+              height: `${A3_SHEET.height * scale}mm`,
+              overflow: 'hidden',
+              background: '#fff',
+              outline: '1px solid hsl(var(--border))',
+            }}
+          >
+            <img
+              src={src}
+              alt={`${card.name} 第 ${faceIndex + 1} 面`}
+              draggable={false}
               style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
+                display: 'block',
                 width: `${A3_SHEET.width * scale}mm`,
                 height: `${A3_SHEET.height * scale}mm`,
-                transform: `scale(${scale})`,
-                transformOrigin: 'top left',
+                marginLeft: `${-shift * scale}mm`,
+                maxWidth: 'none',
               }}
-            >
-              <Overlay card={card} draft={draft} onToggleAnswer={onToggleAnswer} onSetIdDigit={onSetIdDigit} focusQ={focusQ} onLocateQ={onLocateQ} />
-            </div>
-          )}
-        </div>
-      ))}
+            />
+            {faceIndex === 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${-shift * scale}mm`,
+                  top: 0,
+                  width: `${A3_SHEET.width * scale}mm`,
+                  height: `${A3_SHEET.height * scale}mm`,
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                }}
+              >
+                <Overlay card={card} draft={draft} onToggleAnswer={onToggleAnswer} onSetIdDigit={onSetIdDigit} focusQ={focusQ} onLocateQ={onLocateQ} />
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
