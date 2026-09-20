@@ -23,7 +23,7 @@ import {
   type CreateSpec,
 } from '@/lib/assistant-create'
 import {
-  activeSkillFrom, listSkills, loadSkillDoc, parseCommand,
+  activeSkillFrom, conversationTitleFrom, listSkills, loadSkillDoc, parseCommand,
   type CommandSpec, type CreateDraftMeta, type MessageMeta,
 } from '@/lib/assistant-commands'
 import type { AssistantMode, AssistantReply, LittleQEmotion } from '@/lib/assistant-demo'
@@ -49,7 +49,6 @@ export interface ConversationSummary {
   updated_at: string
 }
 
-const TITLE_MAX = 24
 const MESSAGE_COLUMNS = 'id, role, content, sub, tags, sources, followups, meta, created_at'
 const ACTIVE_KEY = 'littleq_active_conversation'
 
@@ -70,11 +69,7 @@ function writeActiveId(id: string | null): void {
 }
 
 /** 会话标题直接取第一句话 —— 让模型起标题要多花一次调用, 而用户自己写的那句往往更准 */
-function titleFrom(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  if (!flat) return '新会话'
-  return flat.length > TITLE_MAX ? `${flat.slice(0, TITLE_MAX)}…` : flat
-}
+const titleFrom = conversationTitleFrom
 
 interface Row {
   id: number

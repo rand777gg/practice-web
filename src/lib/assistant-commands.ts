@@ -89,6 +89,21 @@ export function matchCommands(prefix: string): CommandSpec[] {
   return ASSISTANT_COMMANDS.filter((c) => c.name.startsWith(prefix))
 }
 
+const TITLE_MAX = 24
+
+/**
+ * 会话标题。直接取用户第一句话 —— 让模型起标题要多花一次调用, 而用户自己写的那句往往更准。
+ *
+ * 指令名本身对列表标题没有信息量: 一屏 "/create …" 什么都看不出来, 所以把开头的 "/xxx"
+ * 摘掉; 万一整句就只有指令名, 那就留着(否则标题会是空的)。
+ */
+export function conversationTitleFrom(text: string): string {
+  const withoutCommand = text.replace(/^\/\w+\s*/, '')
+  const flat = (withoutCommand || text).replace(/\s+/g, ' ').trim()
+  if (!flat) return '新会话'
+  return flat.length > TITLE_MAX ? `${flat.slice(0, TITLE_MAX)}…` : flat
+}
+
 // ── 消息卡片 ──
 
 /**

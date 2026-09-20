@@ -7,6 +7,7 @@ import {
   ASSISTANT_COMMANDS,
   activeSkillFrom,
   commandPrefix,
+  conversationTitleFrom,
   findCommand,
   matchCommands,
   parseCommand,
@@ -169,6 +170,13 @@ check('没有目录就是空数组(界面退回手填页码)', sectionsFromToc([
 // ── /create 的指令说明得能让人看懂它有两步 ──
 const createSpec = findCommand('create')
 check('/create 的说明里提到了先确认参数', createSpec.summary.includes('确认'))
+
+// ── 会话标题去掉指令名 ──
+check('标题去掉 /create 前缀', conversationTitleFrom('/create 创建几道基础医学的题目') === '创建几道基础医学的题目')
+check('标题去掉 /export 前缀', conversationTitleFrom('/export 顺便导出') === '顺便导出')
+check('只有指令名时保留指令名(否则标题就空了)', conversationTitleFrom('/export') === '/export')
+check('普通消息不受影响', conversationTitleFrom('死锁的四个必要条件是什么？') === '死锁的四个必要条件是什么？')
+check('过长的标题会截断', conversationTitleFrom(`/create ${'题'.repeat(40)}`).length === 25)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
