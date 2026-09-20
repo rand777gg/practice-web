@@ -12,6 +12,8 @@ import type { ParsedQuestion } from '@/lib/ai/types'
 import type { RagSource } from '@/lib/rag'
 import type { SkillId } from '@/lib/skills-catalog'
 import type { CreateSpec } from '@/lib/assistant-create'
+// 相对路径带扩展名: 这个模块要能被 Node 直接跑单元测试(见 scripts/assistant-commands-smoke.mjs)
+import { asQuestionType, normalizeSpec } from './create-spec.ts'
 
 export type CommandId = 'create' | 'skill' | 'export' | 'help'
 
@@ -154,6 +156,101 @@ export type MessageMeta = CreateDraftMeta | SkillMeta | ExportMeta | HelpMeta
 export function isCreateDraft(meta: MessageMeta | null | undefined): meta is CreateDraftMeta {
   return meta?.kind === 'create-draft'
 }
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function asParsedQuestion(raw: unknown): ParsedQuestion | null {
+  if (!raw || typeof raw !== 'object') return null
+  const q = raw as Record<string, unknown>
+  const text = asString(q.question_text)
+  if (!text.trim()) return null
+  return {
+    // 题型必须落在平台支持的那几种里: 落不进去的退回单选, 否则入库时会被 CHECK 挡下来,
+    // 而那时候题已经生成完, 白花钱
+    question_type: asQuestionType(q.question_type) ?? 'single_choice',
+    question_text: text,
+    options: Array.isArray(q.options) ? q.options.map(String) : [],
+    correct_answer: (q.correct_answer ?? '') as ParsedQuestion['correct_answer'],
+    analysis: asString(q.analysis) || undefined,
+    answer_explanation: asString(q.answer_explanation) || undefined,
+    key_points: asString(q.key_points) || undefined,
+    source_page: asString(q.source_page) || undefined,
+    allow_unordered: q.allow_unordered === true,
+  }
+}
+
+/**
+ * 从库里读出来的 meta 一律先过这里。
+ *
+ * 为什么必须有这一层: 卡片的形状会随版本变(加 sources、scope 从字符串变成页码区间…),
+ * 而库里躺着的是旧版本写下的 meta。直接当新形状用就会像这样炸在渲染里 ——
+ * 用户看到的是整页 "Unexpected Application Error", 而不是一句"这张卡片是旧版本存的"。
+ * 认不出来的 kind 直接丢弃: 正文还在, 只是不再有那张卡片。
+ */
+export function normalizeMeta(raw: unknown): MessageMeta | null {
+  if (!raw || typeof raw !== 'object') return null
+  const m = raw as Record<string, unknown>
+
+  switch (m.kind) {
+    case 'create-draft': {
+      const status = m.status
+      const citation = Array.isArray(m.sources) ? m.sources : []
+      return {
+        kind: 'create-draft',
+        spec: normalizeSpec((m.spec ?? {}) as Partial<CreateSpec>),
+        understanding: asString(m.understanding),
+        status: status === 'review' || status === 'inserted' || status === 'discarded' ? status : 'spec',
+        questions: (Array.isArray(m.questions) ? m.questions : [])
+          .map(asParsedQuestion)
+          .filter((q): q is ParsedQuestion => q !== null),
+        grounded: m.grounded === true,
+        sources: citation
+          .filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === 'object')
+          .map((s) => ({
+            type: (ALL_RAG_SOURCES as readonly string[]).includes(asString(s.type))
+              ? (asString(s.type) as RagSource)
+              : 'resource' as RagSource,
+            label: asString(s.label),
+            pageNo: typeof s.pageNo === 'number' ? s.pageNo : null,
+            anchor: asString(s.anchor) || null,
+          })),
+        scopeMissed: m.scopeMissed === true,
+        insertedCount: typeof m.insertedCount === 'number' ? m.insertedCount : undefined,
+      }
+    }
+
+    case 'skill': {
+      const action = m.action
+      const id = asString(m.skillId)
+      return {
+        kind: 'skill',
+        action: action === 'set' || action === 'clear' ? action : 'list',
+        // 技能 id 也过一遍白名单: 旧版/手改的 meta 里可能是个已经不存在的技能
+        skillId: (SKILL_IDS as readonly string[]).includes(id) ? (id as SkillId) : null,
+        skillTitle: asString(m.skillTitle),
+      }
+    }
+
+    case 'export':
+      return {
+        kind: 'export',
+        filename: asString(m.filename) || '会话.zip',
+        bytes: typeof m.bytes === 'number' ? m.bytes : 0,
+        turns: typeof m.turns === 'number' ? m.turns : 0,
+      }
+
+    case 'help':
+      return { kind: 'help' }
+
+    default:
+      return null
+  }
+}
+
+const ALL_RAG_SOURCES = ['resource', 'question', 'kp', 'subject', 'note'] as const
+const SKILL_IDS = ['local-supabase-docker', 'local-judge0-setup'] as const
 
 /**
  * 当前会话生效的技能 —— 从消息里推出来, 而不是单独存一个字段。

@@ -93,6 +93,11 @@ export const SPREAD_LABEL: Record<CreateSpread, string> = {
 
 const TYPE_VALUES = new Set(QUESTION_TYPE_OPTIONS.map((o) => o.value as string))
 
+/** 平台的真实题型集合里有没有这个值 —— 从库里/模型手里拿到的字符串一律先过这里 */
+export function asQuestionType(value: unknown): QuestionType | null {
+  return typeof value === 'string' && TYPE_VALUES.has(value) ? (value as QuestionType) : null
+}
+
 function normalizeScope(input: unknown): CreateScope | null {
   if (!input || typeof input !== 'object') return null
   const raw = input as Partial<CreateScope>

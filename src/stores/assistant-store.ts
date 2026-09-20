@@ -23,7 +23,7 @@ import {
   type CreateSpec,
 } from '@/lib/assistant-create'
 import {
-  activeSkillFrom, conversationTitleFrom, listSkills, loadSkillDoc, parseCommand,
+  activeSkillFrom, conversationTitleFrom, listSkills, loadSkillDoc, normalizeMeta, parseCommand,
   type CommandSpec, type CreateDraftMeta, type MessageMeta,
 } from '@/lib/assistant-commands'
 import type { AssistantMode, AssistantReply, LittleQEmotion } from '@/lib/assistant-demo'
@@ -79,7 +79,8 @@ interface Row {
   tags: string[] | null
   sources: ChatMessage['sources']
   followups: string[] | null
-  meta: MessageMeta | null
+  /** 库里躺着的可能是旧版本写下的卡片形状, 所以这里收 unknown, 由 normalizeMeta 收口 */
+  meta: unknown
   created_at: string | null
 }
 
@@ -92,7 +93,7 @@ function toMessage(row: Row): ChatMessage {
     tags: row.tags,
     sources: row.sources,
     followups: row.followups,
-    meta: row.meta ?? null,
+    meta: normalizeMeta(row.meta),
     createdAt: row.created_at ?? null,
   }
 }

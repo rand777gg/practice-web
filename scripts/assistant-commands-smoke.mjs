@@ -10,6 +10,7 @@ import {
   conversationTitleFrom,
   findCommand,
   matchCommands,
+  normalizeMeta,
   parseCommand,
 } from '../src/lib/assistant-commands.ts'
 import {
@@ -177,6 +178,49 @@ check('标题去掉 /export 前缀', conversationTitleFrom('/export 顺便导出
 check('只有指令名时保留指令名(否则标题就空了)', conversationTitleFrom('/export') === '/export')
 check('普通消息不受影响', conversationTitleFrom('死锁的四个必要条件是什么？') === '死锁的四个必要条件是什么？')
 check('过长的标题会截断', conversationTitleFrom(`/create ${'题'.repeat(40)}`).length === 25)
+
+// ── normalizeMeta: 旧版本存下的卡片不能把页面打崩 ──
+// 这就是 79a0f0d 那一版写进库里的形状: 没有 sources, scope 是字符串, 还多一个 difficulty。
+// 新版组件直接当新形状用就炸在渲染里, 用户看到的是整页 Unexpected Application Error。
+const broken = normalizeMeta({
+  kind: 'create-draft',
+  spec: {
+    source: 'platform', scope: '第 3 章', prompt: '古罗马', count: 2,
+    questionTypes: ['single_choice'], categories: [], avoidDuplicates: true, spread: 'spread', difficulty: 'hard',
+  },
+  understanding: '出两道古罗马的题',
+  status: 'spec',
+})
+check('旧版卡片能被读出来', broken !== null && broken.kind === 'create-draft')
+check('缺的 sources 补成全部五类', eq(broken.spec.sources, ['resource', 'question', 'kp', 'subject', 'note']))
+check('字符串形态的旧 scope 被丢掉(而不是当成页码用)', broken.spec.scope === null)
+check('questions 缺失时补成空数组', eq(broken.questions, []))
+check('questions / sources 给 null 也不会漏出来', (() => {
+  const m = normalizeMeta({ kind: 'create-draft', spec: {}, questions: null, sources: 'x', status: 'review' })
+  return Array.isArray(m.questions) && Array.isArray(m.sources)
+})())
+check('非法 status 退回 spec', normalizeMeta({ kind: 'create-draft', spec: {}, status: 'wat' }).status === 'spec')
+check('题型非法的题目退回单选', normalizeMeta({
+  kind: 'create-draft', spec: {}, questions: [{ question_text: 'x', question_type: 'telepathy' }],
+}).questions[0].question_type === 'single_choice')
+check('options 不是数组时补成空数组', Array.isArray(normalizeMeta({
+  kind: 'create-draft', spec: {}, questions: [{ question_text: 'x', options: null }],
+}).questions[0].options))
+check('没有题干的条目被丢掉', normalizeMeta({
+  kind: 'create-draft', spec: {}, questions: [{}, { question_text: 'ok' }],
+}).questions.length === 1)
+check('旧引用条目缺 type 时补成文献',
+  normalizeMeta({ kind: 'create-draft', spec: {}, sources: [{ label: '医学史' }] }).sources[0].type === 'resource')
+check('认不出的 kind 直接丢弃(正文还在, 只是没有卡片)',
+  normalizeMeta({ kind: 'question-draft', questions: [] }) === null)
+check('null / 字符串 / undefined 都不炸',
+  normalizeMeta(null) === null && normalizeMeta('x') === null && normalizeMeta(undefined) === null)
+check('help / export / skill 也能读回来',
+  normalizeMeta({ kind: 'help' }).kind === 'help'
+  && normalizeMeta({ kind: 'export' }).kind === 'export'
+  && normalizeMeta({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup' }).skillId === 'local-judge0-setup')
+check('已经不存在的技能 id 会被清掉',
+  normalizeMeta({ kind: 'skill', action: 'set', skillId: 'no-such-skill' }).skillId === null)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
