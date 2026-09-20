@@ -7,6 +7,7 @@ import {
   questionItemCount,
 } from '@/lib/answer-utils'
 import { composeExamIds, fetchQuestionsByIds } from '@/lib/exam-compose'
+import { MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
 import type { ExamSession, Question, CorrectAnswer, ExamTemplate, ExamSampleMode, ExamComposeStat } from '@/types'
 
 export interface StartExamParams {
@@ -262,15 +263,15 @@ export const useExamStore = create<ExamState>((set, get) => ({
     for (const q of questions) {
       const selected = answers.get(q.id)
       if (selected == null) continue
-      const isCase = q.question_type === 'case_analysis'
-      // 案例分析题按小题计分(可部分得分); 其余整题全对才算对
-      const okCount = isCase
+      const multi = MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])
+      // 一条记录挂多个小题的题型（案例题、卷面的完形/阅读/新题型/翻译）按小题计分，可部分得分
+      const okCount = multi
         ? questionCorrectItemCount(q, selected)
         : isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
           ? questionItemCount(q)
           : 0
       correctItems += okCount
-      const fullCorrect = !isCase ? okCount > 0 : ((q.case_questions?.length ?? 0) > 0 && okCount === (q.case_questions?.length ?? 0))
+      const fullCorrect = !multi ? okCount > 0 : ((q.case_questions?.length ?? 0) > 0 && okCount === (q.case_questions?.length ?? 0))
       answerRecords.push({
         user_id: session.user_id,
         question_id: q.id,

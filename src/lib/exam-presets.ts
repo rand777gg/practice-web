@@ -1,4 +1,5 @@
 import type { ExamTemplate, ExamTemplateSection, QuestionType } from '@/types'
+import { paperItemsPerRecord } from '@/lib/exam-paper'
 
 export const BUILTIN_PREFIX = 'builtin:'
 
@@ -6,12 +7,16 @@ function section(type: QuestionType, count: number, score: number): ExamTemplate
   return { id: `s-${type}-${count}-${score}`, type, count, score, categories: [] }
 }
 
+/**
+ * 总题数 / 总分都按「小题」口径算：卷面题型一条记录含多个小题
+ * （完形 20 空、阅读一篇 5 问），模板还没组卷时只能按卷面的固定小题数折算。
+ */
 export function totalQuestions(sections: ExamTemplateSection[]): number {
-  return sections.reduce((n, s) => n + Math.max(0, s.count), 0)
+  return sections.reduce((n, s) => n + Math.max(0, s.count) * paperItemsPerRecord(s.type), 0)
 }
 
 export function totalScore(sections: ExamTemplateSection[]): number {
-  return sections.reduce((n, s) => n + Math.max(0, s.count) * Math.max(0, s.score), 0)
+  return sections.reduce((n, s) => n + Math.max(0, s.count) * paperItemsPerRecord(s.type) * Math.max(0, s.score), 0)
 }
 
 export const BUILTIN_EXAM_TEMPLATES: ExamTemplate[] = [
@@ -118,8 +123,11 @@ export const BUILTIN_EXAM_TEMPLATES: ExamTemplate[] = [
    * 两处不能改：
    *   - `sample_mode: 'seq'` —— 真题必须按卷面原序抽题。分区内随机抽会让"完形第 3 题"变成别的题，
    *     自动涂卡直接涂错位（真实答题卡的格位是卷面题号，不是抽题顺序）。
-   *   - 每个分区带 `categories` —— 完形/阅读/新题型都是 single_choice，只靠题型分不开；
-   *     compose_exam 的分区过滤是 `q.categories ?| 分区categories`，靠这个标签切。
+   *   - `order_mode: 'section'` —— 分区顺序就是卷面题号顺序。
+   *
+   * `count` 在这里是**记录数**（一条记录 = 卷面的一大题），不是小题数：
+   * 完形整篇一条、阅读四篇四条、新题型一条、翻译一条、两篇写作各一条，共 9 条。
+   * 题面题型各不相同，所以分区只按题型过滤，不再靠 `categories` 标签去分同一个 single_choice。
    */
   {
     id: `${BUILTIN_PREFIX}english1`,
@@ -134,12 +142,12 @@ export const BUILTIN_EXAM_TEMPLATES: ExamTemplate[] = [
     updated_at: '',
     builtin: true,
     sections: [
-      { ...section('single_choice', 20, 0.5), categories: ['完形填空'] },
-      { ...section('single_choice', 20, 2), categories: ['阅读理解 Text 1', '阅读理解 Text 2', '阅读理解 Text 3', '阅读理解 Text 4'] },
-      { ...section('single_choice', 5, 2), categories: ['新题型'] },
-      { ...section('analysis', 5, 2), categories: ['翻译'] },
-      { ...section('analysis', 1, 10), categories: ['应用文写作'] },
-      { ...section('analysis', 1, 20), categories: ['短文写作'] },
+      section('cloze', 1, 0.5),            // 完形 20 空 × 0.5 = 10
+      section('reading_set', 4, 2),        // 4 篇 × 5 问 × 2 = 40
+      section('sentence_order', 1, 2),     // 5 空 × 2 = 10
+      section('translation', 1, 2),        // 5 句 × 2 = 10
+      section('writing', 1, 10),           // 应用文 10
+      section('writing', 1, 20),           // 短文写作 20
     ],
   },
 ]

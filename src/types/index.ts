@@ -472,6 +472,11 @@ export interface Question {
   examples?: ExampleCase[]
   /** 案例分析题的小题列表; question_text 为共用案例材料 */
   case_questions?: CaseQuestion[]
+  /**
+   * 真题卷面素材(分区标题 / Directions / 整篇正文 / 段落骨架 / 图表);
+   * 有它的记录就是卷面的一大题, 小题 id 即卷面题号。见 lib/exam-paper.ts
+   */
+  paper?: QuestionPaper | null
   issue_flag?: 'none' | 'suspected' | 'confirmed'
   issue_note?: string | null
   flagged_at?: string | null
@@ -529,6 +534,9 @@ import type {
   PaperSealBand,
   PaperWatermark,
 } from '@/lib/paper-layout'
+import type { QuestionPaper } from '@/lib/exam-paper'
+
+export type { QuestionPaper }
 
 export type {
   ExamTemplateCover,

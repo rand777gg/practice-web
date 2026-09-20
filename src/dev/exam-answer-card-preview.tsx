@@ -11,49 +11,73 @@ import { createRoot } from 'react-dom/client'
 import '@/index.css'
 import { ExamAnswerCardView } from '@/components/exam/ExamAnswerCardView'
 import { buildNumberMap, matchEnglishCard } from '@/lib/exam-answer-sheet'
-import type { Question } from '@/types'
+import { withSlotValue } from '@/lib/exam-paper'
+import type { CaseQuestion, CorrectAnswer, Question, QuestionType } from '@/types'
 
-const mk4 = (n: number, prefix: string): Question[] =>
-  Array.from({ length: n }, (_, i) => ({
-    id: `${prefix}${i + 1}`,
-    question_type: 'single_choice',
-    options: ['A. 甲', 'B. 乙', 'C. 丙', 'D. 丁'],
-  })) as unknown as Question[]
+/** 卷面一条记录 = 一大题：多小题题型把小题挂在 case_questions 上，小题 id 就是卷面题号 */
+const record = (id: string, type: QuestionType, from: number, count: number, options: string[]): Question => ({
+  id,
+  question_type: type,
+  question_text: '',
+  options: [],
+  correct_answer: null,
+  category: null,
+  categories: [],
+  subject: '英语一',
+  analysis: null,
+  key_points: null,
+  answer_explanation: null,
+  seq_number: from,
+  created_at: '',
+  created_by: null,
+  verified: true,
+  import_mode: null,
+  allow_unordered: false,
+  unordered_blanks: null,
+  source_page: null,
+  case_questions: Array.from({ length: count }, (_, i): CaseQuestion => ({
+    id: String(from + i),
+    type: 'single_choice',
+    text: `第 ${from + i} 题`,
+    options,
+    answer: 0,
+  })),
+})
 
-/** Part B：选项文本自带字母前缀，且顺序故意打乱 */
+/** 写作这类单条记录没有小题，整条记录只占卡上一格 */
+const writingRecord = (id: string, no: number): Question => ({ ...record(id, 'writing', no, 0, []), seq_number: no })
+
+/** Part B：选项文本自带字母前缀，且顺序故意打乱（卷面已给定 F/H/C） */
 const PART_B_LETTERS = ['E', 'G', 'A', 'B', 'D']
-const partB: Question[] = Array.from({ length: 5 }, (_, i) => ({
-  id: `b${i + 1}`,
-  question_type: 'single_choice',
-  options: PART_B_LETTERS.map((x) => `${x}. 段落 ${x}`),
-})) as unknown as Question[]
-
-const subjective = (n: number, prefix: string): Question[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i + 1}`, question_type: 'short_answer', options: [] })) as unknown as Question[]
+const ABCD = ['A. 甲', 'B. 乙', 'C. 丙', 'D. 丁']
 
 const paperSections = [
-  { name: '完形', scorePerQuestion: 0.5, questions: mk4(20, 'c') },
-  { name: '阅读A', scorePerQuestion: 2, questions: mk4(20, 'r') },
-  { name: '新题型', scorePerQuestion: 2, questions: partB },
-  { name: '翻译', scorePerQuestion: 2, questions: subjective(5, 't') },
-  { name: '应用文', scorePerQuestion: 10, questions: subjective(1, 'w') },
-  { name: '短文写作', scorePerQuestion: 20, questions: subjective(1, 'x') },
+  { name: '完形', scorePerQuestion: 0.5, questions: [record('cloze', 'cloze', 1, 20, ABCD)] },
+  {
+    name: '阅读A',
+    scorePerQuestion: 2,
+    questions: [21, 26, 31, 36].map((from, i) => record(`read${i + 1}`, 'reading_set', from, 5, ABCD)),
+  },
+  { name: '新题型', scorePerQuestion: 2, questions: [record('order', 'sentence_order', 41, 5, PART_B_LETTERS.map((x) => `${x}. 段落 ${x}`))] },
+  { name: '翻译', scorePerQuestion: 2, questions: [record('trans', 'translation', 46, 5, [])] },
+  { name: '应用文', scorePerQuestion: 10, questions: [writingRecord('writingA', 51)] },
+  { name: '短文写作', scorePerQuestion: 20, questions: [writingRecord('writingB', 52)] },
 ]
 
 /** 合成卷面 → 绑卡 → 造作答。都是静态数据，放模块作用域，组件里不用再 memo */
-const binding = matchEnglishCard(paperSections as never)
-const numberMap = binding ? buildNumberMap(paperSections as never, binding) : null
-const answers = new Map<string, number>()
+const binding = matchEnglishCard(paperSections)
+const numberMap = binding ? buildNumberMap(paperSections, binding) : null
+const answers = new Map<string, CorrectAnswer>()
 if (numberMap) {
   // 完形 + 阅读 Part A：每题涂 (题号-1)%4，四个列轮流出现
   for (let no = 1; no <= 40; no++) {
-    const id = numberMap.questionIdByNo.get(no)
-    if (id) answers.set(id, (no - 1) % 4)
+    const slot = numberMap.slotByNo.get(no)
+    if (slot) answers.set(slot.questionId, withSlotValue(answers.get(slot.questionId), slot.subId, (no - 1) % 4))
   }
   // Part B：5 个位置分别选 E / G / A / B / D → 卡上应为第 5 / 7 / 1 / 2 / 4 列
   for (let i = 0; i < 5; i++) {
-    const id = numberMap.questionIdByNo.get(41 + i)
-    if (id) answers.set(id, i)
+    const slot = numberMap.slotByNo.get(41 + i)
+    if (slot) answers.set(slot.questionId, withSlotValue(answers.get(slot.questionId), slot.subId, i))
   }
 }
 

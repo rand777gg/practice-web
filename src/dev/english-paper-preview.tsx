@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client'
 import { StrictMode, useState } from 'react'
 import '@/index.css'
 import { EnglishRealPaper } from '@/components/exam/EnglishRealPaper'
+import type { PaperSlot } from '@/lib/exam-paper'
 import type { EnglishPaperLayout } from '@/lib/english-paper-layout'
 
 const LOREM = 'Advances in artificial intelligence are rapidly changing every aspect of human life. The world of AI is buzzing with an exciting potential to improve and enrich our lives, yet it also carries hazards we may find hard to control. One such question is how we understand and experience beauty in a world shaped by machines. '
@@ -84,15 +85,15 @@ const layout: EnglishPaperLayout = {
   },
 }
 
-/** 题号 → questionId 的映射，跟线上一致：完形是 1–20 条独立记录，阅读每篇 5 条 */
-const questionIdByNo = new Map<number, string>()
-for (let no = 1; no <= 45; no++) questionIdByNo.set(no, `q${no}`)
-questionIdByNo.set(51, 'q51')
-questionIdByNo.set(52, 'q52')
+/** 题号 → 槽位，跟线上一致：完形整篇一条记录（小题 id 就是题号），阅读每篇一条 */
+const slotByNo = new Map<number, PaperSlot>()
+for (let no = 1; no <= 45; no++) slotByNo.set(no, { questionId: `q${no <= 20 ? 1 : no <= 40 ? 2 : 3}`, subId: String(no) })
+slotByNo.set(51, { questionId: 'q51', subId: '' })
+slotByNo.set(52, { questionId: 'q52', subId: '' })
 
 function Harness() {
-  const [picked] = useState(() => new Map<string, number>([['q1', 0], ['q2', 2], ['q21', 1]]))
-  const [texts] = useState(() => new Map<string, string>([['q46', '这是一句示例译文。']]))
+  const [picked] = useState(() => new Map<string, number>([['q1#1', 0], ['q1#2', 2], ['q2#21', 1]]))
+  const [texts] = useState(() => new Map<string, string>([['q3#46', '这是一句示例译文。']]))
 
   return (
     <div style={{ padding: 16, background: '#e5e5e5' }}>
@@ -103,9 +104,9 @@ function Harness() {
       </p>
       <EnglishRealPaper
         layout={layout}
-        questionIdByNo={questionIdByNo}
-        pickedByQuestion={picked}
-        textByQuestion={texts}
+        slotByNo={slotByNo}
+        pickedBySlot={picked}
+        textBySlot={texts}
         onPick={() => {}}
         onText={() => {}}
       />

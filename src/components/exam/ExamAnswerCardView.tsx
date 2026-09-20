@@ -5,6 +5,7 @@ import { AnswerSheetPrintSurface } from '@/components/templates/AnswerSheetPrint
 import { OfficialAnswerCardStack, OfficialAnswerCardStyles } from '@/components/templates/OfficialAnswerCard'
 import { A3_SHEET, textToIdDigits, type OfficialCardDraft } from '@/lib/answer-sheet-official'
 import { buildCardAnswers, columnToAnswerIndex, sectionByNo, type EnglishCardBinding, type NumberMap } from '@/lib/exam-answer-sheet'
+import type { PaperSlot } from '@/lib/exam-paper'
 import type { CorrectAnswer } from '@/types'
 
 const MM_TO_PX = 96 / 25.4
@@ -53,8 +54,8 @@ export function ExamAnswerCardView({
   candidateNo?: string
   candidateName?: string
   institution?: string
-  /** 在卡上直接点格子作答：回调给出 questionId 与应用里的选项下标 */
-  onAnswer?: (questionId: string, optionIndex: number) => void
+  /** 在卡上直接点格子作答：回调给出该格对应的记录/小题与应用里的选项下标 */
+  onAnswer?: (slot: PaperSlot, optionIndex: number) => void
   /** 卷面信息就地编辑（写回会话的封面字段） */
   onIdentityChange?: (patch: { institution?: string; candidateName?: string; candidateNo?: string }) => void
   /** 传了就固定缩放（外层自己量宽度）；不传则按容器宽度自适应 */
@@ -107,12 +108,12 @@ export function ExamAnswerCardView({
           scale={effectiveScale}
           draft={draft}
           onToggleAnswer={onAnswer ? (no, column) => {
-            const id = numberMap.questionIdByNo.get(no)
+            const slot = numberMap.slotByNo.get(no)
             const section = sectionByNo(binding, no)
-            if (!id || !section) return
+            if (!slot || !section) return
             // 列号必须先换算成选项下标：Part B 的 A、B、D、E、G 不连续
             const idx = columnToAnswerIndex(column, section)
-            if (idx !== null) onAnswer(id, idx)
+            if (idx !== null) onAnswer(slot, idx)
           } : undefined}
         />
       </div>

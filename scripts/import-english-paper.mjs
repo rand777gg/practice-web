@@ -1,25 +1,28 @@
 /**
  * 2026 年考研英语（一）真题入库。
  *
+ * **一条记录 = 卷面的一大题**：完形整篇（20 空）、四篇阅读（每篇 5 问）、Part B 排序（5 空）、
+ * 翻译（5 句）、两篇写作，共 9 条。小题挂在该记录的 `case_questions` 上，
+ * **小题 id 就是卷面题号**——答题卡按题号涂格，拿题号当小题 id 就不用再维护一层对照表。
+ *
+ * 卷面素材（分区标题、Directions 原文、整篇正文、段落骨架、图表）写进记录的 `paper` 字段，
+ * 题目记录自带卷面，所以不再需要 paper_layouts 快照表。
+ *
  * 答案来源：用户提供的答案图（1–45）。逐格读出：
  *   1-5   A D B C B     6-10  C A D A D     11-15 D D C A B
  *   16-20 C C B B A     21-25 C D A B B     26-30 D A B C A
  *   31-35 A A C B D     36-40 D C B D C     41-45 B E A G D
  *
- * 两个关键处理：
- *   1. **材料要一并放进 question_text**。项目约定如此（见 prompt-catalog 的抽取 prompt），
- *      而且"According to Paragraph 1…"这类题干离了原文就是废题。
- *   2. **Part B 的答案字母不能按字母表算下标**。该题选项是 A、B、D、E、G（F/H/C 已给定），
- *      答案 E 对应的是列表第 4 项（下标 3），按字母表算会得 4，全错位。
+ * **Part B 的答案字母不能按字母表算下标**。该题选项是 A、B、D、E、G（C/F/H 已给定），
+ * 答案 E 对应的是列表第 4 项（下标 3），按字母表算会得 4，全错位。
  *
  * 用法：
  *   node scripts/import-english-paper.mjs                # 打印 SQL 供审查
  *   node scripts/import-english-paper.mjs --out x.sql    # 写到文件
  */
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
 import { createServer } from 'vite'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
@@ -28,6 +31,7 @@ const SUBJECT = '英语一'
 const CATEGORY = '2026年真题'
 const SOURCE = '2026年考研英语一.pdf'
 const IMPORT_MODE = 'english-paper'
+const PAPER_TITLE = '2026 年全国硕士研究生招生考试英语（一）'
 
 /** 1–45 标准答案（按题号），来源：用户提供的答案图 */
 const ANSWERS = {
@@ -63,8 +67,8 @@ async function extractPagesText(path) {
   return pages.join('\n').replace(/https?:\/\/zhenti\.burningvocabulary\.cn/g, '')
 }
 
-const flat = (s) => s.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`
+const json = (v) => `$json$${JSON.stringify(v)}$json$::jsonb`
 
 /** 答案字母 → 选项下标：按**选项列表**里的位置，不按字母表 */
 function letterToIndex(letter, labels) {
@@ -75,111 +79,167 @@ function letterToIndex(letter, labels) {
 
 const text = await extractPagesText(pdfPath)
 
-// 各区块
-const sectionI = text.slice(text.search(/Section\s+I\s+Use\s+of\s+English/i), text.search(/Section\s+II\s+Reading/))
-const readA = text.slice(text.search(/Part\s+A(?=[\s\S]{0,200}Text\s*1)/), text.search(/Part\s+B/))
-const partB = text.slice(text.search(/Part\s+B/), text.search(/Part\s+C/))
-const partC = text.slice(text.search(/Part\s+C/), text.search(/Section\s+III/))
-const writing = text.slice(text.search(/Section\s+III\s+Writing/))
-
-// 材料
-const clozeOptStart = sectionI.search(/(?:^|\n)\s*1\.\s*A\.\s/)
-const clozePassage = flat(sectionI.slice(sectionI.search(/\(10 points?\)/i) + 12, clozeOptStart))
-const texts = [...readA.matchAll(/Text\s*(\d)/g)].map((m, i, arr) => ({
-  no: Number(m[1]),
-  from: m.index,
-  to: i + 1 < arr.length ? arr[i + 1].index : readA.length,
-}))
-const passageFor = (no) => {
-  const t = texts.find((x) => x.no === Math.ceil((no - 20) / 5))
-  if (!t) return ''
-  const body = readA.slice(t.from, t.to)
-  // 文章正文到该组第一题为止
-  const firstQ = body.search(/(?:^|\n)\s*\d{1,2}\.\s/)
-  return flat(body.slice(0, firstQ > 0 ? firstQ : body.length))
-}
-const partBMaterial = (() => {
-  const from = partB.search(/(?:^|\n)\s*A\.\s/)
-  return from >= 0 ? flat(partB.slice(from)) : ''
-})()
-
-// 复用解析器拿题干/选项
 const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'warn' })
 try {
   const { parseEnglishQuestions } = await vite.ssrLoadModule('/src/lib/english-questions.ts')
   const { parseEnglishPaperLayout } = await vite.ssrLoadModule('/src/lib/english-paper-layout.ts')
+  const { paperProse } = await vite.ssrLoadModule('/src/lib/exam-paper.ts')
+
   const parsed = parseEnglishQuestions(text)
-
-  // 卷面快照：渲染器要的整篇正文、Directions、骨架、图表都在这儿。
-  // 用 dollar-quoting 包住 JSON，单引号和反斜杠都不用转义。
   const layout = parseEnglishPaperLayout(text)
-  const layoutSql = [
-    `insert into public.paper_layouts (subject, category, title, layout)`,
-    `values (${q(SUBJECT)}, ${q(CATEGORY)}, ${q(layout.title)}, $layout$${JSON.stringify(layout)}$layout$::jsonb)`,
-    `on conflict (subject, category) do update set layout = excluded.layout, title = excluded.title, updated_at = now();`,
-  ].join('\n')
+  const byNo = new Map(parsed.questions.map((x) => [x.no, x]))
+  const warnings = [...parsed.warnings, ...layout.warnings]
 
-  const rows = []
-  const review = []
-  for (const item of parsed.questions) {
-    const isObjective = item.no <= 45
-    let questionText = item.stem
-    if (isObjective) {
-      const material = item.no <= 20 ? clozePassage : item.no <= 40 ? passageFor(item.no) : partBMaterial
-      questionText = material ? `${material}\n\n${item.stem}` : item.stem
+  const head = (block) => ({ ordinal: block.ordinal, sectionTitle: block.title, directions: block.directions })
+
+  /** 客观题小题：题干 + 选项 + 标准答案下标 */
+  const choiceSub = (no, labels) => {
+    const item = byNo.get(no)
+    if (!item) throw new Error(`没解出第 ${no} 题`)
+    return {
+      id: String(no),
+      type: 'single_choice',
+      text: item.stem,
+      options: item.options,
+      answer: letterToIndex(ANSWERS[no], labels),
     }
-
-    let options = item.options
-    let labels = item.optionLabels
-    let correct
-    if (isObjective) {
-      // Part B 的选项换成段落字母形式并保留字母，供映射下标
-      if (item.no >= 41) {
-        labels = item.optionLabels
-        options = labels.map((l) => `段落 ${l}`)
-      } else {
-        labels = ['A', 'B', 'C', 'D']
-      }
-      const letter = ANSWERS[item.no]
-      correct = letterToIndex(letter, labels)
-      review.push(`#${item.no} 答案 ${letter} → 下标 ${correct}（选项 ${labels.join('')}）`)
-    } else {
-      options = []
-      correct = null
-    }
-
-    const kind = item.no <= 20 ? '完形填空' : item.no <= 40 ? `阅读理解 Text ${Math.ceil((item.no - 20) / 5)}`
-      : item.no <= 45 ? '新题型' : item.no <= 50 ? '翻译' : item.no === 51 ? '应用文写作' : '短文写作'
-
-    rows.push(`  (${q(questionText)}, ${q(JSON.stringify(options))}::jsonb, ${q(SUBJECT)}, ` +
-      // categories 里必须带分区标签：compose_exam 的分区过滤是 `q.categories ?| 分区categories`，
-      // 完形/阅读/新题型都是 single_choice，只靠题型分不开，得靠这个标签
-      `${q(`${CATEGORY} · ${kind}`)}, ${q(JSON.stringify([CATEGORY, '英语一', isObjective ? '客观题' : '主观题', kind]))}::jsonb, ` +
-      `${q(isObjective ? 'single_choice' : 'analysis')}, ${q(JSON.stringify(correct))}::jsonb, ` +
-      `${item.no}, ${q(`${SOURCE}（第 ${item.no} 题）`)}, true, ${q(IMPORT_MODE)})`)
   }
 
+  const records = []
+
+  // ── Section I 完形：整篇正文 + 20 空 ──
+  const cloze = layout.sections.cloze
+  if (cloze) {
+    records.push({
+      type: 'cloze',
+      no: 1,
+      kind: '完形填空',
+      text: paperProse(cloze.passage),
+      subs: Array.from({ length: 20 }, (_, i) => choiceSub(i + 1, ['A', 'B', 'C', 'D'])),
+      paper: { paperTitle: PAPER_TITLE, ...head(cloze), passage: cloze.passage },
+    })
+  }
+
+  // ── Section II Part A 阅读：一篇 Text 一条记录 ──
+  for (const t of layout.sections.reading?.texts ?? []) {
+    const from = 21 + (t.no - 1) * 5
+    records.push({
+      type: 'reading_set',
+      no: from,
+      kind: `阅读理解 Text ${t.no}`,
+      text: t.passage,
+      subs: Array.from({ length: 5 }, (_, i) => choiceSub(from + i, ['A', 'B', 'C', 'D'])),
+      paper: {
+        paperTitle: PAPER_TITLE,
+        ...head(layout.sections.reading.head),
+        heading: t.heading,
+        passage: t.passage,
+      },
+    })
+  }
+
+  // ── Section II Part B 新题型：段落 + 骨架 + 5 空（选项是段落字母） ──
+  const partB = layout.sections.partB
+  if (partB) {
+    const labels = byNo.get(41)?.optionLabels ?? ['A', 'B', 'D', 'E', 'G']
+    records.push({
+      type: 'sentence_order',
+      no: 41,
+      kind: '新题型',
+      text: partB.paragraphs.map((p) => `${p.letter}. ${p.text}`).join('\n\n'),
+      subs: Array.from({ length: 5 }, (_, i) => choiceSub(41 + i, labels)),
+      paper: {
+        paperTitle: PAPER_TITLE,
+        ...head(partB),
+        paragraphs: partB.paragraphs,
+        placed: partB.placed,
+        skeleton: partB.skeleton,
+      },
+    })
+  }
+
+  // ── Section II Part C 翻译：全文 + 5 句待译（无标准答案，走 AI 建议分） ──
+  const partC = layout.sections.partC
+  if (partC) {
+    records.push({
+      type: 'translation',
+      no: 46,
+      kind: '翻译',
+      text: partC.passage,
+      subs: partC.segments.map((s) => ({
+        id: String(s.no),
+        type: 'short_answer',
+        text: s.sentence,
+        options: [],
+        answer: null,
+      })),
+      paper: { paperTitle: PAPER_TITLE, ...head(partC), passage: partC.passage },
+    })
+  }
+
+  // ── Section III Writing：两篇写作，各一条记录（单条记录没有小题） ──
+  const writings = [
+    { block: layout.sections.writingA, no: 51, kind: '应用文写作' },
+    { block: layout.sections.writingB, no: 52, kind: '短文写作' },
+  ]
+  for (const w of writings) {
+    if (!w.block) continue
+    const item = byNo.get(w.no)
+    if (!item) throw new Error(`没解出第 ${w.no} 题`)
+    records.push({
+      type: 'writing',
+      no: w.no,
+      kind: w.kind,
+      text: item.stem,
+      subs: [],
+      paper: {
+        paperTitle: PAPER_TITLE,
+        ...head(w.block),
+        letterBox: w.block.letterBox,
+        charts: w.block.charts,
+        chartCaption: w.block.chartCaption,
+      },
+    })
+  }
+
+  const span = (r) => (r.subs.length > 1 ? `第 ${r.no}–${Number(r.subs[r.subs.length - 1].id)} 题` : `第 ${r.no} 题`)
+
+  const rows = records.map((r) => [
+    `  (${q(r.text)}, '[]'::jsonb, ${q(SUBJECT)}, ${q(`${CATEGORY} · ${r.kind}`)}, ` +
+    `${json([CATEGORY, '英语一', r.kind])}, ${q(r.type)}, 'null'::jsonb, ${r.no}, ` +
+    `${q(`${SOURCE}（${span(r)}）`)}, true, ${q(IMPORT_MODE)}, ` +
+    `${r.subs.length ? json(r.subs) : 'null'}, ${json(r.paper)})`,
+  ]).join(',\n')
+
   const sql = [
-    `-- 2026 年考研英语（一）真题入库（1–52 + 卷面快照）`,
-    `-- 幂等：先按 import_mode 清掉本批次，再整体重插；卷面快照按 (subject, category) upsert`,
+    `-- 2026 年考研英语（一）真题入库（9 条卷面记录：整篇/整篇 Text/Part B/翻译/两篇写作）`,
+    `-- 幂等：先按 import_mode 清掉本批次，再整体重插`,
     `delete from questions where import_mode = '${IMPORT_MODE}';`,
     '',
     'insert into questions',
     '  (question_text, options, subject, category, categories, question_type, correct_answer,',
-    '   seq_number, source_page, verified, import_mode)',
+    '   seq_number, source_page, verified, import_mode, case_questions, paper)',
     'values',
-    rows.join(',\n') + ';',
+    rows + ';',
     '',
-    layoutSql,
-    '',
-    `select seq_number, question_type, correct_answer, subject, left(question_text, 30) as head`,
+    `select question_type, seq_number, jsonb_array_length(coalesce(case_questions, '[]'::jsonb)) as subs,`,
+    `       paper->>'sectionTitle' as section, left(question_text, 24) as head`,
     `from questions where import_mode = '${IMPORT_MODE}' order by seq_number;`,
   ].join('\n')
 
-  console.log(`共 ${parsed.questions.length} 题；客观题 ${parsed.questions.filter((x) => x.no <= 45).length} 题带答案，主观题 ${parsed.questions.filter((x) => x.no > 45).length} 题无标准答案`)
-  console.log(`材料长度：完形 ${clozePassage.length}、阅读 ${texts.map((t) => passageFor(t.no * 5 + 20).length).join('/')}、Part B ${partBMaterial.length}`)
-  console.log('\n=== 答案字母 → 选项下标（重点核对 Part B）===')
-  for (const r of review) if (/^#(1|20|21|25|26|40|41|42|43|44|45) /.test(r)) console.log('  ' + r)
+  console.log(`共 ${records.length} 条记录，覆盖 ${records.reduce((n, r) => n + Math.max(1, r.subs.length), 0)} 个小题`)
+  for (const r of records) {
+    console.log(`  ${String(r.no).padStart(2)}  ${r.type.padEnd(15)} ${String(r.subs.length).padStart(2)} 小题  ${r.paper.sectionTitle}`)
+  }
+  console.log('\n=== 答案字母 → 选项下标（重点核对 Part B：ABDEG）===')
+  for (const r of records) {
+    if (r.type !== 'sentence_order') continue
+    for (const s of r.subs) console.log(`  #${s.id} 答案 ${ANSWERS[s.id]} → 下标 ${s.answer}（选项 ${s.options.join('/')}）`)
+  }
+  if (warnings.length) {
+    console.log('\n=== 解析告警 ===')
+    for (const w of warnings) console.log('  ! ' + w)
+  }
 
   const outIdx = process.argv.indexOf('--out')
   if (outIdx >= 0 && process.argv[outIdx + 1]) {
@@ -188,7 +248,6 @@ try {
   } else {
     console.log('\n' + sql)
   }
-  void partC; void writing
 } finally {
   await vite.close()
 }

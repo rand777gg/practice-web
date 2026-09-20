@@ -39,13 +39,13 @@ import { PaperPreview } from './PaperPreview'
 import { ExamCodingPanel } from './ExamCodingPanel'
 import { buildPaperSections, type PaperSection } from '@/lib/exam-compose'
 import { buildNumberMap, matchEnglishCard } from '@/lib/exam-answer-sheet'
+import { buildPaperLayout, slotEntries, slotKey, withSlotValue, type PaperSlot } from '@/lib/exam-paper'
 import { ExamAnswerCardView } from './ExamAnswerCardView'
 import { SubjectiveAnswerInput } from './SubjectiveAnswerInput'
 import { WrittenGradingPanel } from './WrittenGradingPanel'
 import { inkToPng, isWrittenEmpty, type InkStroke, type WrittenAnswer } from '@/lib/written-answer'
 import { gradeHandwrittenAnswer, gradeWrittenAnswer } from '@/lib/ai/written-grade'
 import type { GradingResult, WrittenKind } from '@/lib/written-grading'
-import type { EnglishPaperLayout } from '@/lib/english-paper-layout'
 import { EnglishRealPaper } from './EnglishRealPaper'
 
 import {
@@ -57,7 +57,7 @@ import {
   EXAM_MAX_DURATION_MIN,
 } from '@/lib/constants'
 import type { ExamSession as ExamSessionType, ExamTemplate, ExamTemplateSection, QuestionType, Question, CaseQuestion, CaseAnswer, CorrectAnswer, CodingAnswer } from '@/types'
-import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, OPTION_LABELS, EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
+import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, MULTI_ITEM_QUESTION_TYPES, OPTION_LABELS, EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
 import { suggestExamConfig, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -191,7 +191,7 @@ function isQuestionAnswered(q: Question, value: CorrectAnswer | null | undefined
   }
   if (q.question_type === 'judge_correct') return isJudgeAnswered(value)
   if (q.question_type === 'fill_blank') return isFillBlankAnswered(value, blankNumber(q.question_text))
-  if (q.question_type === 'case_analysis') {
+  if (MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
     const shape = value as CaseAnswer
     if (!shape || !Array.isArray(shape.subs)) return false
     return shape.subs.some((s) => {
@@ -323,17 +323,14 @@ export function ExamSession() {
   /**
    * 这道主观题该用哪套评分标准。
    *
-   * 优先用题目自带的 `seq_number`（入库时写的就是卷面题号），**不依赖答题卡绑定**：
-   * 绑定要求 20/20/5/5/1/1 齐全，把建议分挂在它上面，一缺题就整块消失。
+   * 按**题型**判（翻译 / 写作），不依赖答题卡绑定：绑定要求 20/20/5/5/1/1 齐全，
+   * 把建议分挂在它上面，一缺题就整块消失。两篇写作靠卷面题号分档（51 / 52）。
    */
   const writtenKindFor = useCallback((q: Question): WrittenKind | null => {
-    const no = q.seq_number ?? cardNumberMap?.noByQuestionId.get(q.id) ?? null
-    if (no == null) return null
-    if (no >= 46 && no <= 50) return 'translation'
-    if (no === 51) return 'writing_small'
-    if (no === 52) return 'writing_large'
-    return null
-  }, [cardNumberMap])
+    if (q.question_type === 'translation') return 'translation'
+    if (q.question_type !== 'writing') return null
+    return (q.seq_number ?? 0) >= 52 ? 'writing_large' : 'writing_small'
+  }, [])
 
   const runGrading = useCallback(async (q: Question, written: WrittenAnswer, kind: WrittenKind) => {
     setGradingIds((m) => ({ ...m, [q.id]: true }))
@@ -350,50 +347,28 @@ export function ExamSession() {
   }, [])
 
   /**
-   * 真题卷面快照。
+   * 真题卷面。
    *
-   * 卷面标识从题目自带的分区标签取（入库时写的 `2026年真题 · 完形填空`，去掉后缀）。
-   * 不放在模板上：模板是"怎么组卷"，卷面是"卷子长什么样"，两回事，多年份也不会串。
+   * 卷面素材（分区标题、Directions 原文、整篇正文、段落骨架、图表）就挂在题目记录自带的
+   * `paper` 字段上，所以这里直接从组好的题目拼出来——不再另查一张卷面快照表：
+   * 少一次异步、也不可能出现「题库换了、快照没换」的错位。
    */
-  const [paperSnapshot, setPaperSnapshot] = useState<{ key: string; layout: EnglishPaperLayout } | null>(null)
-  const paperCategory = useMemo(() => {
-    const first = questions.find((q) => q.seq_number != null)
-    return first?.category?.split(' · ')[0] ?? null
-  }, [questions])
+  const realPaper = useMemo(() => buildPaperLayout(questions), [questions])
 
-  useEffect(() => {
-    const subject = template?.subject?.[0]
-    if (!subject || !paperCategory) return
-    let cancelled = false
-    supabase
-      .from('paper_layouts')
-      .select('layout')
-      .eq('subject', subject)
-      .eq('category', paperCategory)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return
-        const layout = data?.layout as EnglishPaperLayout | undefined
-        setPaperSnapshot(layout ? { key: `${subject}|${paperCategory}`, layout } : null)
-      })
-    return () => { cancelled = true }
-  }, [template, paperCategory])
-
-  // 带 key 比对，换卷子时旧快照自动失效——比在 effect 里同步清空干净
-  const paperKey = `${template?.subject?.[0] ?? ''}|${paperCategory ?? ''}`
-  const activeSnapshot = paperSnapshot?.key === paperKey ? paperSnapshot.layout : null
-
-  /** 真题卷面渲染用：作答按题号回写到既有记录 */
-  const pickedByQuestion = useMemo(() => {
+  /** 真题卷面渲染用：作答按「记录 + 小题」回写到既有记录 */
+  const pickedBySlot = useMemo(() => {
     const m = new Map<string, number>()
-    for (const [id, v] of answers) if (typeof v === 'number') m.set(id, v)
+    for (const [id, v] of answers) for (const e of slotEntries(v)) if (typeof e.value === 'number') m.set(slotKey(id, e.subId), e.value)
     return m
   }, [answers])
-  const textByQuestion = useMemo(() => {
+  const textBySlot = useMemo(() => {
     const m = new Map<string, string>()
-    for (const [id, v] of answers) if (typeof v === 'string') m.set(id, v)
+    for (const [id, v] of answers) for (const e of slotEntries(v)) if (typeof e.value === 'string') m.set(slotKey(id, e.subId), e.value)
     return m
   }, [answers])
+  const answerSlot = useCallback((slot: PaperSlot, value: CorrectAnswer) => {
+    answerQuestion(slot.questionId, withSlotValue(answers.get(slot.questionId), slot.subId, value))
+  }, [answerQuestion, answers])
   const applyViewMode = (next: ExamViewMode) => {
     if (next === viewMode) return
     if (next === 'card') {
@@ -1273,7 +1248,7 @@ export function ExamSession() {
               candidateNo={cardIdentity.candidateNo}
               candidateName={cardIdentity.candidateName}
               institution={cardIdentity.institution}
-              onAnswer={(id, i) => answerQuestion(id, i)}
+              onAnswer={answerSlot}
               onIdentityChange={(patch) => {
                 if (!patch) return
                 setCandidateValues((vals) => {
@@ -1307,19 +1282,19 @@ export function ExamSession() {
           />
             </>
           )}
-      {paperMode && activeSnapshot && cardNumberMap && (
+      {paperMode && realPaper && cardNumberMap && (
         <div key="real-paper" className="wb-slide-in-right min-w-0 flex-1 overflow-y-auto p-4">
           <EnglishRealPaper
-            layout={activeSnapshot}
-            questionIdByNo={cardNumberMap.questionIdByNo}
-            pickedByQuestion={pickedByQuestion}
-            textByQuestion={textByQuestion}
-            onPick={(id, i) => answerQuestion(id, i)}
-            onText={(id, text) => answerQuestion(id, text)}
+            layout={realPaper}
+            slotByNo={cardNumberMap.slotByNo}
+            pickedBySlot={pickedBySlot}
+            textBySlot={textBySlot}
+            onPick={answerSlot}
+            onText={answerSlot}
           />
         </div>
       )}
-      {paperMode && !(activeSnapshot && cardNumberMap) && (
+      {paperMode && !(realPaper && cardNumberMap) && (
         <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
           {/* 单页长卷由外层滚动; 双页摊开由 PaperSpreadView 内部 scroller 滚动, 外层不再滚动, 避免右侧叠两根滚动条 */}
           <div
@@ -1502,7 +1477,9 @@ export function ExamSession() {
               )
             }
 
-            if (type === 'case_analysis') {
+            // 一条记录挂多个小题的题型（案例题、以及卷面的完形/阅读/新题型/翻译）共用这套渲染：
+            // 逐小题作答，整题的完成度与计分都按小题算
+            if (MULTI_ITEM_QUESTION_TYPES.includes(type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
               const subs = q.case_questions ?? []
               const cur: CaseAnswer =
                 currentAnswer && typeof currentAnswer === 'object' && !Array.isArray(currentAnswer) && 'subs' in currentAnswer
@@ -1513,10 +1490,19 @@ export function ExamSession() {
                 answerQuestion(q.id, { subs: [...cur.subs.filter((s) => s.id !== id), { id, value }] })
               }
               const inputCls = 'w-full h-9 px-3 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+              // 翻译没有标准答案，整题走 AI 建议分：把五个小题的译文合起来喂给评分
+              const translation = type === 'translation'
+                ? {
+                    text: subs.map((s) => { const v = subValue(s.id); return typeof v === 'string' ? v : '' }).filter(Boolean).join('\n\n'),
+                    ink: inkByQuestion[q.id] ?? [],
+                  } satisfies WrittenAnswer
+                : null
               return (
                 <div className="space-y-3">
                   <p className="text-xs text-muted-foreground">
-                    案例分析题 · 共 {subs.length} 个小题{caseScoreText ? `，${caseScoreText}` : ''}，均基于上方材料作答
+                    {type === 'case_analysis'
+                      ? `案例分析题 · 共 ${subs.length} 个小题${caseScoreText ? `，${caseScoreText}` : ''}，均基于上方材料作答`
+                      : `${QUESTION_TYPE_LABELS[type] ?? type} · 共 ${subs.length} 个小题`}
                   </p>
                   {subs.length === 0 && <p className="text-sm text-muted-foreground">该案例尚未配置小题</p>}
                   {subs.map((sub, si) => {
@@ -1598,6 +1584,14 @@ export function ExamSession() {
                       </div>
                     )
                   })}
+                  {translation && (
+                    <WrittenGradingPanel
+                      result={gradings[q.id] ?? null}
+                      grading={gradingIds[q.id]}
+                      onGrade={isWrittenEmpty(translation) ? undefined : () => runGrading(q, translation, 'translation')}
+                      onRegrade={isWrittenEmpty(translation) ? undefined : () => runGrading(q, translation, 'translation')}
+                    />
+                  )}
                 </div>
               )
             }

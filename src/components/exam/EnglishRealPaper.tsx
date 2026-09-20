@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
+import { slotKey, type PaperSlot } from '@/lib/exam-paper'
 import type { EnglishPaperLayout, WritingChart } from '@/lib/english-paper-layout'
 
 /**
@@ -243,37 +244,41 @@ function UnderlinedPassage({ passage, segments }: { passage: string; segments: {
 
 export interface EnglishRealPaperProps {
   layout: EnglishPaperLayout
-  /** 题号 → 会话里的 questionId，用来把作答写回既有记录 */
-  questionIdByNo: Map<number, string>
-  /** questionId → 已选下标 */
-  pickedByQuestion: Map<string, number>
-  /** 主观题作答（翻译/写作的文字） */
-  textByQuestion?: Map<string, string>
-  onPick?: (questionId: string, optionIndex: number) => void
-  onText?: (questionId: string, text: string) => void
+  /** 卷面题号 → 该格属于哪条记录的哪个小题 */
+  slotByNo: Map<number, PaperSlot>
+  /** `slotKey(记录, 小题)` → 已选下标 */
+  pickedBySlot: Map<string, number>
+  /** `slotKey(记录, 小题)` → 主观题的文字作答 */
+  textBySlot?: Map<string, string>
+  onPick?: (slot: PaperSlot, optionIndex: number) => void
+  onText?: (slot: PaperSlot, text: string) => void
   className?: string
 }
 
 export function EnglishRealPaper({
-  layout, questionIdByNo, pickedByQuestion, textByQuestion, onPick, onText, className,
+  layout, slotByNo, pickedBySlot, textBySlot, onPick, onText, className,
 }: EnglishRealPaperProps) {
   const { cloze, reading, partB, partC, writingA, writingB } = layout.sections
 
+  const keyOf = (no: number) => {
+    const slot = slotByNo.get(no)
+    return slot ? slotKey(slot.questionId, slot.subId) : null
+  }
   const pickedOf = (no: number) => {
-    const id = questionIdByNo.get(no)
-    return id ? pickedByQuestion.get(id) : undefined
+    const k = keyOf(no)
+    return k ? pickedBySlot.get(k) : undefined
   }
   const textOf = (no: number) => {
-    const id = questionIdByNo.get(no)
-    return (id ? textByQuestion?.get(id) : '') ?? ''
+    const k = keyOf(no)
+    return (k ? textBySlot?.get(k) : '') ?? ''
   }
   const pick = (no: number) => (i: number) => {
-    const id = questionIdByNo.get(no)
-    if (id && onPick) onPick(id, i)
+    const slot = slotByNo.get(no)
+    if (slot && onPick) onPick(slot, i)
   }
   const pickedByNo = new Map<number, number>()
-  for (const [no, id] of questionIdByNo) {
-    const p = pickedByQuestion.get(id)
+  for (const [no, slot] of slotByNo) {
+    const p = pickedBySlot.get(slotKey(slot.questionId, slot.subId))
     if (p !== undefined) pickedByNo.set(no, p)
   }
   const answeredLetterByNo = new Map<number, string>()
@@ -372,13 +377,13 @@ export function EnglishRealPaper({
           <UnderlinedPassage passage={partC.passage} segments={partC.segments} />
           <div style={{ marginTop: '5mm' }}>
             {partC.segments.map((s) => {
-              const id = questionIdByNo.get(s.no)
+              const slot = slotByNo.get(s.no)
               return (
                 <div key={s.no} className="erp-block">
                   <p className="erp-q"><span className="erp-qn">({s.no})</span></p>
                   <textarea
-                    value={id ? textOf(s.no) : ''}
-                    onChange={(e) => { if (id && onText) onText(id, e.target.value) }}
+                    value={slot ? textOf(s.no) : ''}
+                    onChange={(e) => { if (slot && onText) onText(slot, e.target.value) }}
                     placeholder="译文…"
                     style={{
                       width: '100%', minHeight: '22mm', boxSizing: 'border-box',
@@ -400,8 +405,8 @@ export function EnglishRealPaper({
           <p className="erp-dir">{writingA.directions.replace(/^\s*Read the following email[^.]*\.\s*/i, '')}</p>
           {writingA.letterBox && <div className="erp-letter">{writingA.letterBox}</div>}
           <textarea
-            value={questionIdByNo.has(51) ? textOf(51) : ''}
-            onChange={(e) => { const id = questionIdByNo.get(51); if (id && onText) onText(id, e.target.value) }}
+            value={slotByNo.has(51) ? textOf(51) : ''}
+            onChange={(e) => { const slot = slotByNo.get(51); if (slot && onText) onText(slot, e.target.value) }}
             placeholder="Write your reply…"
             style={{
               width: '100%', minHeight: '70mm', boxSizing: 'border-box',
@@ -425,8 +430,8 @@ export function EnglishRealPaper({
             </>
           )}
           <textarea
-            value={questionIdByNo.has(52) ? textOf(52) : ''}
-            onChange={(e) => { const id = questionIdByNo.get(52); if (id && onText) onText(id, e.target.value) }}
+            value={slotByNo.has(52) ? textOf(52) : ''}
+            onChange={(e) => { const slot = slotByNo.get(52); if (slot && onText) onText(slot, e.target.value) }}
             placeholder="Write your essay…"
             style={{
               width: '100%', minHeight: '80mm', boxSizing: 'border-box', marginTop: '4mm',

@@ -3691,30 +3691,31 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_sessions_answered(UUID, JSONB) TO authenticated;
 
 -- ============================================================================
--- Section 51: 真题卷面快照 (paper layouts)
+-- Section 52: 卷面素材进题目记录 (questions.paper)
 --   英语（一）这类真题要「像真题」地还原卷面: Section 标题、Directions 原文、
 --   整篇完形正文(挖空带题号)、四篇阅读正文、Part B 段落与顺序骨架、翻译全文与待译句、
 --   两篇写作的来信方框与图表数据。
---   这些是**卷面的东西**, 不是题目本身: 题目在 questions 里仍是一条条独立记录
---   (完形 20 条、阅读每篇 5 条), 渲染时才合并显示, 所以不塞进 questions。
+--   这些素材现在跟题目记录一起走: 一条记录 = 卷面的一大题(完形整篇 / 一篇 Text /
+--   Part B / 翻译 / 一篇写作), 小题挂在该记录的 case_questions 上, **小题 id 就是卷面题号**。
+--   于是不再需要 Section 51 那张 paper_layouts 快照表(已删): 少一套数据通路,
+--   也不会出现「题库换了、快照没换」的错位。
+--   形状见 src/lib/exam-paper.ts 的 QuestionPaper。
 --   放库里而不是烤进仓库: 真题原文有版权, 这个仓库是公开的。
---   layout 的形状见 src/lib/english-paper-layout.ts 的 EnglishPaperLayout。
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS public.paper_layouts (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  subject     TEXT NOT NULL,
-  category    TEXT NOT NULL,            -- 同一学科下的一份卷子, 如 '2026年真题'
-  title       TEXT NOT NULL,
-  layout      JSONB NOT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (subject, category)
-);
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS paper JSONB;
 
-ALTER TABLE public.paper_layouts ENABLE ROW LEVEL SECURITY;
+COMMENT ON COLUMN public.questions.paper IS
+  '真题卷面素材(分区标题/Directions/整篇正文/段落骨架/图表); 有它的记录就是卷面的一大题, 小题 id 即卷面题号';
 
-DROP POLICY IF EXISTS pl_select ON public.paper_layouts;
-CREATE POLICY pl_select ON public.paper_layouts FOR SELECT TO authenticated USING (true);
+-- Section 51 的 paper_layouts 快照表作废(素材已进 questions.paper)
+DROP TABLE IF EXISTS public.paper_layouts;
 
-DROP POLICY IF EXISTS pl_write ON public.paper_layouts;
-CREATE POLICY pl_write ON public.paper_layouts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- 题型白名单补上卷面专用题型。Section 12 / 26 那份是旧的, 不补的话入库直接违反 CHECK
+ALTER TABLE public.questions
+  DROP CONSTRAINT IF EXISTS questions_question_type_check;
+
+ALTER TABLE public.questions
+  ADD CONSTRAINT questions_question_type_check
+  CHECK (question_type IN (
+    'single_choice','multi_select','true_false','fill_blank','short_answer','analysis','judge_correct','coding',
+    'case_analysis','cloze','reading_set','sentence_order','translation','writing'));
