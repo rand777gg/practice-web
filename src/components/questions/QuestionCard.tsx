@@ -2,7 +2,7 @@ import { memo, useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
-import { OPTION_LABELS } from '@/lib/constants'
+import { OPTION_LABELS, MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -263,6 +263,8 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
   const isJudgeCorrect = type === 'judge_correct'
   const isCoding = type === 'coding'
   const isCase = type === 'case_analysis'
+  // 卷面题型（完形 / 阅读一篇 / 新题型 / 翻译）也是「一条记录挂多个小题」，跟案例题同构
+  const isGrouped = isCase || MULTI_ITEM_QUESTION_TYPES.includes(type as typeof MULTI_ITEM_QUESTION_TYPES[number])
   const isLocalJudgeable = isCoding && (question.execution_mode ?? 'stdio') !== 'function'
   // 判题通道面板:练习/测试页里 coding 题展示「中心(置灰)/本地自测」选择。
   // 中心判题尚未就绪(未配中心 Judge0),故本地自测为当前唯一可用通道。
@@ -293,7 +295,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
     }
   }
 
-  const isTextInput = isFillBlank || isShort || isAnalysis
+  const isTextInput = isFillBlank || isShort || isAnalysis || type === 'writing'
   const correct = isAnswerCorrect(selectedAnswer, question.correct_answer, type, question.allow_unordered, question.unordered_blanks, question.case_questions)
   const caseSubs = question.case_questions ?? []
   const caseAnswer = isCaseAnswer(selectedAnswer) ? selectedAnswer : { subs: [] as { id: string; value: CorrectAnswer }[] }
@@ -301,7 +303,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
     if (!onSelect) return
     onSelect({ subs: [...caseAnswer.subs.filter((s) => s.id !== subId), { id: subId, value }] })
   }
-  const caseResults = isCase
+  const caseResults = isGrouped
     ? caseSubs.map((sub) => ({
         sub,
         ok: isAnswerCorrect(caseAnswer.subs.find((x) => x.id === sub.id)?.value, sub.answer, sub.type),
@@ -660,11 +662,13 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
         </div>
       )}
 
-      {/* 案例分析题: 案例材料已在题干的 question_text 渲染, 下方逐个渲染共用材料的小题 */}
-      {isCase && (
+      {/* 一条记录挂多个小题的题型: 材料已在题干的 question_text 渲染, 下方逐个小题作答 */}
+      {isGrouped && (
         <div className="space-y-2.5">
           <p className="text-xs text-muted-foreground">
-            {caseSubs.length > 0 && !showResult ? '阅读上方案例材料，回答下列小题（小题分别判分）。' : ''}
+            {caseSubs.length > 0 && !showResult
+              ? (isCase ? '阅读上方案例材料，回答下列小题（小题分别判分）。' : '阅读上方材料，按小题作答（小题分别判分）。')
+              : ''}
             {showResult && (
               <span
                 className={cn(

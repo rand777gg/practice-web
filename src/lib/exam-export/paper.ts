@@ -7,7 +7,8 @@
  */
 
 import type { CaseQuestion, QuestionType, ExamTemplate } from '@/types'
-import { QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { MULTI_ITEM_QUESTION_TYPES, QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { paperItemCount, paperItemsPerRecord } from '@/lib/exam-paper'
 import type { PaperSection } from '@/lib/exam-compose'
 import { mdToHtml } from './md'
 
@@ -64,6 +65,7 @@ const WRITTEN_TYPES: Partial<Record<QuestionType, { lines: number; blank: string
   analysis: { lines: 8, blank: '' },
   judge_correct: { lines: 3, blank: '' },
   fill_blank: { lines: 0, blank: '' },
+  writing: { lines: 10, blank: '' },
 }
 
 export interface PaperMeta {
@@ -95,7 +97,8 @@ export function buildPaperDoc(
     const per = sec.scorePerQuestion
     const secQs = sec.questions.filter((q) => q && q.id)
     const typeOf = secQs[0]?.question_type
-    const count = secQs.length
+    // 题数按小题口径（卷面题型一条记录含多个小题，如完形 20 空）
+    const count = secQs.reduce((n, q) => n + paperItemCount(q), 0)
     let name = sec.name || (typeOf ? QUESTION_TYPE_LABELS[typeOf] ?? '' : '')
     if (count > 0) {
       name = includeScores && per > 0
@@ -114,7 +117,8 @@ export function buildPaperDoc(
         : []
       let caseSubs: RenderedCaseSub[] = []
       let isCase = false
-      if (type === 'case_analysis' && Array.isArray(q.case_questions)) {
+      // 一条记录挂多个小题的题型（案例题、以及卷面的完形/阅读/新题型/翻译）逐小题排版
+      if (MULTI_ITEM_QUESTION_TYPES.includes(type as typeof MULTI_ITEM_QUESTION_TYPES[number]) && Array.isArray(q.case_questions)) {
         isCase = true
         const perSub = qScore && q.case_questions.length > 0 ? qScore / q.case_questions.length : 0
         caseSubs = q.case_questions.map((sub, si) => renderCaseSub(sub, si, includeScores ? perSub : 0))
@@ -172,14 +176,16 @@ function renderCaseSub(sub: CaseQuestion, idx: number, perSub: number): Rendered
       ? sub.options.map((text, oi) => ({ key: String.fromCharCode(65 + oi), text }))
       : []
   const scoreText = perSub > 0 ? `${formatNum(perSub)}分` : ''
-  return { number: `(${idx + 1})`, type, scoreText, md: sub.text, body: mdToHtml(sub.text), options }
+  // 卷面题型的小题 id 就是卷面题号，直接当题号印；案例题的小题 id 不是数字，用 (1)(2)…
+  const number = /^\d+$/.test(sub.id) ? `${sub.id}.` : `(${idx + 1})`
+  return { number, type, scoreText, md: sub.text, body: mdToHtml(sub.text), options }
 }
 
-/** 依模板分区统计卷面约定总分(分区 count × 每题分) */
+/** 依模板分区统计卷面约定总分(记录数 × 每条记录的小题数 × 每题分) */
 function sectionScoreTotal(template: ExamTemplate | null | undefined): number {
   if (!template?.sections?.length) return 0
   return template.sections.reduce((acc, s) => {
-    const c = Math.max(0, s.count ?? 0)
+    const c = Math.max(0, s.count ?? 0) * paperItemsPerRecord(s.type)
     const sc = Math.max(0, s.score ?? 0)
     return acc + c * sc
   }, 0)
