@@ -1418,7 +1418,13 @@ export function ExamSession() {
             </>
           )}
       {paperMode && realPaper && cardNumberMap && (
-        <div key="real-paper" className="wb-slide-in-right min-w-0 flex-1 overflow-y-auto p-4">
+        <div
+          key={`real-paper-${paperLayout}`}
+          className={cn(
+            'wb-slide-in-right min-w-0 flex-1 p-4',
+            paperLayout === 'spread' ? 'overflow-auto' : 'overflow-y-auto',
+          )}
+        >
           <EnglishRealPaper
             layout={realPaper}
             slotByNo={cardNumberMap.slotByNo}
@@ -1430,6 +1436,7 @@ export function ExamSession() {
             locateNonce={locateNonce}
             autoLocate={autoLocate}
             onLocate={locateByNo}
+            spread={paperLayout === 'spread'}
           />
         </div>
       )}

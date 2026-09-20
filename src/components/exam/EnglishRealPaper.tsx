@@ -17,6 +17,9 @@ import type { EnglishPaperLayout, WritingChart } from '@/lib/english-paper-layou
  */
 
 const OPTION_LETTERS = 'ABCDEFGH'
+/** 卷面一页按 A4 竖版排（和 .erp-page 的宽度一致），双页摊开时缩放要靠它算 */
+const A4_W_MM = 210
+const SPREAD_GAP_MM = 8
 
 export function EnglishRealPaperStyles() {
   return (
@@ -27,6 +30,14 @@ export function EnglishRealPaperStyles() {
         padding: 16mm 15mm; background: #fff; margin: 0 auto 10mm;
         box-shadow: 0 1px 4px rgba(0,0,0,.18);
       }
+      /* 单页：一页一列竖着排；双页摊开：两页并排（像翻开的书） */
+      .erp-root .erp-flow { display: flex; flex-direction: column; align-items: center; }
+      .erp-root .erp-flow .erp-page { margin: 0 0 10mm; }
+      .erp-root .erp-flow.is-spread {
+        flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+        gap: ${SPREAD_GAP_MM}mm;
+      }
+      .erp-root .erp-flow.is-spread .erp-page { margin: 0; }
       .erp-root .erp-title { text-align: center; font-size: 15pt; font-weight: 700; margin-bottom: 8mm; }
       .erp-root .erp-sect { font-size: 12pt; font-weight: 700; margin: 0 0 2mm; }
       .erp-root .erp-dir { font-size: 10.5pt; line-height: 1.5; margin: 0 0 4mm; }
@@ -321,18 +332,38 @@ export interface EnglishRealPaperProps {
   locateNonce?: number
   /** 跟随当前小题自动滚动（默认关闭） */
   autoLocate?: boolean
-  /** 点卷面上的题号 → 回到答题卡的那一小题（「卷面 → 卡片」方向） */
+  /** 点卷面上的题号 → 回到答题卡的那一小題（「卷面 → 卡片」方向） */
   onLocate?: (no: number) => void
+  /** 双页摊开：两页并排（像翻开的书）；默认单页竖排 */
+  spread?: boolean
+  /** 按窗格宽度等比缩放，让整页/整摊都看得全（默认开） */
+  fit?: boolean
   className?: string
 }
 
 export function EnglishRealPaper({
   layout, slotByNo, pickedBySlot, textBySlot, onPick, onText,
-  currentNo = null, locateNonce = 0, autoLocate = false, onLocate, className,
+  currentNo = null, locateNonce = 0, autoLocate = false, onLocate, spread = false, fit = true, className,
 }: EnglishRealPaperProps) {
   const { cloze, reading, partB, partC, writingA, writingB } = layout.sections
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [flash, setFlash] = useState(false)
+  const [boxW, setBoxW] = useState(0)
+
+  /** 按窗格宽度等比缩放：单页让一页看得全，双页让一整摊（两页）看得全 */
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setBoxW(entry.contentRect.width))
+    ro.observe(el)
+    setBoxW(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+
+  const MM_TO_PX = 96 / 25.4
+  const cols = spread ? 2 : 1
+  const needed = A4_W_MM * MM_TO_PX * cols + SPREAD_GAP_MM * MM_TO_PX * (cols - 1)
+  const scale = fit && boxW > 0 ? Math.min(1, (boxW - 4) / needed) : 1
 
   /**
    * 双向定位（卷面侧）：显式跳题（点题号格）总是滚动并闪一下；
@@ -388,6 +419,7 @@ export function EnglishRealPaper({
     <div ref={rootRef} className={cn('erp-root', className)}>
       <EnglishRealPaperStyles />
 
+      <div className={cn('erp-flow', spread && 'is-spread')} style={{ zoom: scale }}>
       {/* ── Section I 完形：整篇一个题，挖空带题号，选项挨着排 ── */}
       {cloze && (
         <PaperPage>
@@ -541,6 +573,7 @@ export function EnglishRealPaper({
           </PaperItem>
         </PaperPage>
       )}
+      </div>
     </div>
   )
 }

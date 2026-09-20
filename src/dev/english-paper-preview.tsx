@@ -96,11 +96,16 @@ function Harness() {
   const [texts] = useState(() => new Map<string, string>([['q3#46', '这是一句示例译文。']]))
   // 双向定位：点卷面上的题号 → 高亮跳到那一题（线上是跳到答题卡的那张卡）
   const [currentNo, setCurrentNo] = useState<number | null>(2)
+  const [spread, setSpread] = useState(false)
 
   return (
     <div style={{ padding: 16, background: '#e5e5e5' }}>
       <p style={{ font: '12px/1.7 system-ui', marginBottom: 12, color: '#92400e', background: '#fef3c7', padding: '8px 12px', border: '1px solid #fcd34d' }}>
         <b>临时预览（免登录）</b> · 英语（一）真题卷面渲染，合成数据。当前高亮：第 {currentNo ?? '-'} 题（点卷面上的题号可切换）<br />
+        <button type="button" onClick={() => setSpread((v) => !v)} style={{ marginTop: 6, font: '12px system-ui' }}>
+          切换：{spread ? '双页摊开' : '单页'}
+        </button>
+        <span style={{ marginLeft: 8 }}>单页 = 一页一列；双页 = 两页并排摊开（都按窗格等比缩放）</span><br />
         预期：Times New Roman · 完形整篇一题、挖空处显示题号（1 已作答显示 A）· 选项挨着排 ·
         阅读文章一页/题目另起一页 · Part B 顺序骨架（41→B）· 翻译下划线带号 · 写作两题 canvas 图表
       </p>
@@ -113,6 +118,7 @@ function Harness() {
         onText={() => {}}
         currentNo={currentNo}
         onLocate={setCurrentNo}
+        spread={spread}
       />
     </div>
   )
