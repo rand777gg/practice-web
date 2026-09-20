@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { CommandPalette } from '@/components/assistant/CommandPalette'
 import { ExportCard, HelpCard, SkillCard } from '@/components/assistant/CommandCards'
-import { QuestionDraftCard } from '@/components/assistant/QuestionDraftCard'
+import { CreateCard } from '@/components/assistant/CreateCard'
 import { useAssistantStore, type ChatMessage } from '@/stores/assistant-store'
 import { commandPrefix, matchCommands, parseCommand, type CommandSpec } from '@/lib/assistant-commands'
 import {
@@ -91,8 +91,8 @@ function MetaCard({ message, onPickCommand }: { message: ChatMessage; onPickComm
   const meta = message.meta
   if (!meta) return null
   switch (meta.kind) {
-    case 'question-draft':
-      return <QuestionDraftCard messageId={message.id} meta={meta} />
+    case 'create-draft':
+      return <CreateCard messageId={message.id} meta={meta} />
     case 'skill':
       return <SkillCard meta={meta} />
     case 'export':

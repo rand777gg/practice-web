@@ -11,6 +11,12 @@ import {
   matchCommands,
   parseCommand,
 } from '../src/lib/assistant-commands.ts'
+import {
+  COUNT_MAX,
+  DEFAULT_CREATE_SPEC,
+  describeSpec,
+  normalizeSpec,
+} from '../src/lib/create-spec.ts'
 
 let pass = 0
 let fail = 0
@@ -74,6 +80,38 @@ check('后一次 set 覆盖前一次', activeSkillFrom([
   msg({ kind: 'skill', action: 'set', skillId: 'local-supabase-docker', skillTitle: 'a' }),
   msg({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup', skillTitle: 'b' }),
 ]) === 'local-judge0-setup')
+
+// ── normalizeSpec: 出题参数的第一道闸门 ──
+check('空对象给出一份可用的默认参数',
+  normalizeSpec({}).count === DEFAULT_CREATE_SPEC.count
+  && normalizeSpec({}).questionTypes.length > 0)
+check('数量被夹到上限', normalizeSpec({ count: 999 }).count === COUNT_MAX)
+check('数量 0 / 负数 / NaN 退回默认', [
+  normalizeSpec({ count: 0 }).count,
+  normalizeSpec({ count: -3 }).count,
+  normalizeSpec({ count: Number.NaN }).count,
+].every((n) => n === DEFAULT_CREATE_SPEC.count))
+check('小数数量取整', normalizeSpec({ count: 4.6 }).count === 5)
+check('平台不支持的题型被剔掉', eq(normalizeSpec({ questionTypes: ['single_choice', 'telepathy'] }).questionTypes, ['single_choice']))
+check('题型全非法时退回单选', eq(normalizeSpec({ questionTypes: ['telepathy'] }).questionTypes, ['single_choice']))
+check('多选题型原样保留', eq(normalizeSpec({ questionTypes: ['multi_select', 'fill_blank'] }).questionTypes, ['multi_select', 'fill_blank']))
+check('来源非法时退回默认', normalizeSpec({ source: 'magic' }).source === DEFAULT_CREATE_SPEC.source)
+check('选了非文献来源时清掉 documentId',
+  normalizeSpec({ source: 'platform', documentId: 'abc' }).documentId === null)
+check('选了文献来源时保留 documentId',
+  normalizeSpec({ source: 'resource', documentId: 'abc' }).documentId === 'abc')
+check('主题和范围去掉首尾空格',
+  normalizeSpec({ prompt: '  死锁  ', scope: ' 第 3 章 ' }).prompt === '死锁'
+  && normalizeSpec({ scope: ' 第 3 章 ' }).scope === '第 3 章')
+check('分类只留非空且最多三个',
+  eq(normalizeSpec({ categories: ['a', '', '  ', 'b', 'c', 'd'] }).categories, ['a', 'b', 'c']))
+check('避重默认开着', DEFAULT_CREATE_SPEC.avoidDuplicates)
+check('默认不把 AI 出的题标成已核对', DEFAULT_CREATE_SPEC.markVerified === false)
+check('describeSpec 说得清参数', describeSpec({ ...DEFAULT_CREATE_SPEC, count: 5 }).includes('5 道'))
+
+// ── /create 的指令说明得能让人看懂它有两步 ──
+const createSpec = findCommand('create')
+check('/create 的说明里提到了先确认参数', createSpec.summary.includes('确认'))
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)

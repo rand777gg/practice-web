@@ -4064,3 +4064,106 @@ CREATE TRIGGER trg_chat_msg_bump AFTER INSERT ON public.chat_messages
 --   每加一种就要迁移一次; 而这些字段只被前端自己读, 从不参与检索或排序。
 --   真正要搜的是消息正文, 那个仍然是 content + 索引。
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS meta JSONB;
+
+-- ============================================================================
+-- Section 58: search_rag 支持按"具体哪一篇"过滤 (RAG 出题: 从指定文献出题)
+--
+--   原先只能按 source 过滤(文献/题库/…), 但 /create 要能"就从《医学史（第3版）》出题"。
+--   在前端拿 40 条结果再筛是不行的: 库里文献一多, 这一篇的块根本进不了召回窗口,
+--   于是"限定这篇出题"会静默退化成"随便哪篇", 出的题和选的文献对不上。
+--
+--   加参数必须 DROP 旧的: 只 CREATE OR REPLACE 会变成重载, PostgREST 按名字调用时二义。
+-- ============================================================================
+DROP FUNCTION IF EXISTS public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[]);
+
+CREATE OR REPLACE FUNCTION public.search_rag(
+  p_query      TEXT,
+  p_embedding  TEXT    DEFAULT NULL,
+  p_sources    TEXT[]  DEFAULT NULL,
+  p_limit      INTEGER DEFAULT 12,
+  p_terms      TEXT[]  DEFAULT NULL,
+  p_source_ids TEXT[]  DEFAULT NULL
+) RETURNS TABLE (
+  id          BIGINT,
+  source      TEXT,
+  source_id   TEXT,
+  label       TEXT,
+  sub_label   TEXT,
+  content     TEXT,
+  page_no     INTEGER,
+  bbox        REAL[],
+  block_index INTEGER,
+  anchor      TEXT,
+  vec_rank    BIGINT,
+  txt_rank    BIGINT,
+  score       DOUBLE PRECISION
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_emb   vector(1024);
+  v_terms TEXT[];
+BEGIN
+  IF p_embedding IS NOT NULL AND btrim(p_embedding) <> '' THEN
+    v_emb := p_embedding::vector;
+  END IF;
+
+  -- 只用 2 个字以上的词, 单字命中太吵
+  IF p_terms IS NOT NULL THEN
+    SELECT array_agg(DISTINCT t) INTO v_terms FROM unnest(p_terms) t WHERE length(btrim(t)) >= 2;
+  END IF;
+
+  RETURN QUERY
+  WITH vec AS (
+    SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> v_emb) AS rnk
+    FROM public.rag_chunks c
+    WHERE v_emb IS NOT NULL
+      AND c.embedding IS NOT NULL
+      AND (p_sources IS NULL OR c.source = ANY(p_sources))
+      AND (p_source_ids IS NULL OR c.source_id = ANY(p_source_ids))
+    ORDER BY c.embedding <=> v_emb
+    LIMIT 40
+  ),
+  txt AS (
+    SELECT b.id, row_number() OVER (
+             ORDER BY b.hits DESC, similarity(b.content, p_query) DESC
+           ) AS rnk
+    FROM (
+      SELECT c.id,
+             c.content,
+             (CASE WHEN v_terms IS NULL THEN 0
+                   ELSE (SELECT count(*) FROM unnest(v_terms) t WHERE c.content ILIKE '%' || t || '%')
+              END) AS hits
+      FROM public.rag_chunks c
+      WHERE (p_sources IS NULL OR c.source = ANY(p_sources))
+        AND (p_source_ids IS NULL OR c.source_id = ANY(p_source_ids))
+        AND (
+          c.search_text ILIKE '%' || regexp_replace(p_query, '(.)', '\1 ', 'g') || '%'
+          OR (v_terms IS NOT NULL
+              AND EXISTS (SELECT 1 FROM unnest(v_terms) t WHERE c.content ILIKE '%' || t || '%'))
+        )
+    ) b
+    LIMIT 40
+  ),
+  fused AS (
+    SELECT coalesce(v.id, t.id) AS fid,
+           v.rnk AS vr,
+           t.rnk AS tr,
+           -- 必须 cast: 1.0 在 PG 里是 numeric, 不 cast 就对不上 RETURNS TABLE 声明的
+           -- double precision, 会报 structure of query does not match function result type
+           (coalesce(1.0 / (60 + v.rnk), 0) + coalesce(1.0 / (60 + t.rnk), 0))::double precision AS sc
+    FROM vec v FULL OUTER JOIN txt t ON v.id = t.id
+  )
+  SELECT c.id, c.source, c.source_id, c.label, c.sub_label, c.content,
+         c.page_no, c.bbox, c.block_index, c.anchor,
+         f.vr, f.tr, f.sc
+  FROM fused f
+  JOIN public.rag_chunks c ON c.id = f.fid
+  ORDER BY f.sc DESC, c.id
+  LIMIT greatest(1, least(coalesce(p_limit, 12), 40));
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]) TO authenticated;

@@ -72,6 +72,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({})) as {
       query?: string
       sources?: string[]
+      sourceIds?: string[]
       limit?: number
     }
     const query = (body.query ?? '').trim()
@@ -80,6 +81,11 @@ Deno.serve(async (req) => {
 
     const sources = Array.isArray(body.sources) && body.sources.length > 0
       ? body.sources.filter((s) => ALLOWED_SOURCES.includes(s))
+      : null
+    // 限定到具体某几篇(目前只有文献有 source_id)。空数组等同于不过滤 ——
+    // 免得前端选了个空选择器就把召回变成零条
+    const sourceIds = Array.isArray(body.sourceIds) && body.sourceIds.length > 0
+      ? body.sourceIds.filter((s) => typeof s === 'string' && s.length > 0).slice(0, 50)
       : null
     const limit = Math.min(Math.max(Number(body.limit) || 12, 1), 40)
 
@@ -97,6 +103,7 @@ Deno.serve(async (req) => {
       p_sources: sources,
       p_limit: limit,
       p_terms: queryTerms(query),
+      p_source_ids: sourceIds,
     })
     if (error) return json({ error: error.message }, 500)
 

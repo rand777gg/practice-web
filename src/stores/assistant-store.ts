@@ -17,16 +17,17 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { produceReply } from '@/lib/assistant-runtime'
 import { exportConversation } from '@/lib/assistant-export'
-import { insertQuestionDraft } from '@/lib/assistant-question-draft'
-import { searchKnowledge } from '@/lib/rag'
 import { hasAiConfig } from '@/lib/ai/config'
 import {
+  generateFromSpec, insertCreatedQuestions, normalizeSpec, parseCreateRequest,
+  type CreateSpec,
+} from '@/lib/assistant-create'
+import {
   activeSkillFrom, listSkills, loadSkillDoc, parseCommand,
-  type CommandSpec, type MessageMeta, type QuestionDraftMeta,
+  type CommandSpec, type CreateDraftMeta, type MessageMeta,
 } from '@/lib/assistant-commands'
 import type { AssistantMode, AssistantReply, LittleQEmotion } from '@/lib/assistant-demo'
 import type { AssistantTurn } from '@/lib/ai/assistant'
-import type { ParsedQuestion } from '@/lib/ai/types'
 import type { SkillId } from '@/lib/skills-catalog'
 
 export interface ChatMessage {
@@ -51,9 +52,6 @@ export interface ConversationSummary {
 const TITLE_MAX = 24
 const MESSAGE_COLUMNS = 'id, role, content, sub, tags, sources, followups, meta, created_at'
 const ACTIVE_KEY = 'littleq_active_conversation'
-/** /create 一次最多出几道: 再多就不是"顺手出两道题", 而是一屏卡片压在对话里 */
-const CREATE_MAX = 5
-const CREATE_DEFAULT = 3
 
 /**
  * 记住最后聊的那个会话。
@@ -132,12 +130,21 @@ async function insertMessage(row: Record<string, unknown>): Promise<{ id: number
   return { id: (data as { id: number }).id, error: null }
 }
 
-/** /create 的数量参数: 允许 "/create 3 死锁的必要条件" 这种写法 */
-function parseCreateArgs(args: string): { count: number; prompt: string } {
-  const match = /^(\d+)\s+(.+)$/.exec(args)
-  if (!match) return { count: CREATE_DEFAULT, prompt: args }
-  const count = Math.max(1, Math.min(CREATE_MAX, Number(match[1])))
-  return { count, prompt: match[2].trim() }
+/** 参数卡片要用的候选项: 学科/分类走缓存表(跟题库筛选同一份数据源), 文献只列已发布的 */
+async function loadCreateOptions(): Promise<{
+  subjects: string[]
+  categories: string[]
+  documents: { id: string; title: string }[]
+}> {
+  const [metaRes, docsRes] = await Promise.all([
+    supabase.from('question_meta_cache').select('subjects, categories').single(),
+    supabase.from('resource_documents').select('id, title').eq('is_published', true).order('created_at'),
+  ])
+  return {
+    subjects: (metaRes.data?.subjects ?? []) as string[],
+    categories: (metaRes.data?.categories ?? []) as string[],
+    documents: (docsRes.data ?? []) as { id: string; title: string }[],
+  }
 }
 
 interface AssistantState {
@@ -172,8 +179,12 @@ interface AssistantState {
   deleteConversation: (id: string) => Promise<void>
   send: (text: string) => Promise<void>
 
-  confirmQuestionDraft: (messageId: number, patch: { subject: string | null; categories: string[] }) => Promise<number>
-  discardQuestionDraft: (messageId: number) => Promise<void>
+  /** 用户改完参数点「开始出题」 */
+  startCreateGeneration: (messageId: number, spec: CreateSpec) => Promise<void>
+  /** 回到参数确认那一步重来 */
+  reopenCreateSpec: (messageId: number) => Promise<void>
+  confirmCreateDraft: (messageId: number) => Promise<number>
+  discardCreateDraft: (messageId: number) => Promise<void>
 }
 
 /**
@@ -230,9 +241,19 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     })
   }
 
+  /**
+   * 卡片状态改了就立刻落库。
+   * 不落库的话刷新之后卡片会退回上一步 —— 用户明明确认过入库, 回来却又是"待确认",
+   * 会以为没成功, 然后再点一次, 于是同一批题入库两遍。
+   */
+  async function writeMeta(messageId: number, meta: MessageMeta): Promise<void> {
+    set({ messages: get().messages.map((m) => (m.id === messageId ? { ...m, meta } : m)) })
+    const { error } = await supabase.from('chat_messages').update({ meta }).eq('id', messageId)
+    if (error) set({ error: `卡片状态保存失败: ${error.message}` })
+  }
+
   /** 用户那条消息先上屏再落库: 等一次往返才显示自己发的话, 感觉像卡住了 */
-  async function pushUserMessage(conversationId: string, value: string, serial: number): Promise<void> {
-    const tempId = -Date.now()
+  async function pushUserMessage(conversationId: string, value: string, serial: number): Promise<void> {    const tempId = -Date.now()
     set({ messages: [...get().messages, emptyMessage(tempId, 'user', value)] })
     const { error } = await supabase.from('chat_messages').insert({
       conversation_id: conversationId, role: 'user', content: value,
@@ -340,63 +361,25 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
             }, serial)
             break
           }
-          if (!hasAiConfig()) {
-            await appendAssistant(conversationId, '当前没有配置可用的模型，暂时没法出题。', { tags: ['未配置'] }, serial)
-            break
-          }
-          const { count, prompt } = parseCreateArgs(args)
-          if (!prompt) {
-            await appendAssistant(conversationId, '用法：/create [数量] <要考的知识点或题干要求>\n例如：/create 3 死锁产生的四个必要条件', {
-              meta: { kind: 'help' },
-              tags: ['用法'],
-            }, serial)
-            break
-          }
 
-          // 先看平台资料里有没有相关内容: 有就拿它当材料出题, 这样出的题和文献对得上,
-          // 也才有出处可核对; 没有就退回"按主题描述出题", 由模型自己的知识来, 并在卡片里说清楚。
-          let questions: ParsedQuestion[] = []
-          let grounded = false
-          try {
-            const { hits } = await searchKnowledge(prompt, { sources: ['resource', 'question', 'kp', 'subject'], limit: 6 })
-            if (hits.length > 0) {
-              const material = hits.map((h, i) => `[${i + 1}] ${h.content}`).join('\n\n')
-              const { generateFromText } = await import('@/lib/ai')
-              questions = (await generateFromText({ documentText: material, count })).questions
-              grounded = true
-            }
-          } catch (err) {
-            console.warn('[assistant] /create 检索平台资料失败, 改为按主题出题:', err)
-          }
-
-          if (questions.length === 0) {
-            const { generateQuestions } = await import('@/lib/ai')
-            questions = (await generateQuestions({
-              subject: '综合',
-              questionTypes: ['single_choice', 'multiple_choice'],
-              count,
-              topicDescription: prompt,
-            })).questions
-          }
-
-          if (questions.length === 0) {
-            await appendAssistant(conversationId, '模型这次没有给出可用题目，换个说法再试一次？', { tags: ['出题失败'] }, serial)
-            break
-          }
-
-          await appendAssistant(conversationId, grounded
-            ? `按平台资料出了 ${questions.length} 道题。学科和分类确认一下再入库 —— 这一步只有你知道该归到哪儿。`
-            : `平台资料里没找到「${prompt}」的对应内容，这 ${questions.length} 道题来自模型自己的知识，请重点核对学科、分类和答案。`, {
+          // 先只解析需求、不出题: 出题要花几十秒和一次生成的钱, 而参数没对齐的话
+          // 那几十秒和那笔钱都是白花的。用户在卡片上确认完再走 startCreateGeneration。
+          const options = await loadCreateOptions()
+          const { spec, understanding } = await parseCreateRequest(args, options)
+          await appendAssistant(conversationId, args.trim()
+            ? '先跟你对一下参数，确认没问题我再出题。'
+            : '要出什么题？把参数选好我再开始。', {
             meta: {
-              kind: 'question-draft',
-              questions,
-              subject: null,
-              categories: [],
-              status: 'pending',
-              prompt,
-              grounded,
-            } satisfies QuestionDraftMeta,
-            tags: grounded ? ['待确认', '基于平台资料'] : ['待确认', '非平台资料'],
+              kind: 'create-draft',
+              spec,
+              understanding,
+              status: 'spec',
+              questions: [],
+              grounded: false,
+              sources: [],
+              scopeMissed: false,
+            } satisfies CreateDraftMeta,
+            tags: ['待确认参数'],
           }, serial)
           break
         }
@@ -604,27 +587,68 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       })
     },
 
-    confirmQuestionDraft: async (messageId, patch) => {
-      const message = get().messages.find((m) => m.id === messageId)
-      const meta = message?.meta
-      if (!meta || meta.kind !== 'question-draft' || meta.status !== 'pending') return 0
+    startCreateGeneration: async (messageId, spec) => {
+      const meta = get().messages.find((m) => m.id === messageId)?.meta
+      if (!meta || meta.kind !== 'create-draft') return
+      const saved = normalizeSpec(spec)
 
-      const next: QuestionDraftMeta = {
-        ...meta,
-        subject: patch.subject,
-        categories: patch.categories,
-        status: 'inserted',
+      // 用户改过的参数先落库: 出题要几十秒, 中途刷新不该把刚填好的参数弄丢
+      await writeMeta(messageId, { ...meta, spec: saved })
+
+      if (!saved.subject) {
+        set({ error: '先选学科再出题' })
+        return
+      }
+      if (!hasAiConfig()) {
+        set({ error: '当前没有配置可用的模型，没法出题' })
+        return
+      }
+
+      set({ sending: true, emotion: 'thinking', error: null })
+      try {
+        const result = await generateFromSpec(saved)
+        if (result.questions.length === 0) {
+          set({ error: '模型这次没有给出可用题目，换个说法或换个资料再试' })
+          return
+        }
+        await writeMeta(messageId, {
+          ...meta,
+          spec: saved,
+          status: 'review',
+          questions: result.questions,
+          grounded: result.grounded,
+          sources: result.sources,
+          scopeMissed: result.scopeMissed,
+        })
+      } catch (err) {
+        set({ error: `出题失败：${err instanceof Error ? err.message : String(err)}` })
+      } finally {
+        set({ sending: false, emotion: 'happy' })
+      }
+    },
+
+    reopenCreateSpec: async (messageId) => {
+      const meta = get().messages.find((m) => m.id === messageId)?.meta
+      if (!meta || meta.kind !== 'create-draft') return
+      await writeMeta(messageId, { ...meta, status: 'spec', questions: [], sources: [], scopeMissed: false })
+    },
+
+    confirmCreateDraft: async (messageId) => {
+      const meta = get().messages.find((m) => m.id === messageId)?.meta
+      if (!meta || meta.kind !== 'create-draft' || meta.status !== 'review') return 0
+      const { spec, questions } = meta
+      if (!spec.subject) {
+        set({ error: '先选学科再入库' })
+        return 0
       }
       try {
-        const inserted = await insertQuestionDraft(meta.questions, {
-          subject: patch.subject,
-          categories: patch.categories,
+        const inserted = await insertCreatedQuestions(questions, {
+          subject: spec.subject,
+          categories: spec.categories,
           importMode: 'littleq',
+          verified: spec.markVerified,
         })
-        next.insertedCount = inserted
-        set({ messages: get().messages.map((m) => (m.id === messageId ? { ...m, meta: next } : m)) })
-        // 卡片状态也要落库, 否则刷新之后又变回"待确认", 用户会以为没成功
-        await supabase.from('chat_messages').update({ meta: next }).eq('id', messageId)
+        await writeMeta(messageId, { ...meta, status: 'inserted', insertedCount: inserted })
         return inserted
       } catch (err) {
         set({ error: err instanceof Error ? err.message : String(err) })
@@ -632,14 +656,10 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       }
     },
 
-    discardQuestionDraft: async (messageId) => {
-      const message = get().messages.find((m) => m.id === messageId)
-      const meta = message?.meta
-      if (!meta || meta.kind !== 'question-draft') return
-      const next: QuestionDraftMeta = { ...meta, status: 'discarded' }
-      set({ messages: get().messages.map((m) => (m.id === messageId ? { ...m, meta: next } : m)) })
-      const { error } = await supabase.from('chat_messages').update({ meta: next }).eq('id', messageId)
-      if (error) set({ error: `丢弃草稿失败: ${error.message}` })
+    discardCreateDraft: async (messageId) => {
+      const meta = get().messages.find((m) => m.id === messageId)?.meta
+      if (!meta || meta.kind !== 'create-draft') return
+      await writeMeta(messageId, { ...meta, status: 'discarded' })
     },
   }
 })

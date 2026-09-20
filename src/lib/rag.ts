@@ -54,13 +54,18 @@ interface RawHit {
 
 export async function searchKnowledge(
   query: string,
-  options: { sources?: RagSource[]; limit?: number } = {},
+  options: { sources?: RagSource[]; sourceIds?: string[]; limit?: number } = {},
 ): Promise<RagSearchResult> {
   const q = query.trim()
   if (!q) return { hits: [], mode: 'text-only', error: null }
 
   const { data, error } = await supabase.functions.invoke('rag-search', {
-    body: { query: q, sources: options.sources, limit: options.limit ?? 12 },
+    body: {
+      query: q,
+      sources: options.sources,
+      sourceIds: options.sourceIds,
+      limit: options.limit ?? 12,
+    },
   })
   if (error) throw new Error(`检索失败: ${error.message}`)
 

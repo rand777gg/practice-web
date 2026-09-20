@@ -10,6 +10,7 @@
  */
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { SkillId } from '@/lib/skills-catalog'
+import type { CreateSpec } from '@/lib/assistant-create'
 
 export type CommandId = 'create' | 'skill' | 'export' | 'help'
 
@@ -28,10 +29,10 @@ export const ASSISTANT_COMMANDS: CommandSpec[] = [
   {
     id: 'create',
     name: 'create',
-    usage: '/create <要考的知识点或题干要求>',
-    summary: '让 AI 出题，预览、改学科分类、确认后才进题库',
+    usage: '/create <要考的知识点，或者从哪篇文献出>',
+    summary: '先跟你确认资料库、数量、题型、学科分类，出题后再确认一遍才入库',
     adminOnly: true,
-    placeholder: '例如：死锁产生的四个必要条件',
+    placeholder: '例如：从医学史里出几道古罗马医学流派的题',
   },
   {
     id: 'skill',
@@ -89,18 +90,27 @@ export function matchCommands(prefix: string): CommandSpec[] {
 
 // ── 消息卡片 ──
 
-export interface QuestionDraftMeta {
-  kind: 'question-draft'
+/**
+ * /create 的卡片状态。
+ *
+ * 'spec' 是"先对齐需求"那一步: 参数还没定, 题也还没出; 用户在卡片上确认/修改之后才走到
+ * 'review'。分两阶段而不是一次到底, 是因为跑偏的代价不对称 —— 出 3 道题几毛钱, 但在两千道
+ * 题的题库里收拾跑偏的题, 花的是人的时间。
+ */
+export interface CreateDraftMeta {
+  kind: 'create-draft'
+  spec: CreateSpec
+  /** 模型对用户那句话的复述, 让用户一眼看出有没有理解偏 */
+  understanding: string
+  status: 'spec' | 'review' | 'inserted' | 'discarded'
   questions: ParsedQuestion[]
-  /** 入库前必须确认的元信息, 出题人自己最清楚该归到哪个学科 */
-  subject: string | null
-  categories: string[]
-  status: 'pending' | 'inserted' | 'discarded'
-  insertedCount?: number
-  /** 出题时用的原始要求, 便于回头核对 AI 有没有跑偏 */
-  prompt: string
-  /** true = 材料来自平台检索结果; false = 模型凭自身知识出的, 卡片要提示逐条核对 */
+  /** 题目材料是否来自平台资料 */
   grounded: boolean
+  /** 出题依据了哪几处(文献名 + 页码 + 跳转地址) */
+  sources: { label: string; pageNo: number | null; anchor: string | null }[]
+  /** 用户填的范围一条都没匹配上 —— 要如实说, 不能假装限定住了 */
+  scopeMissed: boolean
+  insertedCount?: number
 }
 
 export interface SkillMeta {
@@ -123,10 +133,10 @@ export interface HelpMeta {
   kind: 'help'
 }
 
-export type MessageMeta = QuestionDraftMeta | SkillMeta | ExportMeta | HelpMeta
+export type MessageMeta = CreateDraftMeta | SkillMeta | ExportMeta | HelpMeta
 
-export function isQuestionDraft(meta: MessageMeta | null | undefined): meta is QuestionDraftMeta {
-  return meta?.kind === 'question-draft'
+export function isCreateDraft(meta: MessageMeta | null | undefined): meta is CreateDraftMeta {
+  return meta?.kind === 'create-draft'
 }
 
 /**
