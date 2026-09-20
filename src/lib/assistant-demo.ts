@@ -11,7 +11,13 @@ export type LittleQEmotion = 'neutral' | 'happy' | 'concerned' | 'thinking'
 
 export interface AssistantSource {
   label: string
-  type: '题库' | '专题' | '文献' | '真题'
+  type: '题库' | '专题' | '文献' | '真题' | '笔记'
+  /** 站内跳转地址(检索到的文献可以精确落到某一页某一段), 没有就只展示内容 */
+  anchor?: string
+  /** 引用到的原文片段, 便于用户当场核对答案有没有出处 */
+  snippet?: string
+  /** 文献引用才有 */
+  pageNo?: number
 }
 
 export interface AssistantReply {

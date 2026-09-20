@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { ResourceReader } from '@/components/resource/ResourceReader'
 import {
-  getResourceDocument, loadResourceBlocks, pageUrlsOf,
-  type ResourceDocumentDetail,
+  documentMarkdownFromParts, documentPagesFromParts, getResourceDocument,
+  listResourceParts, loadResourceBlocks,
+  type ResourceDocumentDetail, type ResourcePart,
 } from '@/lib/resource-library'
 import type { ResourceBlock } from '@/lib/resource-blocks'
 
@@ -18,6 +19,7 @@ export function Component() {
   const isAdmin = useAuthStore((s) => s.profile?.role === 'admin')
 
   const [doc, setDoc] = useState<ResourceDocumentDetail | null>(null)
+  const [parts, setParts] = useState<ResourcePart[]>([])
   const [blocks, setBlocks] = useState<ResourceBlock[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -41,7 +43,17 @@ export function Component() {
         return
       }
       setDoc(found)
-      setBlocks(found.parse_status === 'ready' ? await loadResourceBlocks(found.id) : [])
+      if (found.parse_status === 'ready') {
+        const [loadedParts, loadedBlocks] = await Promise.all([
+          listResourceParts(found.id),
+          loadResourceBlocks(found.id),
+        ])
+        setParts(loadedParts)
+        setBlocks(loadedBlocks)
+      } else {
+        setParts([])
+        setBlocks([])
+      }
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -52,7 +64,9 @@ export function Component() {
 
   useEffect(() => { void load() }, [load])
 
-  const pages = useMemo(() => (doc ? pageUrlsOf(doc) : []), [doc])
+  // 页图和正文都按卷拼起来; 页码本来就是原文页码, 所以拼完就是连续的全篇
+  const pages = useMemo(() => documentPagesFromParts(parts), [parts])
+  const markdown = useMemo(() => documentMarkdownFromParts(parts, doc?.markdown ?? ''), [parts, doc])
 
   return (
     <div className="flex h-[calc(100vh-10.5rem)] min-h-[420px] min-w-0 flex-col xl:h-[calc(100vh-6.5rem)]">
@@ -148,9 +162,10 @@ export function Component() {
             documentId={doc.id}
             blocks={blocks}
             pages={pages}
-            markdown={doc.markdown}
+            markdown={markdown}
             pdfUrl={doc.pdf_url || null}
             pdfTotalPages={doc.pdf_total_pages}
+            parts={parts}
             initialBlockIndex={initialBlockIndex}
             initialQuery={initialQuery}
           />

@@ -1,155 +1,48 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  BookOpen, GraduationCap, HeartHandshake, Library, RotateCcw, Send, ShieldCheck,
+  BookOpen, GraduationCap, HeartHandshake, History, MessageSquarePlus, ShieldCheck,
   Sparkles, TriangleAlert,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
 import { LittleQAvatar } from '@/components/assistant/LittleQAvatar'
+import { AssistantChat } from '@/components/assistant/AssistantChat'
+import { ConversationList } from '@/components/assistant/ConversationList'
 import { DemoBadge } from '@/components/topics/TopicSidebar'
 import { hasAiConfig } from '@/lib/ai/config'
-import type { AssistantTurn } from '@/lib/ai/assistant'
-import {
-  FALLBACK_EMOTION, FALLBACK_REPLY, MODE_LABEL, QUICK_PROMPTS, matchScript,
-  type AssistantMode, type AssistantReply, type LittleQEmotion,
-} from '@/lib/assistant-demo'
-import { cn } from '@/lib/utils'
-
-interface Turn {
-  id: number
-  role: 'user' | 'assistant'
-  text: string
-  sub?: string
-  tags?: string[]
-  sources?: AssistantReply['sources']
-  followups?: string[]
-}
-
-const GREETING: Turn = {
-  id: 0,
-  role: 'assistant',
-  text: '我是小Q。你可以跟我聊备考里的情绪问题，也可以直接问专业课知识点——我会去平台题库、专题和原始文献里找依据再回答你。',
-  sub: '不太确定怎么开口的话，点下面任意一个话题试试；也可以直接说「操作系统 内存管理」这种「科目 + 章节」的格式。',
-  tags: ['备考心理', '专业课答疑', '基于平台资料'],
-}
-
-const MODES: AssistantMode[] = ['auto', 'psych', 'study']
-
-const SOURCE_TONE: Record<NonNullable<AssistantReply['sources']>[number]['type'], string> = {
-  题库: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  专题: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  文献: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  真题: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-}
-
-const STATUS_TEXT: Record<LittleQEmotion, string> = {
-  neutral: '在听你说',
-  happy: '心情不错，讲得正起劲',
-  concerned: '在认真听你说',
-  thinking: '在想怎么回答你',
-}
+import { useAssistantStore } from '@/stores/assistant-store'
 
 export function Component() {
-  const [turns, setTurns] = useState<Turn[]>([GREETING])
-  const [typing, setTyping] = useState(false)
-  const [input, setInput] = useState('')
-  const [mode, setMode] = useState<AssistantMode>('auto')
-  const [emotion, setEmotion] = useState<LittleQEmotion>('happy')
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<number | null>(null)
-  const idRef = useRef(1)
-  /** 每次发送/重置自增: 在途的模型回复与剧本计时器靠它作废 */
-  const requestRef = useRef(0)
+  const emotion = useAssistantStore((s) => s.emotion)
+  const typing = useAssistantStore((s) => s.sending)
+  const setOpen = useAssistantStore((s) => s.setOpen)
+  const startNewConversation = useAssistantStore((s) => s.startNewConversation)
+  const loadConversations = useAssistantStore((s) => s.loadConversations)
+  const conversationsLoaded = useAssistantStore((s) => s.conversationsLoaded)
+  const activeId = useAssistantStore((s) => s.activeId)
+  const conversations = useAssistantStore((s) => s.conversations)
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  // 这一页本身就装着对话, 再挂一个悬浮面板会出现两份一样的对话
+  useEffect(() => { setOpen(false) }, [setOpen])
 
   useEffect(() => {
-    const node = scrollRef.current
-    if (node) node.scrollTop = node.scrollHeight
-  }, [turns, typing])
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
-    }
-  }, [])
-
-  function pushReply(reply: AssistantReply, nextEmotion: LittleQEmotion, extraTags?: string[]) {
-    setTyping(false)
-    setEmotion(nextEmotion)
-    setTurns((prev) => [
-      ...prev,
-      {
-        id: idRef.current++,
-        role: 'assistant',
-        text: reply.text,
-        sub: reply.sub,
-        tags: extraTags ? [...(reply.tags ?? []), ...extraTags] : reply.tags,
-        sources: reply.sources,
-        followups: reply.followups,
-      },
-    ])
-  }
-
-  /** 没配模型（或模型挂了）时走内置剧本: 关键词匹配 + 一点打字延迟 */
-  function respondScripted(text: string, extraTags?: string[]) {
-    const script = matchScript(text, mode)
-    const reply = script?.reply ?? FALLBACK_REPLY
-    const nextEmotion = script?.emotion ?? FALLBACK_EMOTION
-    const delay = 700 + Math.min(reply.text.length * 4, 1100)
-    const serial = requestRef.current
-    timerRef.current = window.setTimeout(() => {
-      if (serial !== requestRef.current) return
-      pushReply(reply, nextEmotion, extraTags)
-    }, delay)
-  }
-
-  async function respond(text: string, history: AssistantTurn[]) {
-    if (!hasAiConfig()) {
-      respondScripted(text)
+    if (!conversationsLoaded) {
+      void loadConversations()
       return
     }
-    const serial = requestRef.current
-    try {
-      const { chatWithLittleQ } = await import('@/lib/ai/assistant')
-      const { reply, emotion: nextEmotion } = await chatWithLittleQ(text, history, mode)
-      if (serial !== requestRef.current) return
-      pushReply(reply, nextEmotion)
-    } catch {
-      if (serial !== requestRef.current) return
-      respondScripted(text, ['AI 暂不可用，已用示例回答'])
-    }
-  }
+    // 列表拿到之后再判断"上次那条还在不在", 顺序反了会把已被删掉的会话又接回来
+    const { activeId: id, messages, openConversation } = useAssistantStore.getState()
+    if (id && messages.length === 0) void openConversation(id)
+  }, [conversationsLoaded, loadConversations])
 
-  function send(text: string) {
-    const value = text.trim()
-    if (!value || typing) return
-    const history: AssistantTurn[] = turns
-      .filter((turn) => turn.id !== GREETING.id)
-      .map((turn) => ({ role: turn.role, text: turn.text }))
-    setTurns((prev) => [...prev, { id: idRef.current++, role: 'user', text: value }])
-    setInput('')
-    setTyping(true)
-    setEmotion('thinking')
-    requestRef.current += 1
-    void respond(value, history)
-  }
-
-  function reset() {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
-    requestRef.current += 1
-    setTyping(false)
-    setTurns([GREETING])
-    setInput('')
-    setEmotion('happy')
-    idRef.current = 1
-  }
+  const title = conversations.find((c) => c.id === activeId)?.title ?? '新会话'
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="ai-ring relative inline-flex rounded-full p-[2px]">
+        <span className="relative inline-flex rounded-full bg-primary p-[2px]">
           <img src="/littleq.webp" alt="" aria-hidden="true" className="h-11 w-11 rounded-full object-cover" />
         </span>
         <div className="min-w-0 flex-1">
@@ -158,208 +51,68 @@ export function Component() {
             {!hasAiConfig() && <DemoBadge />}
           </h1>
           <p className="text-sm text-muted-foreground">
-            备考心理陪伴 + 基于平台题库与文献的专业课答疑
+            备考心理陪伴 + 基于平台文献、题库与专题的专业课答疑
           </p>
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="space-y-3">
-          <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-b from-sky-50 via-violet-50 to-rose-50 shadow-xl shadow-primary/5 dark:from-sky-950/30 dark:via-violet-950/20 dark:to-rose-950/20">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -left-10 top-8 h-40 w-40 rounded-full bg-sky-300/20 blur-3xl"
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-8 bottom-6 h-44 w-44 rounded-full bg-rose-300/20 blur-3xl"
-            />
-            <LittleQAvatar
-              className="h-[340px] sm:h-[400px] lg:h-[440px]"
-              emotion={emotion}
-              typing={typing}
-            />
-            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
-              <span
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  typing ? 'animate-pulse bg-primary' : 'bg-emerald-500',
-                )}
-              />
-              {typing ? '正在组织语言…' : STATUS_TEXT[emotion]}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,268px)_minmax(0,1fr)]">
+        <div className="order-2 space-y-5 lg:order-1">
+          <Card className="flex h-[380px] flex-col overflow-hidden py-0">
+            <div className="flex items-center gap-2 border-b px-3 py-2">
+              <History className="h-3.5 w-3.5 text-muted-foreground" />
+              <p className="flex-1 text-xs font-medium">会话记录</p>
+              <span className="text-[10px] text-muted-foreground">
+                {conversations.length > 0 ? `${conversations.length} 个` : ''}
+              </span>
             </div>
-            <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-2">
-              <div className="rounded-2xl border bg-background/80 px-3 py-2 backdrop-blur">
-                <p className="text-sm font-semibold leading-none">小Q</p>
-                <p className="mt-1 text-[10px] leading-none text-muted-foreground">备考搭子 · 不会催你</p>
+            <div className="min-h-0 flex-1">
+              <ConversationList />
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden py-0">
+            <div className="relative">
+              <LittleQAvatar className="h-[260px]" emotion={emotion} typing={typing} />
+              <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full border bg-background/80 px-2.5 py-1 text-[10px] text-muted-foreground backdrop-blur">
+                <span className={typing ? 'h-1.5 w-1.5 animate-pulse rounded-full bg-primary' : 'h-1.5 w-1.5 rounded-full bg-emerald-500'} />
+                {typing ? '正在组织语言…' : '在听你说'}
               </div>
             </div>
-          </div>
-          <p className="px-1 text-[11px] text-muted-foreground">
-            立绘会跟着鼠标移动视线，也会随对话切换情绪；说话的是右边那个对话框。
-          </p>
+            <p className="border-t px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+              立绘会跟着鼠标移动视线，也会随对话切换情绪；说话的是右边那个对话框。
+            </p>
+          </Card>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border bg-card shadow-xl shadow-primary/5">
-          <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {MODES.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setMode(item)}
-                  className={cn(
-                    'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
-                    mode === item
-                      ? 'border-primary bg-primary/10 font-medium text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                  )}
-                >
-                  {MODE_LABEL[item]}
-                </button>
-              ))}
-            </div>
-            <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-[11px]" onClick={reset}>
-              <RotateCcw className="mr-1 h-3 w-3" />
-              清空
+        <Card className="order-1 flex h-[640px] flex-col overflow-hidden py-0 lg:order-2">
+          <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
+            <Button
+              size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-[11px] lg:hidden"
+              onClick={() => setHistoryOpen((v) => !v)}
+            >
+              <History className="h-3 w-3" />
+              {historyOpen ? '回到对话' : '会话记录'}
+            </Button>
+            <Button
+              size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+              onClick={startNewConversation}
+            >
+              <MessageSquarePlus className="h-3 w-3" />
+              新会话
             </Button>
           </div>
 
-          <div ref={scrollRef} className="h-[420px] space-y-4 overflow-y-auto p-5 lg:h-[460px]">
-            {turns.map((turn) =>
-              turn.role === 'user' ? (
-                <div
-                  key={turn.id}
-                  className="animate-in fade-in-0 slide-in-from-bottom-2 flex justify-end duration-300"
-                >
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
-                    {turn.text}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  key={turn.id}
-                  className="animate-in fade-in-0 slide-in-from-bottom-2 flex items-start gap-2.5 duration-300"
-                >
-                  <img
-                    src="/littleq.webp"
-                    alt=""
-                    aria-hidden="true"
-                    className="h-8 w-8 shrink-0 rounded-full object-cover"
-                  />
-                  <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
-                    <p className="text-sm">{turn.text}</p>
-                    {turn.sub && <p className="text-xs leading-relaxed text-muted-foreground">{turn.sub}</p>}
-
-                    {turn.sources && turn.sources.length > 0 && (
-                      <div className="space-y-1 rounded-lg border border-primary/20 bg-background/70 p-2">
-                        <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-                          <Library className="h-2.5 w-2.5" />
-                          依据平台资料
-                        </p>
-                        {turn.sources.map((source) => (
-                          <p key={source.label} className="flex items-center gap-1.5 text-[11px]">
-                            <Badge
-                              variant="secondary"
-                              className={cn('shrink-0 border-transparent text-[9px] font-normal', SOURCE_TONE[source.type])}
-                            >
-                              {source.type}
-                            </Badge>
-                            <span className="min-w-0 truncate">{source.label}</span>
-                          </p>
-                        ))}
-                      </div>
-                    )}
-
-                    {turn.tags && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {turn.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-full border bg-background px-2 py-0.5 text-[10px] text-muted-foreground"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {turn.followups && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {turn.followups.map((item) => (
-                          <button
-                            key={item}
-                            type="button"
-                            onClick={() => send(item)}
-                            className="rounded-full border border-dashed px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                          >
-                            {item}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ),
+          <div className="min-h-0 flex-1">
+            {historyOpen && (
+              <div className="h-full lg:hidden"><ConversationList /></div>
             )}
-
-            {typing && (
-              <div className="animate-in fade-in-0 flex items-start gap-2.5 duration-300">
-                <img
-                  src="/littleq.webp"
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 shrink-0 rounded-full object-cover"
-                />
-                <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
-                  <span className="h-1.5 w-1.5 animate-[thinking_1.4s_ease-in-out_infinite] rounded-full bg-muted-foreground" />
-                  <span className="h-1.5 w-1.5 animate-[thinking_1.4s_ease-in-out_0.2s_infinite] rounded-full bg-muted-foreground" />
-                  <span className="h-1.5 w-1.5 animate-[thinking_1.4s_ease-in-out_0.4s_infinite] rounded-full bg-muted-foreground" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3 border-t p-4">
-            <div className="flex flex-wrap gap-1.5">
-              {QUICK_PROMPTS.filter((prompt) => mode === 'auto' || prompt.mode === mode).map((prompt) => (
-                <button
-                  key={prompt.text}
-                  type="button"
-                  onClick={() => send(prompt.text)}
-                  className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                >
-                  {prompt.mode === 'psych' ? (
-                    <HeartHandshake className="h-3 w-3" />
-                  ) : (
-                    <GraduationCap className="h-3 w-3" />
-                  )}
-                  {prompt.text}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-end gap-2">
-              <Textarea
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    send(input)
-                  }
-                }}
-                rows={2}
-                placeholder="说说你现在的情况，或者直接问「操作系统 内存管理」这样的知识点…"
-                className="min-h-[44px] flex-1 resize-none text-sm"
-              />
-              <Button size="sm" className="h-11 shrink-0" disabled={!input.trim() || typing} onClick={() => send(input)}>
-                <Send className="mr-1.5 h-3.5 w-3.5" />
-                发送
-              </Button>
+            <div className={historyOpen ? 'hidden lg:block lg:h-full' : 'h-full'}>
+              <AssistantChat variant="page" />
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -382,7 +135,8 @@ export function Component() {
               <div>
                 <p className="text-xs font-medium">专业课答疑</p>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  基于平台题库、专题框架与原始文献作答，并标出依据来源，方便你顺着去刷对应的题。
+                  先跨来源检索文献、题库、知识点解读与公开笔记，再据此作答，并标出依据来源。
+                  文献引用可以点「看原文」直接落到那一页那一段。
                 </p>
               </div>
             </div>
@@ -425,20 +179,23 @@ export function Component() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Sparkles className="h-4 w-4 text-primary" />
-              为什么她会长这样
+              关于这个形象与记录
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-1 text-[11px] leading-relaxed text-muted-foreground">
             <p>
               左侧的小Q是平台品牌立绘
-              <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">chatQ.webp</span>
+              <span className="mx-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">littleq.webp</span>
               ：会呼吸、会跟着鼠标移动视线，情绪也会随对话换成不同的姿态与色温。
             </p>
             <p>
               {hasAiConfig()
                 ? '对话由真实模型按人格提示词生成，仍可能出错，别当结论用。'
                 : '对话目前由内置剧本驱动，未接入真实模型。'}
-              聊天内容只存在这个页面里，刷新即清空，不会保存。
+            </p>
+            <p>
+              会话记录保存在你的账号下（只有你能看到），换设备或清缓存都还在；
+              左边的会话列表和任何页面右下角的小Q 面板共用同一份记录。
             </p>
           </CardContent>
         </Card>

@@ -10,6 +10,7 @@ import { ImagePlus, Loader2, Wand2, WrapText, Video, ScanEye, Sparkles, X } from
 import { hasAiConfig, getAiConfig, getMinerUToken } from '@/lib/ai/config'
 import { MinerUClient } from '@/lib/ai/mineru'
 import { getPrompt } from '@/stores/prompt-store'
+import { R2_PUBLIC_ORIGIN } from '@/lib/r2'
 
 interface Props {
   value: string
@@ -26,10 +27,7 @@ interface Props {
   className?: string
 }
 
-const R2_BASE = (() => {
-  const host = import.meta.env.VITE_R2_PUBLIC_HOST as string | undefined
-  return (host ? `https://${host}` : 'https://r2-rpw.pguide.dev').replace(/\/+$/, '')
-})()
+const R2_BASE = R2_PUBLIC_ORIGIN
 
 // Collect R2 image URLs referenced as markdown images or raw <img src>.
 function extractR2ImageUrls(md: string): string[] {

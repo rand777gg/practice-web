@@ -12,6 +12,10 @@ const questionSchema = z.object({
   correct_answer: z.any(),
   analysis: z.string().optional().nullable(),
   answer_explanation: z.string().optional().nullable(),
+  // 这两个原先不在 schema 里, 于是被 zod 直接剥掉 —— 结果 AI 生成的题 key_points 永远是空,
+  // 而平台的知识点进度统计正是按 key_points 算的, 那批题一道都不进统计。
+  key_points: z.string().optional().nullable(),
+  source_page: z.string().optional().nullable(),
 })
 
 const resultSchema = z.object({
@@ -307,6 +311,8 @@ export class DeepSeekParser {
           correct_answer,
           analysis: strOrUndefined(q.analysis),
           answer_explanation: strOrUndefined(q.answer_explanation),
+          key_points: strOrUndefined(q.key_points),
+          source_page: strOrUndefined(q.source_page),
         }
       })
   }

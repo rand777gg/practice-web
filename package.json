@@ -1,7 +1,7 @@
 {
   "name": "practice-web",
   "private": true,
-  "version": "1.25.0",
+  "version": "1.25.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -98,6 +98,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "rollup-plugin-visualizer": "^7.0.1",
+    "shadcn": "^4.21.0",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",

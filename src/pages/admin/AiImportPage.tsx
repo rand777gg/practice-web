@@ -40,6 +40,9 @@ import { getPrompt, usePromptStore } from '@/stores/prompt-store'
 import { getPromptDefault } from '@/lib/ai/prompt-catalog'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn, naturalSort } from '@/lib/utils'
+import { R2_PUBLIC_HOST, isOwnStorageUrl, r2PublicUrl } from '@/lib/r2'
+import { autoIndex } from '@/lib/rag'
+import { questionRowFromParsed } from '@/lib/assistant-create'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Icon } from '@/lib/icons'
@@ -317,7 +320,7 @@ export function Component() {
       }
       // Detect if file_name is a URL → use for PDF viewer
       if (entry.file_name.startsWith('http')) {
-        const isOwnStorage = entry.file_name.includes('/storage/v1/object/') || entry.file_name.includes('/r2/') || entry.file_name.includes('r2.dev') || entry.file_name.includes('r2-rpw.pguide.dev')
+        const isOwnStorage = isOwnStorageUrl(entry.file_name)
         if (isOwnStorage) {
           setHistoryPdfUrl(entry.file_name)
         } else {
@@ -337,7 +340,7 @@ export function Component() {
       setSelectionMode('off')
       setRangeAnchor(null)
       setCurrentDisplayName(entry.display_name || (() => {
-        if (entry.file_name.includes('r2-rpw.pguide.dev')) {
+        if (entry.file_name.includes(R2_PUBLIC_HOST)) {
           const idx = entry.file_name.indexOf('pdf/')
           if (idx >= 0) return r2DisplayNames.get(entry.file_name.slice(idx)) || null
         }
@@ -411,7 +414,7 @@ export function Component() {
     setEditPdfId(null)
     setParseResult(prev => prev ? { ...prev, fileName: newUrl } : null)
     if (newUrl.startsWith('http')) {
-      const isOwn = newUrl.includes('/storage/v1/object/') || newUrl.includes('/r2/') || newUrl.includes('r2.dev') || newUrl.includes('r2-rpw.pguide.dev')
+      const isOwn = isOwnStorageUrl(newUrl)
       setHistoryPdfUrl(isOwn ? newUrl : null)
     } else { setHistoryPdfUrl(null) }
   }
@@ -556,7 +559,7 @@ export function Component() {
     const ensureR2 = (async () => {
       try {
         // Check if already in R2
-        const check = await fetch(`https://r2-rpw.pguide.dev/${dedupKey}`, { method: 'HEAD' })
+        const check = await fetch(r2PublicUrl(dedupKey), { method: 'HEAD' })
         if (check.ok) return
       } catch { /* HEAD may fail on CORS, proceed with upload */ }
 
@@ -572,7 +575,7 @@ export function Component() {
         await fetch((presignData as any).url, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
       } catch { /* best-effort */ }
     })()
-    r2Url = `https://r2-rpw.pguide.dev/${dedupKey}`
+    r2Url = r2PublicUrl(dedupKey)
 
     // Start MinerU immediately — don't wait for R2 upload
     const options = {
@@ -802,26 +805,17 @@ export function Component() {
 
     try {
       const { error: insertErr } = await supabase.from('questions').insert(
-        toImport.map((q) => ({
-          question_type: q.question_type,
-          question_text: q.question_text,
-          options: q.options,
-          correct_answer: (q.correct_answer ?? '') as any,
-          category: category ? (Array.isArray(category) ? category[0] : category) : null,
-          categories: category ? (Array.isArray(category) ? category : [category]) : [],
+        toImport.map((q) => questionRowFromParsed(q, {
           subject: subject || null,
-          analysis: q.analysis?.trim() || null,
-          key_points: q.key_points?.trim() || null,
-          answer_explanation: null,
-          seq_number: null,
-          import_mode: parseMode,
-          source_page: q.source_page || pageRangesRef.current || null,
-          verified: q.verified ?? false,
-          allow_unordered: q.allow_unordered ?? false,
+          categories: Array.isArray(category) ? category : category ? [category] : [],
+          importMode: parseMode,
+          sourcePageFallback: pageRangesRef.current || null,
         })),
       )
 
       if (insertErr) throw insertErr
+      // 批量导入也要补索引: 新题不补的话, 在下次重建索引之前小Q 搜不到它们
+      autoIndex('question')
       setImportCount(toImport.length)
       if (currentHistoryId) {
         await supabase.from('parse_history').update({ status_json: JSON.stringify({ state: 'imported' }) }).eq('id', currentHistoryId)
@@ -909,7 +903,7 @@ export function Component() {
           for (const id of ids) {
             const entry = history.find(h => h.id === id)
             if (entry && entry.file_name.startsWith('http')) {
-              const isOwn = entry.file_name.includes('/storage/v1/object/') || entry.file_name.includes('/r2/') || entry.file_name.includes('r2.dev') || entry.file_name.includes('r2-rpw.pguide.dev')
+              const isOwn = isOwnStorageUrl(entry.file_name)
               const pdfUrl = isOwn ? entry.file_name : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mineru-proxy/pdf-proxy?url=${encodeURIComponent(entry.file_name)}`
               setParseMsg(`正在缓存: ${entry.file_name.split('/').pop() || entry.file_name}`)
               await renderAndUploadPages(pdfUrl, id, entry.page_ranges || undefined)

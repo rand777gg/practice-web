@@ -30,6 +30,7 @@ import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { AvatarOwner } from '@/lib/avatar'
 import { useT } from '@/i18n/use-t'
+import { autoIndex } from '@/lib/rag'
 
 type NoteWithQuestion = UserAnswer & { questions: Question }
 
@@ -320,16 +321,21 @@ export function Component() {
  const handleTogglePublic = async (note: NoteWithQuestion) => {
   const next = !note.is_public
   await supabase.from('user_answers').update({ is_public: next }).eq('id', note.id)
+  // 这条笔记是普通用户自己写的, 索引不能等管理员点全量重建 —— 单条增量同步走服务端的公开性过滤
+  autoIndex('note', note.id)
   setMyNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, is_public: next } : n)))
  }
  const handleStartEdit = (note: NoteWithQuestion) => { setEditingNoteId(note.id); setEditText(note.note ?? '') }
  const handleSaveEdit = async (noteId: string) => {
   await supabase.from('user_answers').update({ note: editText || null }).eq('id', noteId)
+  autoIndex('note', noteId)
   setMyNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, note: editText || null } : n)))
   setEditingNoteId(null)
  }
  const handleDelete = async (noteId: string) => {
   await supabase.from('user_answers').update({ note: null, is_public: false }).eq('id', noteId)
+  // 取消公开后服务端取不到这条, 差集为空集 → 旧块被当孤儿删除
+  autoIndex('note', noteId)
   setMyNotes((prev) => prev.filter((n) => n.id !== noteId))
   setDeleteNoteId(null)
  }

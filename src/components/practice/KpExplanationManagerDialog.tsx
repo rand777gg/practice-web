@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import { kpExplanationKey, useKpExplanations } from '@/hooks/use-kp-explanations'
 import { naturalSort } from '@/lib/utils'
+import { autoIndex } from '@/lib/rag'
 
 interface Props {
   open: boolean
@@ -93,6 +94,8 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
       await supabase.from('kp_explanations').delete().eq('subject', selectedSubject).eq('kp', selectedKp)
     }
     setSaving(false)
+    // 知识点解读只有管理员能改, 整源增量同步(这张表很小, 内容没变就等于不花钱)
+    autoIndex('kp')
     await refresh()
   }
 

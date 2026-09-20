@@ -12,7 +12,9 @@ const R2_ACCESS_KEY = requireEnv("R2_ACCESS_KEY_ID")
 const R2_SECRET_KEY = requireEnv("R2_SECRET_ACCESS_KEY")
 const R2_ENDPOINT = requireEnv("R2_ENDPOINT")
 const R2_BUCKET = requireEnv("R2_BUCKET")
-const R2_PUBLIC_HOST = Deno.env.get("R2_PUBLIC_HOST") || "r2-rpw.pguide.dev"
+// 以前这里有硬编码兜底域名, 域名一过期整个函数就静默发死链(页图全白、MinerU 拉到停放页),
+// 所以改成必须显式配置: 少配置就报错, 比悄悄发死链好排查。
+const R2_PUBLIC_HOST = requireEnv("R2_PUBLIC_HOST")
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]
 const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"]

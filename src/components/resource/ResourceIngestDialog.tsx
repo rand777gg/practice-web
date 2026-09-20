@@ -11,6 +11,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { hasMinerUToken } from '@/lib/ai/config'
+import { countPdfPages } from '@/lib/pdf-page-renderer'
+import { MINERU_PAGE_LIMIT, selectedPageCount, slicePageRanges, sliceToRange } from '@/lib/page-slices'
 import { ingestResource, type ParseMode } from '@/lib/resource-library'
 import { ResourceMetaFields } from './ResourceMetaFields'
 import { EMPTY_META, metaToInput, type MetaFormValue } from '@/lib/resource-meta-form'
@@ -36,14 +38,38 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
   const [phase, setPhase] = useState<'idle' | 'running' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [totalPages, setTotalPages] = useState<number | null>(null)
 
   const running = phase === 'running'
   const tokenMissing = !hasMinerUToken()
+
+  const explicitRanges = pageRanges.trim()
+  // 留空 = 按 200 页上限自动切卷; 显式填了页码范围则整段作为一卷, 超上限要拦下来
+  const autoSlices = totalPages !== null && !explicitRanges ? slicePageRanges(totalPages) : []
+  const explicitCount = totalPages !== null && explicitRanges
+    ? selectedPageCount(totalPages, explicitRanges)
+    : 0
+  const overLimit = explicitCount > MINERU_PAGE_LIMIT
+
+  const pickFile = async (picked: File | null) => {
+    setFile(picked)
+    setTotalPages(null)
+    setPhase('idle')
+    setMessage('')
+    if (!picked) return
+    try {
+      setTotalPages(await countPdfPages(picked))
+    } catch {
+      setMessage('无法读取这份 PDF 的页数, 解析时可能失败')
+      setPhase('error')
+    }
+  }
 
   const reset = () => {
     setFile(null)
     setMeta(EMPTY_META)
     setPageRanges('')
+    setTotalPages(null)
     setPhase('idle')
     setMessage('')
     setProgress(null)
@@ -100,7 +126,7 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
               type="file"
               accept="application/pdf"
               className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => { void pickFile(e.target.files?.[0] ?? null) }}
             />
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5" disabled={running} onClick={() => fileRef.current?.click()}>
@@ -108,8 +134,22 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
               </Button>
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {file ? `${file.name} · ${formatSize(file.size)}` : '未选择文件'}
+                {totalPages !== null && ` · 共 ${totalPages} 页`}
               </span>
             </div>
+            {autoSlices.length > 1 && (
+              <p className="text-[10px] text-muted-foreground">
+                共 {totalPages} 页, 超过 MinerU 单次 {MINERU_PAGE_LIMIT} 页上限, 将自动切成 {autoSlices.length} 卷依次解析：
+                {autoSlices.map((s) => sliceToRange(s)).join('、')}。
+                全篇仍是一篇文献, 页码连续。解析期间请保持此页面打开。
+              </p>
+            )}
+            {overLimit && (
+              <p className="text-[10px] text-destructive">
+                指定的页码范围覆盖 {explicitCount} 页, 超过 MinerU 的 {MINERU_PAGE_LIMIT} 页上限。
+                请把页码范围改小, 或清空让它自动切卷。
+              </p>
+            )}
           </div>
 
           <ResourceMetaFields value={meta} onChange={setMeta} disabled={running} />
@@ -163,7 +203,7 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
           <Button variant="ghost" disabled={running} onClick={() => { reset(); onOpenChange(false) }}>
             取消
           </Button>
-          <Button disabled={running} onClick={submit}>
+          <Button disabled={running || overLimit} onClick={submit}>
             {running
               ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />解析中...</>
               : <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />开始解析并录入</>}

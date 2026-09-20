@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSyncStore } from '@/stores/sync-store'
 import { addPendingAnswer } from '@/lib/offline-db'
+import { autoIndex } from '@/lib/rag'
 
 /** sequential = 顺序学习(推进计划轮次), random = 复习自由刷 */
 export type AnswerSource = 'sequential' | 'random'
@@ -87,6 +88,8 @@ export function useUserAnswers() {
         .update(payload)
         .eq('id', answerId)
       if (error) throw error
+      // 笔记改成公开/改内容/取消公开都走这里, 索引跟着一起动(服务端只看 is_public, 私密笔记不会进)
+      autoIndex('note', answerId)
     },
     [],
   )

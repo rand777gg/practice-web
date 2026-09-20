@@ -1,0 +1,276 @@
+/**
+ * 小Q 指令解析的单元测试 —— 纯函数, 直接跑 Node 的类型剥离。
+ *
+ *   node scripts/assistant-commands-smoke.mjs
+ */
+import {
+  ASSISTANT_COMMANDS,
+  activeSkillFrom,
+  commandPrefix,
+  conversationTitleFrom,
+  findCommand,
+  matchCommands,
+  normalizeMeta,
+  parseCommand,
+} from '../src/lib/assistant-commands.ts'
+import {
+  COUNT_MAX,
+  DEFAULT_CREATE_SPEC,
+  PLATFORM_SOURCES,
+  describeSpec,
+  formatKeyPoints,
+  normalizeSpec,
+  retrievalSources,
+  selectionSummary,
+  splitKeyPoints,
+} from '../src/lib/create-spec.ts'
+import { sectionsFromToc } from '../src/lib/resource-blocks.ts'
+
+let pass = 0
+let fail = 0
+function check(name, ok, detail = '') {
+  if (ok) { pass++; console.log(`PASS  ${name}`) }
+  else { fail++; console.log(`FAIL  ${name}${detail ? ` — ${detail}` : ''}`) }
+}
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+// ── 指令表本身 ──
+check('指令名唯一', new Set(ASSISTANT_COMMANDS.map((c) => c.name)).size === ASSISTANT_COMMANDS.length)
+check('每条指令都有说明和用法', ASSISTANT_COMMANDS.every((c) => c.summary && c.usage.startsWith('/')))
+check('只有 /create 需要管理员', ASSISTANT_COMMANDS.filter((c) => c.adminOnly).map((c) => c.name).join() === 'create')
+
+// ── parseCommand ──
+check('普通聊天不是指令', parseCommand('死锁的四个必要条件是什么？') === null)
+check('不认识的指令返回 unknown', parseCommand('/nope').kind === 'unknown')
+check('unknown 带回了指令名', parseCommand('/nope').name === 'nope')
+
+const exportCmd = parseCommand('/export')
+check('/export 解析成 export', exportCmd.kind === 'command' && exportCmd.spec.id === 'export')
+check('/export 没有参数', exportCmd.args === '')
+
+const createCmd = parseCommand('/create 3 死锁产生的四个必要条件')
+check('/create 带数量的参数原样保留', createCmd.spec.id === 'create' && createCmd.args === '3 死锁产生的四个必要条件',
+  createCmd.args)
+
+check('指令名大小写不敏感', parseCommand('/EXPORT').spec.id === 'export')
+check('前后空格不影响', parseCommand('   /help   ').spec.id === 'help')
+check('参数里的多余空格被压掉', parseCommand('/create   死锁   必要条件').args === '死锁 必要条件')
+check('中文参数不被当成指令名', parseCommand('/create 出题').args === '出题')
+check('只有斜杠没有名字算 unknown', parseCommand('/').kind === 'unknown')
+check('路径式文本不会被误认成指令', parseCommand('/admin/questions 看一下') === null
+  || parseCommand('/admin/questions 看一下').kind === 'unknown')
+
+// ── commandPrefix: 只在还没开始写参数时给候选 ──
+check('空的斜杠给全部候选', commandPrefix('/') === '' && matchCommands('').length === ASSISTANT_COMMANDS.length)
+check('打了半截给前缀', commandPrefix('/cr') === 'cr')
+check('补全后的斜杠加空格不再弹菜单', commandPrefix('/create ') === null)
+check('开始写参数后不再弹菜单', commandPrefix('/create 死锁') === null)
+check('普通文本没有候选', commandPrefix('死锁') === null)
+check('前缀匹配能收敛到一条', eq(matchCommands('cr').map((c) => c.name), ['create']))
+check('没有匹配就是空', matchCommands('zzz').length === 0)
+check('findCommand 忽略大小写', findCommand('HELP').id === 'help')
+
+// ── activeSkillFrom: 技能状态靠消息回溯, 不额外存字段 ──
+const msg = (meta) => ({ meta })
+check('没有技能消息时为空', activeSkillFrom([msg(null), msg({ kind: 'help' })]) === null)
+check('set 之后技能生效', activeSkillFrom([
+  msg({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup', skillTitle: 'x' }),
+]) === 'local-judge0-setup')
+check('list 不改变当前技能', activeSkillFrom([
+  msg({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup', skillTitle: 'x' }),
+  msg({ kind: 'skill', action: 'list', skillId: null, skillTitle: '' }),
+]) === 'local-judge0-setup')
+check('clear 之后技能关掉', activeSkillFrom([
+  msg({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup', skillTitle: 'x' }),
+  msg({ kind: 'skill', action: 'clear', skillId: null, skillTitle: '' }),
+]) === null)
+check('后一次 set 覆盖前一次', activeSkillFrom([
+  msg({ kind: 'skill', action: 'set', skillId: 'local-supabase-docker', skillTitle: 'a' }),
+  msg({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup', skillTitle: 'b' }),
+]) === 'local-judge0-setup')
+
+// ── normalizeSpec: 出题参数的第一道闸门 ──
+check('空对象给出一份可用的默认参数',
+  normalizeSpec({}).count === DEFAULT_CREATE_SPEC.count
+  && normalizeSpec({}).questionTypes.length > 0)
+check('数量被夹到上限', normalizeSpec({ count: 999 }).count === COUNT_MAX)
+check('数量 0 / 负数 / NaN 退回默认', [
+  normalizeSpec({ count: 0 }).count,
+  normalizeSpec({ count: -3 }).count,
+  normalizeSpec({ count: Number.NaN }).count,
+].every((n) => n === DEFAULT_CREATE_SPEC.count))
+check('小数数量取整', normalizeSpec({ count: 4.6 }).count === 5)
+check('平台不支持的题型被剔掉', eq(normalizeSpec({ questionTypes: ['single_choice', 'telepathy'] }).questionTypes, ['single_choice']))
+check('题型全非法时退回单选', eq(normalizeSpec({ questionTypes: ['telepathy'] }).questionTypes, ['single_choice']))
+check('多选题型原样保留', eq(normalizeSpec({ questionTypes: ['multi_select', 'fill_blank'] }).questionTypes, ['multi_select', 'fill_blank']))
+check('来源非法时退回默认', normalizeSpec({ source: 'magic' }).source === DEFAULT_CREATE_SPEC.source)
+check('选了非文献来源时清掉 documentId',
+  normalizeSpec({ source: 'platform', documentId: 'abc' }).documentId === null)
+check('选了文献来源时保留 documentId',
+  normalizeSpec({ source: 'resource', documentId: 'abc' }).documentId === 'abc')
+check('主题和范围去掉首尾空格', normalizeSpec({ prompt: '  死锁  ' }).prompt === '死锁')
+check('分类只留非空且最多三个',
+  eq(normalizeSpec({ categories: ['a', '', '  ', 'b', 'c', 'd'] }).categories, ['a', 'b', 'c']))
+check('避重默认开着', DEFAULT_CREATE_SPEC.avoidDuplicates)
+check('默认不把 AI 出的题标成已核对', DEFAULT_CREATE_SPEC.markVerified === false)
+check('describeSpec 说得清参数', describeSpec({ ...DEFAULT_CREATE_SPEC, count: 5 }).includes('5 道'))
+check('参数里不再有难度这一项', !('difficulty' in DEFAULT_CREATE_SPEC))
+
+// ── 来源子选择 ──
+check('默认跨来源是全部五类', DEFAULT_CREATE_SPEC.sources.length === PLATFORM_SOURCES.length)
+check('只会用文献时检索来源就只剩文献',
+  eq(retrievalSources(normalizeSpec({ source: 'platform', sources: ['resource'] })), ['resource']))
+check('只用题库时也是', eq(retrievalSources(normalizeSpec({ sources: ['question'] })), ['question']))
+check('非法来源被剔掉', eq(normalizeSpec({ sources: ['question', 'nowhere'] }).sources, ['question']))
+check('来源全非法时退回全选',
+  normalizeSpec({ sources: ['nowhere'] }).sources.length === PLATFORM_SOURCES.length)
+check('不用资料时检索来源为空', eq(retrievalSources(normalizeSpec({ source: 'model' })), []))
+check('指定文献时检索来源就是文献',
+  eq(retrievalSources(normalizeSpec({ source: 'resource', documentId: 'x' })), ['resource']))
+
+// ── 选中的资料内容: 页码区间 + 段号 ──
+const sel = (spec) => normalizeSpec({ source: 'resource', documentId: 'doc-1', ...spec }).selection
+const full = sel({ selection: { documentId: 'doc-1', documentTitle: '医学史', label: '第一章', from: 3, to: 9, blocks: [] } })
+check('整节选中: 保留页码区间', full?.from === 3 && full?.to === 9)
+check('整节选中: blocks 空数组 = 整个区间', eq(full?.blocks, []))
+check('带上文献标题(卡片上要显示是哪一篇)', full?.documentTitle === '医学史')
+const granular = sel({ selection: { documentId: 'doc-1', from: 4, to: 4, blocks: [12, 7, 7, 9] } })
+check('段落级选中: 段号去重并排序', eq(granular?.blocks, [7, 9, 12]))
+check('没给标签时用页码范围当标签', granular?.label === '第 4 页')
+check('上下限写反了会自动摆正',
+  sel({ selection: { documentId: 'doc-1', from: 90, to: 40 } })?.from === 40)
+check('缺 documentId 的选择丢掉(不知道是哪一篇就没法取材料)',
+  sel({ selection: { from: 1, to: 3 } }) === null)
+check('页码缺失/为 0 的选择丢掉',
+  sel({ selection: { documentId: 'doc-1', from: 0, to: 0 } }) === null
+  && sel({ selection: { documentId: 'doc-1' } }) === null)
+check('blocks 里有脏值时只留能用的',
+  eq(sel({ selection: { documentId: 'doc-1', from: 1, to: 2, blocks: [5, 'x', null, 5.4] } })?.blocks, [5]))
+check('跨来源时清掉选中内容(几篇文献的页码各算各的)',
+  normalizeSpec({ source: 'platform', selection: { documentId: 'doc-1', from: 1, to: 3 } }).selection === null)
+check('不用资料时也不留选中内容',
+  normalizeSpec({ source: 'model', selection: { documentId: 'doc-1', from: 1, to: 3 } }).selection === null)
+check('选中内容的摘要写得清',
+  selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 9, blocks: [] }) === '第一章 · 第 3-9 页'
+  && selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 3, blocks: [1, 2] }) === '第一章 · 第 3 页 · 2 段')
+check('describeSpec 会体现选中的内容',
+  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd', selection: { documentId: 'd', label: '第一章', from: 3, to: 9 } })).includes('第一章'))
+check('指定文献但没选内容时说明白',
+  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd' })).includes('还没选内容'))
+
+// ── 目录 → 页码区间 ──
+const toc = [
+  { blockIndex: 0, level: 1, title: '第 1 章 古代的医药卫生', pageNo: 10 },
+  { blockIndex: 5, level: 2, title: '（三）医学流派', pageNo: 40 },
+  { blockIndex: 9, level: 1, title: '第 2 章 中世纪', pageNo: 55 },
+]
+const secs = sectionsFromToc(toc, 120)
+check('每一节都切出页码区间', secs.length === 3)
+check('一节到下一节前一页为止', secs[0].pageFrom === 10 && secs[0].pageTo === 39)
+check('最后一节到全书末尾', secs[2].pageFrom === 55 && secs[2].pageTo === 120)
+check('区间互不重叠', secs.every((s, i) => i === 0 || s.pageFrom > secs[i - 1].pageTo))
+check('目录条目本身的 key 带出来了(同名标题也能区分)',
+  secs[1].key === 5 && secs[1].title === '（三）医学流派')
+const samePage = sectionsFromToc([
+  { blockIndex: 0, level: 1, title: 'A', pageNo: 7 },
+  { blockIndex: 1, level: 2, title: 'B', pageNo: 7 },
+  { blockIndex: 2, level: 2, title: 'C', pageNo: 7 },
+], 30)
+check('三个标题挤在同一页时不会切出负宽区间',
+  samePage.every((s) => s.pageFrom <= s.pageTo), JSON.stringify(samePage))
+check('没有总页数时最后一节至少到自己那一页',
+  sectionsFromToc([{ blockIndex: 0, level: 1, title: 'A', pageNo: 9 }], 0)[0].pageTo === 9)
+check('没有目录就是空数组(界面退回手填页码)', sectionsFromToc([], 100).length === 0)
+
+// ── /create 的指令说明得能让人看懂它有两步 ──
+const createSpec = findCommand('create')
+check('/create 的说明里提到了先确认参数', createSpec.summary.includes('确认'))
+
+// ── 会话标题去掉指令名 ──
+check('标题去掉 /create 前缀', conversationTitleFrom('/create 创建几道基础医学的题目') === '创建几道基础医学的题目')
+check('标题去掉 /export 前缀', conversationTitleFrom('/export 顺便导出') === '顺便导出')
+check('只有指令名时保留指令名(否则标题就空了)', conversationTitleFrom('/export') === '/export')
+check('普通消息不受影响', conversationTitleFrom('死锁的四个必要条件是什么？') === '死锁的四个必要条件是什么？')
+check('过长的标题会截断', conversationTitleFrom(`/create ${'题'.repeat(40)}`).length === 25)
+
+// ── 知识点: 平台是一套带编号的受控词表, 不能由模型自由发挥 ──
+check('知识点默认空着(不编)',
+  eq(normalizeSpec({}).keyPoints, []))
+check('知识点去掉空串与重复',
+  eq(normalizeSpec({ keyPoints: ['A01-甲', '', '  ', 'A01-甲', 'B02-乙'] }).keyPoints, ['A01-甲', 'B02-乙']))
+check('知识点最多留 6 个(挂十几个等于没挂)',
+  normalizeSpec({ keyPoints: Array.from({ length: 10 }, (_, i) => `K${i}`) }).keyPoints.length === 6)
+check('非字符串的知识点被丢掉',
+  eq(normalizeSpec({ keyPoints: [1, null, 'A01-甲'] }).keyPoints, ['A01-甲']))
+check('知识点里的顿号不会被当成分隔符(编码本身带顿号)',
+  eq(normalizeSpec({ keyPoints: ['A01-医学的演变、传播与交融'] }).keyPoints, ['A01-医学的演变、传播与交融']))
+check('存库用 ", "(平台 get_question_meta 就是按这个拆的)',
+  formatKeyPoints(['A01-甲', 'B02-乙']) === 'A01-甲, B02-乙')
+check('空列表存库是 null 而不是空串', formatKeyPoints([]) === null)
+check('从库里读回来能拆开', eq(splitKeyPoints('A01-甲, B02-乙'), ['A01-甲', 'B02-乙']))
+check('半角/全角逗号与分号都能拆',
+  eq(splitKeyPoints('A01-甲，B02-乙；C03-丙'), ['A01-甲', 'B02-乙', 'C03-丙']))
+check('单个知识点原样读回', eq(splitKeyPoints('A01-医学的演变、传播与交融'), ['A01-医学的演变、传播与交融']))
+check('null / undefined 读回来是空数组',
+  eq(splitKeyPoints(null), []) && eq(splitKeyPoints(undefined), []))
+
+// ── normalizeMeta: 旧版本存下的卡片不能把页面打崩 ──
+// 这就是 79a0f0d 那一版写进库里的形状: 没有 sources, scope 是字符串, 还多一个 difficulty。
+// 新版组件直接当新形状用就炸在渲染里, 用户看到的是整页 Unexpected Application Error。
+const broken = normalizeMeta({
+  kind: 'create-draft',
+  spec: {
+    source: 'platform', scope: '第 3 章', prompt: '古罗马', count: 2,
+    questionTypes: ['single_choice'], categories: [], avoidDuplicates: true, spread: 'spread', difficulty: 'hard',
+  },
+  understanding: '出两道古罗马的题',
+  status: 'spec',
+})
+check('旧版卡片能被读出来', broken !== null && broken.kind === 'create-draft')
+check('缺的 sources 补成全部五类', eq(broken.spec.sources, ['resource', 'question', 'kp', 'subject', 'note']))
+check('更早那版把 scope 存成字符串的, 升级时会被丢掉(而不是当成页码用)',
+  broken.spec.selection === null)
+// a038986 那版: scope 是对象 {label, from, to, tocKey}。它当年的语义就是"这一整段页码",
+// 正好等于新模型里 blocks 为空, 所以要能升上来而不是丢掉。
+const upgraded = normalizeMeta({
+  kind: 'create-draft',
+  spec: {
+    source: 'resource', documentId: 'doc-9', prompt: 'x',
+    scope: { label: '第一章 绪论', from: 1, to: 7, tocKey: 3 },
+  },
+  status: 'spec',
+})
+check('上一版的 scope 对象能升级成选中内容',
+  upgraded.spec.selection?.from === 1 && upgraded.spec.selection?.to === 7)
+check('升级时补上了文献 id', upgraded.spec.selection?.documentId === 'doc-9')
+check('升级成"整段范围"形态(blocks 为空)', eq(upgraded.spec.selection?.blocks, []))
+check('questions 缺失时补成空数组', eq(broken.questions, []))
+check('questions / sources 给 null 也不会漏出来', (() => {
+  const m = normalizeMeta({ kind: 'create-draft', spec: {}, questions: null, sources: 'x', status: 'review' })
+  return Array.isArray(m.questions) && Array.isArray(m.sources)
+})())
+check('非法 status 退回 spec', normalizeMeta({ kind: 'create-draft', spec: {}, status: 'wat' }).status === 'spec')
+check('题型非法的题目退回单选', normalizeMeta({
+  kind: 'create-draft', spec: {}, questions: [{ question_text: 'x', question_type: 'telepathy' }],
+}).questions[0].question_type === 'single_choice')
+check('options 不是数组时补成空数组', Array.isArray(normalizeMeta({
+  kind: 'create-draft', spec: {}, questions: [{ question_text: 'x', options: null }],
+}).questions[0].options))
+check('没有题干的条目被丢掉', normalizeMeta({
+  kind: 'create-draft', spec: {}, questions: [{}, { question_text: 'ok' }],
+}).questions.length === 1)
+check('旧引用条目缺 type 时补成文献',
+  normalizeMeta({ kind: 'create-draft', spec: {}, sources: [{ label: '医学史' }] }).sources[0].type === 'resource')
+check('认不出的 kind 直接丢弃(正文还在, 只是没有卡片)',
+  normalizeMeta({ kind: 'question-draft', questions: [] }) === null)
+check('null / 字符串 / undefined 都不炸',
+  normalizeMeta(null) === null && normalizeMeta('x') === null && normalizeMeta(undefined) === null)
+check('help / export / skill 也能读回来',
+  normalizeMeta({ kind: 'help' }).kind === 'help'
+  && normalizeMeta({ kind: 'export' }).kind === 'export'
+  && normalizeMeta({ kind: 'skill', action: 'set', skillId: 'local-judge0-setup' }).skillId === 'local-judge0-setup')
+check('已经不存在的技能 id 会被清掉',
+  normalizeMeta({ kind: 'skill', action: 'set', skillId: 'no-such-skill' }).skillId === null)
+
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail === 0 ? 0 : 1)
