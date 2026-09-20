@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { uploadBlobToR2 } from '@/lib/r2-upload'
 import type { DocumentParseResult, MinerUPrecisionOptions, MinerUTaskResult, MinerUBatchFileResult, MinerUBatchStatus, MinerULightweightStatus } from './types'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
@@ -374,22 +375,7 @@ export class MinerUClient {
   async uploadToR2(file: File, folder = 'pdf'): Promise<string> {
     const ext = file.name.split('.').pop() || 'bin'
     const key = `${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`
-
-    const { data, error } = await supabase.functions.invoke('r2', {
-      body: { action: 'upload-url', key, contentType: file.type },
-    })
-    if (error) throw new Error(`Failed to get upload URL: ${error.message}`)
-    const { url: presignedUrl, publicUrl } = data as { url: string; publicUrl: string }
-    if (!presignedUrl || !publicUrl) throw new Error('No pre-signed URL returned')
-
-    const uploadRes = await fetch(presignedUrl, {
-      method: 'PUT',
-      body: file,
-      headers: { 'Content-Type': file.type },
-    })
-    if (!uploadRes.ok) throw new Error(`R2 direct upload failed: HTTP ${uploadRes.status}`)
-
-    return publicUrl
+    return uploadBlobToR2(file, key, file.type)
   }
 
   // Precision parsing via R2 upload (no Supabase size limit)

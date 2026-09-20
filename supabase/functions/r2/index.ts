@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from "npm:@aws-sdk/client-s3@3"
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, ListPartsCommand } from "npm:@aws-sdk/client-s3@3"
 import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3"
 import { corsHeaders, corsResponse, corsOk } from "../_shared/cors.ts"
 
@@ -23,8 +23,9 @@ const ALLOWED_FILE_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, "app
 // Multipart uploads buffer the whole file in function memory, so keep the cap
 // low; large videos must use the presigned "upload-url" path (direct to R2).
 const MAX_SIZE = 200 * 1024 * 1024
-// 批量签名的条数上限。一本 600 页的书一次要签 600 个键, 响应体约 300KB, 留够余量。
-const MAX_PRESIGN_BATCH = 800
+// 批量签名的条数上限。一本 600 页的书一次要签 600 个键, 响应体约 300KB, 留够余量;
+// 分片上传也复用这个上限, 所以不能低于客户端的最大分片数。
+const MAX_PRESIGN_BATCH = 1000
 
 const s3 = new S3Client({
   region: "auto",
@@ -110,6 +111,71 @@ Deno.serve(async (req) => {
         return { key, url: signedUrl, publicUrl: `https://${R2_PUBLIC_HOST}/${key}` }
       }))
       return corsResponse(JSON.stringify({ urls }), { headers: { "Content-Type": "application/json" } })
+    }
+
+    // ── 分片上传 ──
+    // 大文件单次 PUT 只能吃到一个连接的速率, 几百 MB 到 1GB 的视频全靠它非常慢。分片让浏览器
+    // 直传 R2(不走函数, 不吃函数内存和出网), 4 片并发跑满上行带宽。
+    //
+    // 三件事必须由服务端做, 所以是三个 action 而不是一个:
+    //   - create-multipart  拿到 uploadId
+    //   - upload-part-urls  给每片签一个直传地址
+    //   - complete-multipart 补 ETag 并收尾
+    // ETag 不能让客户端读: 分片的 PUT 响应里确实有 ETag, 但桶的 CORS 没配
+    // Access-Control-Expose-Headers, 而 ETag 不在 CORS 安全响应头名单里, 浏览器里读出来是 null。
+    // 所以收尾时用 ListParts 从 R2 侧把 ETag 捞出来, 这样不用动桶的 CORS 配置。
+    if (action === "create-multipart") {
+      const key = body.key as string
+      const ct = (body.contentType as string) || "application/octet-stream"
+      if (!key) return corsResponse(JSON.stringify({ error: "Missing key" }), { status: 400, headers: { "Content-Type": "application/json" } })
+
+      const created = await s3.send(new CreateMultipartUploadCommand({ Bucket: R2_BUCKET, Key: key, ContentType: ct }))
+      if (!created.UploadId) return corsResponse(JSON.stringify({ error: "R2 未返回 uploadId" }), { status: 500, headers: { "Content-Type": "application/json" } })
+      return corsResponse(JSON.stringify({ key, uploadId: created.UploadId, publicUrl: `https://${R2_PUBLIC_HOST}/${key}` }), { headers: { "Content-Type": "application/json" } })
+    }
+
+    if (action === "upload-part-urls") {
+      const key = body.key as string
+      const uploadId = body.uploadId as string
+      const partNumbers = (body.partNumbers as number[]) || []
+      if (!key || !uploadId || !partNumbers.length) return corsResponse(JSON.stringify({ error: "Missing key/uploadId/partNumbers" }), { status: 400, headers: { "Content-Type": "application/json" } })
+      if (partNumbers.length > MAX_PRESIGN_BATCH) return corsResponse(JSON.stringify({ error: `Too many parts: ${partNumbers.length} > ${MAX_PRESIGN_BATCH}` }), { status: 400, headers: { "Content-Type": "application/json" } })
+
+      const urls = await Promise.all(partNumbers.map(async (partNumber) => ({
+        partNumber,
+        url: await getSignedUrl(s3, new UploadPartCommand({ Bucket: R2_BUCKET, Key: key, UploadId: uploadId, PartNumber: partNumber }), { expiresIn: 3600 }),
+      })))
+      return corsResponse(JSON.stringify({ urls }), { headers: { "Content-Type": "application/json" } })
+    }
+
+    if (action === "complete-multipart") {
+      const key = body.key as string
+      const uploadId = body.uploadId as string
+      const partCount = body.partCount as number
+      if (!key || !uploadId || !partCount) return corsResponse(JSON.stringify({ error: "Missing key/uploadId/partCount" }), { status: 400, headers: { "Content-Type": "application/json" } })
+
+      const listed = await s3.send(new ListPartsCommand({ Bucket: R2_BUCKET, Key: key, UploadId: uploadId, MaxParts: MAX_PRESIGN_BATCH }))
+      const uploaded = (listed.Parts || []).filter(p => p.PartNumber && p.ETag)
+      if (uploaded.length !== partCount || listed.IsTruncated) {
+        await s3.send(new AbortMultipartUploadCommand({ Bucket: R2_BUCKET, Key: key, UploadId: uploadId }))
+        return corsResponse(JSON.stringify({ error: `分片数对不上: R2 上有 ${uploaded.length} 片, 客户端传了 ${partCount} 片, 已放弃这次上传` }), { status: 400, headers: { "Content-Type": "application/json" } })
+      }
+
+      const parts = uploaded
+        .map(p => ({ PartNumber: p.PartNumber as number, ETag: p.ETag as string }))
+        .sort((a, b) => a.PartNumber - b.PartNumber)
+      await s3.send(new CompleteMultipartUploadCommand({ Bucket: R2_BUCKET, Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts } }))
+
+      return corsResponse(JSON.stringify({ key, parts: parts.length, publicUrl: `https://${R2_PUBLIC_HOST}/${key}` }), { headers: { "Content-Type": "application/json" } })
+    }
+
+    if (action === "abort-multipart") {
+      const key = body.key as string
+      const uploadId = body.uploadId as string
+      if (!key || !uploadId) return corsResponse(JSON.stringify({ error: "Missing key/uploadId" }), { status: 400, headers: { "Content-Type": "application/json" } })
+
+      await s3.send(new AbortMultipartUploadCommand({ Bucket: R2_BUCKET, Key: key, UploadId: uploadId }))
+      return corsResponse(JSON.stringify({ aborted: true, key }), { headers: { "Content-Type": "application/json" } })
     }
 
     if (action === "delete") {

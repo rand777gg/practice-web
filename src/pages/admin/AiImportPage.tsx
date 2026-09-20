@@ -41,6 +41,7 @@ import { getPromptDefault } from '@/lib/ai/prompt-catalog'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn, naturalSort } from '@/lib/utils'
 import { R2_PUBLIC_HOST, isOwnStorageUrl, r2PublicUrl } from '@/lib/r2'
+import { uploadBlobToR2 } from '@/lib/r2-upload'
 import { autoIndex } from '@/lib/rag'
 import { questionRowFromParsed } from '@/lib/assistant-create'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
@@ -568,11 +569,7 @@ export function Component() {
         if (!pdfRes.ok) return
         const pdfBlob = await pdfRes.blob()
         const pdfFile = new File([pdfBlob], fileName, { type: pdfBlob.type || 'application/pdf' })
-        const { data: presignData, error: presignErr } = await supabase.functions.invoke('r2', {
-          body: { action: 'upload-url', key: dedupKey, contentType: pdfFile.type },
-        })
-        if (presignErr || !(presignData as any)?.url) return
-        await fetch((presignData as any).url, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
+        await uploadBlobToR2(pdfFile, dedupKey, pdfFile.type)
       } catch { /* best-effort */ }
     })()
     r2Url = r2PublicUrl(dedupKey)

@@ -251,20 +251,10 @@ export function MarkdownEditor({
     setIsUploadingVideo(true)
     setVideoProgress(0)
     try {
-      const { data, error } = await supabase.functions.invoke('r2', {
-        body: JSON.stringify({ action: 'upload-url', key, contentType: type }),
-      })
-      if (error) throw new Error(error.message || '获取上传地址失败')
-      const { url, publicUrl } = (data ?? {}) as { url: string; publicUrl: string }
-      if (!url) throw new Error('获取上传地址失败')
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('PUT', url)
-        xhr.setRequestHeader('Content-Type', type)
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setVideoProgress(Math.round((e.loaded / e.total) * 100)) }
-        xhr.onload = () => { xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`上传失败 HTTP ${xhr.status}`)) }
-        xhr.onerror = () => reject(new Error('上传失败，请检查网络连接'))
-        xhr.send(file)
+      const { uploadBlobToR2 } = await import('@/lib/r2-upload')
+      // 1GB 的视频走分片并发; 进度按片回调, 比 XHR 的 upload.onprogress 粒度粗, 但对这种体量够用
+      const publicUrl = await uploadBlobToR2(file, key, type, (loaded, total) => {
+        setVideoProgress(Math.round((loaded / total) * 100))
       })
       insertText(`<video controls preload="metadata" src="${publicUrl}"></video>`)
     } catch (err) { alert(err instanceof Error ? err.message : '上传失败') }

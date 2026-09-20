@@ -15,6 +15,7 @@ import { getMinerUModelVersion, getMinerUToken } from '@/lib/ai/config'
 import type { MinerUBatchFileResult, MinerUBatchStatus, MinerUPrecisionOptions } from '@/lib/ai/types'
 import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocSection } from '@/lib/resource-blocks'
 import { renderAndUploadPdfPages, countPdfPages, type PageUrl } from '@/lib/pdf-page-renderer'
+import { uploadBlobToR2 } from '@/lib/r2-upload'
 import {
   MINERU_PAGE_LIMIT, parsePageNumbers, planParts, rangeForSlice, selectedPageCount,
   type PageSlice,
@@ -73,17 +74,13 @@ const LIST_COLUMNS = [
 
 // ── R2 ──
 
-async function putToR2(key: string, body: Blob | File, contentType: string): Promise<string> {
-  const { data, error } = await supabase.functions.invoke('r2', {
-    body: { action: 'upload-url', key, contentType },
-  })
-  if (error) throw new Error(`R2 预签名失败: ${error.message}`)
-  const { url, publicUrl } = (data ?? {}) as { url?: string; publicUrl?: string }
-  if (!url || !publicUrl) throw new Error('R2 未返回上传地址')
-
-  const res = await fetch(url, { method: 'PUT', body, headers: { 'Content-Type': contentType } })
-  if (!res.ok) throw new Error(`R2 上传失败: HTTP ${res.status}`)
-  return publicUrl
+async function putToR2(
+  key: string,
+  body: Blob | File,
+  contentType: string,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<string> {
+  return uploadBlobToR2(body, key, contentType, onProgress)
 }
 
 export function documentPrefix(documentId: string): string {
@@ -765,7 +762,9 @@ export async function ingestResource(
   try {
     producer?.({ step: '正在上传 PDF 到 R2...' })
     const pdfKey = `${documentPrefix(documentId)}/source.pdf`
-    const pdfUrl = await putToR2(pdfKey, file, 'application/pdf')
+    const pdfUrl = await putToR2(pdfKey, file, 'application/pdf', (loaded, total) => {
+      producer?.({ step: `正在上传 PDF 到 R2... ${Math.round((loaded / total) * 100)}%`, done: loaded, total })
+    })
 
     await updateResourceDocument(documentId, {
       pdf_url: pdfUrl,
