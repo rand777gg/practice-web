@@ -416,7 +416,7 @@ export function parseCoverFromItems(items: PdfItem[], pageWidth: number, pageHei
 
 /**
  * 在浏览器里用 pdfjs-dist 加载一份 PDF 并把所有页文本项 + 页面尺寸抽出来。
- * 复用项目里 PdfViewer 的 worker 配置方式 (调用方需先设置过 pdfjsLib.GlobalWorkerOptions.workerSrc)。
+ * 调用方需先设置过 pdfjsLib.GlobalWorkerOptions.workerSrc。
  */
 export async function loadPdfItems(pdfjsLib: typeof import('pdfjs-dist'), source: ArrayBuffer | Uint8Array): Promise<PdfPage[]> {
   const pdf = await pdfjsLib.getDocument({ data: source }).promise
