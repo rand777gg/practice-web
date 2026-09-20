@@ -20,6 +20,7 @@ import {
   describeSpec,
   normalizeSpec,
   retrievalSources,
+  selectionSummary,
 } from '../src/lib/create-spec.ts'
 import { sectionsFromToc } from '../src/lib/resource-blocks.ts'
 
@@ -125,24 +126,35 @@ check('不用资料时检索来源为空', eq(retrievalSources(normalizeSpec({ s
 check('指定文献时检索来源就是文献',
   eq(retrievalSources(normalizeSpec({ source: 'resource', documentId: 'x' })), ['resource']))
 
-// ── 范围: 页码区间 ──
-const scoped = normalizeSpec({ source: 'resource', documentId: 'x', scope: { label: '第 3 章', from: 40, to: 60, tocKey: 7 } })
-check('指定文献时保留页码范围', scoped.scope?.from === 40 && scoped.scope?.to === 60)
-check('范围记着目录条目的 key(下拉框要能恢复选中)', scoped.scope?.tocKey === 7)
-check('范围上下限写反了会自动摆正',
-  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 60, to: 40 } }).scope?.from === 40)
-check('只有一端有数字的范围当成不限',
-  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 40 } }).scope === null
-  && normalizeSpec({ source: 'resource', documentId: 'x', scope: { to: 60 } }).scope === null)
-check('页码 0 / 负数当成不限',
-  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 0, to: 0 } }).scope === null
-  && normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: -5, to: 10 } }).scope === null)
-check('跨来源时清掉页码范围(几篇的页码各算各的)',
-  normalizeSpec({ source: 'platform', scope: { from: 40, to: 60 } }).scope === null)
-check('不用资料时也不留范围',
-  normalizeSpec({ source: 'model', scope: { from: 40, to: 60 } }).scope === null)
-check('没给标签时用页码范围当标签',
-  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 3, to: 9 } }).scope?.label === '第 3-9 页')
+// ── 选中的资料内容: 页码区间 + 段号 ──
+const sel = (spec) => normalizeSpec({ source: 'resource', documentId: 'doc-1', ...spec }).selection
+const full = sel({ selection: { documentId: 'doc-1', documentTitle: '医学史', label: '第一章', from: 3, to: 9, blocks: [] } })
+check('整节选中: 保留页码区间', full?.from === 3 && full?.to === 9)
+check('整节选中: blocks 空数组 = 整个区间', eq(full?.blocks, []))
+check('带上文献标题(卡片上要显示是哪一篇)', full?.documentTitle === '医学史')
+const granular = sel({ selection: { documentId: 'doc-1', from: 4, to: 4, blocks: [12, 7, 7, 9] } })
+check('段落级选中: 段号去重并排序', eq(granular?.blocks, [7, 9, 12]))
+check('没给标签时用页码范围当标签', granular?.label === '第 4 页')
+check('上下限写反了会自动摆正',
+  sel({ selection: { documentId: 'doc-1', from: 90, to: 40 } })?.from === 40)
+check('缺 documentId 的选择丢掉(不知道是哪一篇就没法取材料)',
+  sel({ selection: { from: 1, to: 3 } }) === null)
+check('页码缺失/为 0 的选择丢掉',
+  sel({ selection: { documentId: 'doc-1', from: 0, to: 0 } }) === null
+  && sel({ selection: { documentId: 'doc-1' } }) === null)
+check('blocks 里有脏值时只留能用的',
+  eq(sel({ selection: { documentId: 'doc-1', from: 1, to: 2, blocks: [5, 'x', null, 5.4] } })?.blocks, [5]))
+check('跨来源时清掉选中内容(几篇文献的页码各算各的)',
+  normalizeSpec({ source: 'platform', selection: { documentId: 'doc-1', from: 1, to: 3 } }).selection === null)
+check('不用资料时也不留选中内容',
+  normalizeSpec({ source: 'model', selection: { documentId: 'doc-1', from: 1, to: 3 } }).selection === null)
+check('选中内容的摘要写得清',
+  selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 9, blocks: [] }) === '第一章 · 第 3-9 页'
+  && selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 3, blocks: [1, 2] }) === '第一章 · 第 3 页 · 2 段')
+check('describeSpec 会体现选中的内容',
+  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd', selection: { documentId: 'd', label: '第一章', from: 3, to: 9 } })).includes('第一章'))
+check('指定文献但没选内容时说明白',
+  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd' })).includes('还没选内容'))
 
 // ── 目录 → 页码区间 ──
 const toc = [
@@ -193,7 +205,22 @@ const broken = normalizeMeta({
 })
 check('旧版卡片能被读出来', broken !== null && broken.kind === 'create-draft')
 check('缺的 sources 补成全部五类', eq(broken.spec.sources, ['resource', 'question', 'kp', 'subject', 'note']))
-check('字符串形态的旧 scope 被丢掉(而不是当成页码用)', broken.spec.scope === null)
+check('更早那版把 scope 存成字符串的, 升级时会被丢掉(而不是当成页码用)',
+  broken.spec.selection === null)
+// a038986 那版: scope 是对象 {label, from, to, tocKey}。它当年的语义就是"这一整段页码",
+// 正好等于新模型里 blocks 为空, 所以要能升上来而不是丢掉。
+const upgraded = normalizeMeta({
+  kind: 'create-draft',
+  spec: {
+    source: 'resource', documentId: 'doc-9', prompt: 'x',
+    scope: { label: '第一章 绪论', from: 1, to: 7, tocKey: 3 },
+  },
+  status: 'spec',
+})
+check('上一版的 scope 对象能升级成选中内容',
+  upgraded.spec.selection?.from === 1 && upgraded.spec.selection?.to === 7)
+check('升级时补上了文献 id', upgraded.spec.selection?.documentId === 'doc-9')
+check('升级成"整段范围"形态(blocks 为空)', eq(upgraded.spec.selection?.blocks, []))
 check('questions 缺失时补成空数组', eq(broken.questions, []))
 check('questions / sources 给 null 也不会漏出来', (() => {
   const m = normalizeMeta({ kind: 'create-draft', spec: {}, questions: null, sources: 'x', status: 'review' })

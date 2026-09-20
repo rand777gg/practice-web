@@ -373,7 +373,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
               questions: [],
               grounded: false,
               sources: [],
-              scopeMissed: false,
+              materialNote: null,
             } satisfies CreateDraftMeta,
             tags: ['待确认参数'],
           }, serial)
@@ -614,7 +614,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
           questions: result.questions,
           grounded: result.grounded,
           sources: result.sources,
-          scopeMissed: result.scopeMissed,
+          materialNote: result.materialNote,
         })
       } catch (err) {
         set({ error: `出题失败：${err instanceof Error ? err.message : String(err)}` })
@@ -626,7 +626,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     reopenCreateSpec: async (messageId) => {
       const meta = get().messages.find((m) => m.id === messageId)?.meta
       if (!meta || meta.kind !== 'create-draft') return
-      await writeMeta(messageId, { ...meta, status: 'spec', questions: [], sources: [], scopeMissed: false })
+      await writeMeta(messageId, { ...meta, status: 'spec', questions: [], sources: [], materialNote: null })
     },
 
     confirmCreateDraft: async (messageId) => {

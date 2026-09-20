@@ -126,8 +126,8 @@ export interface CreateDraftMeta {
   grounded: boolean
   /** 出题依据了哪几处(来源类型 + 文献名 + 页码 + 跳转地址) */
   sources: { type: RagSource; label: string; pageNo: number | null; anchor: string | null }[]
-  /** 用户填的范围一条都没匹配上 —— 要如实说, 不能假装限定住了 */
-  scopeMissed: boolean
+  /** 材料被截断 / 选中范围没有正文之类的实情, 卡片上如实说明 */
+  materialNote: string | null
   insertedCount?: number
 }
 
@@ -197,9 +197,21 @@ export function normalizeMeta(raw: unknown): MessageMeta | null {
     case 'create-draft': {
       const status = m.status
       const citation = Array.isArray(m.sources) ? m.sources : []
+      const rawSpec = (m.spec ?? {}) as Record<string, unknown>
       return {
         kind: 'create-draft',
-        spec: normalizeSpec((m.spec ?? {}) as Partial<CreateSpec>),
+        spec: normalizeSpec({
+          ...rawSpec,
+          // 老版本的"范围"叫 scope, 只有页码区间没有段号。它当年的语义就是"这一整段页码",
+          // 正好对上"blocks 为空 = 整个区间"的新含义, 所以直接升上来, 旧卡片不会丢选择。
+          selection: rawSpec.selection ?? (rawSpec.scope
+            ? {
+              ...(rawSpec.scope as Record<string, unknown>),
+              documentId: rawSpec.documentId,
+              documentTitle: '',
+            }
+            : null),
+        } as Partial<CreateSpec>),
         understanding: asString(m.understanding),
         status: status === 'review' || status === 'inserted' || status === 'discarded' ? status : 'spec',
         questions: (Array.isArray(m.questions) ? m.questions : [])
@@ -216,7 +228,10 @@ export function normalizeMeta(raw: unknown): MessageMeta | null {
             pageNo: typeof s.pageNo === 'number' ? s.pageNo : null,
             anchor: asString(s.anchor) || null,
           })),
-        scopeMissed: m.scopeMissed === true,
+        // 老版本只有一个 scopeMissed 布尔; 有就翻成一句说明, 免得那条信息凭空消失
+        materialNote: asString(m.materialNote)
+          || (m.scopeMissed === true ? '上一轮选的范围里没检索到材料，那次是按整篇出的。' : '')
+          || null,
         insertedCount: typeof m.insertedCount === 'number' ? m.insertedCount : undefined,
       }
     }

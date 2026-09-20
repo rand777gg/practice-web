@@ -11,59 +11,30 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, Info, Library, RotateCcw, Sparkles, Trash2,
+  AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Info, Library, RotateCcw, Search,
+  Sparkles, Trash2,
 } from 'lucide-react'
-import { AutocompleteInput } from '@/components/ui/autocomplete-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { ContentPickerDialog } from '@/components/assistant/ContentPickerDialog'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useAssistantStore } from '@/stores/assistant-store'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import {
   COUNT_MAX, PLATFORM_SOURCES, PLATFORM_SOURCE_LABEL, SOURCE_LABEL, SPREAD_LABEL, describeSpec,
-  normalizeSpec, type CreateScope, type CreateSource, type CreateSpec, type CreateSpread,
+  normalizeSpec, selectionSummary, type CreateSource, type CreateSpec,
+  type CreateSpread,
 } from '@/lib/assistant-create'
 import type { CreateDraftMeta } from '@/lib/assistant-commands'
 import type { ParsedQuestion } from '@/lib/ai/types'
-import type { TocSection } from '@/lib/resource-blocks'
 import type { QuestionType } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface Doc { id: string; title: string }
-
-/** 建议列表里带上页码, 不然一堆同名标题("小结")看不出哪个是哪个 */
-function scopeSuffix(s: TocSection): string {
-  return s.pageTo > s.pageFrom ? `（第 ${s.pageFrom}-${s.pageTo} 页）` : `（第 ${s.pageFrom} 页）`
-}
-
-function scopeLabelOf(scope: CreateScope): string {
-  return scope.tocKey !== null ? scope.label : `${scope.from}${scope.to > scope.from ? `-${scope.to}` : ''}`
-}
-
-/**
- * 输入框文本 → 结构化范围。
- * 三种输入都认: 目录里某一节的标题(建议列表点出来的)、页码范围("40-60")、清空(不限)。
- * 对不上就返回 null —— 宁可当成不限并在出题时如实说明, 也不要猜一个范围出来。
- */
-function scopeFromText(text: string, sections: TocSection[]): CreateScope | null {
-  // 建议列表里的条目带着"（第 X-Y 页）"后缀, 匹配前先摘掉
-  const bare = text.replace(/（第[^）]*页）\s*$/, '').trim()
-  if (!bare) return null
-
-  const hit = sections.find((s) => s.title === bare) ?? sections.find((s) => s.title.includes(bare))
-  if (hit) return { label: hit.title, from: hit.pageFrom, to: hit.pageTo, tocKey: hit.key }
-
-  const range = /^(\d+)\s*(?:[-–—~]\s*(\d+))?$/.exec(bare)
-  if (range) {
-    const from = Number(range[1])
-    return { label: '', from, to: Number(range[2] ?? range[1]), tocKey: null }
-  }
-  return null
-}
 
 /** 已发布文献列表: 卡片自己拉, 免得每次开对话都为一张可能不存在的卡片多打一次库 */
 let docCache: Doc[] | null = null
@@ -82,31 +53,6 @@ function usePublishedDocuments(enabled: boolean): Doc[] {
     return () => { cancelled = true }
   }, [enabled])
   return docs
-}
-
-/** 某一篇文献的章节目录(页码区间), 按篇缓存 —— 同一篇被反复选中时不再重拉 */
-const sectionCache = new Map<string, TocSection[]>()
-const NO_SECTIONS: TocSection[] = []
-
-/**
- * 直接在渲染时读缓存, 而不是把缓存抄进一份 state。
- * 抄进 state 就得在 effect 体里同步 setState(先给旧值再给新值), 那既多一轮渲染, 也会让
- * "这一段目录到底加载完没有"变得看不出来; 缓存只增不减, 渲染时读它是安全的。
- */
-function useDocumentSections(documentId: string | null): TocSection[] {
-  const [, bump] = useState(0)
-  useEffect(() => {
-    if (!documentId || sectionCache.has(documentId)) return
-    let cancelled = false
-    void import('@/lib/resource-library').then(async ({ loadDocumentSections }) => {
-      const list = await loadDocumentSections(documentId)
-      if (cancelled) return
-      sectionCache.set(documentId, list)
-      bump((n) => n + 1)
-    }).catch(() => { /* 没有目录就退回手填页码范围 */ })
-    return () => { cancelled = true }
-  }, [documentId])
-  return documentId ? sectionCache.get(documentId) ?? NO_SECTIONS : NO_SECTIONS
 }
 
 /** 答案的落点随题型而变: 单选是序号、填空是文本、判断是布尔 */
@@ -209,18 +155,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
   const [spec, setSpec] = useState<CreateSpec>(meta.spec)
   const [busy, setBusy] = useState(false)
   const [showAllQuestions, setShowAllQuestions] = useState(false)
-  // 范围输入框自己持有一份文本: 用户打字打到一半时 scope 还是 null(章节名没对上),
-  // 如果输入框的 value 直接绑 scope, 那半截字会被立刻抹掉, 根本没法往下打
-  const [scopeText, setScopeText] = useState(() => (meta.spec.scope ? scopeLabelOf(meta.spec.scope) : ''))
-  // 注意这里用的是本地 draft 的 documentId, 不是 meta.spec: 用户在卡片上选文献只改本地状态,
-  // 要等点了"开始出题"才写回 meta。盯 meta 的话永远拉不到这一篇的目录。
-  const sections = useDocumentSections(spec.documentId)
-
-  /** 输入框里的文本 → 结构化范围: 先当章节名在目录里找, 再当页码范围 */
-  function applyScopeText(text: string) {
-    setScopeText(text)
-    patch({ scope: scopeFromText(text, sections) })
-  }
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     if (spec.subject) void updateFilteredCategories(spec.subject)
@@ -253,7 +188,20 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
   if (meta.status === 'spec') {
     const selectedTypes = spec.questionTypes
     return (
-      <div className="space-y-2.5 rounded-lg border border-primary/25 bg-background/70 p-2.5">
+      <>
+        <ContentPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          documents={documents}
+          initialDocumentId={spec.documentId}
+          initialSelection={spec.selection}
+          onConfirm={(selection) => patch({
+            selection,
+            // 用户在弹窗里换了文献, 卡片上的"哪一篇"要跟着走, 否则出题时用的是另一篇
+            documentId: selection?.documentId ?? spec.documentId,
+          })}
+        />
+        <div className="space-y-2.5 rounded-lg border border-primary/25 bg-background/70 p-2.5">
         <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
           <Sparkles className="h-2.5 w-2.5" />
           第 1 步 · 确认参数（还没出题）
@@ -297,28 +245,25 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             </Field>
           )}
 
-          <Field label="范围" hint={sections.length > 0 ? '选填，从目录里找一节' : '选填'}>
-            {spec.source === 'resource' && sections.length > 0 ? (
-              <AutocompleteInput
-                value={scopeText}
-                onChange={applyScopeText}
-                // 一本书能解析出几百个标题, 普通下拉框根本翻不动 —— 给可搜索的建议列表,
-                // 同时也允许直接写页码范围("40-60")
-                suggestions={sections.map((s) => `${s.title}${scopeSuffix(s)}`)}
-                placeholder="输入章节名或页码，如 40-60"
-                className="h-7 text-xs"
-                clearable
-              />
-            ) : (
-              <Input
-                value={scopeText}
-                onChange={(e) => applyScopeText(e.target.value)}
-                placeholder={spec.source === 'resource' ? '这篇文献没有目录，可填页码范围，如 40-60' : '先指定文献'}
-                disabled={spec.source !== 'resource'}
-                aria-label="范围"
-                className="h-7 text-xs"
-              />
-            )}
+          <Field label="范围" hint={spec.source === 'resource' ? '点开挑你要考的内容' : '需先指定文献'}>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="选择资料内容"
+              disabled={spec.source !== 'resource' || documents.length === 0}
+              onClick={() => setPickerOpen(true)}
+              className="h-7 w-full justify-between px-2 text-xs font-normal"
+            >
+              <span className={cn('flex min-w-0 items-center gap-1.5', !spec.selection && 'text-muted-foreground')}>
+                <BookOpen className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {spec.source !== 'resource'
+                    ? '先选「指定某一篇文献」'
+                    : spec.selection ? selectionSummary(spec.selection) : '选择资料内容'}
+                </span>
+              </span>
+              <Search className="h-3 w-3 shrink-0 opacity-60" />
+            </Button>
           </Field>
 
           {spec.source === 'platform' && (
@@ -365,16 +310,6 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             />
           </Field>
         </div>
-
-        <Field label="主题 / 题干要求">
-          <Input
-            value={spec.prompt}
-            onChange={(e) => patch({ prompt: e.target.value })}
-            placeholder="如：古罗马时期的医学流派"
-            aria-label="主题"
-            className="h-7 text-xs"
-          />
-        </Field>
 
         <Field label="题型" hint={`已选 ${selectedTypes.length} 种`}>
           <div className="flex flex-wrap gap-1">
@@ -465,7 +400,8 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         <div className="flex items-center gap-2 pt-0.5">
           <Button
             size="sm" className="h-7 gap-1.5 text-xs"
-            disabled={busy || sending || !spec.subject || !spec.prompt.trim()}
+            // 指定文献时必须先选内容: 没选就等于"从整篇里按主题猜着找", 而用户以为自己选好了
+            disabled={busy || sending || !spec.subject || (spec.source === 'resource' && !spec.selection)}
             onClick={() => {
               setBusy(true)
               void startGeneration(messageId, spec).finally(() => setBusy(false))
@@ -474,11 +410,21 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             {busy || sending ? <Spinner className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
             开始出题
           </Button>
-          <span className={cn('text-[10px]', spec.subject ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')}>
-            {!spec.prompt.trim() ? '先写主题' : !spec.subject ? '先选学科' : `${SOURCE_LABEL[spec.source]} · ${spec.count} 道`}
+          <span className={cn(
+            'text-[10px]',
+            spec.subject && !(spec.source === 'resource' && !spec.selection)
+              ? 'text-muted-foreground'
+              : 'text-amber-600 dark:text-amber-400',
+          )}>
+            {!spec.subject
+              ? '先选学科'
+              : spec.source === 'resource' && !spec.selection
+                ? '先点「选择资料内容」'
+                : `${SOURCE_LABEL[spec.source]} · ${spec.count} 道`}
           </span>
         </div>
-      </div>
+        </div>
+      </>
     )
   }
 
@@ -496,9 +442,9 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         <Badge variant="secondary" className="border-transparent font-normal">
           {meta.spec.subject}{meta.spec.categories[0] ? ` / ${meta.spec.categories[0]}` : ''}
         </Badge>
-        {meta.spec.scope && (
+        {meta.spec.selection && (
           <Badge variant="secondary" className="border-transparent font-normal">
-            范围 {meta.spec.scope.label}（第 {meta.spec.scope.from}{meta.spec.scope.to > meta.spec.scope.from ? `-${meta.spec.scope.to}` : ''} 页）
+            {selectionSummary(meta.spec.selection)}
           </Badge>
         )}
         {meta.spec.source === 'platform' && meta.spec.sources.length < PLATFORM_SOURCES.length && (
@@ -534,17 +480,12 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         </p>
       )}
 
-      {meta.scopeMissed && meta.spec.scope && (() => {
-        const scope = meta.spec.scope
-        const pages = scope.to > scope.from ? `第 ${scope.from}-${scope.to} 页` : `第 ${scope.from} 页`
-        return (
-          <p className="flex items-start gap-1.5 rounded-md bg-muted/50 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 h-3 w-3 shrink-0" />
-            范围「{scope.label}」（{pages}）里一条材料都没检索到，这次是按整篇出的。
-            换一节再试，或者把范围清掉。
-          </p>
-        )
-      })()}
+      {meta.materialNote && (
+        <p className="flex items-start gap-1.5 rounded-md bg-muted/50 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
+          <Info className="mt-0.5 h-3 w-3 shrink-0" />
+          {meta.materialNote}
+        </p>
+      )}
 
       <div className="space-y-1">
         {shown.map((q, i) => <QuestionRow key={i} q={q} index={i} />)}

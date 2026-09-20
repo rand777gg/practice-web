@@ -105,7 +105,13 @@ function Row({ item }: { item: ConversationSummary }) {
         </Button>
         <Button
           size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive"
-          onClick={() => void deleteConversation(item.id)} aria-label="删除会话"
+          onClick={() => {
+            // 删会话是不可逆的(外键 cascade 会把整段对话一起带走), 而这个图标就贴在每一行上,
+            // 鼠标划过很容易误点 —— 所以必须确认一次
+            if (!window.confirm(`删除会话「${item.title}」？\n整段对话都会一起删掉，不能恢复。`)) return
+            void deleteConversation(item.id)
+          }}
+          aria-label="删除会话"
         >
           <Trash2 className="h-3 w-3" />
         </Button>

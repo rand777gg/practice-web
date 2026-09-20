@@ -118,34 +118,8 @@ export async function getResourceDocument(id: string): Promise<ResourceDocumentD
 
 const BLOCK_PAGE_SIZE = 1000
 
-export async function loadResourceBlocks(documentId: string): Promise<ResourceBlock[]> {
-  const out: ResourceBlock[] = []
-  for (let from = 0; ; from += BLOCK_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from('resource_blocks')
-      .select('block_index, page_no, bbox, block_type, heading_level, text')
-      .eq('document_id', documentId)
-      .order('block_index', { ascending: true })
-      .range(from, from + BLOCK_PAGE_SIZE - 1)
-
-    if (error) throw new Error(`加载区块失败: ${error.message}`)
-    const rows = (data ?? []) as unknown as {
-      block_index: number; page_no: number; bbox: number[] | null
-      block_type: string; heading_level: number; text: string
-    }[]
-    for (const r of rows) {
-      out.push({
-        blockIndex: r.block_index,
-        pageNo: r.page_no,
-        bbox: r.bbox,
-        blockType: r.block_type,
-        headingLevel: r.heading_level,
-        text: r.text,
-      })
-    }
-    if (rows.length < BLOCK_PAGE_SIZE) break
-  }
-  return out
+export function loadResourceBlocks(documentId: string): Promise<ResourceBlock[]> {
+  return loadDocumentBlocks(documentId)
 }
 
 /**
@@ -173,6 +147,47 @@ export async function loadDocumentSections(documentId: string): Promise<TocSecti
   })).filter((e) => e.title.trim().length > 0)
 
   return sectionsFromToc(toc, doc?.pdf_total_pages ?? 0)
+}
+
+/**
+ * 取一篇文献某段页码区间里的区块。
+ *
+ * 按**页码区间**取而不是 `block_index in (...)` 取, 是为了避开 URL 长度: 一本 295 页的书
+ * 有一千七百多个块, 把它们塞进 in(...) 会把请求行撑爆; 页码范围最多两个数字。
+ * 需要精确到段时, 由调用方在拿回来的结果上按 blockIndex 过滤。
+ */
+export async function loadDocumentBlocks(
+  documentId: string,
+  range?: { from: number; to: number },
+): Promise<ResourceBlock[]> {
+  const out: ResourceBlock[] = []
+  for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
+    let query = supabase
+      .from('resource_blocks')
+      .select('block_index, page_no, bbox, block_type, heading_level, text')
+      .eq('document_id', documentId)
+      .order('block_index', { ascending: true })
+    if (range) query = query.gte('page_no', range.from).lte('page_no', range.to)
+
+    const { data, error } = await query.range(offset, offset + BLOCK_PAGE_SIZE - 1)
+    if (error) throw new Error(`加载区块失败: ${error.message}`)
+    const rows = (data ?? []) as unknown as {
+      block_index: number; page_no: number; bbox: number[] | null
+      block_type: string; heading_level: number; text: string
+    }[]
+    for (const r of rows) {
+      out.push({
+        blockIndex: r.block_index,
+        pageNo: r.page_no,
+        bbox: r.bbox,
+        blockType: r.block_type,
+        headingLevel: r.heading_level,
+        text: r.text,
+      })
+    }
+    if (rows.length < BLOCK_PAGE_SIZE) break
+  }
+  return out
 }
 
 export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {  if (!doc.pdf_page_urls) return []

@@ -27,17 +27,21 @@ export const PLATFORM_SOURCE_LABEL: Record<PlatformSource, string> = {
 }
 
 /**
- * 范围限定 —— 最终落到一个**页码区间**。
+ * 选中的资料内容 —— 出题的唯一材料来源。
  *
- * 不用标题字符串匹配: 同一本书里「小结」「思考题」每章都有, 拿字符串去匹配块所属的标题路径,
- * 选一次「小结」会把全书所有章的小结都圈进来。页码区间是互不重叠的, 与标题重名无关。
+ * 为什么存 blockIndex 而不是"章节名"或"页码"就完事: 用户要能在弹窗里勾到**具体段落**,
+ * 而段落是唯一的锚点。blocks 为空表示"整个 [from,to] 页码区间", 这样"整节"这种粗选
+ * 不必把几百个 blockIndex 塞进 JSONB, 老数据(只有页码区间)也能直接升上来。
  */
-export interface CreateScope {
+export interface CreateSelection {
+  documentId: string
+  documentTitle: string
+  /** 展示用: "第一章 绪论 · 第 1-7 页 · 23 段" */
   label: string
   from: number
   to: number
-  /** 目录条目的 blockIndex, 只用于让下拉框恢复选中; 手填的范围为 null */
-  tocKey: number | null
+  /** 精确到段的选中(已排序去重); 空数组 = [from,to] 全部 */
+  blocks: number[]
 }
 
 export interface CreateSpec {
@@ -47,9 +51,13 @@ export interface CreateSpec {
   documentId: string | null
   /** source === 'platform' 时只查这几类来源 */
   sources: PlatformSource[]
-  /** null = 整篇/全部 */
-  scope: CreateScope | null
-  /** 主题或题干要求 */
+  /** 选中的资料内容(指定文献时才有) */
+  selection: CreateSelection | null
+  /**
+   * 用户那句自然语言的原文。
+   * 卡片上**不再有输入框**(要出什么题由"选中的内容"决定), 但它仍有两个用处:
+   * 跨来源检索的查询词, 以及"打开弹窗时该预勾选哪里"的依据。
+   */
   prompt: string
   count: number
   questionTypes: QuestionType[]
@@ -69,7 +77,7 @@ export const DEFAULT_CREATE_SPEC: CreateSpec = {
   source: 'platform',
   documentId: null,
   sources: [...PLATFORM_SOURCES],
-  scope: null,
+  selection: null,
   prompt: '',
   count: COUNT_DEFAULT,
   questionTypes: ['single_choice'],
@@ -98,19 +106,48 @@ export function asQuestionType(value: unknown): QuestionType | null {
   return typeof value === 'string' && TYPE_VALUES.has(value) ? (value as QuestionType) : null
 }
 
-function normalizeScope(input: unknown): CreateScope | null {
+/**
+ * 选中内容的收口。
+ *
+ * 老数据(只有 { label, from, to } 的 scope)会以 blocks: [] 升上来 —— 也就是"整个页码区间",
+ * 和它当年的语义一致, 所以旧卡片不会因为这次改结构而丢东西。
+ */
+export function normalizeSelection(input: unknown): CreateSelection | null {
   if (!input || typeof input !== 'object') return null
-  const raw = input as Partial<CreateScope>
+  const raw = input as Partial<CreateSelection>
+  const documentId = typeof raw.documentId === 'string' && raw.documentId ? raw.documentId : null
   const from = Math.round(Number(raw.from))
   const to = Math.round(Number(raw.to))
-  // 只有一端有数字的范围没有意义(既不知道从哪开始, 也不知道到哪结束) → 当成不限
-  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < 1) return null
+  if (!documentId || !Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < 1) return null
+
+  // 只用**真正的数字**: 不能拿 Number() 去转, 因为 Number(null) 是 0, 一个 null 会变成"第 0 段"
+  const blocks = Array.isArray(raw.blocks)
+    ? [...new Set(
+      raw.blocks
+        .filter((b): b is number => typeof b === 'number' && Number.isFinite(b))
+        .map((b) => Math.round(b)),
+    )].sort((a, b) => a - b)
+    : []
+
+  const low = Math.min(from, to)
+  const high = Math.max(from, to)
   return {
-    label: String(raw.label ?? '').trim() || `第 ${Math.min(from, to)}-${Math.max(from, to)} 页`,
-    from: Math.min(from, to),
-    to: Math.max(from, to),
-    tocKey: Number.isFinite(Number(raw.tocKey)) ? Math.round(Number(raw.tocKey)) : null,
+    documentId,
+    documentTitle: typeof raw.documentTitle === 'string' ? raw.documentTitle : '',
+    label: (typeof raw.label === 'string' ? raw.label : '').trim()
+      || (low === high ? `第 ${low} 页` : `第 ${low}-${high} 页`),
+    from: low,
+    to: high,
+    blocks,
   }
+}
+
+/** 卡片/按钮上那行说明。段落数只有真的勾过才知道, 所以按有无 blocks 两套说法 */
+export function selectionSummary(selection: CreateSelection): string {
+  const pages = selection.to > selection.from ? `第 ${selection.from}-${selection.to} 页` : `第 ${selection.from} 页`
+  return selection.blocks.length > 0
+    ? `${selection.label} · ${pages} · ${selection.blocks.length} 段`
+    : `${selection.label} · ${pages}`
 }
 
 /**
@@ -137,7 +174,7 @@ export function normalizeSpec(input: Partial<CreateSpec>): CreateSpec {
     sources: sources.length > 0 ? sources : [...PLATFORM_SOURCES],
     // 页码区间只对"指定某一篇文献"有意义: 跨来源时几篇文献的页码是各算各的, 拿一个区间去筛
     // 只会莫名其妙地筛掉别的篇目
-    scope: source === 'resource' ? normalizeScope(input.scope) : null,
+    selection: source === 'resource' ? normalizeSelection(input.selection) : null,
     count,
     questionTypes: types.length > 0 ? types : DEFAULT_CREATE_SPEC.questionTypes,
     categories: (input.categories ?? []).filter((c) => typeof c === 'string' && c.trim()).slice(0, 3),
@@ -154,8 +191,8 @@ export function retrievalSources(spec: CreateSpec): RagSource[] {
 
 /** 一句话概括这份参数, 给按钮旁边那行小字用 */
 export function describeSpec(spec: CreateSpec): string {
-  const where = spec.source === 'resource' && spec.documentId
-    ? `指定文献${spec.scope ? ` · ${spec.scope.label}` : ''}`
+  const where = spec.source === 'resource'
+    ? (spec.selection ? selectionSummary(spec.selection) : '指定文献（还没选内容）')
     : SOURCE_LABEL[spec.source]
   const types = spec.questionTypes.length > 1 ? `${spec.questionTypes.length} 种题型` : '单一题型'
   return `${where} · ${spec.count} 道 · ${types}`

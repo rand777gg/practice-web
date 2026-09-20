@@ -18,17 +18,18 @@ import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { loadDocumentSections } from '@/lib/resource-library'
 import {
   DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, normalizeSpec, retrievalSources,
-  type CreateScope, type CreateSource, type CreateSpec, type PlatformSource,
+  type CreateSelection, type CreateSource, type CreateSpec, type PlatformSource,
 } from '@/lib/create-spec'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { CorrectAnswer, QuestionType } from '@/types'
 
 export type {
-  CreateScope, CreateSource, CreateSpec, CreateSpread, PlatformSource,
+  CreateSelection, CreateSource, CreateSpec, CreateSpread, PlatformSource,
 } from '@/lib/create-spec'
 export {
   COUNT_DEFAULT, COUNT_MAX, DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, PLATFORM_SOURCE_LABEL,
-  SOURCE_LABEL, SPREAD_LABEL, describeSpec, normalizeSpec, retrievalSources,
+  SOURCE_LABEL, SPREAD_LABEL, describeSpec, normalizeSelection, normalizeSpec, retrievalSources,
+  selectionSummary,
 } from '@/lib/create-spec'
 
 const TYPE_VALUES = new Set(QUESTION_TYPE_OPTIONS.map((o) => o.value as string))
@@ -98,8 +99,10 @@ export async function parseCreateRequest(
       '- count：要几道。用户没说就留空，不要瞎猜一个数',
       '- questionTypes：题型。用户没指定就留空',
       '- subject / categories：只有当用户明说了、而且能在上面的清单里对上时才填',
-      '- documentTitle：用户指定了从某篇文献出题时填（原样，不要改写）',
-      '- scope：用户限定了章节时填章节标题（例如"第 3 章"、"绪论"）；页码范围也可以，写成"40-60"',
+      '- documentTitle：用户要从某篇文献出题时填。**拿不准也要填最接近的那一篇** ——',
+      '  用户会在卡片上确认，你留空他就得从零开始选；名字不完全一致（"基础医学" vs',
+      '  "现代医学导论-基础医学部分"）也算，填上；一篇都对不上才留空',
+      '- scope：用户限定了章节时填章节标题（例如"第一章"、"绪论"）；页码范围也可以，写成"40-60"',
       '- sources：用户点名只用某几类资料时填，取值只能是 resource/question/kp/subject/note；',
       '  例如"只从题库里找相似的题"填 ["question"]；没说就留空',
       '- source：用户要在指定文献里出题填 resource；说"用平台资料/文献/题库"填 platform；',
@@ -121,25 +124,48 @@ export async function parseCreateRequest(
 
     // 文献名 → id: 模型只回名字, 由前端在真实的已发布列表里对齐, 免得它编一个 id 出来
     let documentId: string | null = null
+    let documentTitle = ''
     const wanted = object.documentTitle?.trim()
     if (wanted) {
       const hit = options.documents.find((d) => d.title === wanted)
         ?? options.documents.find((d) => d.title.includes(wanted) || wanted.includes(d.title))
       documentId = hit?.id ?? null
+      documentTitle = hit?.title ?? ''
     }
     const source: CreateSource = documentId ? 'resource' : (object.source ?? 'platform')
 
-    // 章节名 → 页码区间: 也同样只认目录里真实存在的章节。模型说得出"第 3 章"但目录里没有,
-    // 那就当没限定, 并在下面如实说 —— 否则会变成"以为限定了, 其实是整本出的题"。
-    let scope: CreateScope | null = null
-    let scopeNote = ''
+    // 章节名 → 预选中的内容。同样只认目录里真实存在的章节; 猜不准就**不猜** ——
+    // 留空让用户在弹窗里自己挑, 而不是悄悄按整篇出题然后他不看就生成了。
+    let selection: CreateSelection | null = null
+    const notes: string[] = []
     const wantedScope = object.scope?.trim()
-    if (wantedScope && source === 'resource' && documentId) {
-      const sections = await loadDocumentSections(documentId).catch(() => [])
-      const hit = sections.find((s) => s.title.replace(/\s+/g, '') === wantedScope.replace(/\s+/g, ''))
-        ?? sections.find((s) => s.title.includes(wantedScope) || wantedScope.includes(s.title))
-      if (hit) scope = { label: hit.title, from: hit.pageFrom, to: hit.pageTo, tocKey: hit.key }
-      else scopeNote = `\n（目录里没找到「${wantedScope}」这一节，范围我留成了整篇，你改一下）`
+    if (source === 'resource' && documentId) {
+      if (!wantedScope) {
+        notes.push('没说从哪一部分出题，点「选择资料内容」勾一段（也可以直接勾整篇）。')
+      } else {
+        const sections = await loadDocumentSections(documentId).catch(() => [])
+        const exact = sections.filter((s) => s.title.replace(/\s+/g, '') === wantedScope.replace(/\s+/g, ''))
+        const loose = sections.filter((s) => s.title.includes(wantedScope) || wantedScope.includes(s.title))
+        const hit = exact[0] ?? (loose.length === 1 ? loose[0] : undefined)
+
+        if (hit) {
+          selection = {
+            documentId,
+            documentTitle,
+            label: hit.title,
+            from: hit.pageFrom,
+            to: hit.pageTo,
+            blocks: [],
+          }
+          const pages = hit.pageTo > hit.pageFrom ? `第 ${hit.pageFrom}-${hit.pageTo} 页` : `第 ${hit.pageFrom} 页`
+          notes.push(`在《${documentTitle}》里定位到「${hit.title}」（${pages}），已经替你勾上了，确认一下就行。`)
+        } else if (loose.length > 1) {
+          const names = loose.slice(0, 3).map((s) => s.title).join('、')
+          notes.push(`「${wantedScope}」在目录里对上了 ${loose.length} 节（${names}${loose.length > 3 ? '…' : ''}），我没替你猜，点「选择资料内容」从里面挑一节。`)
+        } else {
+          notes.push(`目录里没有「${wantedScope}」这一节，点「选择资料内容」自己挑一段。`)
+        }
+      }
     }
 
     const spec = normalizeSpec({
@@ -147,7 +173,7 @@ export async function parseCreateRequest(
       documentId,
       sources: (object.sources ?? []).filter((s): s is PlatformSource =>
         (PLATFORM_SOURCES as readonly string[]).includes(s)),
-      scope,
+      selection,
       prompt: object.prompt || text,
       count: object.count ?? undefined,
       questionTypes: (object.questionTypes ?? []).filter((t): t is QuestionType => TYPE_VALUES.has(t)),
@@ -158,12 +184,22 @@ export async function parseCreateRequest(
       markVerified: false,
     })
 
-    // 用户说了从某篇出题, 但名字对不上库里的任何一篇 → 明说, 不要静默改成跨来源
-    const documentNote = object.documentTitle && !documentId
-      ? `\n（没找到叫「${object.documentTitle}」的已发布文献，资料库那一项我留成了跨来源，你改一下）`
-      : ''
+    // 用户说了从某篇出题, 但名字对不上库里的任何一篇 → 明说, 并把真实可选的那些列出来,
+    // 再告诉他下一步点哪儿(光说"没找到"等于把活推回给用户)
+    if (object.documentTitle && !documentId) {
+      const titles = options.documents.map((d) => d.title)
+      notes.push(titles.length
+        ? `没找到叫「${object.documentTitle}」的已发布文献。资料库里现在有：${titles.join('、')}。点「资料库」选一篇，再点「选择资料内容」勾具体章节。`
+        : '资料库里还没有已发布的文献，资料库那一项我先留成了跨来源。')
+    } else if (!documentId && wantedScope) {
+      // 提到章节却没提文献: 他脑子里有明确的一篇, 只是没说名字
+      const titles = options.documents.map((d) => d.title)
+      notes.push(titles.length === 1
+        ? `你提到了「${wantedScope}」，但没说从哪一篇出题。资料库里只有《${titles[0]}》，先点「资料库」选上它，再点「选择资料内容」勾「${wantedScope}」。`
+        : `你提到了「${wantedScope}」，但没说从哪一篇出题。先点「资料库」选一篇，再点「选择资料内容」勾「${wantedScope}」。`)
+    }
 
-    return { spec, understanding: `${object.understanding}${documentNote}${scopeNote}` }
+    return { spec, understanding: [object.understanding, ...notes].filter(Boolean).join('\n') }
   } catch (err) {
     console.warn('[create] 参数解析失败, 退回手动确认:', err)
     return fallback
@@ -178,9 +214,12 @@ export interface CreateResult {
   grounded: boolean
   /** 出题依据了哪几处, 卡片上列出来供核对 */
   sources: { type: RagSource; label: string; pageNo: number | null; anchor: string | null }[]
-  /** 用户选的范围一条材料都没落在里面 */
-  scopeMissed: boolean
+  /** 材料被截断 / 选中内容为空之类的实情, 卡片上如实说明 */
+  materialNote: string | null
 }
+
+/** 一次出题塞给模型的正文上限: 超了要说明白"只用了前面这些", 不能悄悄截 */
+const MATERIAL_MAX_CHARS = 24_000
 
 function materialFrom(hits: RagHit[]): string {
   return hits
@@ -190,6 +229,43 @@ function materialFrom(hits: RagHit[]): string {
       return `[${i + 1}]（${where}）\n${h.content.replace(/\s+/g, ' ').trim()}`
     })
     .join('\n\n')
+}
+
+/**
+ * 用**用户勾中的那些区块**当材料。
+ *
+ * 不走语义检索: 用户已经在弹窗里明确指定了要哪几段, 再按相似度召回一批"可能相关的",
+ * 等于把他刚做的选择又推翻一遍。这里直接按页码区间取回区块, 精确到段时按 blockIndex 过滤。
+ */
+async function materialFromSelection(selection: CreateSelection): Promise<{
+  text: string
+  pages: number[]
+  note: string | null
+}> {
+  const { loadDocumentBlocks } = await import('@/lib/resource-library')
+  const all = await loadDocumentBlocks(selection.documentId, { from: selection.from, to: selection.to })
+  const wanted = new Set(selection.blocks)
+  const picked = (wanted.size > 0 ? all.filter((b) => wanted.has(b.blockIndex)) : all)
+    .filter((b) => b.text.trim().length > 0)
+
+  if (picked.length === 0) {
+    return { text: '', pages: [], note: '选中的范围里没有可用正文（可能只勾到了标题或空块）。' }
+  }
+
+  const lines: string[] = []
+  let used = 0
+  let truncated = false
+  for (const b of picked) {
+    const line = `（第 ${b.pageNo} 页）${b.text.replace(/\s+/g, ' ').trim()}`
+    if (used + line.length > MATERIAL_MAX_CHARS) { truncated = true; break }
+    lines.push(line)
+    used += line.length
+  }
+  return {
+    text: lines.join('\n\n'),
+    pages: [...new Set(picked.map((b) => b.pageNo))].sort((a, b) => a - b),
+    note: truncated ? `材料较长，这次只用了选中内容的前 ${lines.length} 段（共 ${picked.length} 段）。` : null,
+  }
 }
 
 /** 出题时要塞进 system prompt 的额外要求 —— 两个生成入口都接受 systemPrompt 覆盖 */
@@ -229,36 +305,47 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
   const { getPrompt } = await import('@/stores/prompt-store')
   const { generateFromText, generateQuestions } = await import('@/lib/ai')
 
-  // 材料检索
-  let hits: RagHit[] = []
-  let scopeMissed = false
-  if (s.source !== 'model') {
-    const query = [s.prompt, s.scope?.label].filter(Boolean).join(' ')
-    const result = await searchKnowledge(query || '核心知识点', {
+  // 材料: 指定文献且勾了内容 → 就用勾中的那些段落(不走检索);
+  // 其余情况才按查询词跨来源检索
+  let material = ''
+  let allowedPages = new Set<number>()
+  let sources: CreateResult['sources'] = []
+  let materialNote: string | null = null
+  let grounded = false
+
+  if (s.source === 'resource' && s.selection) {
+    const picked = await materialFromSelection(s.selection)
+    material = picked.text
+    materialNote = picked.note
+    grounded = material.length > 0
+    allowedPages = new Set(picked.pages)
+    sources = picked.pages.slice(0, 6).map((page) => ({
+      type: 'resource' as RagSource,
+      label: s.selection!.documentTitle || s.selection!.label,
+      pageNo: page,
+      anchor: `/resource-library/${s.selection!.documentId}?page=${page}`,
+    }))
+  } else if (s.source !== 'model') {
+    const result = await searchKnowledge(s.prompt || '核心知识点', {
       sources: retrievalSources(s),
       sourceIds: s.source === 'resource' && s.documentId ? [s.documentId] : undefined,
-      // 限定节的时候多取一些: 召回窗口是按整篇排的, 这一节的块未必都进前十
-      limit: s.scope ? 40 : 10,
+      limit: 10,
     })
-    hits = result.hits
-    // 范围是页码区间(不是标题字符串): 同一本书里「小结」每章都有, 按字符串匹配会一次
-    // 圈进全书所有小结。区间筛完一片不剩就如实说, 而不是假装限定住了。
-    if (s.scope) {
-      const scoped = hits.filter((h) =>
-        h.pageNo !== null && h.pageNo >= s.scope!.from && h.pageNo <= s.scope!.to)
-      if (scoped.length > 0) hits = scoped
-      else scopeMissed = hits.length > 0
-    }
-    hits = hits.slice(0, 10)
+    material = materialFrom(result.hits.slice(0, 10))
+    grounded = material.length > 0
+    allowedPages = new Set(result.hits.map((h) => h.pageNo).filter((n): n is number => typeof n === 'number'))
+    sources = result.hits.slice(0, 6).map((h) => ({
+      type: h.source, label: h.label, pageNo: h.pageNo, anchor: h.anchor,
+    }))
   }
-
-  const grounded = hits.length > 0
 
   // 避重清单: 从题库里捞最相似的几道, 让模型知道"这些已经出过"
   const existing: string[] = []
   if (s.avoidDuplicates) {
     try {
-      const dup = await searchKnowledge(s.prompt || '知识点', { sources: ['question'], limit: 8 })
+      const dup = await searchKnowledge(s.prompt || material.slice(0, 200) || '知识点', {
+        sources: ['question'], limit: 8,
+      })
       for (const h of dup.hits) if (h.label) existing.push(h.label)
     } catch (err) {
       console.warn('[create] 避重清单取失败, 这轮不做避重:', err)
@@ -271,7 +358,7 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
   // 材料里带页码, 模型才有依据往 source_page 里填
   const questions = grounded
     ? (await generateFromText({
-      documentText: materialFrom(hits),
+      documentText: material,
       subject: s.subject ?? undefined,
       questionTypes: s.questionTypes,
       count: s.count,
@@ -284,7 +371,6 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
     }, system)).questions
 
   // 页码回填只认我们真的给出去过的页码, 模型自己编的一律清掉
-  const allowedPages = new Set(hits.map((h) => h.pageNo).filter((n): n is number => typeof n === 'number'))
   const cleaned = questions.slice(0, s.count).map((q) => {
     if (!grounded || !q.source_page) return q
     const hit = /\d+/.exec(q.source_page)
@@ -293,14 +379,7 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
     return allowedPages.has(page) ? q : { ...q, source_page: undefined }
   })
 
-  return {
-    questions: cleaned,
-    grounded,
-    scopeMissed,
-    sources: hits.slice(0, 6).map((h) => ({
-      type: h.source, label: h.label, pageNo: h.pageNo, anchor: h.anchor,
-    })),
-  }
+  return { questions: cleaned, grounded, sources, materialNote }
 }
 
 // ── 3. 入库 ──
