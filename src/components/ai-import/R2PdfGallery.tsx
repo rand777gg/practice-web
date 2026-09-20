@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { renderPdfThumbnail } from '@/lib/pdf-page-renderer'
+import { r2PublicUrl } from '@/lib/r2'
 import { RefreshCw, FileText, LayoutGrid, List } from 'lucide-react'
 
 interface R2Pdf {
@@ -26,7 +27,7 @@ function thumbKey(pdf: R2Pdf): string {
 }
 
 function thumbUrl(pdf: R2Pdf): string {
-  return `https://r2-rpw.pguide.dev/${thumbKey(pdf)}`
+  return r2PublicUrl(thumbKey(pdf))
 }
 
 function displayName(pdf: R2Pdf, names: Map<string, string>): string {

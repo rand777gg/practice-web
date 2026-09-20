@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertCircle, CheckCircle2, Eye, FileText, Loader2, MoreHorizontal, Pencil,
+  AlertCircle, CheckCircle2, Database, Eye, FileText, Loader2, MoreHorizontal, Pencil,
   RefreshCw, Trash2, Upload,
 } from 'lucide-react'
 
@@ -16,9 +16,11 @@ import {
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import {
-  deleteResourceDocument, listResourceDocuments, reparseResource, updateResourceDocument,
-  type ParseMode, type ResourceDocument,
+  deleteResourceDocument, listResourceDocuments, listResourceParts, reparseResource,
+  updateResourceDocument,
+  type ParseMode, type ResourceDocument, type ResourcePart,
 } from '@/lib/resource-library'
+import { syncRagSource, autoIndex, type RagSource, type RagSyncResult } from '@/lib/rag'
 import { ResourceIngestDialog } from '@/components/resource/ResourceIngestDialog'
 import { ResourceMetaDialog } from '@/components/resource/ResourceMetaDialog'
 
@@ -30,6 +32,17 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
 }
 
 type StatusFilter = 'all' | 'ready' | 'failed' | 'parsing' | 'pending'
+
+/** 索引同步结果说人话: 关键是让管理员看出"这次到底重算了多少", 而不是又看到一个块数 */
+function describeSync(r: RagSyncResult, suffix: string): string {
+  if (r.embedded === 0 && r.removed === 0) return `内容无变化, 未重算向量${suffix}(共 ${r.total} 块)`
+  const parts: string[] = []
+  if (r.added) parts.push(`新增 ${r.added}`)
+  if (r.updated) parts.push(`更新 ${r.updated}`)
+  if (r.removed) parts.push(`删除 ${r.removed}`)
+  parts.push(`重算向量 ${r.embedded}`)
+  return `${parts.join(' / ')}${suffix}(共 ${r.total} 块)`
+}
 
 const FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -49,11 +62,21 @@ export function Component() {
   const [ingestOpen, setIngestOpen] = useState(false)
   const [editing, setEditing] = useState<ResourceDocument | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [partsByDoc, setPartsByDoc] = useState<Map<string, ResourcePart[]>>(new Map())
+  const [indexing, setIndexing] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setDocs(await listResourceDocuments())
+      const [list, parts] = await Promise.all([listResourceDocuments(), listResourceParts()])
+      setDocs(list)
+      const grouped = new Map<string, ResourcePart[]>()
+      for (const p of parts) {
+        const arr = grouped.get(p.document_id)
+        if (arr) arr.push(p)
+        else grouped.set(p.document_id, [p])
+      }
+      setPartsByDoc(grouped)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -95,10 +118,54 @@ export function Component() {
     }
   }
 
+  /**
+   * 建检索索引。索引带时间预算, 单次调用可能跑不完(一本 295 页的书近千个块),
+   * 所以这里循环调直到 done —— 否则管理员会以为"点一次就好了", 结果索引只建了一半。
+   */
+  const buildIndex = async (source: RagSource, id?: string, label?: string) => {
+    setIndexing(true)
+    setNotice(null)
+    const suffix = label ? `: ${label}` : ''
+    try {
+      const r = await syncRagSource(source, id, {
+        onRound: (round) => setNotice(`正在同步索引${suffix}... 已重算 ${round.embedded} 个块`),
+      })
+      setNotice(describeSync(r, suffix))
+    } catch (err) {
+      setNotice(`建索引失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIndexing(false)
+    }
+  }
+
+  const rebuildAll = async () => {
+    if (!window.confirm('重建全部检索索引(文献 + 题库 + 知识点解读 + 学科解读 + 公开笔记)?\n服务端按内容差分, 只有变过的内容才会重新算向量。')) return
+    setIndexing(true)
+    setNotice(null)
+    const lines: string[] = []
+    try {
+      for (const [src, name] of [
+        ['resource', '文献'], ['question', '题库'], ['kp', '知识点解读'],
+        ['subject', '学科解读'], ['note', '公开笔记'],
+      ] as [RagSource, string][]) {
+        setNotice(`正在同步 ${name}...\n${lines.join('\n')}`)
+        const r = await syncRagSource(src)
+        lines.push(`${name}: ${describeSync(r, '')}`)
+      }
+      setNotice(`索引重建完成\n${lines.join('\n')}`)
+    } catch (err) {
+      setNotice(`建索引失败: ${err instanceof Error ? err.message : String(err)}\n${lines.join('\n')}`)
+    } finally {
+      setIndexing(false)
+    }
+  }
+
   const togglePublish = async (doc: ResourceDocument) => {
     setBusyId(doc.id)
     try {
       await updateResourceDocument(doc.id, { is_published: !doc.is_published })
+      // 发布 → 正文进索引; 下架 → 已有区块被当孤儿清掉(否则下架了还搜得到)
+      autoIndex('resource', doc.id)
       await load()
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err))
@@ -133,6 +200,10 @@ export function Component() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />刷新
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" disabled={indexing} onClick={() => void rebuildAll()}>
+            {indexing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+            {indexing ? '建索引中...' : '重建检索索引'}
           </Button>
           <Button size="sm" className="gap-1.5" onClick={() => setIngestOpen(true)}>
             <Upload className="h-3.5 w-3.5" />录入原始文献
@@ -255,6 +326,26 @@ export function Component() {
                       <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', status.className)}>
                         {status.label}
                       </span>
+                      {(partsByDoc.get(doc.id)?.length ?? 0) > 1 && (
+                        <div className="mt-1 flex flex-wrap gap-0.5">
+                          {partsByDoc.get(doc.id)!.map((p) => (
+                            <span
+                              key={p.id}
+                              title={`第 ${p.page_from}-${p.page_to} 页 · ${STATUS_META[p.parse_status]?.label ?? p.parse_status}${p.parse_error ? `\n${p.parse_error}` : ''}`}
+                              className={cn(
+                                'rounded px-1 text-[9px] leading-tight',
+                                p.parse_status === 'ready'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                  : p.parse_status === 'failed'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                    : 'bg-muted text-muted-foreground',
+                              )}
+                            >
+                              {p.page_from}-{p.page_to} {p.parse_status === 'ready' ? '✓' : p.parse_status === 'failed' ? '✗' : '…'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <button
@@ -290,6 +381,13 @@ export function Component() {
                           </DropdownMenuItem>
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => setEditing(doc)}>
                             <Pencil className="h-3.5 w-3.5" />编辑信息
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="gap-2 text-xs"
+                            disabled={indexing}
+                            onSelect={() => void buildIndex('resource', doc.id, doc.title)}
+                          >
+                            <Database className="h-3.5 w-3.5" />建立检索索引
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'precision')}>

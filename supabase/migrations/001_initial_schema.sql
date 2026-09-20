@@ -3779,3 +3779,276 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.count_question_items(TEXT, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TEXT, TEXT) TO authenticated;
+
+-- ============================================================================
+-- Section 54: 资料库分卷 (resource parts) —— 超长文献自动切片解析
+--   MinerU 单次最多解析 200 页(实测报 "number of pages exceeds limit (200 pages)"),
+--   一本 295 页的教材必须切成 1-200 / 201-295 两次解析。为了让前台仍然是"一本书",
+--   解析产物按卷存, 但页码一律用原文页码(全局):
+--     - resource_blocks.page_no   = 原文页码, 跨卷连续(见 page_offset 的用法)
+--     - resource_parts.page_urls  里每个 p 也是原文页码
+--   这样阅读页、目录、检索、PDF↔正文定位全都不用感知"卷"的存在。
+--
+--   实测注意: MinerU 传 page_ranges 时返回的 layout.json 页码是**相对**的
+--   (解析 3-5 页 → pdf_info 只有 3 项, page_idx = 0,1,2), 所以写区块时要加
+--   page_offset = 本卷起始页 - 1; 而页图是按原始页码渲染的, 不需要偏移。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.resource_parts (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id  UUID NOT NULL REFERENCES public.resource_documents(id) ON DELETE CASCADE,
+  part_index   INTEGER NOT NULL,
+  page_from    INTEGER NOT NULL,
+  page_to      INTEGER NOT NULL,
+  page_urls    TEXT,
+  markdown     TEXT NOT NULL DEFAULT '',
+  parse_mode   TEXT NOT NULL DEFAULT 'precision',
+  parse_status TEXT NOT NULL DEFAULT 'pending',
+  parse_error  TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rp_doc_index ON public.resource_parts(document_id, part_index);
+
+ALTER TABLE public.resource_parts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rp_select ON public.resource_parts;
+CREATE POLICY rp_select ON public.resource_parts FOR SELECT
+  USING (EXISTS (SELECT 1 FROM public.resource_documents d
+                 WHERE d.id = document_id AND (d.is_published OR public.is_admin())));
+DROP POLICY IF EXISTS rp_insert ON public.resource_parts;
+CREATE POLICY rp_insert ON public.resource_parts FOR INSERT WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS rp_update ON public.resource_parts;
+CREATE POLICY rp_update ON public.resource_parts FOR UPDATE USING (public.is_admin());
+DROP POLICY IF EXISTS rp_delete ON public.resource_parts;
+CREATE POLICY rp_delete ON public.resource_parts FOR DELETE USING (public.is_admin());
+
+-- ============================================================================
+-- Section 55: RAG —— 跨来源知识索引 (rag chunks) + 混合检索
+--   把可被引用的内容统一成"块"存到一张表里, 检索只需要一条路径:
+--     resource  文献区块(resource_blocks)  → 有页码+bbox, 可跳到阅读页那一段
+--     question  题库题目(题干+选项+解析+知识点)
+--     kp        知识点解读(kp_explanations)
+--     subject   学科解读(subject_explanations)
+--     note      公开笔记(user_answers.note, 只收 is_public 的)
+--
+--   为什么统一成一张表而不是给每张源表加向量列: 混合检索(向量+全文)的融合排序需要
+--   一次 ORDER BY, 分成几张表就得 UNION 再对不上权重; 而且重新切块时只动这张表。
+--   文本冗余无所谓 —— 真正占空间的是向量(1024 维 ≈ 4KB/块), 文本比它小两个数量级。
+--
+--   可见性: 只索引"所有登录用户都能看到"的内容(公开笔记 + 已发布的文献 + 题库/解读),
+--   所以 rag_chunks 直接对 authenticated 开放读, 不会泄露草稿或私密笔记。
+--
+--   向量由 Edge Function(rag-index) 写入, 用服务端 Qwen key, 前端拿不到 key。
+-- ============================================================================
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS public.rag_chunks (
+  id           BIGSERIAL PRIMARY KEY,
+  source       TEXT NOT NULL,
+  source_id    TEXT NOT NULL,
+  chunk_index  INTEGER NOT NULL DEFAULT 0,
+  label        TEXT NOT NULL DEFAULT '',
+  sub_label    TEXT,
+  content      TEXT NOT NULL,
+  -- 逐字加空格: 中文没空格, pg_trgm 对 2 字词生成不出 trigram, 加空格后 2 字词也能走 GIN 索引
+  search_text  TEXT GENERATED ALWAYS AS (regexp_replace(lower(content), '(.)', '\1 ', 'g')) STORED,
+  -- 定位信息(只有 resource 填)
+  page_no      INTEGER,
+  bbox         REAL[],
+  block_index  INTEGER,
+  anchor       TEXT,
+  embedding    vector(1024),
+  embedded_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source, source_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_embedding  ON public.rag_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_rag_search     ON public.rag_chunks USING GIN (search_text gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_rag_src        ON public.rag_chunks(source, source_id);
+
+ALTER TABLE public.rag_chunks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rag_select ON public.rag_chunks;
+CREATE POLICY rag_select ON public.rag_chunks FOR SELECT
+  USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS rag_write_admin ON public.rag_chunks;
+CREATE POLICY rag_write_admin ON public.rag_chunks FOR ALL
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- 混合检索: 向量召回 + 全文召回, 用 RRF(倒数排名融合)合并。
+--
+-- p_terms 是查询里抽出来的关键词。为什么要它: 全文那一路原本拿**整句**当子串匹配,
+-- 而用户问的是「灵气学派是什么？」——正文里有"灵气学派", 却绝不会有这一整句,
+-- 于是整句匹配恒为空。向量那一路能处理这种改写, 可一旦 embedding 服务不可用
+-- (实测撞上过 DashScope 欠费), 降级成纯全文就等于什么都搜不到。
+-- 所以抽词后按"命中几个词"排序: 命中的词越多越靠前, 命不中就退回整句匹配。
+--
+-- p_embedding 收 TEXT 而不是 vector: PostgREST 对 vector 参数的解析不可靠,
+-- 收文本在函数内 cast, 传 null 或空串就是"只走全文检索"。
+CREATE OR REPLACE FUNCTION public.search_rag(
+  p_query     TEXT,
+  p_embedding TEXT    DEFAULT NULL,
+  p_sources   TEXT[]  DEFAULT NULL,
+  p_limit     INTEGER DEFAULT 12,
+  p_terms     TEXT[]  DEFAULT NULL
+) RETURNS TABLE (
+  id          BIGINT,
+  source      TEXT,
+  source_id   TEXT,
+  label       TEXT,
+  sub_label   TEXT,
+  content     TEXT,
+  page_no     INTEGER,
+  bbox        REAL[],
+  block_index INTEGER,
+  anchor      TEXT,
+  vec_rank    BIGINT,
+  txt_rank    BIGINT,
+  score       DOUBLE PRECISION
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_emb   vector(1024);
+  v_terms TEXT[];
+BEGIN
+  IF p_embedding IS NOT NULL AND btrim(p_embedding) <> '' THEN
+    v_emb := p_embedding::vector;
+  END IF;
+
+  -- 只用 2 个字以上的词, 单字命中太吵
+  IF p_terms IS NOT NULL THEN
+    SELECT array_agg(DISTINCT t) INTO v_terms FROM unnest(p_terms) t WHERE length(btrim(t)) >= 2;
+  END IF;
+
+  RETURN QUERY
+  WITH vec AS (
+    SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> v_emb) AS rnk
+    FROM public.rag_chunks c
+    WHERE v_emb IS NOT NULL
+      AND c.embedding IS NOT NULL
+      AND (p_sources IS NULL OR c.source = ANY(p_sources))
+    ORDER BY c.embedding <=> v_emb
+    LIMIT 40
+  ),
+  txt AS (
+    SELECT b.id, row_number() OVER (
+             ORDER BY b.hits DESC, similarity(b.content, p_query) DESC
+           ) AS rnk
+    FROM (
+      SELECT c.id,
+             c.content,
+             (CASE WHEN v_terms IS NULL THEN 0
+                   ELSE (SELECT count(*) FROM unnest(v_terms) t WHERE c.content ILIKE '%' || t || '%')
+              END) AS hits
+      FROM public.rag_chunks c
+      WHERE (p_sources IS NULL OR c.source = ANY(p_sources))
+        AND (
+          c.search_text ILIKE '%' || regexp_replace(p_query, '(.)', '\1 ', 'g') || '%'
+          OR (v_terms IS NOT NULL
+              AND EXISTS (SELECT 1 FROM unnest(v_terms) t WHERE c.content ILIKE '%' || t || '%'))
+        )
+    ) b
+    LIMIT 40
+  ),
+  fused AS (
+    SELECT coalesce(v.id, t.id) AS fid,
+           v.rnk AS vr,
+           t.rnk AS tr,
+           -- 必须 cast: 1.0 在 PG 里是 numeric, 不 cast 就对不上 RETURNS TABLE 声明的
+           -- double precision, 会报 structure of query does not match function result type
+           (coalesce(1.0 / (60 + v.rnk), 0) + coalesce(1.0 / (60 + t.rnk), 0))::double precision AS sc
+    FROM vec v FULL OUTER JOIN txt t ON v.id = t.id
+  )
+  SELECT c.id, c.source, c.source_id, c.label, c.sub_label, c.content,
+         c.page_no, c.bbox, c.block_index, c.anchor,
+         f.vr, f.tr, f.sc
+  FROM fused f
+  JOIN public.rag_chunks c ON c.id = f.fid
+  ORDER BY f.sc DESC, c.id
+  LIMIT greatest(1, least(coalesce(p_limit, 12), 40));
+END;
+$$;
+
+-- 旧签名(4 参数)已被 5 参数版取代, 删掉免得 PostgREST 调用时二义
+DROP FUNCTION IF EXISTS public.search_rag(TEXT, TEXT, TEXT[], INTEGER);
+
+GRANT EXECUTE ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[]) TO authenticated;
+
+-- ============================================================================
+-- Section 56: 小Q 会话记录 (chat conversations & messages)
+--
+--   为什么要落库而不是只留在浏览器里: 会话里带的是**引用出处**(文献名 + 页码 + 段落
+--   跳转地址)。存在本地等于"换个设备、清个缓存, 之前查过的依据就找不回来了"; 而且同一个
+--   会话要在 /assistant 页和阅读页的悬浮面板里接着聊, 两边各存一份状态必然会分叉。
+--
+--   两张表而不是一张: 会话列表只需要标题和时间, 消息是长文本 + 引用 JSON。合成一张表,
+--   "列出我的会话"这条最频繁的查询就得跟着读一堆正文。
+--
+--   tags / sources / followups 存 JSONB: 它们的形状由前端定义(引用条目以后还会加字段),
+--   拆成列会让每次改前端都要配一次迁移; 而这里从不需要按引用内容检索 —— 真正要搜的是正文。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.chat_conversations (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL DEFAULT '新会话',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 列表按"最近聊过"倒序取, 这是唯一的高频查询
+CREATE INDEX IF NOT EXISTS idx_chat_conv_user ON public.chat_conversations(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+  id              BIGSERIAL PRIMARY KEY,
+  conversation_id UUID NOT NULL REFERENCES public.chat_conversations(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content         TEXT NOT NULL,
+  sub             TEXT,
+  tags            TEXT[],
+  sources         JSONB,
+  followups       TEXT[],
+  emotion         TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 按 id 而不是 created_at: 同一毫秒写入的两条消息用时间排序不稳定, 会串序
+CREATE INDEX IF NOT EXISTS idx_chat_msg_conv ON public.chat_messages(conversation_id, id);
+
+ALTER TABLE public.chat_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS chat_conv_own ON public.chat_conversations;
+CREATE POLICY chat_conv_own ON public.chat_conversations FOR ALL
+  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- 消息表不带 user_id: 归属靠会话反查。少一列冗余, 也就少一次"两处不一致"的机会。
+-- 代价是策略里多一个 EXISTS; 消息量按会话取, 有 idx_chat_msg_conv 在前面挡着。
+DROP POLICY IF EXISTS chat_msg_own ON public.chat_messages;
+CREATE POLICY chat_msg_own ON public.chat_messages FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.chat_conversations c
+                 WHERE c.id = conversation_id AND c.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.chat_conversations c
+                      WHERE c.id = conversation_id AND c.user_id = auth.uid()));
+
+-- 会话的 updated_at 由消息写入带起来: 让前端每次发消息都多写一次 conversations 表,
+-- 迟早会漏(比如补发失败重试那条路径), 而这里漏了的后果是会话排到列表最底下, 很难发现。
+CREATE OR REPLACE FUNCTION public.bump_chat_conversation() RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.chat_conversations SET updated_at = NOW() WHERE id = NEW.conversation_id;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.bump_chat_conversation() FROM anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_chat_msg_bump ON public.chat_messages;
+CREATE TRIGGER trg_chat_msg_bump AFTER INSERT ON public.chat_messages
+  FOR EACH ROW EXECUTE FUNCTION public.bump_chat_conversation();

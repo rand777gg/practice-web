@@ -21,6 +21,8 @@ interface Props {
   pages: PageUrl[]
   markdown: string
   pdfUrl: string | null
+  /** 各卷页码区间; 页图缺失时按卷兜底渲染用 */
+  parts?: { page_from: number; page_to: number }[]
   /** pages 为空(页图缺失, 走本地渲染兜底)时用它显示真实页数 */
   pdfTotalPages?: number | null
   /** 从检索结果或外链带着目标区块进来时, 挂载后直接定位过去 */
@@ -50,7 +52,7 @@ function blockClass(block: ResourceBlock): string {
 }
 
 export function ResourceReader({
-  documentId, blocks, pages, markdown, pdfUrl, pdfTotalPages, initialBlockIndex, initialQuery = '',
+  documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '',
 }: Props) {
   const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null)
   const [focusNonce, setFocusNonce] = useState(0)
@@ -109,7 +111,13 @@ export function ResourceReader({
   }, [activeQuery, documentId])
 
   // ── 目录 / 检索 / PDF 点击 → 三边同步定位 ──
+  // pendingLocate 记着"正在滚向哪一块": 长文档里平滑滚动到几千段之外的块要好几秒,
+  // 光靠一个固定时长的抑制窗口挡不住滚动监听 —— 滚动途中它就会把 active 改成当前可见的块,
+  // 于是"点第 250 页的检索结果却跳到 166 页"。所以改成: 目标没进入视口之前, 监听器不抢。
+  const pendingLocateRef = useRef<number | null>(null)
+
   const locate = useCallback((blockIndex: number) => {
+    pendingLocateRef.current = blockIndex
     setActiveBlockIndex(blockIndex)
     setFlashIndex(blockIndex)
     setFocusNonce((n) => n + 1)
@@ -119,7 +127,9 @@ export function ResourceReader({
   useEffect(() => {
     if (focusNonce === 0) return
     const el = activeBlockIndex === null ? null : blockRefs.current.get(activeBlockIndex)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // 用 start 而不是 center: 滚动监听认定的「当前块」是视口顶部那一段, 定位时若把目标居中,
+    // 滚完监听就会把 active 改成顶部那一段, 变成「定位到了却显示成别的块」。
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [focusNonce, activeBlockIndex])
 
   // 带着 ?block= 进来时, 等首屏排版稳定再定位, 否则量到的位置会偏。
@@ -159,14 +169,28 @@ export function ResourceReader({
     const root = mdScrollRef.current
     if (!root) return
     let raf = 0
+    let settle: number | null = null
+
     const onScroll = () => {
+      // 每次滚动都重置"已经滚完"的计时。程序化定位期间一直挡着监听, 直到滚动真正停下 ——
+      // 用"目标是否接近顶部"这种判据会中途放行, 平滑滚动的后半程就把 active 改成更后面的块了。
+      if (settle !== null) window.clearTimeout(settle)
+      settle = window.setTimeout(() => {
+        settle = null
+        pendingLocateRef.current = null
+      }, 180)
+
       if (raf) return
       raf = requestAnimationFrame(() => {
         raf = 0
         if (Date.now() < suppressSpyUntil.current) return
+        if (pendingLocateRef.current !== null) return
+
         const list = offsetsRef.current
         if (list.length === 0) return
-        const target = root.scrollTop + 90
+        // 取"盖住视口顶边的那一块", 而不是"顶部往下 90px 内最靠后的那一块":
+        // 后者在短段落上会选中定位目标的下一个块, 让定位结果看起来偏了一屏。
+        const target = root.scrollTop + 4
         let lo = 0
         let hi = list.length - 1
         let found = list[0].idx
@@ -181,6 +205,7 @@ export function ResourceReader({
     return () => {
       root.removeEventListener('scroll', onScroll)
       if (raf) cancelAnimationFrame(raf)
+      if (settle !== null) window.clearTimeout(settle)
     }
   }, [viewMode])
 
@@ -277,6 +302,7 @@ export function ResourceReader({
                 pages={pages}
                 blocks={blocks}
                 pdfUrl={pdfUrl}
+                partRanges={parts?.map((p) => ({ from: p.page_from, to: p.page_to }))}
                 activeBlockIndex={activeBlockIndex}
                 onSelectBlock={locate}
                 jumpToPage={jumpToPage}

@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { supabase } from '@/lib/supabase'
+import { parsePageNumbers } from '@/lib/page-slices'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -13,24 +14,27 @@ export interface PageUrl {
 
 export const RENDER_SCALE = 2.0
 
-function parsePageNumbers(ranges: string | undefined, totalPages: number): number[] {
-  if (!ranges || !ranges.trim()) {
-    return Array.from({ length: totalPages }, (_, i) => i + 1)
+/**
+ * 只读 PDF 页数。
+ * 传 File 时走 object URL 而不是把整个文件读进 ArrayBuffer —— 几百 MB 的书只为数页数就吃满内存不值。
+ */
+export async function countPdfPages(source: File | string): Promise<number> {
+  if (typeof source === 'string') {
+    const pdf = await pdfjsLib.getDocument(source).promise
+    const total = pdf.numPages
+    pdf.destroy()
+    return total
   }
-  const set = new Set<number>()
-  for (const part of ranges.split(',')) {
-    const trimmed = part.trim()
-    if (trimmed.includes('-')) {
-      const [start, end] = trimmed.split('-').map(Number)
-      for (let i = Math.max(1, start); i <= Math.min(totalPages, end || start); i++) {
-        set.add(i)
-      }
-    } else {
-      const n = Number(trimmed)
-      if (n >= 1 && n <= totalPages) set.add(n)
-    }
+
+  const objectUrl = URL.createObjectURL(source)
+  try {
+    const pdf = await pdfjsLib.getDocument(objectUrl).promise
+    const total = pdf.numPages
+    pdf.destroy()
+    return total
+  } finally {
+    URL.revokeObjectURL(objectUrl)
   }
-  return set.size > 0 ? Array.from(set).sort((a, b) => a - b) : Array.from({ length: totalPages }, (_, i) => i + 1)
 }
 
 // Render a single PDF page to a WebP blob

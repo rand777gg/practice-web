@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Trash2, Clock, Link, ChevronDown, Pencil } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { R2_PUBLIC_HOST } from '@/lib/r2'
 
 export interface HistoryEntry {
   id: number
@@ -75,7 +76,7 @@ function fileNameFromUrl(url: string): string {
 }
 
 function r2KeyFromUrl(url: string): string | null {
-  if (!url.includes('r2-rpw.pguide.dev')) return null
+  if (!url.includes(R2_PUBLIC_HOST)) return null
   const idx = url.indexOf('pdf/')
   return idx >= 0 ? url.slice(idx) : null
 }

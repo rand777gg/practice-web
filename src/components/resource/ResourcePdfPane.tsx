@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { RENDER_SCALE, renderPdfPagesLocally, type PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock } from '@/lib/resource-blocks'
 
@@ -8,6 +9,8 @@ interface Props {
   pages: PageUrl[]
   blocks: ResourceBlock[]
   pdfUrl: string | null
+  /** 各卷的原文页码范围; 页图缺失时按卷取范围现场渲染, 大书才不会一次渲染几百页 */
+  partRanges?: { from: number; to: number }[]
   activeBlockIndex: number | null
   onSelectBlock: (blockIndex: number) => void
   /** 直接跳页(工具栏页码框); nonce 变化才触发, 便于重复跳同一页 */
@@ -16,8 +19,13 @@ interface Props {
 
 const INITIAL_PAGES = 6
 const PAGE_STEP = 3
+// 兜底渲染把每页存成 base64 常驻内存, 一本 295 页的书能吃掉几百 MB 并拖崩标签页。
+// 所以只在页数不多时自动渲染, 超了就让用户按需点 —— 正常路径(有 R2 页图)不受影响。
+const LOCAL_RENDER_MAX = 40
 
-export function ResourcePdfPane({ pages, blocks, pdfUrl, activeBlockIndex, onSelectBlock, jumpToPage }: Props) {
+export function ResourcePdfPane({
+  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const [containerW, setContainerW] = useState(700)
@@ -25,17 +33,30 @@ export function ResourcePdfPane({ pages, blocks, pdfUrl, activeBlockIndex, onSel
   const [localError, setLocalError] = useState<string | null>(null)
   const [localProgress, setLocalProgress] = useState<{ done: number; total: number } | null>(null)
   const [loadedCount, setLoadedCount] = useState(INITIAL_PAGES)
+  const [localWanted, setLocalWanted] = useState(false)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   const effectivePages = pages.length > 0 ? pages : localPages
-  // 状态只在异步回调里改, "正在渲染"这个中间态由渲染时推导, 免得在 effect 里同步 setState 触发多一轮渲染
-  const localBusy = pages.length === 0 && !!pdfUrl && localPages.length === 0 && localError === null
 
-  // 页图缺失时(解析时渲染失败 / R2 不可达)现场用 pdfjs 渲染, 否则这篇文献只剩正文可看
+  // 全篇页数: 有分卷就按各卷累加, 否则用页码参数兜底
+  const fallbackTotal = useMemo(() => {
+    if (partRanges && partRanges.length > 0) {
+      return partRanges.reduce((n, r) => n + Math.max(0, r.to - r.from + 1), 0)
+    }
+    return 0
+  }, [partRanges])
+  const needsFallback = pages.length === 0 && !!pdfUrl
+  const fallbackTooBig = needsFallback && fallbackTotal > LOCAL_RENDER_MAX
+  // 状态只在异步回调里改, "正在渲染"这个中间态由渲染时推导, 免得在 effect 里同步 setState 触发多一轮渲染
+  const localBusy = needsFallback && (!fallbackTooBig || localWanted) && localPages.length === 0 && localError === null
+
+  // 页图缺失时(解析时渲染失败 / R2 不可达)现场用 pdfjs 渲染, 否则这篇文献只剩正文可看。
+  // 大书只渲染开头一段: base64 常驻内存, 295 页能吃掉几百 MB 并拖崩标签页。
   useEffect(() => {
-    if (pages.length > 0 || !pdfUrl) return
+    if (!needsFallback) return
+    if (fallbackTooBig && !localWanted) return
     const run = { cancelled: false }
-    renderPdfPagesLocally(pdfUrl, undefined, (done, total) => {
+    renderPdfPagesLocally(pdfUrl, fallbackTooBig ? `1-${LOCAL_RENDER_MAX}` : undefined, (done, total) => {
       if (!run.cancelled) setLocalProgress({ done, total })
     })
       .then((rendered) => {
@@ -47,7 +68,7 @@ export function ResourcePdfPane({ pages, blocks, pdfUrl, activeBlockIndex, onSel
         if (!run.cancelled) setLocalError('PDF 页面渲染失败, 仅显示正文')
       })
     return () => { run.cancelled = true }
-  }, [pages.length, pdfUrl])
+  }, [needsFallback, pdfUrl, fallbackTooBig, localWanted])
 
   useEffect(() => {
     const el = containerRef.current
@@ -87,7 +108,10 @@ export function ResourcePdfPane({ pages, blocks, pdfUrl, activeBlockIndex, onSel
   // 跳页目标可能还在懒加载后面, 用派生值把它前面的页一起放出来 —— 放到 state 里会晚一帧,
   // 那一帧里目标元素还没挂载, 滚动就丢了。
   const targetIdx = jumpToPage ? effectivePages.findIndex((p) => p.p === jumpToPage.page) : -1
-  const visibleCount = Math.max(loadedCount, targetIdx + 1)
+  // 正文定位过来的目标页同理: 长文档里目标页往往还没挂载, 不放出来的话 scrollIntoView 找不到元素,
+  // 表现就是「正文定位了但 PDF 没动也没有高亮」。
+  const activePageIdx = activePage === null ? -1 : effectivePages.findIndex((p) => p.p === activePage)
+  const visibleCount = Math.max(loadedCount, targetIdx + 1, activePageIdx + 1)
   const visible = effectivePages.slice(0, visibleCount)
   const hasMore = visibleCount < effectivePages.length
 
@@ -109,8 +133,18 @@ export function ResourcePdfPane({ pages, blocks, pdfUrl, activeBlockIndex, onSel
 
   if (effectivePages.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6">
-        {localBusy ? (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+        {fallbackTooBig && !localWanted ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              这篇文献缺少页图, 共 {fallbackTotal} 页 —— 一次全部渲染会占用过多内存。
+            </p>
+            <Button variant="outline" size="sm" onClick={() => setLocalWanted(true)}>
+              只渲染前 {LOCAL_RENDER_MAX} 页
+            </Button>
+            <p className="text-[10px] text-muted-foreground">要看到全部页面, 请在管理页重新解析以生成页图。</p>
+          </>
+        ) : localBusy ? (
           <>
             <Skeleton className="h-[46vh] w-full max-w-md rounded" />
             <p className="text-xs text-muted-foreground">
