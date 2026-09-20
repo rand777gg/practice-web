@@ -40,7 +40,7 @@ export function Component() {
   const { t } = useT()
   const navigate = useNavigate()
   const [, setSearchParams] = useSearchParams()
-  const { questions, count, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
+  const { questions, count, itemCount, isLoading, page, totalPages, pageSize, deleteQuestion, fetchQuestions, refetch } = useQuestions()
   const currentFilterParams = () => ({ search, subject: selectedSubject, category: selectedCategory, questionType: selectedType, importMode: selectedImportMode, verified: selectedVerified, keyPoints: selectedKeyPoints, issueFlag: selectedIssueFlag })
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
@@ -101,18 +101,20 @@ export function Component() {
     const kpCounts = new Map<string, number>()
     const PAGE = 1000; let from = 0
     while (true) {
-      const { data } = await supabase.from('questions').select('subject, key_points, category, categories').order('id').range(from, from + PAGE - 1)
+      // item_count 是库里按小题口径算好的生成列（卷面题型一条记录 = 20 空…）
+      const { data } = await supabase.from('questions').select('subject, key_points, category, categories, item_count').order('id').range(from, from + PAGE - 1)
       if (!data || data.length === 0) break
       for (const q of data) {
         const s = q.subject || '未分类'
-        subCounts.set(s, (subCounts.get(s) ?? 0) + 1)
+        const items = Number((q as { item_count?: number }).item_count ?? 1)
+        subCounts.set(s, (subCounts.get(s) ?? 0) + items)
         if (q.key_points) {
           let kps = kpMap.get(s); if (!kps) { kps = new Set(); kpMap.set(s, kps) }
           kps.add(q.key_points)
-          kpCounts.set(q.key_points, (kpCounts.get(q.key_points) ?? 0) + 1)
+          kpCounts.set(q.key_points, (kpCounts.get(q.key_points) ?? 0) + items)
         }
         const cats: string[] = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
-        for (const c of cats) catCounts.set(c, (catCounts.get(c) ?? 0) + 1)
+        for (const c of cats) catCounts.set(c, (catCounts.get(c) ?? 0) + items)
       }
       if (data.length < PAGE) break
       from += PAGE
@@ -293,7 +295,11 @@ export function Component() {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-<p className="text-sm text-muted-foreground">{count} {t('questions.total')}</p>
+<p className="text-sm text-muted-foreground">
+  {count} {t('questions.total')}
+  {/* 卷面题型一条记录含多个小题，只报记录数会让人以为题少了 */}
+  {itemCount > count && <> · {itemCount} {t('questions.itemUnit')}</>}
+</p>
         </div>
         <div className="flex gap-2" ref={btnRowRef}>
           {([

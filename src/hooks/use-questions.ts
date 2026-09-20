@@ -20,6 +20,9 @@ export interface FetchParams {
 export function useQuestions() {
   const [questions, setQuestions] = useState<Question[]>([])
   const [count, setCount] = useState(0)
+  /** 同一筛选条件下的**小题**总数：卷面题型一条记录含多个小题（完形 20 空），
+   *  只报记录数会让人以为题少了 */
+  const [itemCount, setItemCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
@@ -55,7 +58,22 @@ export function useQuestions() {
 
     query = query.order('created_at', { ascending: false }).range(from, to)
 
-    const { data, error: fetchError, count: total } = await query
+    // 记录数（分页用）与小题数（展示用）一起拿：分页在服务端做，小题数只能让库聚合
+    const orNull = (v?: string) => (v ? v : null)
+    const [{ data, error: fetchError, count: total }, stats] = await Promise.all([
+      query,
+      supabase.rpc('count_question_items', {
+        p_search: orNull(search),
+        p_subject: orNull(subject),
+        // '__unset__'（无分类）要原样传下去，库里认这个哨兵值
+        p_category: orNull(category),
+        p_question_type: orNull(questionType),
+        p_import_mode: orNull(importMode),
+        p_verified: verified === 'true' ? true : verified === 'false' ? false : null,
+        p_key_points: orNull(keyPoints),
+        p_issue_flag: orNull(issueFlag),
+      }),
+    ])
 
     if (fetchError) {
       setError(fetchError.message)
@@ -63,6 +81,8 @@ export function useQuestions() {
       setQuestions((data ?? []) as Question[])
       if (total !== null) setCount(total)
     }
+    const items = (stats.data as { items?: number } | null)?.items
+    if (typeof items === 'number') setItemCount(items)
     setPage(p)
     if (ps !== pageSize) setPageSize(ps)
     setIsLoading(false)
@@ -104,6 +124,7 @@ export function useQuestions() {
   return {
     questions,
     count,
+    itemCount,
     isLoading,
     error,
     page,

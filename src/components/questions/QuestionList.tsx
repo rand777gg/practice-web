@@ -8,6 +8,7 @@ import { Pencil, Trash2, Check, TriangleAlert, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { TYPE_COLORS } from '@/lib/constants'
+import { questionItemCount } from '@/lib/answer-utils'
 
 interface Props {
   questions: Question[]
@@ -98,6 +99,12 @@ export function QuestionList({ questions, onDelete, selectedIds, onToggleSelect,
                   <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${TYPE_COLORS[q.question_type]}`}>
                     {t(`questionTypes.${q.question_type}` as any) || q.question_type}
                   </span>
+                  {/* 卷面题型一条记录含多个小题（完形 20 空…），题数按小题口径标出来 */}
+                  {questionItemCount(q) > 1 && (
+                    <span className="ml-1.5 text-[10px] text-muted-foreground">
+                      {questionItemCount(q)} {t('questions.itemUnit')}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {q.source_page && (q.import_mode === 'lightweight' || q.import_mode === 'precision') ? (

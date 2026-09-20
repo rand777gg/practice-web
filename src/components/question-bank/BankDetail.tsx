@@ -16,6 +16,8 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 import { ArrowLeft, Check, ChevronDown, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { questionItemCount } from '@/lib/answer-utils'
+import type { Question } from '@/types'
 
 function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | null; alt: string; className?: string; fallbackClassName?: string }) {
   const [loaded, setLoaded] = useState(false)
@@ -68,6 +70,12 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
     }
     return { subjects: [...subs].sort(), categories: [...cats].sort(), types: [...typs].sort() }
   }, [items])
+
+  /** 卷面题型一条记录含多个小题（完形 20 空），题数顺带按小题口径报一下 */
+  const itemTotal = useMemo(
+    () => items.reduce((n, i) => n + questionItemCount(i.questions as unknown as Question), 0),
+    [items],
+  )
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -156,7 +164,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm text-muted-foreground">
-            共 {items.length} 道题目{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
+            共 {items.length} 道题目{itemTotal > items.length ? ` · ${itemTotal} 个小题` : ''}{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
           </p>
           {selectedItems.size > 0 && (
             <Button variant="destructive" size="sm" onClick={handleBatchRemove}>

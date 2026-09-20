@@ -3719,3 +3719,63 @@ ALTER TABLE public.questions
   CHECK (question_type IN (
     'single_choice','multi_select','true_false','fill_blank','short_answer','analysis','judge_correct','coding',
     'case_analysis','cloze','reading_set','sentence_order','translation','writing'));
+
+-- ============================================================================
+-- Section 53: 小题口径的计题数 (questions.item_count + count_question_items)
+--   卷面题型一条记录含多个小题(完形 20 空 / 阅读一篇 5 问 / 翻译 5 句), 题库列表和侧边
+--   统计按「记录」计数会让英语一从 52 变成 9, 看着像丢了题。这里落一个生成列:
+--     item_count = 多小题题型的小题数, 其余 = 1
+--   口径与前端 MULTI_ITEM_QUESTION_TYPES 一致(见 src/lib/constants.ts)。
+--   count_question_items 给同一个筛选条件下的「记录数 + 小题数」, 供列表头部展示;
+--   筛选语义与前端 use-questions 的查询保持一致。
+-- ============================================================================
+ALTER TABLE public.questions
+  ADD COLUMN IF NOT EXISTS item_count INTEGER
+  GENERATED ALWAYS AS (
+    CASE
+      WHEN question_type IN ('cloze','reading_set','sentence_order','translation','case_analysis')
+      THEN GREATEST(
+             jsonb_array_length(
+               CASE WHEN jsonb_typeof(case_questions) = 'array' THEN case_questions ELSE '[]'::jsonb END
+             ),
+             1)
+      ELSE 1
+    END
+  ) STORED;
+
+COMMENT ON COLUMN public.questions.item_count IS
+  '按小题口径的计题数: 多小题题型 = 小题数, 其余 = 1 (生成列)';
+
+CREATE OR REPLACE FUNCTION public.count_question_items(
+  p_search        TEXT DEFAULT NULL,
+  p_subject       TEXT DEFAULT NULL,
+  p_category      TEXT DEFAULT NULL,   -- '__unset__' = 无分类
+  p_question_type TEXT DEFAULT NULL,
+  p_import_mode   TEXT DEFAULT NULL,
+  p_verified      BOOLEAN DEFAULT NULL,
+  p_key_points    TEXT DEFAULT NULL,   -- '__none__' = 无知识点
+  p_issue_flag    TEXT DEFAULT NULL
+)
+RETURNS JSONB LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT jsonb_build_object('rows', count(*), 'items', COALESCE(sum(q.item_count), 0))
+  FROM public.questions q
+  WHERE (p_search IS NULL OR q.question_text ILIKE '%' || p_search || '%')
+    AND (p_subject IS NULL OR q.subject = p_subject)
+    AND (p_question_type IS NULL OR q.question_type = p_question_type)
+    AND (p_import_mode IS NULL OR q.import_mode = p_import_mode)
+    AND (p_verified IS NULL OR q.verified = p_verified)
+    AND (p_issue_flag IS NULL OR q.issue_flag = p_issue_flag)
+    AND (CASE
+           WHEN p_category IS NULL THEN TRUE
+           WHEN p_category = '__unset__' THEN q.category IS NULL
+           ELSE q.category = p_category OR q.categories @> to_jsonb(ARRAY[p_category])
+         END)
+    AND (CASE
+           WHEN p_key_points IS NULL THEN TRUE
+           WHEN p_key_points = '__none__' THEN q.key_points IS NULL OR q.key_points = ''
+           ELSE q.key_points ILIKE '%' || p_key_points || '%'
+         END);
+$$;
+
+GRANT EXECUTE ON FUNCTION public.count_question_items(TEXT, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TEXT, TEXT) TO authenticated;
