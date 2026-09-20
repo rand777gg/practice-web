@@ -48,7 +48,7 @@ export function AssistantPanel() {
         aria-label="小Q 助手"
       >
         <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-          <span className="ai-ring relative inline-flex shrink-0 rounded-full p-[2px]">
+          <span className="relative inline-flex shrink-0 rounded-full bg-primary p-[2px]">
             <img src="/littleq.webp" alt="" aria-hidden="true" className="h-7 w-7 rounded-full object-cover" />
           </span>
           <div className="min-w-0 flex-1">

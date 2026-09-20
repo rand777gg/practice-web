@@ -42,7 +42,7 @@ export function Component() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="ai-ring relative inline-flex rounded-full p-[2px]">
+        <span className="relative inline-flex rounded-full bg-primary p-[2px]">
           <img src="/littleq.webp" alt="" aria-hidden="true" className="h-11 w-11 rounded-full object-cover" />
         </span>
         <div className="min-w-0 flex-1">
