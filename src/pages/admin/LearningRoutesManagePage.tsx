@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Map, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 export function Component() {
   const navigate = useNavigate()
@@ -157,7 +158,7 @@ export function Component() {
                       </p>
                     )}
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {entry.stageCount} 个阶段 · {entry.questionCount} 道题
+                      {entry.stageCount} 个阶段<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{entry.questionCount} 道题
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">

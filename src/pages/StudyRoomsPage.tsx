@@ -49,6 +49,7 @@ import {
   UserRoundCog,
   UsersRound,
 } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 interface RoomRow {
   id: string
@@ -207,9 +208,9 @@ function PublicBadges({ p }: { p?: PublicProfile }) {
   if (!goal && !status && !p.target_school) return null
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
-      {goal && <PubChip icon={<Target className="h-2.5 w-2.5" />}>备考目标 · {goal}</PubChip>}
+      {goal && <PubChip icon={<Target className="h-2.5 w-2.5" />}>备考目标<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{goal}</PubChip>}
       {status && <PubChip icon={<Flame className="h-2.5 w-2.5" />}>{status}</PubChip>}
-      {p.target_school && <PubChip icon={<GraduationCap className="h-2.5 w-2.5" />}>目标院校 · {p.target_school}</PubChip>}
+      {p.target_school && <PubChip icon={<GraduationCap className="h-2.5 w-2.5" />}>目标院校<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{p.target_school}</PubChip>}
     </div>
   )
 }

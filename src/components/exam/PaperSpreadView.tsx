@@ -42,6 +42,7 @@ import {
 import { CN_NUM } from './paper-view-core'
 import type { CaseAnswer, CorrectAnswer } from '@/types'
 import type { PaperSection } from '@/lib/exam-compose'
+import { Separator } from '@/components/ui/separator'
 
 /** mm → px (CSS 96dpi) */
 const MM_PX = 96 / 25.4
@@ -278,7 +279,7 @@ export function PaperSpreadView({
               {t('paperPreview.totalHint').replace('{n}', String(total))}
               {gradedTotal && (
                 <span className="paper-no-print ml-2">
-                  · {t('paperReview.scoredHint')
+                 <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('paperReview.scoredHint')
                     .replace('{c}', String(gradedTotal.correct))
                     .replace('{n}', String(gradedTotal.done))}
                 </span>

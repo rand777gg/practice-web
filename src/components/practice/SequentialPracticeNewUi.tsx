@@ -20,6 +20,7 @@ import {
   ListChecks, List, ChevronLeft, ChevronRight, Star, Flag, Keyboard,
   BookOpen, Filter, X, ChevronDown,
 } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 function keyDisplay(key: string): string {
   const KEY: Record<string, string> = {
@@ -280,7 +281,7 @@ export function SequentialPracticeNewUi(props: Props) {
 
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
         <Keyboard className="h-3 w-3" />
-        快捷键：← 上一题 · → 下一题 · 1-4 选择 · {keyDisplay(practiceShortcuts.markUnsure)} 存疑
+        快捷键：← 上一题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />→ 下一题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />1-4 选择<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{keyDisplay(practiceShortcuts.markUnsure)} 存疑
       </div>
     </>
   )
@@ -292,7 +293,7 @@ export function SequentialPracticeNewUi(props: Props) {
         <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
           <ListChecks className="h-4 w-4 shrink-0 text-primary" />
           <span className="font-medium">顺序刷题</span>
-          <span className="text-muted-foreground">·</span>
+          <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
           {subjectName && (
             uniqueSubjects.length > 1 ? (
               <DropdownMenu>

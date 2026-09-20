@@ -9,6 +9,7 @@ import {
   getLayout, getKeyLabel, keyCodeToShortcutPart,
 } from './keyboard-layout'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 const LABELS: Record<ShortcutAction, string> = { prev: '上一题', next: '下一题', submit: '提交答案', markUnsure: '不确定', markWrong: '纠错', favorite: '收藏', tooEasy: '太简单', flagIssue: '标记问题' }
 
@@ -171,7 +172,7 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="text-sm flex items-center gap-2">
             {action && LABELS[action]}
-            {recorded.length > 0 && <span className="text-xs text-muted-foreground font-normal">— Esc 清除 · ← 删除，确认请点按钮</span>}
+            {recorded.length > 0 && <span className="text-xs text-muted-foreground font-normal">— Esc 清除<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />← 删除，确认请点按钮</span>}
           </DialogTitle>
           <DialogDescription className="sr-only">录制快捷键</DialogDescription>
         </DialogHeader>

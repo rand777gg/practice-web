@@ -102,7 +102,7 @@ function TemplateCard({
           <p>
             <span className="text-muted-foreground/70">分组：</span>
             {EXPORT_GROUPS.find((item) => item.key === template.groupBy)?.label}
-            <span className="mx-1">·</span>
+            <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
             <span className="text-muted-foreground/70">排序：</span>
             {EXPORT_ORDERS.find((item) => item.key === template.orderBy)?.label}
           </p>
@@ -414,7 +414,7 @@ export function Component() {
           <h2 className="text-sm font-semibold">
             内置模板
             <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-              {BUILTIN_TEMPLATES.length} 个 · 不可修改
+              {BUILTIN_TEMPLATES.length} 个<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />不可修改
             </span>
           </h2>
         </div>

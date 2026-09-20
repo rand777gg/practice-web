@@ -43,6 +43,7 @@ import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 const mockBar = 'flex items-center justify-between border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground'
 
@@ -99,7 +100,7 @@ export function PracticeSetupMock() {
   return (
     <Panel>
       <div className={mockBar}>
-        <span>练习配置 · 顺序刷题</span>
+        <span>练习配置<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />顺序刷题</span>
         <span>示例</span>
       </div>
       <div className="space-y-4 p-5">
@@ -157,7 +158,7 @@ export function ExamGridMock() {
   return (
     <Panel>
       <div className={mockBar}>
-        <span>模拟考试 · 高等数学（一）</span>
+        <span>模拟考试<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />高等数学（一）</span>
         <span className="inline-flex items-center gap-1 font-medium text-red-500">
           <Timer className="h-3.5 w-3.5" />
           32:47
@@ -219,7 +220,7 @@ export function IdeRunMock() {
       <div className={mockBar}>
           <span className="inline-flex items-center gap-1.5">
             <FileCode2 className="h-3.5 w-3.5 text-primary" />
-            编程判题 · two_sum
+            编程判题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />two_sum
           </span>
           <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
             <CheckCircle2 className="h-3 w-3" /> 3 / 3 用例通过
@@ -283,7 +284,7 @@ export function IdeRunMock() {
                       className="animate-[passkey-check-path_0.5s_ease-out_0.8s_forwards]"
                     />
                   </svg>
-                  Accepted · 通过 3 / 3 个用例
+                  Accepted<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />通过 3 / 3 个用例
                 </span>
               ) : state === 'running' ? (
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-500">
@@ -406,7 +407,7 @@ export function AiChatMock() {
   return (
     <Panel ref={ref}>
       <div className={mockBar}>
-        <span>AI 讲解 · 学习助手</span>
+        <span>AI 讲解<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />学习助手</span>
           <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
             <CheckCircle2 className="h-3 w-3" /> 今日已总结
           </span>
@@ -516,7 +517,7 @@ export function StatsMock() {
   return (
     <Panel>
       <div className={mockBar}>
-        <span>数据看板 · 数据结构</span>
+        <span>数据看板<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />数据结构</span>
         <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-500">
           <TrendingUp className="h-3.5 w-3.5" /> 正确率 82%
         </span>
@@ -548,7 +549,7 @@ export function StatsMock() {
               <i className="h-2 w-2 rounded-sm bg-rose-400/80" /> 答错
             </span>
           </span>
-          <span>本周 170 题 · 追平历史最佳</span>
+          <span>本周 170 题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />追平历史最佳</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-lg border bg-muted/40 p-2">
@@ -671,7 +672,7 @@ export function RouteStudyMock() {
             </span>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            今日 12 人打卡 · 连续 7 天 · 每日 20:00 开始
+            今日 12 人打卡<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />连续 7 天<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />每日 20:00 开始
           </p>
         </div>
     </Panel>
@@ -688,7 +689,7 @@ export function ExamPaperMock() {
   return (
     <Panel>
       <div className={mockBar}>
-        <span>试卷预览 · 硕士研究生通用模板</span>
+        <span>试卷预览<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />硕士研究生通用模板</span>
         <span className="inline-flex items-center gap-1.5">绝密★启用前</span>
       </div>
       <div className="bg-muted/60 p-4 sm:p-6">
@@ -731,7 +732,7 @@ export function ExamPaperMock() {
             </ol>
           </div>
           <div className="mt-4 flex items-center justify-between border-t pt-3 text-[10px] text-muted-foreground">
-            <span>第 1 页 · 通用模板封面</span>
+            <span>第 1 页<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />通用模板封面</span>
           </div>
         </div>
       </div>
@@ -816,7 +817,7 @@ export function PracticeSessionMock() {
       <div className={mockBar}>
         <span className="inline-flex items-center gap-1.5">
           <ListChecks className="h-3.5 w-3.5 text-primary" />
-          顺序刷题 · 数据结构
+          顺序刷题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />数据结构
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="font-medium">第 7 / 128 题</span>
@@ -878,7 +879,7 @@ export function PracticeSessionMock() {
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <Keyboard className="h-3 w-3" />
-            快捷键：← 上一题 · → 下一题 · 1-4 选择 · S 存疑
+            快捷键：← 上一题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />→ 下一题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />1-4 选择<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />S 存疑
           </div>
         </div>
         <div className="hidden p-5 sm:block">
@@ -933,7 +934,7 @@ export function AiAnalysisMock() {
       <div className={mockBar}>
         <span className="inline-flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          AI 智能解析 · 文档 → 题目
+          AI 智能解析<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />文档 → 题目
         </span>
         <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-500">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
@@ -1232,7 +1233,7 @@ export function QuestionTypes() {
           <ListChecks className="h-3.5 w-3.5 text-primary" />
           支持的题型
         </span>
-        <span>共 {questionTypes.length} 种 · 点击切换</span>
+        <span>共 {questionTypes.length} 种<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />点击切换</span>
       </div>
       <div className="p-5">
         <div className="grid gap-5 lg:grid-cols-[200px_1fr]">
@@ -1256,7 +1257,7 @@ export function QuestionTypes() {
           </div>
           <div className="space-y-4 rounded-xl border bg-muted/30 p-4 sm:p-5">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{current.label} · 作答示例</span>
+              <span>{current.label}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />作答示例</span>
               <span>{current.desc}</span>
             </div>
             {active === 'single' && <SingleExample />}
@@ -1302,7 +1303,7 @@ function CodingExample() {
       </div>
       <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-500">
         <CheckCircle2 className="h-3.5 w-3.5" />
-        3 / 3 用例通过 · 用时 42ms
+        3 / 3 用例通过<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />用时 42ms
       </div>
     </div>
   )
@@ -1316,7 +1317,7 @@ function QuestionDeckCard({ type, index }: { type: (typeof questionTypes)[number
       <div className={cn(mockBar, 'shrink-0')}>
         <span className="inline-flex items-center gap-1.5">
           <span className="text-primary [&>svg]:h-3.5 [&>svg]:w-3.5">{type.icon}</span>
-          {type.label} · 作答示例
+          {type.label}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />作答示例
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="font-medium">

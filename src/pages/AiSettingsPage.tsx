@@ -270,7 +270,7 @@ function ProviderCard({
               {!result.ok && result.status && (
                 <p className="pl-5 text-[10px] text-muted-foreground">
                   原始返回：HTTP {result.status}
-                  {result.code && <> · code: <code className="font-mono">{result.code}</code></>}
+                  {result.code && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />code: <code className="font-mono">{result.code}</code></>}
                 </p>
               )}
               {!result.ok && result.docsUrl && (

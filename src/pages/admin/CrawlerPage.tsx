@@ -20,6 +20,7 @@ import {
 } from '@/lib/crawler-demo'
 import { getDemoTopic, topicIndexOf } from '@/lib/topics-demo'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 const LOG_POOL: { level: 'info' | 'warn' | 'error'; node: string; text: string }[] = [
   { level: 'info', node: '华东-01', text: '模拟客户端完成第 %d 次指纹轮换，命中率 98.2%' },
@@ -61,7 +62,7 @@ function NodeCard({ node, tick }: { node: CrawlerNode; tick: number }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium">{node.name}</p>
             <p className="text-[10px] text-muted-foreground">
-              {node.region} · {node.ip}
+              {node.region}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{node.ip}
             </p>
           </div>
           <Badge variant="secondary" className={cn('shrink-0 border-transparent text-[9px] font-normal', meta.className)}>
@@ -228,7 +229,7 @@ function QuestionCrawler() {
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span>总体进度</span>
               <span className="tabular-nums">
-                {totalFetched.toLocaleString()} / {target.toLocaleString()} 页 · {progress}%
+                {totalFetched.toLocaleString()} / {target.toLocaleString()} 页<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{progress}%
               </span>
             </div>
             <Progress value={progress} className="h-2" />
@@ -263,7 +264,7 @@ function QuestionCrawler() {
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Server className="h-4 w-4 text-primary" />
           分布式节点
-          <span className="text-[11px] font-normal text-muted-foreground">{nodes.length} 个节点 · 跨 6 个区域</span>
+          <span className="text-[11px] font-normal text-muted-foreground">{nodes.length} 个节点<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />跨 6 个区域</span>
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {nodes.map((node) => (
@@ -309,7 +310,7 @@ function QuestionCrawler() {
                           <div className="min-w-0">
                             <p className="line-clamp-2 text-xs leading-relaxed">{question.title}</p>
                             <p className="mt-0.5 text-[10px] text-muted-foreground">
-                              {question.type} · {question.modality}
+                              {question.type}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{question.modality}
                             </p>
                           </div>
                         </div>
@@ -499,7 +500,7 @@ function ExperiencePanel() {
             <Radar className="h-4 w-4 text-primary" />
             经验分享管理
             <span className="text-[11px] font-normal text-muted-foreground">
-              待审核 {pendingCount} · 已采纳 {approvedCount} · 已驳回 {rejectedCount}
+              待审核 {pendingCount}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />已采纳 {approvedCount}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />已驳回 {rejectedCount}
             </span>
           </CardTitle>
         </CardHeader>
@@ -554,7 +555,7 @@ function ExperiencePanel() {
                       {post.authorVerified && <ShieldCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
                     </p>
                     <p className="text-muted-foreground">
-                      采集人 <span className="text-foreground">{post.operator}</span> · {post.node} · {post.collectedAt}
+                      采集人 <span className="text-foreground">{post.operator}</span><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{post.node}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{post.collectedAt}
                     </p>
                     <p className="text-muted-foreground tabular-nums">原文获赞 {post.likes.toLocaleString()}</p>
                   </div>

@@ -92,14 +92,14 @@ function IssueRow({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
           <span>{mine ? '我' : issue.author} 提交于 {issue.createdAt}</span>
-          <span>·</span>
+          <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
           <span className="inline-flex items-center gap-1">
             <MessageSquare className="h-2.5 w-2.5" />
             {issue.comments} 条评论
           </span>
-          <span>·</span>
+          <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
           <span className={cn('font-medium', severity.className)}>严重程度：{severity.label}</span>
-          <span>·</span>
+          <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
           <span className="font-mono">{issue.env}</span>
         </div>
       </div>

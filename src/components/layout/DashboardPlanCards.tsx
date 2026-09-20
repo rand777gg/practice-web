@@ -15,6 +15,7 @@ import {
 } from '@/hooks/use-plan-completion'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 function todayStart(): string {
   const now = new Date()
@@ -262,8 +263,8 @@ export function DashboardPlanCards() {
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-muted-foreground">
                   <span className="tabular-nums">
                     {t('plan.batchRest')} <b className="text-sm font-semibold text-foreground">{goalRest}</b> {t('plan.questions')}
-                    {' · '}{t('plan.roundStateDone')} {goalDoneCount}/{goals.length}{t('plan.batchesUnit')}
-                    {' · '}{t('plan.aboutPerDay')} <b className="text-foreground">{goalPerDay}</b> {t('plan.perDay')}
+                    <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundStateDone')} {goalDoneCount}/{goals.length}{t('plan.batchesUnit')}
+                    <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.aboutPerDay')} <b className="text-foreground">{goalPerDay}</b> {t('plan.perDay')}
                   </span>
                   <span>{t('plan.dailyTarget')}</span>
                 </div>
@@ -275,10 +276,10 @@ export function DashboardPlanCards() {
               <div className="space-y-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-muted-foreground">
                   <span className="tabular-nums">
-                    <b className="text-sm font-semibold text-foreground">{totalDone}</b>/{totalScope} {t('plan.questions')} · {overallPct}%
+                    <b className="text-sm font-semibold text-foreground">{totalDone}</b>/{totalScope} {t('plan.questions')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{overallPct}%
                     {todayDelta > 0 && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">{t('plan.today')} +{todayDelta}</span>}
                   </span>
-                  <span className="tabular-nums">{t('plan.examIn')} <b className="font-semibold text-foreground">{dayLeft}</b> {t('plan.daysUnit')} · {deadline}</span>
+                  <span className="tabular-nums">{t('plan.examIn')} <b className="font-semibold text-foreground">{dayLeft}</b> {t('plan.daysUnit')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{deadline}</span>
                 </div>
                 <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
                   {yestSegPct > 0 && <div className="h-full bg-blue-500 transition-all duration-700" style={{ width: `${yestSegPct}%` }} />}
@@ -328,16 +329,16 @@ export function DashboardPlanCards() {
               <div className="space-y-1.5 rounded-lg border bg-muted/20 p-2.5" onClick={(e) => e.stopPropagation()}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                   <span className="min-w-0 truncate font-medium text-blue-600 dark:text-blue-400">
-                    {activeRound.subject} · {t('plan.roundPrefix')}{activeRound.index}{t('plan.roundsUnit')}
+                    {activeRound.subject}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundPrefix')}{activeRound.index}{t('plan.roundsUnit')}
                   </span>
                   <span className={cn('shrink-0 text-[10px]', stateTone(activeRound.state))}>{stateLabel(activeRound.state)}</span>
                 </div>
                 <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
                   <span>{t('plan.createdAt')} {activeRound.createdAt}</span>
-                  <span>· {t('plan.roundTarget')} {activeRound.target}</span>
+                  <span><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundTarget')} {activeRound.target}</span>
                   {activeRound.doneAt
-                    ? <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.completedAt')} {activeRound.doneAt}</span>
-                    : daysLeftOf(activeRound) !== null && <span>· {t('plan.remaining')} {daysLeftOf(activeRound)} {t('plan.daysUnit')}</span>}
+                    ? <span className="text-emerald-600 dark:text-emerald-400"><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.completedAt')} {activeRound.doneAt}</span>
+                    : daysLeftOf(activeRound) !== null && <span><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} {daysLeftOf(activeRound)} {t('plan.daysUnit')}</span>}
                 </div>
                 {activeRound.quantity > 0 && (
                   <div className="flex items-center gap-2 pt-0.5">
@@ -356,16 +357,16 @@ export function DashboardPlanCards() {
               <div className="space-y-1.5 rounded-lg border bg-muted/20 p-2.5" onClick={(e) => e.stopPropagation()}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                   <span className="min-w-0 truncate font-medium text-pink-600 dark:text-pink-400">
-                    {activeGoal.subject} · {t('plan.roundPrefix')}{activeGoal.index}{t('plan.batchesUnit')}
+                    {activeGoal.subject}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundPrefix')}{activeGoal.index}{t('plan.batchesUnit')}
                   </span>
                   <span className={cn('shrink-0 text-[10px]', stateTone(activeGoal.state))}>{stateLabel(activeGoal.state)}</span>
                 </div>
                 <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
                   <span>{t('plan.createdAt')} {activeGoal.createdAt}</span>
-                  <span>· {t('plan.roundTarget')} {activeGoal.target}</span>
+                  <span><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundTarget')} {activeGoal.target}</span>
                   {activeGoal.doneAt
-                    ? <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.completedAt')} {activeGoal.doneAt}</span>
-                    : daysLeftOf(activeGoal) !== null && <span>· {t('plan.remaining')} {daysLeftOf(activeGoal)} {t('plan.daysUnit')}</span>}
+                    ? <span className="text-emerald-600 dark:text-emerald-400"><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.completedAt')} {activeGoal.doneAt}</span>
+                    : daysLeftOf(activeGoal) !== null && <span><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} {daysLeftOf(activeGoal)} {t('plan.daysUnit')}</span>}
                 </div>
                 <div className="flex items-center gap-2 pt-0.5">
                   <Progress
@@ -390,7 +391,7 @@ export function DashboardPlanCards() {
               {deadline && totalScope > 0 && (
                 <p className="text-muted-foreground">
                   {t('plan.bySchedule')} {t('plan.aboutPerDay')} <b className="text-foreground">{longDailyGoal}</b> {t('plan.perDay')}
-                  {' · '}{t('plan.remaining')} <b className="text-foreground">{Math.max(totalScope - totalDone, 0)}</b> {t('plan.questions')}
+                  <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} <b className="text-foreground">{Math.max(totalScope - totalDone, 0)}</b> {t('plan.questions')}
                 </p>
               )}
               {subjectRows.map((s) => {
@@ -403,10 +404,10 @@ export function DashboardPlanCards() {
                     </span>
                     {s.next
                       ? <span className={cn('tabular-nums', s.next.state === 'overdue' ? 'text-destructive' : '')}>
-                          · {s.next.target}{s.next.state === 'overdue' ? ` ${t('plan.roundStateOverdue')}` : ''}
+                         <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{s.next.target}{s.next.state === 'overdue' ? ` ${t('plan.roundStateOverdue')}` : ''}
                           {pace ? ` · ${pace.remaining}${t('plan.questions')}/${pace.days}${t('plan.daysUnit')} ≈ ${pace.perDay}${t('plan.perDay')}` : ''}
                         </span>
-                      : <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.roundsAllDone')}</span>}
+                      : <span className="text-emerald-600 dark:text-emerald-400"><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundsAllDone')}</span>}
                   </p>
                 )
               })}
@@ -435,8 +436,8 @@ export function DashboardPlanCards() {
                     {t('plan.roundPrefix')}{s.next ? s.next.index : s.totalBatches}/{s.totalBatches}{t('plan.batchesUnit')}
                   </span>
                   {s.next
-                    ? <span className="tabular-nums">· {t('plan.remaining')} {s.rest} {t('plan.questions')} · {s.next.target}</span>
-                    : <span className="text-emerald-600 dark:text-emerald-400">· {t('plan.roundsAllDone')}</span>}
+                    ? <span className="tabular-nums"><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} {s.rest} {t('plan.questions')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{s.next.target}</span>
+                    : <span className="text-emerald-600 dark:text-emerald-400"><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundsAllDone')}</span>}
                 </p>
               ))}
             </div>

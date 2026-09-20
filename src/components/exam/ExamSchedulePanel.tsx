@@ -58,6 +58,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { ExamSchedule, ExamTemplate } from '@/types'
+import { Separator } from '@/components/ui/separator'
 
 const WEEKDAY_UI_ORDER = [1, 2, 3, 4, 5, 6, 0]
 
@@ -512,11 +513,11 @@ export function ExamSchedulePanel({ userId }: { userId: string }) {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {describeRun(s, t, zh)}
-                    <span className="mx-1 text-border">·</span>
+                    <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                     {s.template.name ?? ''}
                     {s.template.duration_min ? (
                       <>
-                        <span className="mx-1 text-border">·</span>
+                        <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                         {s.template.duration_min} {t('exam.minutes')}
                       </>
                     ) : null}

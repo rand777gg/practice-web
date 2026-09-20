@@ -16,6 +16,7 @@ import type { ImportedQuestion } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { Switch } from '@/components/ui/switch'
 import { Upload, Code2 } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   open: boolean
@@ -286,7 +287,7 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
                   <p className="font-medium">{q.question_text}</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {q.options.length} 个选项
-                    {q.analysis && <> · 解析: {q.analysis.slice(0, 40)}{q.analysis.length > 40 ? '...' : ''}</>}
+                    {q.analysis && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />解析: {q.analysis.slice(0, 40)}{q.analysis.length > 40 ? '...' : ''}</>}
                   </p>
                 </div>
               ))}

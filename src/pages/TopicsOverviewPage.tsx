@@ -13,6 +13,7 @@ import {
   type DemoTopic, type RankingMetric,
 } from '@/lib/topics-demo'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 function OverviewStats() {
   const stats = useMemo(() => {
@@ -67,7 +68,7 @@ function TopicCard({ topic, index }: { topic: DemoTopic; index: number }) {
               )}
             </div>
             <p className="text-[11px] text-muted-foreground tabular-nums">
-              {topic.code} · {topic.credit} · 占比 {topic.weight}%
+              {topic.code}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{topic.credit}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />占比 {topic.weight}%
             </p>
           </div>
         </div>

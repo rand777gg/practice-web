@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { RUBRIC, type GradingResult } from '@/lib/written-grading'
+import { Separator } from '@/components/ui/separator'
 
 const CONFIDENCE_LABEL = { high: '较有把握', medium: '一般', low: '把握较低' } as const
 
@@ -79,7 +80,7 @@ export function WrittenGradingPanel({
     <div className={cn('space-y-3 rounded-md border px-3 py-3 text-xs', className)}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge className="border-transparent bg-violet-100 text-[10px] font-normal text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-          建议分 · 仅供参考
+          建议分<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />仅供参考
         </Badge>
         <span className="text-muted-foreground">按{RUBRIC[result.kind].label}的官方分档</span>
         {result.model && <span className="text-[10px] text-muted-foreground">{result.model}</span>}

@@ -104,7 +104,7 @@ function QuestionRow({
           )}
           {question.lastWrongAt && <span>最近 {question.lastWrongAt}</span>}
           {question.favoritedAt && <span>收藏于 {question.favoritedAt}</span>}
-          <span>· {question.bankName}</span>
+          <span><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{question.bankName}</span>
         </span>
       </span>
     </label>
@@ -566,7 +566,7 @@ export function Component() {
                 导出预览
               </DialogTitle>
               <DialogDescription>
-                {preview.filename} · 共 {preview.questionCount} 题
+                {preview.filename}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />共 {preview.questionCount} 题
               </DialogDescription>
             </DialogHeader>
 

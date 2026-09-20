@@ -49,6 +49,7 @@ import { isGitHubAvatarUrl, resolveAvatar, selfAvatarOwner } from '@/lib/avatar'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { langDisplay, LANG_ICONS } from '@/lib/lang-names'
+import { Separator } from '@/components/ui/separator'
 
 const ADJECTIVES = ['勤奋的', '勇敢的', '机智的', '冷静的', '乐观的', '执着的', '专注的', '敏捷的', '沉稳的', '好奇的']
 const NOUNS = ['学者', '探索者', '思考者', '求知者', '攀登者', '追光者', '行者', '旅人', '书虫', '夜猫']
@@ -547,7 +548,7 @@ export function Component() {
                 />
                 <span className="text-xs text-muted-foreground">
                  {s.method === 'passkey' ? t('auth.mfaSessionPasskey') : t('auth.mfaSessionTotp')}
-                 {' · '}
+                 <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                  {new Date(s.verified_at).toLocaleString()}
                 </span>
                 <Button
@@ -760,7 +761,7 @@ export function Component() {
        >
         敏捷的棕色狐狸跳过懒狗。<br />
         The quick brown fox jumps over the lazy dog.<br />
-        0123456789 · 敏捷的棕色狐狸
+        0123456789<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />敏捷的棕色狐狸
        </div>
 
        <div className="border-t pt-4" />

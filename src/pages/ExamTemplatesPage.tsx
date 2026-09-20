@@ -40,6 +40,7 @@ import type {
 import { TemplatePaperPreview } from '@/components/exam/TemplatePaperPreview'
 import { CoverEditor } from '@/components/exam/CoverEditor'
 import { PaperLayoutEditor } from '@/components/exam/PaperLayoutEditor'
+import { Separator } from '@/components/ui/separator'
 
 /** Radix Select 不接受空字符串 value; 用此 token 表示"不继承" */
 const NO_PARENT = '__none__'
@@ -557,7 +558,7 @@ export function Component() {
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">{t('examTemplate.sections')}</Label>
                   <span className="text-xs text-muted-foreground">
-                    {t('examTemplate.totalQuestions')}: {totals.questions} · {t('examTemplate.totalScore')}: {totals.score}
+                    {t('examTemplate.totalQuestions')}: {totals.questions}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('examTemplate.totalScore')}: {totals.score}
                   </span>
                 </div>
                 <div ref={listRef} className="space-y-1.5">
@@ -730,7 +731,7 @@ function TemplateCard({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{x.name}</p>
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            {x.subject?.length ? x.subject.join('、') : t('examTemplate.anySubject')} · {x.duration_min} {t('exam.minutes')}
+            {x.subject?.length ? x.subject.join('、') : t('examTemplate.anySubject')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{x.duration_min} {t('exam.minutes')}
           </p>
         </div>
         {builtin && (

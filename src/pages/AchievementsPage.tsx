@@ -15,6 +15,7 @@ import {
 } from '@/lib/achievements-demo'
 import { DEMO_TOPICS, getDemoTopic } from '@/lib/topics-demo'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 const CATEGORY_ICONS: Record<AchievementCategory, typeof Zap> = {
   刷题: Zap,
@@ -144,13 +145,13 @@ function BadgeWall() {
                   {unlocked ? (
                     <p className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
                       <CheckCircle2 className="h-3 w-3" />
-                      {item.unlockedAt} 解锁 · +{item.points}
+                      {item.unlockedAt} 解锁<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />+{item.points}
                     </p>
                   ) : (
                     <>
                       <Progress value={percent} className="h-1.5" />
                       <p className="text-[10px] tabular-nums text-muted-foreground">
-                        {item.progress} / {item.target} · 奖励 {item.points} 点
+                        {item.progress} / {item.target}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />奖励 {item.points} 点
                       </p>
                     </>
                   )}

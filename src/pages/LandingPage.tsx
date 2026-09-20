@@ -38,6 +38,7 @@ import {
   StatsMock,
 } from './LandingMocks'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 const containerCls = 'mx-auto w-full max-w-6xl px-4 sm:px-6'
 
@@ -351,7 +352,7 @@ export function LandingPage() {
                   </Button>
                 </div>
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  免下载 · 免费使用 · 手机与桌面端皆可 · 进度自动同步
+                  免下载<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />免费使用<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />手机与桌面端皆可<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />进度自动同步
                 </p>
               </div>
             ) : (
@@ -478,7 +479,7 @@ export function LandingPage() {
         </div>
         <div className="border-t">
           <div className={cn(containerCls, 'py-4 text-center text-xs text-muted-foreground')}>
-            © {new Date().getFullYear()} 刷题网 · Practice Web
+            © {new Date().getFullYear()} 刷题网<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />Practice Web
           </div>
         </div>
       </footer>

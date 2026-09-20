@@ -9,6 +9,7 @@ import {
 } from '@/lib/mentors-demo'
 import { getDemoTopic, topicIndexOf } from '@/lib/topics-demo'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 interface MentorCardProps {
   mentor: Mentor
@@ -53,10 +54,10 @@ export function MentorCard({ mentor, myStatus, onOpen }: MentorCardProps) {
               )}
             </div>
             <p className="truncate text-[11px] text-muted-foreground">
-              {mentor.school} · {mentor.major}
+              {mentor.school}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{mentor.major}
             </p>
             <p className="text-[11px] tabular-nums text-muted-foreground">
-              {mentor.enrollYear} · {mentor.score} · 最近活跃 {mentor.lastActive}
+              {mentor.enrollYear}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{mentor.score}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />最近活跃 {mentor.lastActive}
             </p>
           </div>
         </div>
@@ -72,7 +73,7 @@ export function MentorCard({ mentor, myStatus, onOpen }: MentorCardProps) {
                   topicAccent(topicIndexOf(topicId)),
                 )}
               >
-                {topic.short} · {topic.name}
+                {topic.short}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{topic.name}
               </span>
             )
           })}

@@ -18,6 +18,7 @@ import {
   startScheduledExam,
 } from '@/lib/exam-schedule'
 import type { ExamSchedule } from '@/types'
+import { Separator } from '@/components/ui/separator'
 
 /**
  * 每天"已提醒/已忽略"的预约集合, 持久化在 localStorage。
@@ -173,11 +174,11 @@ export function ExamScheduleWatcher() {
             <p className="text-base font-semibold">{s.name}</p>
             <p className="text-xs text-muted-foreground">
               {describeRun(s, t, zh)}
-              <span className="mx-1 text-border">·</span>
+              <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
               {s.template.name ?? ''}
               {s.template.duration_min ? (
                 <>
-                  <span className="mx-1 text-border">·</span>
+                  <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                   {s.template.duration_min} {t('exam.minutes')}
                 </>
               ) : null}

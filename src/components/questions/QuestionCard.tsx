@@ -18,6 +18,7 @@ import { CodingIdeView } from '@/components/practice/CodingIdeView'
 import { QuestionTags } from '@/components/questions/QuestionTags'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
 import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
+import { Separator } from '@/components/ui/separator'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
 
@@ -579,12 +580,12 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
                   )
                 ) : platformChecking ? (
                   <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="h-3 w-3 animate-spin" /> 平台判题 · 探测延迟…
+                    <Loader2 className="h-3 w-3 animate-spin" /> 平台判题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />探测延迟…
                   </span>
                 ) : platformLatency != null ? (
                   <span className={cn('inline-flex items-center gap-1', platformLatency < 200 ? 'text-emerald-600 dark:text-emerald-400' : platformLatency < 600 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400')}>
                     <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                    平台判题 · 延迟 {platformLatency}ms
+                    平台判题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />延迟 {platformLatency}ms
                   </span>
                 ) : (
                   <span className="text-red-600 dark:text-red-400">平台判题节点不可达</span>

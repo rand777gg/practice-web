@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RouteNodeStyle } from '@/types/learning-routes'
+import { Separator } from '@/components/ui/separator'
 
 export interface RoadmapQuestion {
   id: string
@@ -646,12 +647,12 @@ export function RoadmapCanvas({
         </span>
         {editor && (
           <span className="ml-auto text-[11px]">
-            右击空白处加阶段 · 右击节点改内容/样式 · 拖动节点摆位置
+            右击空白处加阶段<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />右击节点改内容/样式<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />拖动节点摆位置
           </span>
         )}
         {!editor && (
           <span className="ml-auto">
-            {stages.length} 个阶段 · {questionCount} 题
+            {stages.length} 个阶段<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{questionCount} 题
           </span>
         )}
       </div>

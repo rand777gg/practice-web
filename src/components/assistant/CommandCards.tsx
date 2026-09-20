@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { useAssistantStore } from '@/stores/assistant-store'
 import { ASSISTANT_COMMANDS, type ExportMeta, type SkillMeta } from '@/lib/assistant-commands'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 export function SkillCard({ meta }: { meta: SkillMeta }) {
   const send = useAssistantStore((s) => s.send)
@@ -43,7 +44,7 @@ export function ExportCard({ meta }: { meta: ExportMeta }) {
       <FileArchive className="h-3 w-3" />
       <span className="font-mono text-[10px]">{meta.filename}</span>
       <Badge variant="secondary" className="border-transparent text-[9px] font-normal">
-        {Math.max(1, Math.round(meta.bytes / 1024))} KB · {meta.turns} 条消息
+        {Math.max(1, Math.round(meta.bytes / 1024))} KB<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{meta.turns} 条消息
       </Badge>
       <span className="flex items-center gap-1"><Download className="h-3 w-3" />已存到浏览器下载目录</span>
     </div>

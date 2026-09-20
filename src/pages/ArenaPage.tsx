@@ -74,7 +74,7 @@ function MatchList() {
                   <span className="truncate text-xs">{match.paperName}</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground tabular-nums">
-                  {match.questionCount} 题 · {match.durationMin} 分钟 · {match.createdAt}
+                  {match.questionCount} 题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{match.durationMin} 分钟<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{match.createdAt}
                 </p>
               </div>
 
@@ -200,7 +200,7 @@ function InviteForm() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{paper.name}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {paper.source} · {paper.questionCount} 题 · {paper.durationMin} 分钟
+                      {paper.source}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{paper.questionCount} 题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{paper.durationMin} 分钟
                     </span>
                   </span>
                   {paper.id === activePaper.id && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
@@ -272,7 +272,7 @@ function InviteForm() {
             <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
               <div className="flex items-center gap-2 text-xs font-medium text-primary">
                 <CheckCheck className="h-3.5 w-3.5" />
-                邀请已生成 · {invite.paper.name}
+                邀请已生成<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{invite.paper.name}
               </div>
               <p className="font-mono text-lg font-semibold tracking-widest">{invite.code}</p>
               <div className="flex flex-wrap items-center gap-2">
@@ -293,7 +293,7 @@ function InviteForm() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">本场关联题目</CardTitle>
           <p className="text-[11px] text-muted-foreground">
-            {activePaper.name} · 共 {activePaper.questionCount} 题，以下为前 3 题预览
+            {activePaper.name}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />共 {activePaper.questionCount} 题，以下为前 3 题预览
           </p>
         </CardHeader>
         <CardContent className="space-y-2.5 pt-1">

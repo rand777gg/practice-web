@@ -25,6 +25,7 @@ import { useT } from '@/i18n/use-t'
 import { PlanCompletionChart } from '@/components/charts/PlanCompletionChart'
 import { SubjectAccuracyBar } from '@/components/charts/SubjectAccuracyBar'
 import { SubjectTypeRadar } from '@/components/charts/SubjectTypeRadar'
+import { Separator } from '@/components/ui/separator'
 
 const DailyGoalHeatmap = lazy(() => import('@/components/charts/DailyGoalHeatmap').then(m => ({ default: m.DailyGoalHeatmap })))
 const SubjectCategorySunburst = lazy(() => import('@/components/charts/SubjectCategorySunburst').then(m => ({ default: m.SubjectCategorySunburst })))
@@ -475,7 +476,7 @@ export function Component() {
                     )}
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {todayText} ·
+                    {todayText}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                     {goalName
                       ? daysLeft != null
                         ? `距${goalName}还有 ${daysLeft} 天,按计划推进、稳扎稳打`
@@ -561,7 +562,7 @@ export function Component() {
                   <Card className="border-0 shadow-none flex flex-col">
                     <CardHeader className="pb-1">
                       <CardTitle className="text-sm text-muted-foreground">科目正确率</CardTitle>
-                      <p className="text-xs text-muted-foreground/70">今日正确率 · 与昨日对比</p>
+                      <p className="text-xs text-muted-foreground/70">今日正确率<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />与昨日对比</p>
                     </CardHeader>
                     <CardContent className="flex-1">
                       <SubjectAccuracyTodayList />
@@ -627,7 +628,7 @@ export function Component() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm text-muted-foreground">题型能力雷达</CardTitle>
-                      <p className="text-xs text-muted-foreground/70">单选 · 多选 · 判断 · 填空 · 简答 正确率</p>
+                      <p className="text-xs text-muted-foreground/70">单选<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />多选<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />判断<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />填空<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />简答 正确率</p>
                     </CardHeader>
                     <CardContent>
                       <TypeRadarChart cells={chartData.heatmapData} />
@@ -637,7 +638,7 @@ export function Component() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-muted-foreground">各科正确率与趋势</CardTitle>
-                    <p className="text-xs text-muted-foreground/70">今日正确率 · 与昨日对比</p>
+                    <p className="text-xs text-muted-foreground/70">今日正确率<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />与昨日对比</p>
                   </CardHeader>
                   <CardContent>
                     <SubjectAccuracyTodayList />
@@ -750,7 +751,7 @@ export function Component() {
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm text-muted-foreground">2026 学习热力图</CardTitle>
-                        <p className="text-xs text-muted-foreground/70">每日答题量 · 目标 {chartData.dailyGoal} 题/天</p>
+                        <p className="text-xs text-muted-foreground/70">每日答题量<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />目标 {chartData.dailyGoal} 题/天</p>
                       </CardHeader>
                       <CardContent>
                         <YearHeatPreview data={chartData.dailyAnswers} />

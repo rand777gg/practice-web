@@ -16,6 +16,7 @@ import {
 import { useFocusStats } from '@/hooks/use-focus-stats'
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 export function FocusTimer() {
   const { t } = useT()
@@ -83,7 +84,7 @@ export function FocusTimer() {
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium">{t('focus.title')}</span>
         <span className="text-[10px] tabular-nums text-muted-foreground">
-          {t('plan.today')} {formatDuration(todaySec + elapsed)} · {t('focus.week')} {formatDuration(weekSec)}
+          {t('plan.today')} {formatDuration(todaySec + elapsed)}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('focus.week')} {formatDuration(weekSec)}
         </span>
       </div>
 
@@ -128,7 +129,7 @@ export function FocusTimer() {
 
       {roundDone && !running && (
         <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-          {t('focus.roundDone')} · {formatDuration(POMODORO_SEC)}
+          {t('focus.roundDone')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{formatDuration(POMODORO_SEC)}
         </p>
       )}
       {error && <p className="text-[11px] text-destructive">{t('focus.saveFailed')}</p>}

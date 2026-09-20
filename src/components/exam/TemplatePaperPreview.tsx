@@ -23,6 +23,7 @@ import { moveCoverCustomBlocks, setCoverFieldText, type ExamTemplateCover, type 
 import type { ExamTemplateSection } from '@/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PaperOutline } from './PaperOutline'
+import { Separator } from '@/components/ui/separator'
 
 const MM_PX = 96 / 25.4
 
@@ -375,7 +376,7 @@ export function TemplatePaperPreview({ title, meta, sections, cover, layout, onL
         {pick?.kind === 'coverBlock' && (
           <>
             <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
-              {t('examTemplate.direct.coverBlock')} · {pickCbIx + 1}
+              {t('examTemplate.direct.coverBlock')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{pickCbIx + 1}
             </span>
             {cbTarget && (
               <>

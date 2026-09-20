@@ -478,7 +478,7 @@ export function Component() {
           <h2 className="text-sm font-semibold">
             3. 我的题目
             <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-              {questions.length} 道 · 待上传 {pending.length} · 已上传 {uploaded.length}
+              {questions.length} 道<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />待上传 {pending.length}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />已上传 {uploaded.length}
             </span>
           </h2>
           <Button size="sm" variant="outline" className="ml-auto h-7" onClick={openNew}>

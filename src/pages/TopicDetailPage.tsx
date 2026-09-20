@@ -111,7 +111,7 @@ function TopicIntro({ topic }: { topic: DemoTopic }) {
           <CardTitle className="flex items-center justify-between text-sm">
             <span>章节知识框架</span>
             <span className="text-[11px] font-normal text-muted-foreground">
-              近五年平均合计 {totalScore} 分 · {topic.chapters.length} 章
+              近五年平均合计 {totalScore} 分<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{topic.chapters.length} 章
             </span>
           </CardTitle>
         </CardHeader>
@@ -166,7 +166,7 @@ function TopicQuestionBanks({ topic }: { topic: DemoTopic }) {
                   {bank.name}
                 </CardTitle>
                 <p className="text-[11px] text-muted-foreground">
-                  {bank.source} · {bank.yearRange}
+                  {bank.source}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{bank.yearRange}
                 </p>
               </CardHeader>
               <CardContent className="flex flex-1 flex-col gap-3 pt-1">
@@ -242,7 +242,7 @@ function TopicLiterature({ topic }: { topic: DemoTopic }) {
                 <span className="text-sm font-medium leading-snug">{item.title}</span>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                {item.authors} · {item.year} · {item.source}
+                {item.authors}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{item.year}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{item.source}
                 {item.cited > 0 && <span className="ml-2">被引 {item.cited.toLocaleString()}</span>}
               </p>
               <p className="flex gap-1.5 text-xs leading-relaxed text-foreground/80">
@@ -289,7 +289,7 @@ function TopicFootprints({ topic }: { topic: DemoTopic }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">{item.author}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    {item.school} · {item.year}
+                    {item.school}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{item.year}
                   </span>
                   <Badge variant="outline" className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
                     {item.score}

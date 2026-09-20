@@ -22,6 +22,7 @@ import {
 import { CN_NUM } from './paper-view-core'
 import type { CorrectAnswer } from '@/types'
 import type { PaperSection } from '@/lib/exam-compose'
+import { Separator } from '@/components/ui/separator'
 
 export type { PaperGrade } from './paper-view-parts'
 
@@ -432,7 +433,7 @@ export function PaperPreview({
               {t('paperPreview.totalHint').replace('{n}', String(total))}
               {gradedTotal && (
                 <span className="paper-no-print ml-2">
-                  · {t('paperReview.scoredHint')
+                 <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('paperReview.scoredHint')
                     .replace('{c}', String(gradedTotal.correct))
                     .replace('{n}', String(gradedTotal.done))}
                 </span>

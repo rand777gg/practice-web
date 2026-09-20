@@ -45,6 +45,7 @@ import type {
 } from '@/types'
 import type { PaperPick } from '@/lib/paper-layout'
 import type { ExamTemplateCover } from '@/lib/paper-cover'
+import { Separator } from '@/components/ui/separator'
 
 /** Radix Select 不接受空字符串 value; 用此 token 表示"不继承" */
 const NO_PARENT = '__none__'
@@ -461,7 +462,7 @@ export function ExamTemplateEditorDialog({
         <div className="flex items-center justify-between">
           <Label className="text-xs">{t('examTemplate.sections')}</Label>
           <span className="text-xs text-muted-foreground">
-            {t('examTemplate.totalQuestions')}: {totals.questions} · {t('examTemplate.totalScore')}: {totals.score}
+            {t('examTemplate.totalQuestions')}: {totals.questions}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('examTemplate.totalScore')}: {totals.score}
           </span>
         </div>
 

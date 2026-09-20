@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase"
 import { useAuthStore } from "@/stores/auth-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useChartPalette, CATEGORY_COLORS, withAlpha } from "@/lib/chart-theme"
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   planSubjects: string[]
@@ -191,7 +192,7 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
         <div className="flex flex-1 flex-col justify-center gap-1 px-6 pt-4 pb-3">
           <CardTitle className="text-sm">每日计划完成对比</CardTitle>
           <p className="text-xs text-muted-foreground/70">
-            时间轴自你作答的第一天起 · 默认展示全部范围,可拖动滑块或滚轮缩放查看
+            时间轴自你作答的第一天起<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />默认展示全部范围,可拖动滑块或滚轮缩放查看
           </p>
         </div>
         <div className="flex">

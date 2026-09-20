@@ -7,6 +7,7 @@ import { A3_SHEET, objectiveCells, textToIdDigits, type OfficialCardDraft } from
 import { buildCardAnswers, columnToAnswerIndex, sectionByNo, type EnglishCardBinding, type NumberMap } from '@/lib/exam-answer-sheet'
 import type { PaperSlot } from '@/lib/exam-paper'
 import type { CorrectAnswer } from '@/types'
+import { Separator } from '@/components/ui/separator'
 
 const MM_TO_PX = 96 / 25.4
 
@@ -99,7 +100,7 @@ export function ExamAnswerCardView({
     <div className={className}>
       <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <span className="tabular-nums">已涂 {painted} / {objectiveCount} 题</span>
-        <span>·</span>
+        <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
         <span>{binding.card.name}</span>
         {[...numberMap.warnings, ...binding.warnings].slice(0, 1).map((w) => (
           <span key={w} className="text-amber-600 dark:text-amber-500">· {w}</span>

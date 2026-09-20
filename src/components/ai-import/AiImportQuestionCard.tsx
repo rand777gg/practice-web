@@ -18,6 +18,7 @@ import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
 import { generateKeyPoints, hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
+import { Separator } from '@/components/ui/separator'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
 
@@ -121,7 +122,7 @@ export function AiImportQuestionCard({ question, index, selected, subject, categ
         {(subject || category) && (
           <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
             {subject && <span>{subject}</span>}
-            {subject && category && <span>·</span>}
+            {subject && category && <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />}
             {category && <span>{category}</span>}
           </span>
         )}

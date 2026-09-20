@@ -22,6 +22,7 @@ import {
 } from '@/lib/data-center-personal-demo'
 import { getDemoTopic, topicIndexOf } from '@/lib/topics-demo'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 function BarRow({
   label,
@@ -84,7 +85,7 @@ function PublicTab() {
             <Database className="h-4 w-4 text-primary" />
             题目数量披露
             <span className="text-[11px] font-normal text-muted-foreground">
-              合计 {totalQuestions.toLocaleString()} 题 · 客观题 {totalObjective.toLocaleString()} · 主观题 {totalSubjective.toLocaleString()}
+              合计 {totalQuestions.toLocaleString()} 题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />客观题 {totalObjective.toLocaleString()}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />主观题 {totalSubjective.toLocaleString()}
             </span>
           </CardTitle>
         </CardHeader>

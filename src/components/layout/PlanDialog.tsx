@@ -52,6 +52,7 @@ import {
 } from '@/hooks/use-plan-completion'
 import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
 import { useT } from '@/i18n/use-t'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   open: boolean
@@ -885,7 +886,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                         {' '}
                         <b className="text-blue-600 dark:text-blue-400">{previewPace}</b> {t('plan.perDay')}
                         <span className="text-muted-foreground">
-                          {' · '}{t('plan.remaining')} <b className="font-semibold text-foreground">{remaining}</b> {t('plan.questions')}
+                          <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} <b className="font-semibold text-foreground">{remaining}</b> {t('plan.questions')}
                           {previewDaysLeft > 0 && <> ÷ {previewDaysLeft} {t('plan.daysUnit')}</>}
                         </span>
                       </p>
@@ -899,7 +900,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                               <span className="truncate">{s}</span>
                               <span className="shrink-0 tabular-nums">
                                 {pace
-                                  ? <>{t('plan.roundPrefix')}{pace.index}{t('plan.roundsUnit')} · {t('plan.remaining')} {pace.remaining} {t('plan.questions')} ÷ {pace.days} {t('plan.daysUnit')} ≈ {pace.perDay} {t('plan.perDay')}</>
+                                  ? <>{t('plan.roundPrefix')}{pace.index}{t('plan.roundsUnit')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} {pace.remaining} {t('plan.questions')} ÷ {pace.days} {t('plan.daysUnit')} ≈ {pace.perDay} {t('plan.perDay')}</>
                                   : <>{t('plan.remaining')} {rem}{previewDaysLeft > 0 ? <> ÷ {previewDaysLeft} {t('plan.daysUnit')} ≈ {Math.ceil(rem / previewDaysLeft)} {t('plan.perDay')}</> : null}</>}
                               </span>
                             </li>
@@ -932,7 +933,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                         <b className="text-pink-600 dark:text-pink-400">{previewGoals.filter((g) => g.state !== 'done').reduce((sum, g) => sum + g.quantity, 0)}</b>
                         {' '}
                         {t('plan.questions')}
-                        {' · '}
+                        <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                         {t('plan.roundStateDone')} {previewGoals.filter((g) => g.state === 'done').length}/{previewGoals.length}
                         {t('plan.batchesUnit')}
                       </p>
@@ -944,7 +945,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
                             <li key={subject} className="flex justify-between gap-2">
                               <span className="truncate">{subject}</span>
                               <span className="shrink-0 tabular-nums">
-                                {list.length}{t('plan.batchesUnit')} · {t('plan.remaining')} {rest} {t('plan.questions')}
+                                {list.length}{t('plan.batchesUnit')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.remaining')} {rest} {t('plan.questions')}
                               </span>
                             </li>
                           )

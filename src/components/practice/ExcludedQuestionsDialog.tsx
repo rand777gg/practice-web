@@ -6,6 +6,7 @@ import { QuestionCard } from '@/components/questions/QuestionCard'
 import { RotateCcw, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Question, CorrectAnswer } from '@/types'
+import { Separator } from '@/components/ui/separator'
 
 interface ExcludedItem {
   question: Question
@@ -77,7 +78,7 @@ export function ExcludedQuestionsDialog({ userId, kp, open, onOpenChange, onRest
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-6xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>恢复已排除的题目 · {kp}</DialogTitle>
+          <DialogTitle>恢复已排除的题目<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{kp}</DialogTitle>
         </DialogHeader>
         <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
           <div className="w-72 shrink-0 flex flex-col min-h-0 rounded-lg border">

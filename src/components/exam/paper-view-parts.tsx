@@ -19,6 +19,7 @@ import {
   optionMark,
   type PaperGrade,
 } from './paper-view-core'
+import { Separator } from '@/components/ui/separator'
 
 export type { PaperGrade } from './paper-view-core'
 
@@ -592,7 +593,7 @@ export function QuestionBody({
       return (
         <div className="mt-2">
           <p className="mb-1 text-xs text-muted-foreground">
-            {t('paperReview.yourCode')} · {codingObj?.language ?? 'python'}
+            {t('paperReview.yourCode')}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{codingObj?.language ?? 'python'}
             {codingObj?.allPassed != null && (
               <span className={cn('ml-1 font-medium', codingObj.allPassed ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
                 {codingObj.allPassed ? t('paperReview.testsPassed') : t('paperReview.testsFailed')}

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { AssistantChat } from '@/components/assistant/AssistantChat'
 import { ConversationList } from '@/components/assistant/ConversationList'
 import { useAssistantStore } from '@/stores/assistant-store'
+import { Separator } from '@/components/ui/separator'
 
 export function AssistantPanel() {
   const open = useAssistantStore((s) => s.open)
@@ -53,7 +54,7 @@ export function AssistantPanel() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{view === 'history' ? '会话记录' : title}</p>
-            <p className="text-[10px] text-muted-foreground">备考搭子 · 基于平台资料作答</p>
+            <p className="text-[10px] text-muted-foreground">备考搭子<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />基于平台资料作答</p>
           </div>
           <Button
             size="icon" variant="ghost" className="h-7 w-7 shrink-0"

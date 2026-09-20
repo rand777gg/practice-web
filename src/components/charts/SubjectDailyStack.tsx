@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import echarts from '@/lib/echarts'
 import { useChartPalette, CATEGORY_COLORS } from '@/lib/chart-theme'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   data: { dates: string[]; subjects: string[]; data: Record<string, number>[] }
@@ -72,7 +73,7 @@ export function SubjectDailyStack({ data }: Props) {
   if (!option) {
     return (
       <div className="h-[300px] rounded-lg bg-muted/30 flex items-center justify-center text-sm text-muted-foreground/60">
-        暂无数据 · 先去刷几道题吧
+        暂无数据<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />先去刷几道题吧
       </div>
     )
   }

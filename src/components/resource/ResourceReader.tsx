@@ -14,6 +14,7 @@ import { HighlightText } from './HighlightText'
 import { ResourcePdfPane } from './ResourcePdfPane'
 import { ResourceSearchPanel } from './ResourceSearchPanel'
 import { ResourceToc } from './ResourceToc'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   documentId: string
@@ -237,7 +238,7 @@ export function ResourceReader({
           </Button>
 
           <span className="text-[10px] text-muted-foreground">
-            共 {pages.length || pdfTotalPages || 0} 页 · {blocks.length} 段 · 可定位 {located}
+            共 {pages.length || pdfTotalPages || 0} 页<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{blocks.length} 段<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />可定位 {located}
           </span>
           {viewMode === 'document' && (
             <span className="text-[10px] text-amber-600 dark:text-amber-400">整篇模式不参与定位</span>

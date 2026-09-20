@@ -111,7 +111,7 @@ function ExportTemplateTab({ source, tabLabel }: { source: QuestionSource; tabLa
             <Link to={`/export?source=${source}`} className="inline-flex items-center gap-0.5 text-primary hover:underline">
               直接去导出{source === 'wrong' ? '错题' : '收藏题'} <ArrowRight className="h-3 w-3" />
             </Link>
-            <span>·</span>
+            <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
             <Link to="/export/templates" className="inline-flex items-center gap-0.5 text-primary hover:underline">
               管理导出模板 <ArrowRight className="h-3 w-3" />
             </Link>
@@ -123,7 +123,7 @@ function ExportTemplateTab({ source, tabLabel }: { source: QuestionSource; tabLa
         <h2 className="text-sm font-semibold">
           可用模板
           <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-            {templates.length} 个 · 其中 {owned} 个是 {source === 'wrong' ? '错题' : '收藏'}专用
+            {templates.length} 个<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />其中 {owned} 个是 {source === 'wrong' ? '错题' : '收藏'}专用
           </span>
         </h2>
       </div>
@@ -269,12 +269,12 @@ function AnswerSheetCard({
       <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
         {template.objectiveCount > 0 && (
           <span>
-            客观 {template.objectiveCount} 题 · {template.optionCount} 选项 · {template.columns} 栏
+            客观 {template.objectiveCount} 题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{template.optionCount} 选项<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{template.columns} 栏
           </span>
         )}
         {template.subjectiveCount > 0 && (
           <span>
-            主观 {template.subjectiveCount} 题 · 每题 {template.linesPerQuestion} 行
+            主观 {template.subjectiveCount} 题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />每题 {template.linesPerQuestion} 行
           </span>
         )}
       </div>
@@ -297,7 +297,7 @@ function B4AnswerSheetCard({ active, onSelect }: { active: boolean; onSelect: ()
       )}
     >
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-sm font-semibold">自命题科目答题纸 · B4</span>
+        <span className="text-sm font-semibold">自命题科目答题纸<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />B4</span>
         <Badge className="border-transparent bg-emerald-100 text-[9px] font-normal text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
           按真件复刻
         </Badge>
@@ -439,7 +439,7 @@ function B4AnswerSheetPane({ info, onChange }: { info: B4AnswerSheetInfo; onChan
             <span className="text-[11px] font-normal text-muted-foreground">成品</span>
             <p className="flex h-8 items-center gap-1.5 text-[11px]">
               <Ruler className="h-3 w-3 text-muted-foreground" />
-              {pages} 页（含封面）· {faces.length} 个 B4 面 · {Math.ceil(faces.length / 2)} 张 B4 双面
+              {pages} 页（含封面）<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{faces.length} 个 B4 面<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{Math.ceil(faces.length / 2)} 张 B4 双面
             </p>
           </div>
         </CardContent>
@@ -450,7 +450,7 @@ function B4AnswerSheetPane({ info, onChange }: { info: B4AnswerSheetInfo; onChan
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Printer className="h-4 w-4 text-primary" />
-              预览 · 按真实 B4 尺寸
+              预览<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />按真实 B4 尺寸
             </CardTitle>
             <div className="flex items-center gap-1.5">
               <Button size="sm" variant={fit ? 'secondary' : 'outline'} className="h-7 text-[11px]" onClick={() => setFit(true)}>
@@ -561,7 +561,7 @@ function OfficialAnswerCardPane({ card }: { card: OfficialAnswerCard }) {
             <Ruler className="h-3 w-3" />
             A3 横向 420 × 294mm
           </span>
-          <span>{card.faces.length} 个面 · 共 {card.totalPages} 页</span>
+          <span>{card.faces.length} 个面<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />共 {card.totalPages} 页</span>
           <span>客观题 {totalQuestions} 题</span>
         </CardContent>
       </Card>
@@ -639,7 +639,7 @@ function OfficialAnswerCardPane({ card }: { card: OfficialAnswerCard }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Printer className="h-4 w-4 text-primary" />
-              预览 · 按真实 A3 尺寸
+              预览<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />按真实 A3 尺寸
             </CardTitle>
             <div className="flex flex-wrap items-center gap-1.5">
               <Button size="sm" variant={fit ? 'secondary' : 'outline'} className="h-7 text-[11px]" onClick={() => setFit(true)}>
@@ -730,7 +730,7 @@ function AnswerSheetTab() {
             <CardHeader className="pb-2">
               <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
                 <ClipboardList className="h-4 w-4 text-primary" />
-                预览 · {active.name}
+                预览<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{active.name}
               </CardTitle>
               <p className="text-[11px] text-muted-foreground">
                 按真实纸张呈现，白底直角；实际打印时按 {active.paperSize} 尺寸输出

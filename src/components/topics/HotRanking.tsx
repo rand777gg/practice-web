@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { RANKING_METRICS, metricValue, type DemoTopic, type RankingMetric } from '@/lib/topics-demo'
 import { topicAccent, topicSectionUrl } from './topic-sections'
+import { Separator } from '@/components/ui/separator'
 
 const rankTone = [
   'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300',
@@ -39,7 +40,7 @@ export function HotRanking({
           <Trophy className="h-4 w-4 text-primary" />
           热门专业课排行榜
           <span className="text-[11px] font-normal text-muted-foreground">
-            按{metricLabel}排序 · 每周一 06:00 更新
+            按{metricLabel}排序<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />每周一 06:00 更新
           </span>
           <Link
             to="/topics/ranking"

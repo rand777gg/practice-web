@@ -72,7 +72,7 @@ function TopicTag({ topicId }: { topicId: string }) {
         topicAccent(topicIndexOf(topicId)),
       )}
     >
-      {topic.short} · {topic.name}
+      {topic.short}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{topic.name}
     </span>
   )
 }
@@ -290,7 +290,7 @@ function MyMentorship({
                         </Badge>
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        {mentor.school} · {mentor.major} · 申请于 {application.createdAt}
+                        {mentor.school}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{mentor.major}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />申请于 {application.createdAt}
                       </p>
                       <p className="line-clamp-2 text-xs leading-relaxed text-foreground/80">{application.message}</p>
                       <p className="text-[11px] text-muted-foreground">我的目标：{application.goal}</p>
@@ -653,7 +653,7 @@ function MentorDialog({
             )}
           </DialogTitle>
           <DialogDescription>
-            {mentor.school} · {mentor.major} · {mentor.enrollYear} · {mentor.score}
+            {mentor.school}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{mentor.major}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{mentor.enrollYear}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{mentor.score}
           </DialogDescription>
         </DialogHeader>
 

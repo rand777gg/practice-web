@@ -12,6 +12,7 @@ import type { ExamSession, UserAnswer, Question, CorrectAnswer, ExamTemplate, Ex
 import { RotateCcw, Home, FileText, Columns2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   sessionId: string
@@ -192,7 +193,7 @@ export function ExamResultCard({ sessionId }: Props) {
                 <span className="text-2xl">分</span>
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                {t('exam.correct')} {correct} · {t('exam.wrong')} {wrong}
+                {t('exam.correct')} {correct}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('exam.wrong')} {wrong}
               </p>
             </div>
 

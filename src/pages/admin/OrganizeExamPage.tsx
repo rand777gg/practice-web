@@ -15,6 +15,7 @@ import { useT } from '@/i18n/use-t'
 import { useLangStore } from '@/stores/lang-store'
 import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 function StatusBadge({ status }: { status: CandidateSeat['status'] }) {
   const { t } = useT()
@@ -133,7 +134,7 @@ export function Component() {
                     <DropdownMenuItem key={v.id} onClick={() => pickVenue(v)}>
                       <div className="min-w-0">
                         <p className="truncate text-sm">{v.name}</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{v.subject} · {v.startTime}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{v.subject}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{v.startTime}</p>
                       </div>
                     </DropdownMenuItem>
                   ))}
@@ -141,7 +142,7 @@ export function Component() {
               </DropdownMenu>
             </div>
             <p className="text-xs text-muted-foreground">
-              {venue.subject} · {venue.startTime} · {venue.durationMin} {t('exam.minutes')}
+              {venue.subject}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{venue.startTime}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{venue.durationMin} {t('exam.minutes')}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ArrowLeft, RefreshCw, GitMerge, Copy, Check, X, TriangleAlert, Search, ChevronDown, Layers } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 interface DupQuestion {
   id: string
@@ -430,14 +431,14 @@ export function Component() {
 
       {(stats.merged > 0 || stats.kept > 0 || stats.notDup > 0) && (
         <div className="text-xs text-muted-foreground">
-          本页已处理：合并 {stats.merged} 组 · 保留 {stats.kept} 条 · 非重复 {stats.notDup} 对
+          本页已处理：合并 {stats.merged} 组<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />保留 {stats.kept} 条<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />非重复 {stats.notDup} 对
         </div>
       )}
 
       {result && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">
-            共 {result.total} 对候选：完全一致组 {exactGroups.length} 个（覆盖 {groupCovered} 条题）· 相似对 {fuzzyPairs.length}
+            共 {result.total} 对候选：完全一致组 {exactGroups.length} 个（覆盖 {groupCovered} 条题）<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />相似对 {fuzzyPairs.length}
           </span>
           {result.truncated && <span className="text-xs text-amber-600 dark:text-amber-400">（超出单次上限，仅展示前 {result.limit} 条，可调严阈值）</span>}
           <div className="flex gap-1 ml-auto">
@@ -538,7 +539,7 @@ export function Component() {
                   <Badge variant="outline" className="text-[11px]">文本相似</Badge>
                   <span className="text-xs tabular-nums text-muted-foreground">重复概率约 {Math.round(c.prob * 100)}%</span>
                   <span className="text-[11px] text-muted-foreground tabular-nums">
-                    题干相似 {Math.round(c.signals.sText * 100)}% · 选项重叠 {Math.round(c.signals.oOverlap * 100)}% · 答案{c.signals.aSame ? '一致' : '不同'}
+                    题干相似 {Math.round(c.signals.sText * 100)}%<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />选项重叠 {Math.round(c.signals.oOverlap * 100)}%<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />答案{c.signals.aSame ? '一致' : '不同'}
                   </span>
                   <div className="ml-auto flex items-center gap-1.5">
                     <Button size="sm" variant="outline" disabled={acting} onClick={() => reviewPair(c, 'keep')} title="这两题确实都需要，保留两条且不再提示">

@@ -267,7 +267,7 @@ export function HeaderPlanMenu() {
           {subjectBars.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground">
-                {t("plan.longTerm")} · {t("plan.bySchedule")}
+                {t("plan.longTerm")}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t("plan.bySchedule")}
               </p>
               {subjectBars.map((s) => {
                 const perDay = s.perDay
@@ -280,7 +280,7 @@ export function HeaderPlanMenu() {
                     <div className="flex items-baseline justify-between gap-2 text-[11px]">
                       <span className="min-w-0 truncate text-muted-foreground">
                         <span className="text-foreground">{s.subject}</span>
-                        {' · '}{pace}
+                        <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{pace}
                       </span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {s.doneToday}/{perDay}{t("plan.questions")}
@@ -299,7 +299,7 @@ export function HeaderPlanMenu() {
           {plan.reviewCount > 0 && (
             <p className="text-[11px] text-muted-foreground">
               {t("plan.today")} {plan.todayDone}/{plan.dailyGoal} {t("plan.questions")}
-              {' · '}{t("plan.reviewIncluded")} <b className="text-pink-500 dark:text-pink-400">{plan.reviewCount}</b> {t("plan.questions")}
+              <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t("plan.reviewIncluded")} <b className="text-pink-500 dark:text-pink-400">{plan.reviewCount}</b> {t("plan.questions")}
             </p>
           )}
           <Separator />

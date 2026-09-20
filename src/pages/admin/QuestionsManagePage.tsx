@@ -35,6 +35,7 @@ import { KpExplanationManagerDialog } from '@/components/practice/KpExplanationM
 import { QuestionList } from '@/components/questions/QuestionList'
 import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen, GitMerge, GraduationCap, Bot } from 'lucide-react'
 import { useT } from '@/i18n/use-t'
+import { Separator } from '@/components/ui/separator'
 
 export function Component() {
   const { t } = useT()
@@ -298,7 +299,7 @@ export function Component() {
 <p className="text-sm text-muted-foreground">
   {count} {t('questions.total')}
   {/* 卷面题型一条记录含多个小题，只报记录数会让人以为题少了 */}
-  {itemCount > count && <> · {itemCount} {t('questions.itemUnit')}</>}
+  {itemCount > count && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{itemCount} {t('questions.itemUnit')}</>}
 </p>
         </div>
         <div className="flex gap-2" ref={btnRowRef}>

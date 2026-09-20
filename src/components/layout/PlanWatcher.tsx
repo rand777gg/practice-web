@@ -27,6 +27,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useT } from '@/i18n/use-t'
+import { Separator } from '@/components/ui/separator'
 
 interface CompletedBatch {
   kind: 'round' | 'goal'
@@ -267,9 +268,9 @@ export function PlanWatcher() {
           <div className="space-y-2 text-xs">
             <p>
               <b className="font-semibold">{ask.subject}</b>
-              {' · '}
+              <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
               {t('plan.roundPrefix')}{ask.index}{ask.kind === 'goal' ? t('plan.batchesUnit') : t('plan.roundsUnit')}
-              {' · '}
+              <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
               <span className="text-emerald-600 dark:text-emerald-400">
                 {t('plan.completedAt')} {ask.doneAt}
               </span>

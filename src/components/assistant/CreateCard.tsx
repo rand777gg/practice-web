@@ -34,6 +34,7 @@ import type { CreateDraftMeta } from '@/lib/assistant-commands'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 interface Doc { id: string; title: string }
 
@@ -205,7 +206,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         <span>{done ? `已入库 ${meta.insertedCount ?? meta.questions.length} 道题` : '已丢弃，没有写进题库'}</span>
         {done && meta.spec.subject && (
           <span className="text-muted-foreground">
-            · {meta.spec.subject}{meta.spec.categories[0] ? ` / ${meta.spec.categories[0]}` : ''}
+           <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{meta.spec.subject}{meta.spec.categories[0] ? ` / ${meta.spec.categories[0]}` : ''}
             {meta.spec.markVerified ? ' · 已标为已核对' : ''}
           </span>
         )}
@@ -234,7 +235,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         <div className="space-y-2.5 rounded-lg border border-primary/25 bg-background/70 p-2.5">
         <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
           <Sparkles className="h-2.5 w-2.5" />
-          第 1 步 · 确认参数（还没出题）
+          第 1 步<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />确认参数（还没出题）
         </p>
 
         {meta.understanding && (
@@ -480,7 +481,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
     <div className="space-y-2 rounded-lg border border-primary/25 bg-background/70 p-2.5">
       <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
         <Sparkles className="h-2.5 w-2.5" />
-        第 2 步 · 确认题目（共 {meta.questions.length} 道，入库前还没写进题库）
+        第 2 步<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />确认题目（共 {meta.questions.length} 道，入库前还没写进题库）
       </p>
 
       <div className="flex flex-wrap gap-1 text-[10px]">
