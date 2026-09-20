@@ -17,7 +17,7 @@ import { hasAiConfig, getAiConfig } from '@/lib/ai/config'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { loadDocumentSections } from '@/lib/resource-library'
 import {
-  DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, normalizeSpec, retrievalSources,
+  DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, formatKeyPoints, normalizeSpec, retrievalSources, splitKeyPoints,
   type CreateSelection, type CreateSource, type CreateSpec, type PlatformSource,
 } from '@/lib/create-spec'
 import type { ParsedQuestion } from '@/lib/ai/types'
@@ -28,8 +28,8 @@ export type {
 } from '@/lib/create-spec'
 export {
   COUNT_DEFAULT, COUNT_MAX, DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, PLATFORM_SOURCE_LABEL,
-  SOURCE_LABEL, SPREAD_LABEL, describeSpec, normalizeSelection, normalizeSpec, retrievalSources,
-  selectionSummary,
+  SOURCE_LABEL, SPREAD_LABEL, describeSpec, formatKeyPoints, normalizeKeyPoints, normalizeSelection,
+  normalizeSpec, retrievalSources, selectionSummary, splitKeyPoints,
 } from '@/lib/create-spec'
 
 const TYPE_VALUES = new Set(QUESTION_TYPE_OPTIONS.map((o) => o.value as string))
@@ -274,11 +274,30 @@ function extraInstructions(spec: CreateSpec, existing: string[]): string {
     '补充要求（优先级高于上面的默认设定）：',
     `- 出题数量：正好 ${spec.count} 道。`,
     `- 题型只能是：${spec.questionTypes.map((t) => QUESTION_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t).join('、')}。`,
-    `- 每题都必须填写 key_points（3-5 个核心知识点，逗号分隔，每项不超过 10 个字）—— 平台的练习进度按知识点统计，这一项为空这道题就不进任何知识点统计。`,
-    spec.spread === 'focus'
-      ? '- 这几道题全部围绕同一个知识点，从不同角度反复考它。'
-      : `- 这几道题必须分散在 ${spec.count} 个不同的知识点上，不要出成同一道题的换皮。`,
   ]
+
+  // 知识点: 有清单就只许从清单里原样照抄, 没清单就明确让它别编。
+  // 平台的练习进度、知识点筛选、知识点解读全按这套带编号的编码走; 模型自己写的"死锁""并发"
+  // 存进去看着像模像样, 但跟任何筛选都对不上 —— 还不如空着: 空着至少能被"缺知识点"查出来。
+  if (spec.keyPoints.length > 0) {
+    lines.push(
+      '- 每题必须带 key_points，而且**只能**从下面这几个平台知识点里原样照抄（含编号前缀，一个字都不要改）：',
+      ...spec.keyPoints.map((kp) => `  · ${kp}`),
+      spec.spread === 'focus'
+        ? '  这几道题都挂在同一个知识点上，就选最贴切的那一个。'
+        : '  请把这几道题分散到不同的知识点上，每题挑一个最贴切的。',
+      '- 这个清单之外的内容一律不要写进 key_points。',
+    )
+  } else {
+    lines.push(
+      '- key_points 一律留空：这个平台的知识点是一套带编号的受控词表（形如 A01-xxx），',
+      '  只能人工从词表里挑；模型自己编的词存进去跟统计和筛选都对不上，所以宁可不写。',
+    )
+  }
+
+  lines.push(spec.spread === 'focus'
+    ? '- 这几道题全部围绕同一个知识点，从不同角度反复考它。'
+    : '- 这几道题不要出成同一道题的换皮，考点要拉开。')
 
   if (existing.length > 0) {
     lines.push(
@@ -370,13 +389,18 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
       topicDescription: s.prompt,
     }, system)).questions
 
-  // 页码回填只认我们真的给出去过的页码, 模型自己编的一律清掉
+  // 两处回填都只认我们真的给出过的东西, 模型自己编的一律清掉:
+  //   页码 —— 只留材料里出现过的页
+  //   知识点 —— 只留我们列给它的那几个编码, 其余(包括它自己编的词)全部丢掉
+  const allowedKeyPoints = new Set(s.keyPoints)
   const cleaned = questions.slice(0, s.count).map((q) => {
-    if (!grounded || !q.source_page) return q
+    const validKp = splitKeyPoints(q.key_points).filter((kp) => allowedKeyPoints.has(kp))
+    const next: ParsedQuestion = { ...q, key_points: formatKeyPoints(validKp) ?? undefined }
+    if (!grounded || !q.source_page) return next
     const hit = /\d+/.exec(q.source_page)
-    if (!hit) return { ...q, source_page: undefined }
+    if (!hit) return { ...next, source_page: undefined }
     const page = Number(hit[0])
-    return allowedPages.has(page) ? q : { ...q, source_page: undefined }
+    return allowedPages.has(page) ? next : { ...next, source_page: undefined }
   })
 
   return { questions: cleaned, grounded, sources, materialNote }
@@ -404,7 +428,9 @@ export function questionRowFromParsed(q: ParsedQuestion, meta: QuestionRowMeta):
     categories: meta.categories,
     subject: meta.subject,
     analysis: q.analysis?.trim() || null,
-    key_points: q.key_points?.trim() || null,
+    // 分隔符统一成 ", ": 平台 get_question_meta 是按 `string_to_array(key_points, ', ')` 拆的,
+    // 用别的写法它拆不开, 一整串会被当成一个知识点。导入页和对话出的题都走这里, 一起收口。
+    key_points: formatKeyPoints(splitKeyPoints(q.key_points)),
     answer_explanation: q.answer_explanation?.trim() || null,
     seq_number: null,
     import_mode: meta.importMode,

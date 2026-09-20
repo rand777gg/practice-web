@@ -63,6 +63,15 @@ export interface CreateSpec {
   questionTypes: QuestionType[]
   subject: string | null
   categories: string[]
+  /**
+   * 要考的知识点(选填)。
+   *
+   * 这一项必须是**平台已有的知识点编码**(形如 `A01-医学的演变、传播与交融`), 不能是模型自己
+   * 写的自由文本: 平台的练习进度、知识点筛选、知识点解读都按这套编码走, 而 `get_question_meta`
+   * 也是从 questions.key_points 里按学科聚合出这套编码的。模型编出来的"死锁/并发"这类词
+   * 存进去看起来没问题, 但它跟任何一套筛选都对不上 —— 等于白写。
+   */
+  keyPoints: string[]
   /** 出题前先捞出题库里最相似的几道喂给模型, 让它避开已经出过的 */
   avoidDuplicates: boolean
   spread: CreateSpread
@@ -83,6 +92,7 @@ export const DEFAULT_CREATE_SPEC: CreateSpec = {
   questionTypes: ['single_choice'],
   subject: null,
   categories: [],
+  keyPoints: [],
   avoidDuplicates: true,
   spread: 'spread',
   markVerified: false,
@@ -178,8 +188,47 @@ export function normalizeSpec(input: Partial<CreateSpec>): CreateSpec {
     count,
     questionTypes: types.length > 0 ? types : DEFAULT_CREATE_SPEC.questionTypes,
     categories: (input.categories ?? []).filter((c) => typeof c === 'string' && c.trim()).slice(0, 3),
+    keyPoints: normalizeKeyPoints(input.keyPoints),
     prompt: (input.prompt ?? '').trim(),
   }
+}
+
+/**
+ * 知识点收口: 去空、去重、限量。
+ *
+ * 不改写内容 —— 编码是平台定的(`A01-医学的演变、传播与交融` 里的顿号也是编码的一部分),
+ * 这里只做清理。上限 6 是因为一道题挂十几个知识点等于没挂。
+ */
+export function normalizeKeyPoints(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue
+    const kp = raw.trim()
+    if (!kp || seen.has(kp)) continue
+    seen.add(kp)
+    out.push(kp)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+/**
+ * 知识点的存储分隔符: `", "`(逗号 + 空格)。
+ *
+ * 不是随便挑的 —— `get_question_meta` 里是 `string_to_array(key_points, ', ')`, 用别的写法
+ * 它拆不开, 一整串会被当成**一个**知识点。所以入库前统一。
+ * 只拆逗号/分号: 知识点名字里本来就带顿号(`A01-医学的演变、传播与交融`), 拆顿号会把它劈断。
+ */
+export function formatKeyPoints(list: string[]): string | null {
+  const clean = normalizeKeyPoints(list)
+  return clean.length > 0 ? clean.join(', ') : null
+}
+
+export function splitKeyPoints(value: string | null | undefined): string[] {
+  if (!value) return []
+  return normalizeKeyPoints(value.split(/[,，;；]+/))
 }
 
 /** 检索时用的来源清单: 只有跨来源那一档才需要传 */

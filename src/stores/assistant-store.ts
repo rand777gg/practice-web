@@ -28,6 +28,7 @@ import {
 } from '@/lib/assistant-commands'
 import type { AssistantMode, AssistantReply, LittleQEmotion } from '@/lib/assistant-demo'
 import type { AssistantTurn } from '@/lib/ai/assistant'
+import type { ParsedQuestion } from '@/lib/ai/types'
 import type { SkillId } from '@/lib/skills-catalog'
 
 export interface ChatMessage {
@@ -179,7 +180,7 @@ interface AssistantState {
   startCreateGeneration: (messageId: number, spec: CreateSpec) => Promise<void>
   /** 回到参数确认那一步重来 */
   reopenCreateSpec: (messageId: number) => Promise<void>
-  confirmCreateDraft: (messageId: number) => Promise<number>
+  confirmCreateDraft: (messageId: number, questions?: ParsedQuestion[]) => Promise<number>
   discardCreateDraft: (messageId: number) => Promise<void>
 }
 
@@ -629,12 +630,19 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       await writeMeta(messageId, { ...meta, status: 'spec', questions: [], sources: [], materialNote: null })
     },
 
-    confirmCreateDraft: async (messageId) => {
+    confirmCreateDraft: async (messageId, edited) => {
       const meta = get().messages.find((m) => m.id === messageId)?.meta
       if (!meta || meta.kind !== 'create-draft' || meta.status !== 'review') return 0
-      const { spec, questions } = meta
+      const { spec } = meta
+      // 用户在卡片上改过知识点就按改后的走, 并且把改后的写回 meta ——
+      // 否则入库的是带改动的题, 卡片上显示的却还是出题时那份, 刷新后会对不上
+      const questions = edited ?? meta.questions
       if (!spec.subject) {
         set({ error: '先选学科再入库' })
+        return 0
+      }
+      if (questions.length === 0) {
+        set({ error: '没有可入库的题目' })
         return 0
       }
       try {
@@ -644,7 +652,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
           importMode: 'littleq',
           verified: spec.markVerified,
         })
-        await writeMeta(messageId, { ...meta, status: 'inserted', insertedCount: inserted })
+        await writeMeta(messageId, { ...meta, questions, status: 'inserted', insertedCount: inserted })
         return inserted
       } catch (err) {
         set({ error: err instanceof Error ? err.message : String(err) })

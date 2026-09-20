@@ -18,9 +18,11 @@ import {
   DEFAULT_CREATE_SPEC,
   PLATFORM_SOURCES,
   describeSpec,
+  formatKeyPoints,
   normalizeSpec,
   retrievalSources,
   selectionSummary,
+  splitKeyPoints,
 } from '../src/lib/create-spec.ts'
 import { sectionsFromToc } from '../src/lib/resource-blocks.ts'
 
@@ -190,6 +192,27 @@ check('标题去掉 /export 前缀', conversationTitleFrom('/export 顺便导出
 check('只有指令名时保留指令名(否则标题就空了)', conversationTitleFrom('/export') === '/export')
 check('普通消息不受影响', conversationTitleFrom('死锁的四个必要条件是什么？') === '死锁的四个必要条件是什么？')
 check('过长的标题会截断', conversationTitleFrom(`/create ${'题'.repeat(40)}`).length === 25)
+
+// ── 知识点: 平台是一套带编号的受控词表, 不能由模型自由发挥 ──
+check('知识点默认空着(不编)',
+  eq(normalizeSpec({}).keyPoints, []))
+check('知识点去掉空串与重复',
+  eq(normalizeSpec({ keyPoints: ['A01-甲', '', '  ', 'A01-甲', 'B02-乙'] }).keyPoints, ['A01-甲', 'B02-乙']))
+check('知识点最多留 6 个(挂十几个等于没挂)',
+  normalizeSpec({ keyPoints: Array.from({ length: 10 }, (_, i) => `K${i}`) }).keyPoints.length === 6)
+check('非字符串的知识点被丢掉',
+  eq(normalizeSpec({ keyPoints: [1, null, 'A01-甲'] }).keyPoints, ['A01-甲']))
+check('知识点里的顿号不会被当成分隔符(编码本身带顿号)',
+  eq(normalizeSpec({ keyPoints: ['A01-医学的演变、传播与交融'] }).keyPoints, ['A01-医学的演变、传播与交融']))
+check('存库用 ", "(平台 get_question_meta 就是按这个拆的)',
+  formatKeyPoints(['A01-甲', 'B02-乙']) === 'A01-甲, B02-乙')
+check('空列表存库是 null 而不是空串', formatKeyPoints([]) === null)
+check('从库里读回来能拆开', eq(splitKeyPoints('A01-甲, B02-乙'), ['A01-甲', 'B02-乙']))
+check('半角/全角逗号与分号都能拆',
+  eq(splitKeyPoints('A01-甲，B02-乙；C03-丙'), ['A01-甲', 'B02-乙', 'C03-丙']))
+check('单个知识点原样读回', eq(splitKeyPoints('A01-医学的演变、传播与交融'), ['A01-医学的演变、传播与交融']))
+check('null / undefined 读回来是空数组',
+  eq(splitKeyPoints(null), []) && eq(splitKeyPoints(undefined), []))
 
 // ── normalizeMeta: 旧版本存下的卡片不能把页面打崩 ──
 // 这就是 79a0f0d 那一版写进库里的形状: 没有 sources, scope 是字符串, 还多一个 difficulty。

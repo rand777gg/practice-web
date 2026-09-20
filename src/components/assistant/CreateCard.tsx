@@ -8,7 +8,7 @@
  * 时间。所以宁可多一次确认 —— 而且确认的内容(学科/分类/资料)恰恰是模型最猜不准、只有用户
  * 知道的那部分。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Info, Library, RotateCcw, Search,
@@ -21,12 +21,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { ContentPickerDialog } from '@/components/assistant/ContentPickerDialog'
+import { KeyPointChips, KeyPointPicker } from '@/components/assistant/KeyPointPicker'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useAssistantStore } from '@/stores/assistant-store'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import {
   COUNT_MAX, PLATFORM_SOURCES, PLATFORM_SOURCE_LABEL, SOURCE_LABEL, SPREAD_LABEL, describeSpec,
-  normalizeSpec, selectionSummary, type CreateSource, type CreateSpec,
+  formatKeyPoints, normalizeSpec, selectionSummary, splitKeyPoints, type CreateSource, type CreateSpec,
   type CreateSpread,
 } from '@/lib/assistant-create'
 import type { CreateDraftMeta } from '@/lib/assistant-commands'
@@ -69,8 +70,14 @@ function answerText(q: ParsedQuestion): string {
   return String(a)
 }
 
-function QuestionRow({ q, index }: { q: ParsedQuestion; index: number }) {
+function QuestionRow({ q, index, subject, onKeyPoints }: {
+  q: ParsedQuestion
+  index: number
+  subject: string | null
+  onKeyPoints: (next: string[]) => void
+}) {
   const [open, setOpen] = useState(false)
+  const kps = splitKeyPoints(q.key_points)
   return (
     <div className="rounded-md border bg-background/60">
       <button
@@ -96,8 +103,14 @@ function QuestionRow({ q, index }: { q: ParsedQuestion; index: number }) {
           )}
           <p><span className="text-foreground">答案：</span>{answerText(q)}</p>
           {q.analysis && <p><span className="text-foreground">解析：</span>{q.analysis}</p>}
-          {q.key_points && <p><span className="text-foreground">知识点：</span>{q.key_points}</p>}
           {q.source_page && <p><span className="text-foreground">出处：</span>{q.source_page}</p>}
+
+          {/* 知识点在这儿可以自己挑 —— 它是一套带编号的受控词表, 不该由模型写死 */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-foreground">知识点：</span>
+            <KeyPointPicker subject={subject} value={kps} onChange={onKeyPoints} compact />
+            {kps.length === 0 && <span className="text-amber-600 dark:text-amber-400">未设置</span>}
+          </div>
         </div>
       )}
     </div>
@@ -156,6 +169,23 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
   const [busy, setBusy] = useState(false)
   const [showAllQuestions, setShowAllQuestions] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  /** 第 2 步里用户对每道题知识点的改动; 没动过的题不在这个表里 */
+  const [kpEdits, setKpEdits] = useState<Record<number, string[]>>({})
+  const [batchKp, setBatchKp] = useState<string[]>([])
+
+  /**
+   * 知识点的最终值 = 出题结果 + 用户在卡片上的改动。
+   * 改动只留在本地 state, 入库那一刻才合并 —— 点一下写一次库既吵又没必要。
+   */
+  const questions = useMemo(
+    () => meta.questions.map((q, i) => (
+      kpEdits[i] ? { ...q, key_points: formatKeyPoints(kpEdits[i]) ?? undefined } : q
+    )),
+    [meta.questions, kpEdits],
+  )
+  const setQuestionKeyPoints = (index: number, next: string[]) => {
+    setKpEdits((prev) => ({ ...prev, [index]: next }))
+  }
 
   useEffect(() => {
     if (spec.subject) void updateFilteredCategories(spec.subject)
@@ -309,6 +339,22 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
               className="h-7 text-xs"
             />
           </Field>
+          <Field label="知识点" hint="选填，从平台已有的知识点里挑">
+            <div className="space-y-1">
+              <KeyPointPicker
+                subject={spec.subject}
+                value={spec.keyPoints}
+                onChange={(next) => patch({ keyPoints: next })}
+                disabled={!spec.subject}
+              />
+              <KeyPointChips value={spec.keyPoints} onChange={(next) => patch({ keyPoints: next })} />
+              {spec.keyPoints.length === 0 && (
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  不选的话，出的题不带知识点，也就进不了按知识点统计的练习进度。
+                </p>
+              )}
+            </div>
+          </Field>
         </div>
 
         <Field label="题型" hint={`已选 ${selectedTypes.length} 种`}>
@@ -429,7 +475,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
   }
 
   // ── ② 出题结果确认 ──
-  const shown = showAllQuestions ? meta.questions : meta.questions.slice(0, 2)
+  const shown = showAllQuestions ? questions : questions.slice(0, 2)
   return (
     <div className="space-y-2 rounded-lg border border-primary/25 bg-background/70 p-2.5">
       <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
@@ -488,7 +534,36 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
       )}
 
       <div className="space-y-1">
-        {shown.map((q, i) => <QuestionRow key={i} q={q} index={i} />)}
+        {shown.map((q, i) => (
+          <QuestionRow
+            key={i}
+            q={q}
+            index={i}
+            subject={meta.spec.subject}
+            onKeyPoints={(next) => setQuestionKeyPoints(i, next)}
+          />
+        ))}
+      </div>
+
+      
+
+      {/* 知识点是一套受控词表, 这里给一个"一次改完"的口子 —— 10 道题逐个点太累 */}      <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1.5">
+        <span className="text-[10px] text-muted-foreground">全部设为</span>
+        <KeyPointPicker subject={meta.spec.subject} value={batchKp} onChange={setBatchKp} compact />
+        <Button
+          size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]"
+          disabled={batchKp.length === 0}
+          onClick={() => {
+            const next: Record<number, string[]> = {}
+            for (let i = 0; i < questions.length; i++) next[i] = batchKp
+            setKpEdits(next)
+          }}
+        >
+          应用到全部 {questions.length} 道
+        </Button>
+        <span className="text-[10px] text-muted-foreground">
+          或者展开每道题单独改（现在有 {questions.filter((q) => !q.key_points?.trim()).length} 道没知识点）
+        </span>
       </div>
 
       {meta.questions.length > 2 && (
@@ -508,7 +583,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
           disabled={busy || sending}
           onClick={() => {
             setBusy(true)
-            void confirmDraft(messageId).finally(() => setBusy(false))
+            void confirmDraft(messageId, questions).finally(() => setBusy(false))
           }}
         >
           {busy ? <Spinner className="h-3 w-3" /> : <Library className="h-3 w-3" />}
