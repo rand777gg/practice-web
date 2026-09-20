@@ -139,7 +139,7 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
             </div>
             {autoSlices.length > 1 && (
               <p className="text-[10px] text-muted-foreground">
-                共 {totalPages} 页, 超过 MinerU 单次 {MINERU_PAGE_LIMIT} 页上限, 将自动切成 {autoSlices.length} 卷依次解析：
+                共 {totalPages} 页, 超过 MinerU 单次 {MINERU_PAGE_LIMIT} 页上限, 将自动切成 {autoSlices.length} 卷并行解析：
                 {autoSlices.map((s) => sliceToRange(s)).join('、')}。
                 全篇仍是一篇文献, 页码连续。解析期间请保持此页面打开。
               </p>

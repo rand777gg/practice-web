@@ -23,6 +23,8 @@ const ALLOWED_FILE_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, "app
 // Multipart uploads buffer the whole file in function memory, so keep the cap
 // low; large videos must use the presigned "upload-url" path (direct to R2).
 const MAX_SIZE = 200 * 1024 * 1024
+// 批量签名的条数上限。一本 600 页的书一次要签 600 个键, 响应体约 300KB, 留够余量。
+const MAX_PRESIGN_BATCH = 800
 
 const s3 = new S3Client({
   region: "auto",
@@ -88,6 +90,26 @@ Deno.serve(async (req) => {
 
       const signedUrl = await getSignedUrl(s3, new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: ct }), { expiresIn: 300 })
       return corsResponse(JSON.stringify({ url: signedUrl, publicUrl: `https://${R2_PUBLIC_HOST}/${key}`, key }), { headers: { "Content-Type": "application/json" } })
+    }
+
+    // 一次签一批。签名是本地 HMAC, 不产生网络请求, 所以批量签名几乎不花时间; 而前端渲染页图时
+    // 每页都来一次函数调用的话, 几百页就是几百次往返, 光排队等待就比渲染本身还久。
+    if (action === "upload-urls") {
+      const items = (body.items as { key?: string; contentType?: string }[]) || []
+      if (!items.length) return corsResponse(JSON.stringify({ error: "Missing items" }), { status: 400, headers: { "Content-Type": "application/json" } })
+      if (items.length > MAX_PRESIGN_BATCH) {
+        return corsResponse(JSON.stringify({ error: `Too many items: ${items.length} > ${MAX_PRESIGN_BATCH}` }), { status: 400, headers: { "Content-Type": "application/json" } })
+      }
+
+      // 有效期给到 1 小时而不是单签那样的 5 分钟: 这一批是在开始渲染之前一次性签好的, 之后每页
+      // 渲染完才 PUT 上来。几百页渲染 + 上传要跑几分钟, 5 分钟会让排在后面的页全部 403。
+      const urls = await Promise.all(items.map(async (item) => {
+        const key = item.key as string
+        const ct = item.contentType || "application/octet-stream"
+        const signedUrl = await getSignedUrl(s3, new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: ct }), { expiresIn: 3600 })
+        return { key, url: signedUrl, publicUrl: `https://${R2_PUBLIC_HOST}/${key}` }
+      }))
+      return corsResponse(JSON.stringify({ urls }), { headers: { "Content-Type": "application/json" } })
     }
 
     if (action === "delete") {

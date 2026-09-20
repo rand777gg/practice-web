@@ -239,13 +239,16 @@ export class MinerUClient {
 
   // Batch URL-based precision parsing
   async createBatchTask(
-    files: { url: string; name: string; dataId?: string; pageRanges?: string; isOcr?: boolean }[],
+    files: { url: string; dataId: string; name?: string; pageRanges?: string; isOcr?: boolean }[],
     options: MinerUPrecisionOptions,
   ): Promise<string> {
     const body: Record<string, unknown> = {
+      // data_id 是认领结果的唯一可靠依据: 响应里的 file_name 是从 URL 末段推出来的, 同一份 PDF
+      // 按 page_ranges 拆成多卷时每卷的 URL 一模一样, file_name 也就一样。
+      // name 是文档没列、但多文件批量一直带着的字段, 留着不动 —— 真被忽略也只是维持现状。
       files: files.map(f => {
-        const item: Record<string, unknown> = { url: f.url, name: f.name }
-        if (f.dataId) item.data_id = f.dataId
+        const item: Record<string, unknown> = { url: f.url, data_id: f.dataId }
+        if (f.name) item.name = f.name
         if (f.pageRanges) item.page_ranges = f.pageRanges
         if (f.isOcr !== undefined) item.is_ocr = f.isOcr
         return item
@@ -320,8 +323,10 @@ export class MinerUClient {
 
     onProgress?.('正在创建批量精准解析任务...')
     const batchId = await this.createBatchTask(
-      uploads.map(u => ({
+      uploads.map((u, i) => ({
         url: u.url,
+        // data_id 只能用字母数字和 _-., 文件名里的空格和括号会被接口拒掉, 所以按序号生成
+        dataId: `f${i}`,
         name: u.fileName,
         pageRanges: options.pageRanges,
         isOcr: options.isOcr,

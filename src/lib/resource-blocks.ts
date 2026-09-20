@@ -287,6 +287,35 @@ export function blocksFromParse(
   return blocksFromMarkdown(markdown, pageNumbers)
 }
 
+/**
+ * 解析产物里有多少页 —— 只用来校验 MinerU 真的按 page_ranges 解析了本卷。
+ *
+ * 多卷共用同一个 PDF URL 时, 如果服务端按 URL 命中了缓存把整篇解析结果发回来, 而 pageNumbers
+ * 是按本卷算出来的, 页码映射就会整体错位: 目录和 PDF 双向定位会指到别的页, 却完全不报错。
+ * 所以宁可多解析一次 JSON 也要能发现这件事。拿不到页结构时返回 0, 表示"校验不了"而不是"零页"。
+ */
+export function layoutPageCount(jsonData: string | null | undefined): number {
+  if (!jsonData) return 0
+  let data: unknown
+  try {
+    data = JSON.parse(jsonData)
+  } catch {
+    return 0
+  }
+
+  if (Array.isArray(data)) {
+    const pages = new Set<number>()
+    for (const item of data as { page_idx?: number; page_index?: number }[]) {
+      const idx = item?.page_idx ?? item?.page_index
+      if (typeof idx === 'number') pages.add(idx)
+    }
+    return pages.size
+  }
+
+  const info = (data as { pdf_info?: unknown } | null)?.pdf_info
+  return Array.isArray(info) ? info.length : 0
+}
+
 export function buildToc(blocks: ResourceBlock[]): TocEntry[] {
   const toc: TocEntry[] = []
   for (const b of blocks) {

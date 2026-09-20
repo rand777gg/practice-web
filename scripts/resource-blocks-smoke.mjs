@@ -8,7 +8,7 @@
  *
  * Usage: node scripts/resource-blocks-smoke.mjs
  */
-import { blocksFromLayout, blocksFromMarkdown, blocksFromParse, buildToc } from '../src/lib/resource-blocks.ts'
+import { blocksFromLayout, blocksFromMarkdown, blocksFromParse, buildToc, layoutPageCount } from '../src/lib/resource-blocks.ts'
 import { slicePageRanges, sliceToRange, selectedPageCount, planParts, rangeForSlice } from '../src/lib/page-slices.ts'
 
 let pass = 0
@@ -202,6 +202,20 @@ check('不连续页码范围按映射逐项对应',
 check('分卷后目录页码也是原文页码',
   buildToc(blocksFromLayout(twoPages, [201, 202])).map((t) => t.pageNo), [201])
 check('轻量路径也走页码映射', blocksFromMarkdown('甲\n\n乙', [201, 202]).map((b) => b.pageNo), [201, 202])
+
+// ── 批量解析的页数校验 ──
+// 多卷共用同一个 PDF URL 时, 如果服务端按 URL 命中缓存把整篇发回来, 页码映射会整体错位却
+// 不报错(目录和 PDF 定位会指到别的页), 靠 layoutPageCount > 本卷页数 来发现。
+const layoutOf = (n) => JSON.stringify({ pdf_info: Array.from({ length: n }, () => ({ para_blocks: [] })) })
+check('layout 页数: 按 pdf_info 长度', layoutPageCount(layoutOf(199)), 199)
+check('layout 页数: 整篇返回会被认出来', layoutPageCount(layoutOf(295)) > 96, true)
+check('layout 页数: content_list 按 page_idx 去重', layoutPageCount(JSON.stringify([
+  { page_idx: 0, category: 'text', bbox: [0, 0, 1, 1], text: 'a' },
+  { page_idx: 0, category: 'text', bbox: [0, 0, 1, 1], text: 'b' },
+  { page_idx: 1, category: 'text', bbox: [0, 0, 1, 1], text: 'c' },
+])), 2)
+check('layout 页数: 坏 JSON 当校验不了(0)', layoutPageCount('{oops'), 0)
+check('layout 页数: 没有 json 当校验不了(0)', layoutPageCount(undefined), 0)
 
 // ── 自动切卷 ──
 check('295 页切成 2 卷(上界 199)', slicePageRanges(295).map(sliceToRange), ['1-199', '200-295'])

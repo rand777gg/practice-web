@@ -10,9 +10,10 @@
 
 import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
-import { MinerUClient } from '@/lib/ai/mineru'
+import { MinerUClient, fetchZipAndExtractFiles } from '@/lib/ai/mineru'
 import { getMinerUModelVersion, getMinerUToken } from '@/lib/ai/config'
-import { blocksFromParse, sectionsFromToc, type ResourceBlock, type TocSection } from '@/lib/resource-blocks'
+import type { MinerUBatchFileResult, MinerUBatchStatus, MinerUPrecisionOptions } from '@/lib/ai/types'
+import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocSection } from '@/lib/resource-blocks'
 import { renderAndUploadPdfPages, countPdfPages, type PageUrl } from '@/lib/pdf-page-renderer'
 import {
   MINERU_PAGE_LIMIT, parsePageNumbers, planParts, rangeForSlice, selectedPageCount,
@@ -368,6 +369,45 @@ export interface ParseOptions {
   producer?: (p: ParseProgress) => void
 }
 
+/** 并发跑几卷。每卷自己会开一个 pdfjs 文档并同时渲染多页图, 所以这里只能给到 2。 */
+const VOLUME_CONCURRENCY = 2
+
+/** 批量解析轮询: 3 秒一次, 最多 30 分钟(vlm 解析一本 199 页的书可能跑十几分钟)。 */
+const BATCH_POLL_TRIES = 600
+const BATCH_POLL_INTERVAL_MS = 3000
+/** 连续多少次状态查询失败就放弃这批, 剩下的交给单任务。 */
+const BATCH_POLL_ERROR_LIMIT = 10
+
+/**
+ * 区块入库的临界区。
+ *
+ * block_index 是「本卷之前已经有多少个区块」现数出来的, 两卷并发时可能同时数到同一个数字,
+ * 撞上 (document_id, block_index) 唯一索引。所以只把「数 + 插」这一段串起来 —— 真正慢的解析
+ * 和页图渲染照旧并发。
+ */
+let blockWriteChain: Promise<unknown> = Promise.resolve()
+
+function withBlockWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = blockWriteChain.then(fn, fn)
+  blockWriteChain = run.catch(() => {})
+  return run
+}
+
+async function mapLimited<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = cursor++
+      if (i >= items.length) return
+      await fn(items[i], i)
+    }
+  }))
+}
+
 async function parseWithMinerU(
   pdfUrl: string,
   options: ParseOptions,
@@ -402,7 +442,6 @@ async function parseWithMinerU(
     const poll = await mineru.pollTask(task.taskId, token)
     if (poll.state === 'done' && poll.fullZipUrl) {
       onProgress('正在提取解析结果...')
-      const { fetchZipAndExtractFiles } = await import('@/lib/ai/mineru')
       return await fetchZipAndExtractFiles(poll.fullZipUrl)
     }
     if (poll.state === 'failed') throw new Error(`MinerU 精准解析失败: ${poll.errMsg}`)
@@ -419,81 +458,289 @@ async function parseWithMinerU(
 }
 
 /**
- * 解析 + 建区块。
- * 单独一个函数是为了让 jsonData 在这里就走出作用域: 199 页的 layout.json 有十几 MB,
- * 如果和后面的页图渲染(要跑几分钟, pdfjs 自己还要吃内存)挤在一起, 很容易把标签页拖垮。
+ * 解析产物 → 区块。
+ * 单独一步是为了让 jsonData 尽快走出作用域: 199 页的 layout.json 有十几 MB,
+ * 和后面的页图渲染(pdfjs 自己还要吃内存)挤在一起很容易把标签页拖垮。
  */
-async function parseIntoBlocks(
-  pdfUrl: string,
-  options: ParseOptions,
-  useRange: string | undefined,
-  pageNumbers: number[],
-  label: string,
-): Promise<{ blocks: ResourceBlock[]; markdown: string }> {
-  const producer = options.producer
-  producer?.({ step: `${label}正在提交解析任务${useRange ? ` (第 ${useRange} 页)` : ''}...` })
-  const { markdown, jsonData } = await parseWithMinerU(pdfUrl, { ...options, pageRanges: useRange })
-
-  producer?.({ step: `${label}正在建立目录与定位区块...` })
-  const blocks = blocksFromParse(jsonData, markdown, pageNumbers)
+function blocksOf(parsed: { markdown: string; jsonData?: string }, pageNumbers: number[]): ResourceBlock[] {
+  const blocks = blocksFromParse(parsed.jsonData, parsed.markdown, pageNumbers)
   if (blocks.length === 0) throw new Error('解析结果为空, 未取得任何正文区块')
-  return { blocks, markdown }
+  return blocks
 }
 
+/** 一卷解析成功后: 建区块 → 渲染页图传 R2 → 落库。 */
+async function finishPart(
+  documentId: string,
+  pdfUrl: string,
+  part: ResourcePart,
+  slice: PageSlice,
+  parsed: { markdown: string; jsonData?: string },
+  useRange: string | undefined,
+  label: string,
+  producer?: (p: ParseProgress) => void,
+): Promise<{ blocks: number; pages: number }> {
+  producer?.({ step: `${label}正在建立目录与定位区块...` })
+  const blocks = blocksOf(parsed, parsePageNumbers(useRange, slice.to))
+
+  producer?.({ step: `${label}正在渲染 PDF 页面并上传 R2...` })
+  const pages = await renderAndUploadPdfPages(
+    pdfUrl,
+    `${documentPrefix(documentId)}/parts/${part.part_index}/pages`,
+    useRange,
+    (done, total) => producer?.({ step: `${label}渲染页面并上传 R2... ${done}/${total}`, done, total }),
+  )
+  const goodPages = pages.filter((p) => p.src)
+
+  await withBlockWriteLock(async () => {
+    await replaceResourceBlocks(documentId, blocks, await countBlocksBefore(documentId, slice.from))
+  })
+  await patchPart(part.id, {
+    page_urls: goodPages.length ? JSON.stringify(goodPages) : null,
+    markdown: parsed.markdown,
+    parse_status: 'ready',
+    parse_error: null,
+  })
+
+  return { blocks: blocks.length, pages: goodPages.length }
+}
+
+/**
+ * 把一卷标成失败, 返回带卷标签的错误信息。
+ * 原先是 .catch(() => {}) 全吞: 会话过期时连 patchPart 也 401, 于是这一卷永远停在
+ * parsing, 界面只会一直转, 看不出任何原因。至少把真实原因打出来。
+ */
+async function failPart(partId: string, label: string, err: unknown): Promise<string> {
+  const message = err instanceof Error ? err.message : String(err)
+  try {
+    await patchPart(partId, { parse_status: 'failed', parse_error: message })
+  } catch (patchErr) {
+    console.error('[resource] 标记分卷失败时又出错, 该卷会停在 parsing:', patchErr)
+  }
+  return `${label}${message}`
+}
+
+/** 单任务流水线: 提交一个 task → 轮询 → 建区块 + 渲染页图 → 落库 */
 async function runPart(
   documentId: string,
   pdfUrl: string,
   part: ResourcePart,
   slice: PageSlice,
   options: ParseOptions,
-  // 本卷要发给 MinerU 的页码范围; undefined 表示这一卷就等于整篇, 不传能拿到完整版面信息。
-  // 注意不能自己在这里判断"从第 1 页开始就不传": 多卷文档的第一卷也是从第 1 页开始,
-  // 那样会让 MinerU 拿到整本书而报超过页数上限。
   useRange: string | undefined,
   label: string,
-): Promise<{ blocks: number; pages: number; markdown: string }> {
+): Promise<{ blocks: number; pages: number }> {
   const producer = options.producer
-  const pageNumbers = parsePageNumbers(useRange, slice.to)
-
   await patchPart(part.id, { parse_mode: options.mode, parse_status: 'parsing', parse_error: null })
 
   try {
-    const { blocks, markdown } = await parseIntoBlocks(pdfUrl, options, useRange, pageNumbers, label)
-
-    producer?.({ step: `${label}正在渲染 PDF 页面并上传 R2...` })
-    const pages = await renderAndUploadPdfPages(
-      pdfUrl,
-      `${documentPrefix(documentId)}/parts/${part.part_index}/pages`,
-      useRange,
-      (done, total) => producer?.({ step: `${label}渲染页面并上传 R2... ${done}/${total}`, done, total }),
-    )
-    const goodPages = pages.filter((p) => p.src)
-
-    await replaceResourceBlocks(documentId, blocks, await countBlocksBefore(documentId, slice.from))
-    await patchPart(part.id, {
-      page_urls: goodPages.length ? JSON.stringify(goodPages) : null,
-      markdown,
-      parse_status: 'ready',
-      parse_error: null,
-    })
-
-    return { blocks: blocks.length, pages: goodPages.length, markdown }
+    producer?.({ step: `${label}正在提交解析任务${useRange ? ` (第 ${useRange} 页)` : ''}...` })
+    const parsed = await parseWithMinerU(pdfUrl, { ...options, pageRanges: useRange })
+    return await finishPart(documentId, pdfUrl, part, slice, parsed, useRange, label, producer)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // 原先是 .catch(() => {}) 全吞: 会话过期时连 patchPart 也 401, 于是这一卷永远停在
-    // parsing, 界面只会一直转, 看不出任何原因。至少把真实原因打出来。
-    try {
-      await patchPart(part.id, { parse_status: 'failed', parse_error: message })
-    } catch (patchErr) {
-      console.error('[resource] 标记分卷失败时又出错, 该卷会停在 parsing:', patchErr)
-    }
-    throw new Error(`${label}${message}`, { cause: err })
+    throw new Error(await failPart(part.id, label, err), { cause: err })
   }
 }
 
+interface VolumeJob {
+  /** 分卷序号, 同时当批量任务的 data_id 用 —— 接口只认这个, 认不出同 URL 的不同卷 */
+  index: number
+  part: ResourcePart
+  slice: PageSlice
+  useRange: string | undefined
+  label: string
+  /** 本卷应该解析出多少页, 用来校验批量返回的结果 */
+  expectedPages: number
+}
+
+interface VolumeOutcome {
+  failures: string[]
+  blocks: number
+  pages: number
+}
+
+function volumeJob(
+  slices: PageSlice[],
+  index: number,
+  part: ResourcePart,
+  totalPages: number,
+  explicitRanges?: string,
+): VolumeJob {
+  const slice = slices[index]
+  // 本卷要发给 MinerU 的页码范围; undefined 表示这一卷就等于整篇, 不传能拿到完整版面信息。
+  // 注意不能自己在这里判断"从第 1 页开始就不传": 多卷文档的第一卷也是从第 1 页开始,
+  // 那样会让 MinerU 拿到整本书而报超过页数上限。
+  const useRange = rangeForSlice(slices, index, totalPages, explicitRanges)
+  return {
+    index,
+    part,
+    slice,
+    useRange,
+    label: slices.length > 1 ? `[第 ${slice.from}-${slice.to} 页] ` : '',
+    expectedPages: parsePageNumbers(useRange, slice.to).length,
+  }
+}
+
+const volumeDataId = (index: number) => `v${index}`
+
 /**
- * 录入一篇原始文献: 建行 → 上传 PDF 到 R2 → 按 200 页切卷依次解析 → 落区块。
- * 每一卷成功就立刻落库, 所以某一卷失败时前面几卷的成果不会白费, 重试会跳过已成功的卷。
+ * 多卷一次性提交给 MinerU 批量接口, 服务端同时解析, 总耗时约等于最慢的那一卷。
+ *
+ * 返回 null 表示这批根本没提交出去, 调用方直接走单任务并发池; 已经提交出去、但个别卷失败或者
+ * 迟迟不收敛的, 放进 retry 让并发池重来一次 —— 单卷失败不该把整批成果一起扔掉。
+ */
+async function runPartsBatch(
+  documentId: string,
+  pdfUrl: string,
+  jobs: VolumeJob[],
+  options: ParseOptions,
+): Promise<{ outcome: VolumeOutcome; retry: VolumeJob[] } | null> {
+  const producer = options.producer
+  const token = getMinerUToken()
+  if (!token) return null
+
+  const mineru = new MinerUClient()
+  const parseOptions: MinerUPrecisionOptions = {
+    token,
+    modelVersion: getMinerUModelVersion(),
+    language: 'ch',
+    enableFormula: true,
+    enableTable: true,
+  }
+
+  producer?.({ step: `正在创建批量解析任务 (${jobs.length} 卷并行)...` })
+  let batchId: string
+  try {
+    batchId = await mineru.createBatchTask(
+      jobs.map((j) => ({ url: pdfUrl, dataId: volumeDataId(j.index), pageRanges: j.useRange })),
+      parseOptions,
+    )
+  } catch (err) {
+    console.warn('[resource] 批量解析任务创建失败, 退回单任务并发池:', err)
+    return null
+  }
+
+  await Promise.all(jobs.map((j) =>
+    patchPart(j.part.id, { parse_mode: options.mode, parse_status: 'parsing', parse_error: null })))
+
+  const byDataId = new Map(jobs.map((j) => [volumeDataId(j.index), j]))
+  const settled = new Map<number, MinerUBatchFileResult>()
+  const isTerminal = (state: string) => state === 'done' || state === 'failed'
+  let pollErrors = 0
+
+  for (let i = 0; i < BATCH_POLL_TRIES; i++) {
+    await new Promise((r) => setTimeout(r, BATCH_POLL_INTERVAL_MS))
+
+    let status: MinerUBatchStatus
+    try {
+      status = await mineru.pollBatch(batchId, token)
+      pollErrors = 0
+    } catch (err) {
+      // 单次查询失败当网络抖动忽略; 连续失败说明这批查不动了, 剩下的交给并发池
+      if (++pollErrors >= BATCH_POLL_ERROR_LIMIT) {
+        console.warn('[resource] 批量状态查询连续失败, 剩余分卷改用单任务:', err)
+        break
+      }
+      continue
+    }
+
+    for (const f of status.files) {
+      const job = f.dataId ? byDataId.get(f.dataId) : undefined
+      if (job) settled.set(job.index, f)
+    }
+
+    const done = [...settled.values()].filter((f) => f.state === 'done').length
+    const failed = [...settled.values()].filter((f) => f.state === 'failed').length
+    producer?.({
+      step: `批量解析中... 完成 ${done}/${jobs.length}${failed > 0 ? `, 失败 ${failed}` : ''}`,
+      done,
+      total: jobs.length,
+    })
+    if (settled.size === jobs.length && [...settled.values()].every((f) => isTerminal(f.state))) break
+  }
+
+  const outcome: VolumeOutcome = { failures: [], blocks: 0, pages: 0 }
+  const retry: VolumeJob[] = []
+
+  for (const job of jobs) {
+    const result = settled.get(job.index)
+    if (!result || !isTerminal(result.state)) {
+      retry.push(job)
+      continue
+    }
+    if (result.state === 'failed' || !result.fullZipUrl) {
+      outcome.failures.push(await failPart(job.part.id, job.label, new Error(result.errMsg || '批量解析失败')))
+      continue
+    }
+
+    try {
+      producer?.({ step: `${job.label}正在提取解析结果...` })
+      const parsed = await fetchZipAndExtractFiles(result.fullZipUrl)
+
+      // 本卷只要了 N 页, 返回的却多于 N 页, 说明拿到的是整篇(多卷共用同一个 URL, 可能命中
+      // 服务端按 URL 的缓存)。页码映射会整体错位且全程不报错, 所以退回单任务重解析一次。
+      const gotPages = layoutPageCount(parsed.jsonData)
+      if (gotPages > job.expectedPages) {
+        console.warn(`[resource] ${job.label}批量返回 ${gotPages} 页 > 请求的 ${job.expectedPages} 页, 改用单任务重解析`)
+        retry.push(job)
+        continue
+      }
+
+      const r = await finishPart(documentId, pdfUrl, job.part, job.slice, parsed, job.useRange, job.label, producer)
+      outcome.blocks += r.blocks
+      outcome.pages += r.pages
+      producer?.({ step: `${job.label}完成: ${r.blocks} 个区块 / ${r.pages} 页` })
+    } catch (err) {
+      outcome.failures.push(await failPart(job.part.id, job.label, err))
+    }
+  }
+
+  return { outcome, retry }
+}
+
+/**
+ * 跑完所有待解析的分卷。
+ * 多卷优先走 MinerU 批量接口(服务端并行), 单卷、或者批量没提交出去, 就走单任务并发池。
+ * 卷级失败只记进 failures 不中断 —— 一卷挂了不该把其它卷已经烧掉的额度一起废掉。
+ */
+async function runVolumeJobs(
+  documentId: string,
+  pdfUrl: string,
+  jobs: VolumeJob[],
+  options: ParseOptions,
+): Promise<VolumeOutcome> {
+  const outcome: VolumeOutcome = { failures: [], blocks: 0, pages: 0 }
+  let pending = jobs
+
+  if (jobs.length > 1 && options.mode === 'precision') {
+    const batch = await runPartsBatch(documentId, pdfUrl, jobs, options)
+    if (batch) {
+      outcome.failures.push(...batch.outcome.failures)
+      outcome.blocks += batch.outcome.blocks
+      outcome.pages += batch.outcome.pages
+      pending = batch.retry
+      if (pending.length > 0) options.producer?.({ step: `${pending.length} 卷改用单任务重解析...` })
+    }
+  }
+
+  await mapLimited(pending, VOLUME_CONCURRENCY, async (job, i) => {
+    options.producer?.({ step: `${job.label}开始解析 (${i + 1}/${pending.length})...` })
+    try {
+      const r = await runPart(documentId, pdfUrl, job.part, job.slice, options, job.useRange, job.label)
+      outcome.blocks += r.blocks
+      outcome.pages += r.pages
+      options.producer?.({ step: `${job.label}完成: ${r.blocks} 个区块 / ${r.pages} 页` })
+    } catch (err) {
+      outcome.failures.push(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  return outcome
+}
+
+/**
+ * 录入一篇原始文献: 建行 → 上传 PDF 到 R2 → 按 200 页切卷解析 → 落区块。
+ * 多卷走 MinerU 批量接口并行解析; 每一卷成功就立刻落库, 所以某一卷失败时其它卷的成果不会白费,
+ * 重试会跳过已成功的卷。
  */
 export async function ingestResource(
   file: File,
@@ -532,21 +779,15 @@ export async function ingestResource(
     const parts = await replaceParts(documentId, slices, options.mode)
     await clearResourceBlocks(documentId)
 
-    let done = 0
-    for (let i = 0; i < parts.length; i++) {
-      const label = parts.length > 1 ? `[第 ${slices[i].from}-${slices[i].to} 页] ` : ''
-      producer?.({ step: `${label}开始解析 (${i + 1}/${parts.length})...` })
-      const r = await runPart(documentId, pdfUrl, parts[i], slices[i], options,
-        rangeForSlice(slices, i, totalPages, options.pageRanges), label)
-      done += r.blocks
-      producer?.({ step: `${label}完成: ${r.blocks} 个区块 / ${r.pages} 页` })
-    }
+    const jobs = parts.map((part, i) => volumeJob(slices, i, part, totalPages, options.pageRanges))
+    const outcome = await runVolumeJobs(documentId, pdfUrl, jobs, options)
+    if (outcome.failures.length > 0) throw new Error(outcome.failures.join(' | '))
 
     await updateResourceDocument(documentId, { parse_status: 'ready', parse_error: null })
     // 解析完顺手建索引。已发布才真的会建(服务端对未发布文献返回空集),
     // 但这里不做判断: 发布态可能刚刚改过, 让服务端按库里的实际状态决定更省事。
     autoIndex('resource', documentId)
-    producer?.({ step: `全部完成: ${parts.length} 卷 / ${done} 个区块 / ${totalPages} 页` })
+    producer?.({ step: `全部完成: ${parts.length} 卷 / ${outcome.blocks} 个区块 / ${totalPages} 页` })
     return documentId
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -592,6 +833,7 @@ export async function reparseResource(
     })
 
     let skipped = 0
+    const jobs: VolumeJob[] = []
     for (let i = 0; i < parts.length; i++) {
       const label = parts.length > 1 ? `[第 ${slices[i].from}-${slices[i].to} 页] ` : ''
       if (sameLayout && parts[i].parse_status === 'ready' && parts[i].page_urls) {
@@ -599,11 +841,11 @@ export async function reparseResource(
         producer?.({ step: `${label}已成功, 跳过` })
         continue
       }
-      producer?.({ step: `${label}开始解析 (${i + 1}/${parts.length})...` })
-      const r = await runPart(documentId, doc.pdf_url, parts[i], slices[i], options,
-        rangeForSlice(slices, i, totalPages, options.pageRanges), label)
-      producer?.({ step: `${label}完成: ${r.blocks} 个区块 / ${r.pages} 页` })
+      jobs.push(volumeJob(slices, i, parts[i], totalPages, options.pageRanges))
     }
+
+    const outcome = await runVolumeJobs(documentId, doc.pdf_url, jobs, options)
+    if (outcome.failures.length > 0) throw new Error(outcome.failures.join(' | '))
 
     await updateResourceDocument(documentId, { parse_status: 'ready', parse_error: null })
     autoIndex('resource', documentId)
