@@ -7,6 +7,7 @@ import { ChevronDown, Check, Trash2 } from 'lucide-react'
 import { MarkdownEditor } from '@/components/markdown/MarkdownEditor'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useSubjectExplanations } from '@/hooks/use-subject-explanations'
+import { autoIndex } from '@/lib/rag'
 
 interface Props {
   open: boolean
@@ -42,6 +43,8 @@ export function SubjectExplanationManagerDialog({ open, onOpenChange }: Props) {
       await supabase.from('subject_explanations').delete().eq('subject', selected)
     }
     setSaving(false)
+    // 学科解读同上: 管理员独占的编辑入口, 整源增量同步
+    autoIndex('subject')
     await refresh()
   }
 

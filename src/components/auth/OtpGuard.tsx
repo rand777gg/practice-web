@@ -17,7 +17,10 @@ function MfaReminder({ onGo, onDismiss }: { onGo: () => void; onDismiss: () => v
   return (
     <div
       className={
-        'fixed top-4 right-4 z-[60] max-w-xs rounded-lg border bg-background px-4 py-3 shadow-lg transition-all duration-500 ' +
+        // z-30 而不是 z-[60]: 这个提醒停在右上角, 而小Q 悬浮面板(右侧停靠)的头部按钮也在右上角。
+        // 放在 60 会把面板的新会话/历史/关闭三个按钮整个盖住, 点不动 —— 一句非强制的提醒
+        // 不该挡住用户主动打开的东西。30 仍然高于页面内容和 Header(z-20), 该看见还是看得见。
+        'fixed top-4 right-4 z-30 max-w-xs rounded-lg border bg-background px-4 py-3 shadow-lg transition-all duration-500 ' +
         (visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none')
       }
     >

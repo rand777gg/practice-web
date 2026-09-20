@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { autoIndex } from '@/lib/rag'
 import type { Question, QuestionType } from '@/types'
 
 const DEFAULT_PAGE_SIZE = 20
@@ -94,20 +95,25 @@ export function useQuestions() {
   }, [])
 
   const createQuestion = async (question: Omit<Question, 'id' | 'created_at' | 'created_by'>) => {
-    const { error: createError } = await supabase.from('questions').insert(question as Record<string, unknown>)
+    const { data, error: createError } = await supabase
+      .from('questions').insert(question as Record<string, unknown>).select('id').single()
     if (createError) throw createError
+    autoIndex('question', (data as { id: string } | null)?.id)
     await fetchQuestions({ ...paramsRef.current, page: 1 })
   }
 
   const updateQuestion = async (id: string, question: Partial<Question>) => {
     const { error: updateError } = await supabase.from('questions').update(question as Record<string, unknown>).eq('id', id)
     if (updateError) throw updateError
+    autoIndex('question', id)
     await fetchQuestions({ ...paramsRef.current, page })
   }
 
   const deleteQuestion = async (id: string) => {
     const { error: deleteError } = await supabase.from('questions').delete().eq('id', id)
     if (deleteError) throw deleteError
+    // 删题也要同步: 差集里多出来的旧块靠这一次调用清掉, 否则被删的题还会被小Q 引用出来
+    autoIndex('question', id)
     // If last item on page and not first page, go back one page
     const nextPage = questions.length <= 1 && page > 1 ? page - 1 : page
     await fetchQuestions({ ...paramsRef.current, page: nextPage })

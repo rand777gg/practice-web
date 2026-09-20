@@ -25,3 +25,14 @@ enabled = true
 # 自己校验 token(auth.getUser),这样 401 能回 MCP 客户端看得懂的 JSON-RPC 错误
 verify_jwt = false
 entrypoint = "./functions/mcp/index.ts"
+
+[functions.rag-index]
+enabled = true
+# 同上: 函数内部分管理员和普通用户两种权限, 自己解析 Authorization
+verify_jwt = false
+entrypoint = "./functions/rag-index/index.ts"
+
+[functions.rag-search]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/rag-search/index.ts"
