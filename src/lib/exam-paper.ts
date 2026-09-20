@@ -136,6 +136,25 @@ export function paperProse(passage: string): string {
   return passage.replace(/\[\[(\d+)\]\]/g, ' ___ ')
 }
 
+/**
+ * 一张卡片的题号文案：卡片模式里一张卡 = 卷面的一大题，所以标的是它覆盖的卷面题号
+ * （完形卡是 `1–20`、写作卡是 `51`）。没绑答题卡时退回卡片序号。
+ */
+export function cardNoLabel(
+  noBySlot: Map<string, number> | undefined,
+  q: Pick<Question, 'id' | 'question_type' | 'case_questions'> | undefined,
+  fallback: number,
+): string {
+  if (!q || !noBySlot) return String(fallback)
+  const nos = recordSlotIds(q)
+    .map((subId) => noBySlot.get(slotKey(q.id, subId)))
+    .filter((n): n is number => n != null)
+  if (nos.length === 0) return String(fallback)
+  const [first] = nos
+  const last = nos[nos.length - 1]
+  return first === last ? String(first) : `${first}–${last}`
+}
+
 const bySeq = (a: Question, b: Question) => (a.seq_number ?? 0) - (b.seq_number ?? 0)
 
 const head = (p: QuestionPaper): PaperSectionHead => ({

@@ -30,7 +30,8 @@ const PART_B_LETTERS = ['A', 'B', 'D', 'E', 'G']
 try {
   const { buildPaperSections } = await vite.ssrLoadModule('/src/lib/exam-compose.ts')
   const { matchEnglishCard, buildNumberMap, buildCardAnswers } = await vite.ssrLoadModule('/src/lib/exam-answer-sheet.ts')
-  const { buildPaperLayout, recordSlotIds, slotKey, withSlotValue, slotValue } = await vite.ssrLoadModule('/src/lib/exam-paper.ts')
+  const { buildPaperLayout, recordSlotIds, slotKey, withSlotValue, slotValue, cardNoLabel } = await vite.ssrLoadModule('/src/lib/exam-paper.ts')
+  const { questionItemCount, questionAnsweredItemCount, isQuestionAnswered } = await vite.ssrLoadModule('/src/lib/answer-utils.ts')
   const { BUILTIN_EXAM_TEMPLATES, totalQuestions, totalScore } = await vite.ssrLoadModule('/src/lib/exam-presets.ts')
 
   const template = BUILTIN_EXAM_TEMPLATES.find((t) => t.id.includes('english1'))
@@ -145,6 +146,20 @@ try {
   check('改完形第 7 空，第 1 空的作答还在', [slotValue(after, '1'), slotValue(after, '7')], [0, 2])
   check('写作是单条记录，整条替换', slotValue(withSlotValue('old', '', 'new'), ''), 'new')
   check('槽位键与映射键一致', slotKey('cloze', '7'), 'cloze#7')
+
+  // ── 卡片模式的口径：一张卡 = 卷面的一大题，题数按小题报 ──
+  check('整卷小题数 52（卡片模式「共 52 题」的来源）', questions.reduce((n, q) => n + questionItemCount(q), 0), 52)
+  check('一张卡的题号文案',
+    [cardNoLabel(map.noBySlot, questions[0], 1), cardNoLabel(map.noBySlot, questions[5], 3), cardNoLabel(map.noBySlot, questions[8], 9)],
+    ['1–20', '41–45', '52'])
+  check('没绑答题卡时退回卡片序号', cardNoLabel(undefined, questions[0], 7), '7')
+
+  // 完形答了 3 空 → 算 3 个小题（不是 1，也不是 20）
+  const clozePartial = { subs: [{ id: '1', value: 0 }, { id: '2', value: 1 }, { id: '7', value: 2 }] }
+  check('已答小题数：完形答 3 空 → 3', questionAnsweredItemCount(questions[0], clozePartial), 3)
+  check('已答小题数：完形一空没答 → 0', questionAnsweredItemCount(questions[0], null), 0)
+  check('已答小题数：写作整题 → 1', questionAnsweredItemCount(questions[8], 'My essay'), 1)
+  check('已答判定：完形答一空就算这道卡作答了', isQuestionAnswered(questions[0], { subs: [{ id: '1', value: 0 }] }), true)
 
   // ── 卷面：从记录拼出渲染器要的结构 ──
   const layout = buildPaperLayout(questions)

@@ -39,7 +39,8 @@ import { PaperPreview } from './PaperPreview'
 import { ExamCodingPanel } from './ExamCodingPanel'
 import { buildPaperSections, type PaperSection } from '@/lib/exam-compose'
 import { buildNumberMap, matchEnglishCard } from '@/lib/exam-answer-sheet'
-import { buildPaperLayout, slotEntries, slotKey, withSlotValue, type PaperSlot } from '@/lib/exam-paper'
+import { buildPaperLayout, cardNoLabel, recordSlotIds, slotEntries, slotKey, withSlotValue, type PaperSlot } from '@/lib/exam-paper'
+import { isQuestionAnswered, questionAnsweredItemCount, questionItemCount } from '@/lib/answer-utils'
 import { ExamAnswerCardView } from './ExamAnswerCardView'
 import { SubjectiveAnswerInput } from './SubjectiveAnswerInput'
 import { WrittenGradingPanel } from './WrittenGradingPanel'
@@ -150,61 +151,6 @@ function buildPreviewSections(tpl: ExamTemplate): PaperSection[] {
 }
 
 type ExamViewMode = 'card' | 'sheet' | 'spread'
-
-/** 判断改错题: 只有“选正确”或“选错误且已填改正内容”才算完成该题 */
-function isJudgeAnswered(value: CorrectAnswer): boolean {
-  if (value === true) return true
-  return typeof value === 'string' && value.trim().length > 0
-}
-
-/** 题干中“___”空缺的数量(单空按 1 计) */
-function blankNumber(text: string): number {
-  return (text.match(/_{2,}/g) || []).length || 1
-}
-
-/** 填空题: 多空时任意一空未填都不能算完成, 需全部空位均有非空作答 */
-function isFillBlankAnswered(value: CorrectAnswer | null | undefined, nBlanks: number): boolean {
-  if (value === null || value === undefined) return false
-  const vals = Array.isArray(value)
-    ? (value as string[])
-    : typeof value === 'string'
-      ? [value]
-      : []
-  if (vals.length === 0) return false
-  for (let i = 0; i < nBlanks; i++) {
-    const v = vals[i]
-    if (v === null || v === undefined || String(v).trim() === '') return false
-  }
-  return true
-}
-
-/** 题目是否已完成作答(空改正内容的判断改错题、未填满全部空的填空题、无代码的编程题均不算完成) */
-function isQuestionAnswered(q: Question, value: CorrectAnswer | null | undefined): boolean {
-  if (value === null || value === undefined) return false
-  if (q.question_type === 'coding') {
-    // 编程题作答为 CodingAnswer 对象或旧版纯代码字符串, 以是否写了代码为准
-    if (value && typeof value === 'object' && !Array.isArray(value) && 'code' in (value as object)) {
-      const ca = value as CodingAnswer
-      return typeof ca.code === 'string' && ca.code.trim().length > 0
-    }
-    return typeof value === 'string' && value.trim().length > 0
-  }
-  if (q.question_type === 'judge_correct') return isJudgeAnswered(value)
-  if (q.question_type === 'fill_blank') return isFillBlankAnswered(value, blankNumber(q.question_text))
-  if (MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
-    const shape = value as CaseAnswer
-    if (!shape || !Array.isArray(shape.subs)) return false
-    return shape.subs.some((s) => {
-      if (s.value === null || s.value === undefined) return false
-      const sub = q.case_questions?.find((c) => c.id === s.id)
-      if (sub?.type === 'judge_correct') return isJudgeAnswered(s.value)
-      // 案例小题里的填空(多空)同样要求全部空位填写完成
-      if (sub?.type === 'fill_blank') return isFillBlankAnswered(s.value, blankNumber(sub.text))
-      return true
-    })
-  }
-  return true
-}
 
 export function ExamSession() {
   const { t } = useT()
@@ -369,6 +315,23 @@ export function ExamSession() {
   const answerSlot = useCallback((slot: PaperSlot, value: CorrectAnswer) => {
     answerQuestion(slot.questionId, withSlotValue(answers.get(slot.questionId), slot.subId, value))
   }, [answerQuestion, answers])
+
+  /**
+   * 一张卡片 = 卷面的一大题（完形整篇 20 空 / 一篇 Text 5 问），所以「共几题 / 已答几题」
+   * 一律按**小题**口径报——按记录报会让一份 52 题的英语卷显示成 9 道。
+   */
+  const totalItems = useMemo(() => questions.reduce((n, q) => n + questionItemCount(q), 0), [questions])
+  const answeredItems = useMemo(
+    () => questions.reduce((n, q) => n + questionAnsweredItemCount(q, answers.get(q.id)), 0),
+    [questions, answers],
+  )
+  /** 这张卡片覆盖几格（决定题号格要不要放宽） */
+  const cardItemCount = useCallback((q: Question | undefined) => (q ? recordSlotIds(q).length : 1), [])
+  /** 这张卡片的卷面题号（1–20 / 41–45；没绑答题卡时是卡片序号） */
+  const cardNo = useCallback(
+    (q: Question | undefined, i: number) => cardNoLabel(cardNumberMap?.noBySlot, q, i + 1),
+    [cardNumberMap],
+  )
   const applyViewMode = (next: ExamViewMode) => {
     if (next === viewMode) return
     if (next === 'card') {
@@ -1034,8 +997,7 @@ export function ExamSession() {
   const currentQuestion = questions[currentIndex]
   const currentAnswer = currentQuestion ? answers.get(currentQuestion.id) ?? null : null
   const currentAnswered = currentQuestion ? isQuestionAnswered(currentQuestion, currentAnswer) : false
-  const answeredCount = questions.filter((q) => isQuestionAnswered(q, answers.get(q.id))).length
-  // 尚未完成的题目下标(供交卷确认时逐题提醒), 与答题卡题号(1-based)对齐
+  // 尚未完成的题目下标(供交卷确认时逐题提醒)
   const unfinishedIndexes = questions.reduce<number[]>((acc, q, i) => {
     if (!isQuestionAnswered(q, answers.get(q.id))) acc.push(i)
     return acc
@@ -1102,7 +1064,7 @@ export function ExamSession() {
         <span className="min-w-0 max-w-[26%] shrink truncate font-medium text-foreground" title={template?.name ?? t('exam.title')}>
           {template?.name ?? t('exam.title')}
         </span>
-        <span className="hidden shrink-0 text-muted-foreground md:inline">共 {questions.length} 题</span>
+        <span className="hidden shrink-0 text-muted-foreground md:inline">共 {totalItems} 题</span>
 
         {/* paper 视图(单页缩放/双页缩放·平移·全屏)查看工具栏锚点: 桌面端渲染进顶部工具栏, 移动端双页回退浮层 */}
         {paperMode && !isMobile && (
@@ -1151,9 +1113,9 @@ export function ExamSession() {
       )}
           <span className="mx-1 h-4 w-px bg-border" />
           <span className="hidden shrink-0 items-center gap-0.5 tabular-nums sm:flex">
-            <span className="font-semibold text-emerald-600 dark:text-emerald-500">{answeredCount}</span>
+            <span className="font-semibold text-emerald-600 dark:text-emerald-500">{answeredItems}</span>
             <span>/</span>
-            <span>{questions.length}</span>
+            <span>{totalItems}</span>
           </span>
           <Button
             size="sm"
@@ -1208,14 +1170,16 @@ export function ExamSession() {
                     return (
                       <button key={id}
                         onClick={() => jumpLocate(i)}
+                        title={q ? `第 ${cardNo(q, i)} 题` : undefined}
                         className={cn(
-                          'w-8 h-8 rounded text-xs tabular-nums transition-all border border-dashed flex items-center justify-center',
+                          'h-8 rounded text-xs tabular-nums transition-all border border-dashed flex items-center justify-center',
+                          cardItemCount(q) > 1 ? 'min-w-8 px-1.5' : 'w-8',
                           isCurrent && 'bg-primary text-primary-foreground border-primary',
                           !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
                           !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
                         )}
                       >
-                        {i + 1}
+                        {cardNo(q, i)}
                       </button>
                     )
                   })}
@@ -1225,9 +1189,9 @@ export function ExamSession() {
               <div className="space-y-1.5 border-t p-3">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">进度</span>
-                  <span className="tabular-nums">{answeredCount}/{questions.length}</span>
+                  <span className="tabular-nums">{answeredItems}/{totalItems}</span>
                 </div>
-                <Progress value={(answeredCount / questions.length) * 100} className="h-2 [&>div]:bg-emerald-500" />
+                <Progress value={totalItems > 0 ? (answeredItems / totalItems) * 100 : 0} className="h-2 [&>div]:bg-emerald-500" />
               </div>
             </div>
           )}
@@ -1303,7 +1267,7 @@ export function ExamSession() {
           >
             <PaperPreview
               title={template?.name ?? t('exam.title')}
-              meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${questions.length} 题`}
+              meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${totalItems} 题`}
               sections={buildPaperSections(questions, template)}
               answers={answers}
               onAnswer={answerQuestion}
@@ -1337,12 +1301,12 @@ export function ExamSession() {
         className="flex-1 flex flex-col min-w-0 lg:overflow-hidden lg:border-0 border border-dashed border-muted-foreground/20 rounded-lg lg:rounded-none m-2 lg:m-0"
       >
         <div className="flex items-center gap-2 px-4 py-2 border-b text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">第 {currentIndex + 1} 题</span>
+          <span className="font-medium text-foreground">第 {cardNo(currentQuestion, currentIndex)} 题</span>
           <span className="text-border">|</span>
           <span>{currentQuestion?.subject || '未分类'}</span>
           <span className="text-border">|</span>
           <span>{currentQuestion?.question_type ? t(`questionTypes.${currentQuestion.question_type}` as any) : ''}</span>
-          <span className="ml-auto md:hidden">共 {questions.length} 题</span>
+          <span className="ml-auto md:hidden">共 {totalItems} 题</span>
         </div>
         <div key={`card-qbody-${cardSlide.id}`} className={cn('flex-1 overflow-y-auto p-4 sm:p-6', cardSlide.cls)}>
           {currentQuestion && (
@@ -1360,7 +1324,9 @@ export function ExamSession() {
         <div className="p-3 border-b">
           <p className="text-sm font-semibold">作答区</p>
           <span className="text-xs text-muted-foreground">
-            {currentAnswered ? `已作答 ${currentIndex + 1}/${questions.length}` : `${currentIndex + 1}/${questions.length}`}
+            {currentQuestion && cardItemCount(currentQuestion) > 1
+              ? `本卡片 ${cardItemCount(currentQuestion)} 小题 · 已答 ${questionAnsweredItemCount(currentQuestion, currentAnswer)}`
+              : currentAnswered ? '已作答' : '未作答'}
           </span>
         </div>
         <div key={`card-answer-${cardSlide.id}`} className={cn('flex-1 overflow-y-auto p-3', cardSlide.cls)}>
@@ -1516,9 +1482,11 @@ export function ExamSession() {
                     const choice = isSingle || isMulti
                     const blanks = isFill ? Math.max(1, (sub.text.match(/_{2,}/g) || []).length) : 0
                     const blankVals = Array.isArray(val) ? (val as string[]) : val ? [String(val)] : Array(blanks).fill('')
+                    // 卷面题型的小题 id 就是卷面题号，直接当题号显示；案例题的小题 id 不是数字，用 (1)(2)…
+                    const subLabel = /^\d+$/.test(sub.id) ? `${sub.id}.` : `(${si + 1})`
                     return (
                       <div key={sub.id} className="space-y-2 rounded-lg border p-3">
-                        <p className="text-sm leading-relaxed"><span className="mr-1.5 font-semibold text-muted-foreground">({si + 1})</span>{sub.text}</p>
+                        <p className="text-sm leading-relaxed"><span className="mr-1.5 font-semibold text-muted-foreground">{subLabel}</span>{sub.text}</p>
                         {choice && (
                           <div className="space-y-1.5">
                             {sub.options.map((opt, oi) => {
@@ -1670,7 +1638,7 @@ export function ExamSession() {
             <Button variant="ghost" size="sm" onClick={() => switchTo(currentIndex - 1)} disabled={currentIndex === 0}>
               <ChevronLeft className="h-4 w-4 mr-1" />上一题
             </Button>
-            <span className="text-xs text-muted-foreground">{currentIndex + 1}/{questions.length}</span>
+            <span className="text-xs text-muted-foreground">{cardNo(currentQuestion, currentIndex)}/{totalItems}</span>
             {currentIndex < questions.length - 1 ? (
               <Button variant="ghost" size="sm" onClick={() => switchTo(currentIndex + 1)}>
                 下一题<ChevronRight className="h-4 w-4 ml-1" />
@@ -1685,7 +1653,7 @@ export function ExamSession() {
       <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
         <Button size="sm" className="shadow-lg gap-1 rounded-full px-4" onClick={() => setShowSheet(true)}>
           <span className="text-xs">答题卡</span>
-          <span className="tabular-nums text-[10px] opacity-70">{answeredCount}/{questions.length}</span>
+          <span className="tabular-nums text-[10px] opacity-70">{answeredItems}/{totalItems}</span>
         </Button>
       </div>
 
@@ -1707,9 +1675,9 @@ export function ExamSession() {
             </div>
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>进度</span><span>{answeredCount}/{questions.length}</span>
+                <span>进度</span><span>{answeredItems}/{totalItems}</span>
               </div>
-              <Progress value={(answeredCount / questions.length) * 100} className="h-2 [&>div]:bg-emerald-500" />
+              <Progress value={totalItems > 0 ? (answeredItems / totalItems) * 100 : 0} className="h-2 [&>div]:bg-emerald-500" />
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
               {questionIds.map((id, i) => {
@@ -1718,11 +1686,12 @@ export function ExamSession() {
                 const isCurrent = i === currentIndex
                 return (
                   <button key={id} onClick={() => jumpLocate(i, true)}
-                    className={cn('w-8 h-8 rounded text-xs tabular-nums border border-dashed flex items-center justify-center transition-all',
+                    className={cn('h-8 rounded text-xs tabular-nums border border-dashed flex items-center justify-center transition-all',
+                      cardItemCount(q) > 1 ? 'min-w-8 px-1.5' : 'w-8',
                       isCurrent && 'bg-primary text-primary-foreground border-primary',
                       !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
                       !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20')}>
-                    {i + 1}
+                    {cardNo(q, i)}
                   </button>
               )})}
             </div>
@@ -1742,9 +1711,9 @@ export function ExamSession() {
               <div className="space-y-3">
                 <p>
                   {t('exam.submitConfirmDesc')
-                    .replace('{total}', String(questions.length))
-                    .replace('{done}', String(answeredCount))
-                    .replace('{left}', String(questions.length - answeredCount))}
+                    .replace('{total}', String(totalItems))
+                    .replace('{done}', String(answeredItems))
+                    .replace('{left}', String(Math.max(0, totalItems - answeredItems)))}
                 </p>
                 {unfinishedIndexes.length > 0 && (
                   <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-left">
@@ -1758,7 +1727,7 @@ export function ExamSession() {
                           className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-amber-500/50 bg-background px-1 text-[11px] tabular-nums text-amber-600 dark:text-amber-400"
                           title={questions[i].question_text}
                         >
-                          {i + 1}
+                          {cardNo(questions[i], i)}
                         </span>
                       ))}
                     </div>

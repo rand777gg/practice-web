@@ -1,4 +1,4 @@
-import type { CaseAnswer, CaseQuestion, CorrectAnswer, Question, QuestionType } from '@/types'
+import type { CaseAnswer, CaseQuestion, CodingAnswer, CorrectAnswer, Question, QuestionType } from '@/types'
 import { MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
 
 export function isAnswerCorrect(
@@ -126,6 +126,81 @@ export function questionCorrectItemCount(q: Question, selected: CorrectAnswer | 
   return isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
     ? 1
     : 0
+}
+
+/** 判断改错题: 只有"选正确"或"选错误且已填改正内容"才算完成该题 */
+function isJudgeAnswered(value: CorrectAnswer): boolean {
+  if (value === true) return true
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+/** 题干中"___"空缺的数量(单空按 1 计) */
+export function blankNumber(text: string): number {
+  return (text.match(/_{2,}/g) || []).length || 1
+}
+
+/** 填空题: 多空时任意一空未填都不能算完成, 需全部空位均有非空作答 */
+function isFillBlankAnswered(value: CorrectAnswer | null | undefined, nBlanks: number): boolean {
+  if (value === null || value === undefined) return false
+  const vals = Array.isArray(value)
+    ? (value as string[])
+    : typeof value === 'string'
+      ? [value]
+      : []
+  if (vals.length === 0) return false
+  for (let i = 0; i < nBlanks; i++) {
+    const v = vals[i]
+    if (v === null || v === undefined || String(v).trim() === '') return false
+  }
+  return true
+}
+
+/** 题目是否已完成作答(空改正内容的判断改错题、未填满全部空的填空题、无代码的编程题均不算完成) */
+export function isQuestionAnswered(
+  q: Pick<Question, 'question_type' | 'question_text' | 'case_questions'>,
+  value: CorrectAnswer | null | undefined,
+): boolean {
+  if (value === null || value === undefined) return false
+  if (q.question_type === 'coding') {
+    // 编程题作答为 CodingAnswer 对象或旧版纯代码字符串, 以是否写了代码为准
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'code' in (value as object)) {
+      const ca = value as CodingAnswer
+      return typeof ca.code === 'string' && ca.code.trim().length > 0
+    }
+    return typeof value === 'string' && value.trim().length > 0
+  }
+  if (q.question_type === 'judge_correct') return isJudgeAnswered(value)
+  if (q.question_type === 'fill_blank') return isFillBlankAnswered(value, blankNumber(q.question_text))
+  if (MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) {
+    const shape = value as CaseAnswer
+    if (!shape || !Array.isArray(shape.subs)) return false
+    return shape.subs.some((s) => {
+      if (s.value === null || s.value === undefined) return false
+      const sub = q.case_questions?.find((c) => c.id === s.id)
+      if (sub?.type === 'judge_correct') return isJudgeAnswered(s.value)
+      // 案例小题里的填空(多空)同样要求全部空位填写完成
+      if (sub?.type === 'fill_blank') return isFillBlankAnswered(s.value, blankNumber(sub.text))
+      return true
+    })
+  }
+  return true
+}
+
+/**
+ * 已作答的**小题**数: 多小题题型按答了几个小题算(部分作答也照数), 其余整题 0/1。
+ * 「共几题 / 已答几题」按这个口径报, 否则一份 52 题的英语卷会显示成 9 道
+ * (一条记录 = 卷面的一大题: 完形整篇 20 空)。
+ */
+export function questionAnsweredItemCount(
+  q: Pick<Question, 'question_type' | 'question_text' | 'case_questions'>,
+  selected: CorrectAnswer | null | undefined,
+): number {
+  if (!isQuestionAnswered(q, selected)) return 0
+  if (!MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])) return 1
+  const answered = ((selected as CaseAnswer).subs ?? [])
+    .filter((s) => !(typeof s.value === 'string' && !s.value.trim()))
+    .length
+  return Math.max(1, answered)
 }
 
 export function getDefaultAnswer(type: QuestionType): CorrectAnswer {
