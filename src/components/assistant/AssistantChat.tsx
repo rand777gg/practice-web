@@ -6,11 +6,15 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, GraduationCap, HeartHandshake, Library, Send } from 'lucide-react'
+import { ChevronRight, GraduationCap, HeartHandshake, Library, Send, Terminal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { CommandPalette } from '@/components/assistant/CommandPalette'
+import { ExportCard, HelpCard, SkillCard } from '@/components/assistant/CommandCards'
+import { QuestionDraftCard } from '@/components/assistant/QuestionDraftCard'
 import { useAssistantStore, type ChatMessage } from '@/stores/assistant-store'
+import { commandPrefix, matchCommands, parseCommand, type CommandSpec } from '@/lib/assistant-commands'
 import {
   MODE_LABEL, QUICK_PROMPTS, type AssistantMode, type AssistantReply, type LittleQEmotion,
 } from '@/lib/assistant-demo'
@@ -82,10 +86,31 @@ function SourceChip({ source, onNavigate }: {
   )
 }
 
-function MessageBody({ message, onNavigate }: { message: ChatMessage; onNavigate?: () => void }) {
+/** 指令产物卡片: meta 是判别联合, 这里就是那一个 switch */
+function MetaCard({ message, onPickCommand }: { message: ChatMessage; onPickCommand: (command: string) => void }) {
+  const meta = message.meta
+  if (!meta) return null
+  switch (meta.kind) {
+    case 'question-draft':
+      return <QuestionDraftCard messageId={message.id} meta={meta} />
+    case 'skill':
+      return <SkillCard meta={meta} />
+    case 'export':
+      return <ExportCard meta={meta} />
+    case 'help':
+      return <HelpCard onPickCommand={onPickCommand} />
+  }
+}
+
+function MessageBody({ message, onNavigate, onPickCommand }: {
+  message: ChatMessage
+  onNavigate?: () => void
+  onPickCommand: (command: string) => void
+}) {
   return (
     <>
       <p className="text-sm">{message.content}</p>
+      <MetaCard message={message} onPickCommand={onPickCommand} />
       {message.sub && <p className="text-xs leading-relaxed text-muted-foreground">{message.sub}</p>}
 
       {message.sources && message.sources.length > 0 && (
@@ -142,12 +167,35 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
   const emotion = useAssistantStore((s) => s.emotion)
   const send = useAssistantStore((s) => s.send)
   const [input, setInput] = useState('')
+  const [paletteIndex, setPaletteIndex] = useState(0)
+  const [paletteHidden, setPaletteHidden] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const node = scrollRef.current
     if (node) node.scrollTop = node.scrollHeight
   }, [messages, sending])
+
+  const prefix = commandPrefix(input)
+  const candidates = paletteHidden || prefix === null ? [] : matchCommands(prefix)
+  /** 当前挂着的技能: 从最后一条 skill 消息推, 让用户随时看得见"现在按哪份文档在答" */
+  let activeSkill: string | null = null
+  for (const message of messages) {
+    const meta = message.meta
+    if (meta?.kind === 'skill' && meta.action !== 'list') activeSkill = meta.action === 'set' ? meta.skillTitle : null
+  }
+
+  function pickCommand(command: CommandSpec) {
+    setInput(`/${command.name} `)
+    setPaletteIndex(0)
+    setPaletteHidden(false)
+  }
+
+  function submit(text: string) {
+    void send(text)
+    setInput('')
+    setPaletteIndex(0)
+  }
 
   /**
    * 面板跳转到原文时把小屏面板收起来: 面板在小屏是整屏浮层, 留着它就等于跳了个寂寞。
@@ -156,6 +204,44 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
   function beforeNavigate() {
     if (variant !== 'panel') return
     if (!window.matchMedia('(min-width: 1024px)').matches) useAssistantStore.getState().setOpen(false)
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (candidates.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setPaletteIndex((i) => (i + 1) % candidates.length)
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setPaletteIndex((i) => (i - 1 + candidates.length) % candidates.length)
+        return
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault()
+        pickCommand(candidates[paletteIndex])
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setPaletteHidden(true)
+        return
+      }
+      // 已经打完整条指令(比如 "/export")时 Enter 该是"发送"而不是"补全",
+      // 否则只用键盘就没法发一条不带参数的指令
+      const complete = parseCommand(input)?.kind === 'command'
+      if (event.key === 'Enter' && !event.shiftKey && !complete) {
+        event.preventDefault()
+        pickCommand(candidates[paletteIndex])
+        return
+      }
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      submit(input)
+    }
   }
 
   return (
@@ -176,9 +262,24 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             {MODE_LABEL[item]}
           </button>
         ))}
+        {activeSkill && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-1 text-[10px] text-primary">
+            <GraduationCap className="h-3 w-3" />
+            {activeSkill}
+            <button type="button" onClick={() => submit('/skill off')} className="hover:underline">关掉</button>
+          </span>
+        )}
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
           {sending ? '正在组织语言…' : STATUS_TEXT[emotion]}
         </span>
+        <button
+          type="button"
+          onClick={() => submit('/help')}
+          className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Terminal className="h-3 w-3" />
+          指令
+        </button>
       </div>
 
       <div ref={scrollRef} className={cn('min-h-0 flex-1 space-y-4 overflow-y-auto', variant === 'page' ? 'p-5' : 'p-3.5')}>
@@ -210,7 +311,7 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             <div key={message.id} className="animate-in fade-in-0 slide-in-from-bottom-2 flex items-start gap-2.5 duration-300">
               <img src="/littleq.webp" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full object-cover" />
               <div className="max-w-[88%] space-y-2 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
-                <MessageBody message={message} onNavigate={beforeNavigate} />
+                <MessageBody message={message} onNavigate={beforeNavigate} onPickCommand={(cmd) => { setInput(cmd) }} />
               </div>
             </div>
           ),
@@ -247,26 +348,24 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             ))}
         </div>
 
+        {candidates.length > 0 && (
+          <CommandPalette commands={candidates} activeIndex={paletteIndex} onPick={pickCommand} />
+        )}
+
         <div className="flex items-end gap-2">
           <Textarea
             value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                void send(input)
-                setInput('')
-              }
-            }}
+            onChange={(event) => { setInput(event.target.value); setPaletteIndex(0); setPaletteHidden(false) }}
+            onKeyDown={handleKeyDown}
             rows={2}
-            placeholder="说说你现在的情况，或者直接问「操作系统 内存管理」这样的知识点…"
+            placeholder="说说你现在的情况，或者直接问「操作系统 内存管理」这样的知识点…打 / 看指令"
             className="min-h-[44px] flex-1 resize-none text-sm"
           />
           <Button
             size="sm"
             className="h-11 shrink-0"
             disabled={!input.trim() || sending}
-            onClick={() => { void send(input); setInput('') }}
+            onClick={() => submit(input)}
           >
             <Send className="mr-1.5 h-3.5 w-3.5" />
             发送

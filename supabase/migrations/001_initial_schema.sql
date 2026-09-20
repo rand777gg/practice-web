@@ -4052,3 +4052,15 @@ REVOKE EXECUTE ON FUNCTION public.bump_chat_conversation() FROM anon, authentica
 DROP TRIGGER IF EXISTS trg_chat_msg_bump ON public.chat_messages;
 CREATE TRIGGER trg_chat_msg_bump AFTER INSERT ON public.chat_messages
   FOR EACH ROW EXECUTE FUNCTION public.bump_chat_conversation();
+
+-- ============================================================================
+-- Section 57: 小Q 指令 (/create, /export, /skill) 产生的结构化消息
+--
+--   指令的结果不是一段文本, 而是一张可交互的卡片: /create 要给"预览 → 改学科分类 →
+--   确认入库"三步, 入库之后那张卡还得变成"已入库 3 道"。所以它必须跟消息一起存下来,
+--   而不是只放在内存里 —— 否则刷新一下, 还没确认的草稿就没了, 但那道题其实还在等你确认。
+--
+--   为什么用 JSONB 而不是给每种卡片加列: 卡片种类会一直加(以后可能还有 /plan 之类),
+--   每加一种就要迁移一次; 而这些字段只被前端自己读, 从不参与检索或排序。
+--   真正要搜的是消息正文, 那个仍然是 content + 索引。
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS meta JSONB;

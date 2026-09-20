@@ -31,11 +31,12 @@ export async function produceReply(
   input: string,
   history: AssistantTurn[],
   mode: AssistantMode,
+  skill?: { title: string; markdown: string },
 ): Promise<ReplyOutcome> {
   if (hasAiConfig()) {
     try {
       const { chatWithLittleQ } = await import('@/lib/ai/assistant')
-      const { reply, emotion } = await chatWithLittleQ(input, history, mode)
+      const { reply, emotion } = await chatWithLittleQ(input, history, mode, { skill })
       return { reply, emotion, scripted: false }
     } catch (err) {
       // 模型挂了不该让整个对话不可用 —— 退回剧本, 并让调用方标出来是降级回答

@@ -41,6 +41,8 @@ import { getPromptDefault } from '@/lib/ai/prompt-catalog'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn, naturalSort } from '@/lib/utils'
 import { R2_PUBLIC_HOST, isOwnStorageUrl, r2PublicUrl } from '@/lib/r2'
+import { autoIndex } from '@/lib/rag'
+import { questionRowFromParsed } from '@/lib/assistant-question-draft'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Icon } from '@/lib/icons'
@@ -803,26 +805,17 @@ export function Component() {
 
     try {
       const { error: insertErr } = await supabase.from('questions').insert(
-        toImport.map((q) => ({
-          question_type: q.question_type,
-          question_text: q.question_text,
-          options: q.options,
-          correct_answer: (q.correct_answer ?? '') as any,
-          category: category ? (Array.isArray(category) ? category[0] : category) : null,
-          categories: category ? (Array.isArray(category) ? category : [category]) : [],
+        toImport.map((q) => questionRowFromParsed(q, {
           subject: subject || null,
-          analysis: q.analysis?.trim() || null,
-          key_points: q.key_points?.trim() || null,
-          answer_explanation: null,
-          seq_number: null,
-          import_mode: parseMode,
-          source_page: q.source_page || pageRangesRef.current || null,
-          verified: q.verified ?? false,
-          allow_unordered: q.allow_unordered ?? false,
+          categories: Array.isArray(category) ? category : category ? [category] : [],
+          importMode: parseMode,
+          sourcePageFallback: pageRangesRef.current || null,
         })),
       )
 
       if (insertErr) throw insertErr
+      // 批量导入也要补索引: 新题不补的话, 在下次重建索引之前小Q 搜不到它们
+      autoIndex('question')
       setImportCount(toImport.length)
       if (currentHistoryId) {
         await supabase.from('parse_history').update({ status_json: JSON.stringify({ state: 'imported' }) }).eq('id', currentHistoryId)

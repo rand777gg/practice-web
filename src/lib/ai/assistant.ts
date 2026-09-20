@@ -9,6 +9,32 @@ export interface AssistantTurn {
   text: string
 }
 
+export interface LittleQOptions {
+  /** 当前会话挂着的平台技能: SKILL.md 作为固定上下文注入 */
+  skill?: { title: string; markdown: string }
+}
+
+/**
+ * 技能文档超长时截断。
+ * 这两份 SKILL.md 各 6-7KB, 每轮都全量注入是能接受的成本; 但技能库以后会长,
+ * 所以还是设个上限 —— 宁可让模型说"文档没看全", 也不要把上下文挤爆。
+ */
+const SKILL_MAX_CHARS = 9000
+
+function skillSection(skill: LittleQOptions['skill']): string | null {
+  if (!skill?.markdown.trim()) return null
+  const body = skill.markdown.length > SKILL_MAX_CHARS
+    ? `${skill.markdown.slice(0, SKILL_MAX_CHARS)}\n……（技能文档过长，此处已截断）`
+    : skill.markdown
+  return [
+    `【当前技能：${skill.title}】用户用 /skill 指定了这个技能，本次及后续对话都按它来。`,
+    '要求：按文档里的步骤顺序带用户做，不要跳步；引用某一步时说明是第几步；',
+    '文档里没写的内容不要当成技能的一部分来承诺；文档要求"未验证就说未验证"时照办。',
+    '',
+    body,
+  ].join('\n')
+}
+
 const replySchema = z.object({
   text: z.string(),
   sub: z.string().nullish(),
@@ -84,6 +110,7 @@ export async function chatWithLittleQ(
   input: string,
   history: AssistantTurn[],
   mode: AssistantMode,
+  options: LittleQOptions = {},
 ): Promise<{ reply: AssistantReply; emotion: LittleQEmotion }> {
   const config = getAiConfig()
   if (!config.apiKey) throw new Error('AI_NOT_CONFIGURED')
@@ -104,6 +131,7 @@ export async function chatWithLittleQ(
 
   const prompt = [
     `【当前模式】${MODE_HINT[mode]}`,
+    skillSection(options.skill),
     hits.length > 0
       ? [
         '【可引用资料】以下是从平台资料库检索到的内容，按编号引用：',
