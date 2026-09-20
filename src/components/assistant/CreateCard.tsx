@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, Info, Library, RotateCcw, Sparkles, Trash2,
 } from 'lucide-react'
+import { AutocompleteInput } from '@/components/ui/autocomplete-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,15 +24,46 @@ import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { useAssistantStore } from '@/stores/assistant-store'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import {
-  COUNT_MAX, DIFFICULTY_LABEL, SOURCE_LABEL, SPREAD_LABEL, normalizeSpec,
-  type CreateDifficulty, type CreateSource, type CreateSpec, type CreateSpread,
+  COUNT_MAX, PLATFORM_SOURCES, PLATFORM_SOURCE_LABEL, SOURCE_LABEL, SPREAD_LABEL, describeSpec,
+  normalizeSpec, type CreateScope, type CreateSource, type CreateSpec, type CreateSpread,
 } from '@/lib/assistant-create'
 import type { CreateDraftMeta } from '@/lib/assistant-commands'
 import type { ParsedQuestion } from '@/lib/ai/types'
+import type { TocSection } from '@/lib/resource-blocks'
 import type { QuestionType } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface Doc { id: string; title: string }
+
+/** 建议列表里带上页码, 不然一堆同名标题("小结")看不出哪个是哪个 */
+function scopeSuffix(s: TocSection): string {
+  return s.pageTo > s.pageFrom ? `（第 ${s.pageFrom}-${s.pageTo} 页）` : `（第 ${s.pageFrom} 页）`
+}
+
+function scopeLabelOf(scope: CreateScope): string {
+  return scope.tocKey !== null ? scope.label : `${scope.from}${scope.to > scope.from ? `-${scope.to}` : ''}`
+}
+
+/**
+ * 输入框文本 → 结构化范围。
+ * 三种输入都认: 目录里某一节的标题(建议列表点出来的)、页码范围("40-60")、清空(不限)。
+ * 对不上就返回 null —— 宁可当成不限并在出题时如实说明, 也不要猜一个范围出来。
+ */
+function scopeFromText(text: string, sections: TocSection[]): CreateScope | null {
+  // 建议列表里的条目带着"（第 X-Y 页）"后缀, 匹配前先摘掉
+  const bare = text.replace(/（第[^）]*页）\s*$/, '').trim()
+  if (!bare) return null
+
+  const hit = sections.find((s) => s.title === bare) ?? sections.find((s) => s.title.includes(bare))
+  if (hit) return { label: hit.title, from: hit.pageFrom, to: hit.pageTo, tocKey: hit.key }
+
+  const range = /^(\d+)\s*(?:[-–—~]\s*(\d+))?$/.exec(bare)
+  if (range) {
+    const from = Number(range[1])
+    return { label: '', from, to: Number(range[2] ?? range[1]), tocKey: null }
+  }
+  return null
+}
 
 /** 已发布文献列表: 卡片自己拉, 免得每次开对话都为一张可能不存在的卡片多打一次库 */
 let docCache: Doc[] | null = null
@@ -50,6 +82,31 @@ function usePublishedDocuments(enabled: boolean): Doc[] {
     return () => { cancelled = true }
   }, [enabled])
   return docs
+}
+
+/** 某一篇文献的章节目录(页码区间), 按篇缓存 —— 同一篇被反复选中时不再重拉 */
+const sectionCache = new Map<string, TocSection[]>()
+const NO_SECTIONS: TocSection[] = []
+
+/**
+ * 直接在渲染时读缓存, 而不是把缓存抄进一份 state。
+ * 抄进 state 就得在 effect 体里同步 setState(先给旧值再给新值), 那既多一轮渲染, 也会让
+ * "这一段目录到底加载完没有"变得看不出来; 缓存只增不减, 渲染时读它是安全的。
+ */
+function useDocumentSections(documentId: string | null): TocSection[] {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    if (!documentId || sectionCache.has(documentId)) return
+    let cancelled = false
+    void import('@/lib/resource-library').then(async ({ loadDocumentSections }) => {
+      const list = await loadDocumentSections(documentId)
+      if (cancelled) return
+      sectionCache.set(documentId, list)
+      bump((n) => n + 1)
+    }).catch(() => { /* 没有目录就退回手填页码范围 */ })
+    return () => { cancelled = true }
+  }, [documentId])
+  return documentId ? sectionCache.get(documentId) ?? NO_SECTIONS : NO_SECTIONS
 }
 
 /** 答案的落点随题型而变: 单选是序号、填空是文本、判断是布尔 */
@@ -122,6 +179,7 @@ function Choice<T extends string>({ value, options, onChange }: {
         <button
           key={o.value}
           type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
             'rounded-full border px-2 py-0.5 text-[10px] transition-colors',
@@ -151,6 +209,18 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
   const [spec, setSpec] = useState<CreateSpec>(meta.spec)
   const [busy, setBusy] = useState(false)
   const [showAllQuestions, setShowAllQuestions] = useState(false)
+  // 范围输入框自己持有一份文本: 用户打字打到一半时 scope 还是 null(章节名没对上),
+  // 如果输入框的 value 直接绑 scope, 那半截字会被立刻抹掉, 根本没法往下打
+  const [scopeText, setScopeText] = useState(() => (meta.spec.scope ? scopeLabelOf(meta.spec.scope) : ''))
+  // 注意这里用的是本地 draft 的 documentId, 不是 meta.spec: 用户在卡片上选文献只改本地状态,
+  // 要等点了"开始出题"才写回 meta。盯 meta 的话永远拉不到这一篇的目录。
+  const sections = useDocumentSections(spec.documentId)
+
+  /** 输入框里的文本 → 结构化范围: 先当章节名在目录里找, 再当页码范围 */
+  function applyScopeText(text: string) {
+    setScopeText(text)
+    patch({ scope: scopeFromText(text, sections) })
+  }
 
   useEffect(() => {
     if (spec.subject) void updateFilteredCategories(spec.subject)
@@ -227,15 +297,61 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             </Field>
           )}
 
-          <Field label="范围" hint="选填，章节或页码范围">
-            <Input
-              value={spec.scope}
-              onChange={(e) => patch({ scope: e.target.value })}
-              placeholder="如：第 3 章 / 40-60"
-              aria-label="范围"
-              className="h-7 text-xs"
-            />
+          <Field label="范围" hint={sections.length > 0 ? '选填，从目录里找一节' : '选填'}>
+            {spec.source === 'resource' && sections.length > 0 ? (
+              <AutocompleteInput
+                value={scopeText}
+                onChange={applyScopeText}
+                // 一本书能解析出几百个标题, 普通下拉框根本翻不动 —— 给可搜索的建议列表,
+                // 同时也允许直接写页码范围("40-60")
+                suggestions={sections.map((s) => `${s.title}${scopeSuffix(s)}`)}
+                placeholder="输入章节名或页码，如 40-60"
+                className="h-7 text-xs"
+                clearable
+              />
+            ) : (
+              <Input
+                value={scopeText}
+                onChange={(e) => applyScopeText(e.target.value)}
+                placeholder={spec.source === 'resource' ? '这篇文献没有目录，可填页码范围，如 40-60' : '先指定文献'}
+                disabled={spec.source !== 'resource'}
+                aria-label="范围"
+                className="h-7 text-xs"
+              />
+            )}
           </Field>
+
+          {spec.source === 'platform' && (
+            <Field label="只用哪几类资料" hint="至少留一类">
+              <div className="flex flex-wrap gap-1">
+                {PLATFORM_SOURCES.map((s) => {
+                  const on = spec.sources.includes(s)
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      aria-pressed={on}
+                      // 最后一个是唯一选中的就不让取消 —— 一类都不选等于检索不出任何材料,
+                      // 那时它会静默退化成"模型自己出题", 而用户以为用的是平台资料
+                      disabled={on && spec.sources.length === 1}
+                      onClick={() => patch({
+                        sources: on ? spec.sources.filter((x) => x !== s) : [...spec.sources, s],
+                      })}
+                      className={cn(
+                        'rounded-full border px-2 py-0.5 text-[10px] transition-colors',
+                        on
+                          ? 'border-primary bg-primary/10 font-medium text-primary'
+                          : 'text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                        on && spec.sources.length === 1 && 'cursor-not-allowed opacity-70',
+                      )}
+                    >
+                      {PLATFORM_SOURCE_LABEL[s]}
+                    </button>
+                  )
+                })}
+              </div>
+            </Field>
+          )}
 
           <Field label="数量" hint={`1–${COUNT_MAX}`}>
             <Input
@@ -268,6 +384,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
                 <button
                   key={o.value}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => patch({
                     questionTypes: on
                       ? selectedTypes.filter((t) => t !== o.value)
@@ -325,12 +442,8 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
               ]}
             />
           </Field>
-          <Field label="难度" hint="只影响出题，题库里不存这一项">
-            <Choice<CreateDifficulty>
-              value={spec.difficulty}
-              onChange={(v) => patch({ difficulty: v })}
-              options={(['easy', 'normal', 'hard'] as CreateDifficulty[]).map((d) => ({ value: d, label: DIFFICULTY_LABEL[d] }))}
-            />
+          <Field label="出题范围小结" hint="确认一下这行是不是你要的">
+            <p className="pt-0.5 text-[11px] text-muted-foreground">{describeSpec(spec)}</p>
           </Field>
         </div>
 
@@ -383,7 +496,16 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         <Badge variant="secondary" className="border-transparent font-normal">
           {meta.spec.subject}{meta.spec.categories[0] ? ` / ${meta.spec.categories[0]}` : ''}
         </Badge>
-        {meta.spec.scope && <Badge variant="secondary" className="border-transparent font-normal">范围 {meta.spec.scope}</Badge>}
+        {meta.spec.scope && (
+          <Badge variant="secondary" className="border-transparent font-normal">
+            范围 {meta.spec.scope.label}（第 {meta.spec.scope.from}{meta.spec.scope.to > meta.spec.scope.from ? `-${meta.spec.scope.to}` : ''} 页）
+          </Badge>
+        )}
+        {meta.spec.source === 'platform' && meta.spec.sources.length < PLATFORM_SOURCES.length && (
+          <Badge variant="secondary" className="border-transparent font-normal">
+            只用 {meta.spec.sources.map((s) => PLATFORM_SOURCE_LABEL[s]).join('/')}
+          </Badge>
+        )}
         {meta.spec.avoidDuplicates && <Badge variant="secondary" className="border-transparent font-normal">已避重</Badge>}
       </div>
 
@@ -394,9 +516,12 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             出题依据（{meta.sources.length} 处）
           </p>
           {meta.sources.map((s, i) => (
-            <p key={i} className="truncate">
-              · {s.label}{s.pageNo ? ` · 第 ${s.pageNo} 页` : ''}
-              {s.anchor && <Link to={s.anchor} className="ml-1 text-primary hover:underline">看原文</Link>}
+            <p key={i} className="flex items-center gap-1 truncate">
+              <Badge variant="secondary" className="shrink-0 border-transparent text-[9px] font-normal">
+                {PLATFORM_SOURCE_LABEL[s.type]}
+              </Badge>
+              <span className="truncate">{s.label}{s.pageNo ? ` · 第 ${s.pageNo} 页` : ''}</span>
+              {s.anchor && <Link to={s.anchor} className="shrink-0 text-primary hover:underline">看原文</Link>}
             </p>
           ))}
         </div>
@@ -409,13 +534,17 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         </p>
       )}
 
-      {meta.scopeMissed && (
-        <p className="flex items-start gap-1.5 rounded-md bg-muted/50 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-          <Info className="mt-0.5 h-3 w-3 shrink-0" />
-          范围「{meta.spec.scope}」在检索到的材料里一条都没匹配上，这次是按整个主题出的。
-          想限定范围的话，把章节名写得更接近文献里的标题（比如「第 1 章 古代的医药卫生」）。
-        </p>
-      )}
+      {meta.scopeMissed && meta.spec.scope && (() => {
+        const scope = meta.spec.scope
+        const pages = scope.to > scope.from ? `第 ${scope.from}-${scope.to} 页` : `第 ${scope.from} 页`
+        return (
+          <p className="flex items-start gap-1.5 rounded-md bg-muted/50 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
+            范围「{scope.label}」（{pages}）里一条材料都没检索到，这次是按整篇出的。
+            换一节再试，或者把范围清掉。
+          </p>
+        )
+      })()}
 
       <div className="space-y-1">
         {shown.map((q, i) => <QuestionRow key={i} q={q} index={i} />)}

@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
 import { MinerUClient } from '@/lib/ai/mineru'
 import { getMinerUModelVersion, getMinerUToken } from '@/lib/ai/config'
-import { blocksFromParse, type ResourceBlock } from '@/lib/resource-blocks'
+import { blocksFromParse, sectionsFromToc, type ResourceBlock, type TocSection } from '@/lib/resource-blocks'
 import { renderAndUploadPdfPages, countPdfPages, type PageUrl } from '@/lib/pdf-page-renderer'
 import {
   MINERU_PAGE_LIMIT, parsePageNumbers, planParts, rangeForSlice, selectedPageCount,
@@ -148,8 +148,34 @@ export async function loadResourceBlocks(documentId: string): Promise<ResourceBl
   return out
 }
 
-export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {
-  if (!doc.pdf_page_urls) return []
+/**
+ * 一篇文献的章节目录(带页码区间), 给"限定章节出题"当选项。
+ *
+ * 只取标题行而不是整篇区块: 一本 295 页的书有近两千个区块, 为了一个下拉框把全文拉下来
+ * 太浪费; 标题行通常只有几十条, 而且 PostgREST 的 1000 行上限对它没有威胁。
+ */
+export async function loadDocumentSections(documentId: string): Promise<TocSection[]> {
+  const doc = await getResourceDocument(documentId)
+  const { data, error } = await supabase
+    .from('resource_blocks')
+    .select('block_index, page_no, heading_level, text')
+    .eq('document_id', documentId)
+    .gt('heading_level', 0)
+    .order('block_index', { ascending: true })
+    .limit(1000)
+  if (error) throw new Error(`加载目录失败: ${error.message}`)
+
+  const toc = (data ?? []).map((r) => ({
+    blockIndex: r.block_index as number,
+    level: r.heading_level as number,
+    title: r.text as string,
+    pageNo: r.page_no as number,
+  })).filter((e) => e.title.trim().length > 0)
+
+  return sectionsFromToc(toc, doc?.pdf_total_pages ?? 0)
+}
+
+export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {  if (!doc.pdf_page_urls) return []
   try {
     const parsed = JSON.parse(doc.pdf_page_urls) as PageUrl[]
     return Array.isArray(parsed) ? parsed.filter((p) => p && p.src) : []

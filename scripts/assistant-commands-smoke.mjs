@@ -14,9 +14,12 @@ import {
 import {
   COUNT_MAX,
   DEFAULT_CREATE_SPEC,
+  PLATFORM_SOURCES,
   describeSpec,
   normalizeSpec,
+  retrievalSources,
 } from '../src/lib/create-spec.ts'
+import { sectionsFromToc } from '../src/lib/resource-blocks.ts'
 
 let pass = 0
 let fail = 0
@@ -100,14 +103,68 @@ check('选了非文献来源时清掉 documentId',
   normalizeSpec({ source: 'platform', documentId: 'abc' }).documentId === null)
 check('选了文献来源时保留 documentId',
   normalizeSpec({ source: 'resource', documentId: 'abc' }).documentId === 'abc')
-check('主题和范围去掉首尾空格',
-  normalizeSpec({ prompt: '  死锁  ', scope: ' 第 3 章 ' }).prompt === '死锁'
-  && normalizeSpec({ scope: ' 第 3 章 ' }).scope === '第 3 章')
+check('主题和范围去掉首尾空格', normalizeSpec({ prompt: '  死锁  ' }).prompt === '死锁')
 check('分类只留非空且最多三个',
   eq(normalizeSpec({ categories: ['a', '', '  ', 'b', 'c', 'd'] }).categories, ['a', 'b', 'c']))
 check('避重默认开着', DEFAULT_CREATE_SPEC.avoidDuplicates)
 check('默认不把 AI 出的题标成已核对', DEFAULT_CREATE_SPEC.markVerified === false)
 check('describeSpec 说得清参数', describeSpec({ ...DEFAULT_CREATE_SPEC, count: 5 }).includes('5 道'))
+check('参数里不再有难度这一项', !('difficulty' in DEFAULT_CREATE_SPEC))
+
+// ── 来源子选择 ──
+check('默认跨来源是全部五类', DEFAULT_CREATE_SPEC.sources.length === PLATFORM_SOURCES.length)
+check('只会用文献时检索来源就只剩文献',
+  eq(retrievalSources(normalizeSpec({ source: 'platform', sources: ['resource'] })), ['resource']))
+check('只用题库时也是', eq(retrievalSources(normalizeSpec({ sources: ['question'] })), ['question']))
+check('非法来源被剔掉', eq(normalizeSpec({ sources: ['question', 'nowhere'] }).sources, ['question']))
+check('来源全非法时退回全选',
+  normalizeSpec({ sources: ['nowhere'] }).sources.length === PLATFORM_SOURCES.length)
+check('不用资料时检索来源为空', eq(retrievalSources(normalizeSpec({ source: 'model' })), []))
+check('指定文献时检索来源就是文献',
+  eq(retrievalSources(normalizeSpec({ source: 'resource', documentId: 'x' })), ['resource']))
+
+// ── 范围: 页码区间 ──
+const scoped = normalizeSpec({ source: 'resource', documentId: 'x', scope: { label: '第 3 章', from: 40, to: 60, tocKey: 7 } })
+check('指定文献时保留页码范围', scoped.scope?.from === 40 && scoped.scope?.to === 60)
+check('范围记着目录条目的 key(下拉框要能恢复选中)', scoped.scope?.tocKey === 7)
+check('范围上下限写反了会自动摆正',
+  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 60, to: 40 } }).scope?.from === 40)
+check('只有一端有数字的范围当成不限',
+  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 40 } }).scope === null
+  && normalizeSpec({ source: 'resource', documentId: 'x', scope: { to: 60 } }).scope === null)
+check('页码 0 / 负数当成不限',
+  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 0, to: 0 } }).scope === null
+  && normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: -5, to: 10 } }).scope === null)
+check('跨来源时清掉页码范围(几篇的页码各算各的)',
+  normalizeSpec({ source: 'platform', scope: { from: 40, to: 60 } }).scope === null)
+check('不用资料时也不留范围',
+  normalizeSpec({ source: 'model', scope: { from: 40, to: 60 } }).scope === null)
+check('没给标签时用页码范围当标签',
+  normalizeSpec({ source: 'resource', documentId: 'x', scope: { from: 3, to: 9 } }).scope?.label === '第 3-9 页')
+
+// ── 目录 → 页码区间 ──
+const toc = [
+  { blockIndex: 0, level: 1, title: '第 1 章 古代的医药卫生', pageNo: 10 },
+  { blockIndex: 5, level: 2, title: '（三）医学流派', pageNo: 40 },
+  { blockIndex: 9, level: 1, title: '第 2 章 中世纪', pageNo: 55 },
+]
+const secs = sectionsFromToc(toc, 120)
+check('每一节都切出页码区间', secs.length === 3)
+check('一节到下一节前一页为止', secs[0].pageFrom === 10 && secs[0].pageTo === 39)
+check('最后一节到全书末尾', secs[2].pageFrom === 55 && secs[2].pageTo === 120)
+check('区间互不重叠', secs.every((s, i) => i === 0 || s.pageFrom > secs[i - 1].pageTo))
+check('目录条目本身的 key 带出来了(同名标题也能区分)',
+  secs[1].key === 5 && secs[1].title === '（三）医学流派')
+const samePage = sectionsFromToc([
+  { blockIndex: 0, level: 1, title: 'A', pageNo: 7 },
+  { blockIndex: 1, level: 2, title: 'B', pageNo: 7 },
+  { blockIndex: 2, level: 2, title: 'C', pageNo: 7 },
+], 30)
+check('三个标题挤在同一页时不会切出负宽区间',
+  samePage.every((s) => s.pageFrom <= s.pageTo), JSON.stringify(samePage))
+check('没有总页数时最后一节至少到自己那一页',
+  sectionsFromToc([{ blockIndex: 0, level: 1, title: 'A', pageNo: 9 }], 0)[0].pageTo === 9)
+check('没有目录就是空数组(界面退回手填页码)', sectionsFromToc([], 100).length === 0)
 
 // ── /create 的指令说明得能让人看懂它有两步 ──
 const createSpec = findCommand('create')

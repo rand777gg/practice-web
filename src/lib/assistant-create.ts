@@ -12,21 +12,23 @@
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
-import { searchKnowledge, type RagHit } from '@/lib/rag'
+import { searchKnowledge, type RagHit, type RagSource } from '@/lib/rag'
 import { hasAiConfig, getAiConfig } from '@/lib/ai/config'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
+import { loadDocumentSections } from '@/lib/resource-library'
 import {
-  DEFAULT_CREATE_SPEC, DIFFICULTY_LABEL, normalizeSpec, type CreateSource, type CreateSpec,
+  DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, normalizeSpec, retrievalSources,
+  type CreateScope, type CreateSource, type CreateSpec, type PlatformSource,
 } from '@/lib/create-spec'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { CorrectAnswer, QuestionType } from '@/types'
 
 export type {
-  CreateDifficulty, CreateSource, CreateSpec, CreateSpread,
+  CreateScope, CreateSource, CreateSpec, CreateSpread, PlatformSource,
 } from '@/lib/create-spec'
 export {
-  COUNT_DEFAULT, COUNT_MAX, DEFAULT_CREATE_SPEC, DIFFICULTY_LABEL, SOURCE_LABEL, SPREAD_LABEL,
-  describeSpec, normalizeSpec,
+  COUNT_DEFAULT, COUNT_MAX, DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, PLATFORM_SOURCE_LABEL,
+  SOURCE_LABEL, SPREAD_LABEL, describeSpec, normalizeSpec, retrievalSources,
 } from '@/lib/create-spec'
 
 const TYPE_VALUES = new Set(QUESTION_TYPE_OPTIONS.map((o) => o.value as string))
@@ -43,10 +45,12 @@ const specSchema = z.object({
   categories: z.array(z.string()).nullish(),
   /** 用户提到的资料名, 用来在已发布文献里找对应那一篇 */
   documentTitle: z.string().nullish(),
+  /** 用户提到的章节名, 用来在那一篇文献的目录里对齐 */
   scope: z.string().nullish(),
   source: z.enum(['resource', 'platform', 'model']).nullish(),
+  /** 用户点名只用某几类资料时填(如"只从题库里找") */
+  sources: z.array(z.string()).nullish(),
   spread: z.enum(['spread', 'focus']).nullish(),
-  difficulty: z.enum(['easy', 'normal', 'hard']).nullish(),
   avoidDuplicates: z.boolean().nullish(),
   markVerified: z.boolean().nullish(),
 })
@@ -95,7 +99,9 @@ export async function parseCreateRequest(
       '- questionTypes：题型。用户没指定就留空',
       '- subject / categories：只有当用户明说了、而且能在上面的清单里对上时才填',
       '- documentTitle：用户指定了从某篇文献出题时填（原样，不要改写）',
-      '- scope：用户限定了章节或页码范围时填（例如"第 3 章"、"40-60 页"）',
+      '- scope：用户限定了章节时填章节标题（例如"第 3 章"、"绪论"）；页码范围也可以，写成"40-60"',
+      '- sources：用户点名只用某几类资料时填，取值只能是 resource/question/kp/subject/note；',
+      '  例如"只从题库里找相似的题"填 ["question"]；没说就留空',
       '- source：用户要在指定文献里出题填 resource；说"用平台资料/文献/题库"填 platform；',
       '  说"不用查资料/你直接出"填 model；没说就填 platform',
       '- spread：用户要求题目分布在多个知识点填 spread；要求围绕同一个知识点填 focus',
@@ -123,10 +129,25 @@ export async function parseCreateRequest(
     }
     const source: CreateSource = documentId ? 'resource' : (object.source ?? 'platform')
 
+    // 章节名 → 页码区间: 也同样只认目录里真实存在的章节。模型说得出"第 3 章"但目录里没有,
+    // 那就当没限定, 并在下面如实说 —— 否则会变成"以为限定了, 其实是整本出的题"。
+    let scope: CreateScope | null = null
+    let scopeNote = ''
+    const wantedScope = object.scope?.trim()
+    if (wantedScope && source === 'resource' && documentId) {
+      const sections = await loadDocumentSections(documentId).catch(() => [])
+      const hit = sections.find((s) => s.title.replace(/\s+/g, '') === wantedScope.replace(/\s+/g, ''))
+        ?? sections.find((s) => s.title.includes(wantedScope) || wantedScope.includes(s.title))
+      if (hit) scope = { label: hit.title, from: hit.pageFrom, to: hit.pageTo, tocKey: hit.key }
+      else scopeNote = `\n（目录里没找到「${wantedScope}」这一节，范围我留成了整篇，你改一下）`
+    }
+
     const spec = normalizeSpec({
       source,
       documentId,
-      scope: object.scope ?? '',
+      sources: (object.sources ?? []).filter((s): s is PlatformSource =>
+        (PLATFORM_SOURCES as readonly string[]).includes(s)),
+      scope,
       prompt: object.prompt || text,
       count: object.count ?? undefined,
       questionTypes: (object.questionTypes ?? []).filter((t): t is QuestionType => TYPE_VALUES.has(t)),
@@ -134,16 +155,15 @@ export async function parseCreateRequest(
       categories: (object.categories ?? []).filter((c) => options.categories.includes(c)),
       avoidDuplicates: object.avoidDuplicates ?? DEFAULT_CREATE_SPEC.avoidDuplicates,
       spread: object.spread ?? DEFAULT_CREATE_SPEC.spread,
-      difficulty: object.difficulty ?? DEFAULT_CREATE_SPEC.difficulty,
       markVerified: false,
     })
 
     // 用户说了从某篇出题, 但名字对不上库里的任何一篇 → 明说, 不要静默改成跨来源
-    const understanding = object.documentTitle && !documentId
-      ? `${object.understanding}\n（没找到叫「${object.documentTitle}」的已发布文献，资料库那一项我留成了跨来源，你改一下）`
-      : object.understanding
+    const documentNote = object.documentTitle && !documentId
+      ? `\n（没找到叫「${object.documentTitle}」的已发布文献，资料库那一项我留成了跨来源，你改一下）`
+      : ''
 
-    return { spec, understanding }
+    return { spec, understanding: `${object.understanding}${documentNote}${scopeNote}` }
   } catch (err) {
     console.warn('[create] 参数解析失败, 退回手动确认:', err)
     return fallback
@@ -157,8 +177,8 @@ export interface CreateResult {
   /** 材料是否来自平台资料 */
   grounded: boolean
   /** 出题依据了哪几处, 卡片上列出来供核对 */
-  sources: { label: string; pageNo: number | null; anchor: string | null }[]
-  /** 用户填的范围一条都没匹配上时, 回填说明 */
+  sources: { type: RagSource; label: string; pageNo: number | null; anchor: string | null }[]
+  /** 用户选的范围一条材料都没落在里面 */
   scopeMissed: boolean
 }
 
@@ -179,7 +199,6 @@ function extraInstructions(spec: CreateSpec, existing: string[]): string {
     `- 出题数量：正好 ${spec.count} 道。`,
     `- 题型只能是：${spec.questionTypes.map((t) => QUESTION_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t).join('、')}。`,
     `- 每题都必须填写 key_points（3-5 个核心知识点，逗号分隔，每项不超过 10 个字）—— 平台的练习进度按知识点统计，这一项为空这道题就不进任何知识点统计。`,
-    `- 难度：${DIFFICULTY_LABEL[spec.difficulty]}。`,
     spec.spread === 'focus'
       ? '- 这几道题全部围绕同一个知识点，从不同角度反复考它。'
       : `- 这几道题必须分散在 ${spec.count} 个不同的知识点上，不要出成同一道题的换皮。`,
@@ -214,19 +233,23 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
   let hits: RagHit[] = []
   let scopeMissed = false
   if (s.source !== 'model') {
-    const query = [s.prompt, s.scope].filter(Boolean).join(' ')
+    const query = [s.prompt, s.scope?.label].filter(Boolean).join(' ')
     const result = await searchKnowledge(query || '核心知识点', {
-      sources: s.source === 'resource' ? ['resource'] : ['resource', 'question', 'kp', 'subject', 'note'],
+      sources: retrievalSources(s),
       sourceIds: s.source === 'resource' && s.documentId ? [s.documentId] : undefined,
-      limit: 10,
+      // 限定节的时候多取一些: 召回窗口是按整篇排的, 这一节的块未必都进前十
+      limit: s.scope ? 40 : 10,
     })
     hits = result.hits
-    // 范围限定是拿"块所属的标题路径"做包含匹配的: 匹配不上就如实说, 而不是假装限定住了
+    // 范围是页码区间(不是标题字符串): 同一本书里「小结」每章都有, 按字符串匹配会一次
+    // 圈进全书所有小结。区间筛完一片不剩就如实说, 而不是假装限定住了。
     if (s.scope) {
-      const scoped = hits.filter((h) => (h.subLabel ?? '').includes(s.scope) || String(h.pageNo ?? '') === s.scope)
+      const scoped = hits.filter((h) =>
+        h.pageNo !== null && h.pageNo >= s.scope!.from && h.pageNo <= s.scope!.to)
       if (scoped.length > 0) hits = scoped
       else scopeMissed = hits.length > 0
     }
+    hits = hits.slice(0, 10)
   }
 
   const grounded = hits.length > 0
@@ -274,7 +297,9 @@ export async function generateFromSpec(spec: CreateSpec): Promise<CreateResult> 
     questions: cleaned,
     grounded,
     scopeMissed,
-    sources: hits.slice(0, 6).map((h) => ({ label: h.label, pageNo: h.pageNo, anchor: h.anchor })),
+    sources: hits.slice(0, 6).map((h) => ({
+      type: h.source, label: h.label, pageNo: h.pageNo, anchor: h.anchor,
+    })),
   }
 }
 

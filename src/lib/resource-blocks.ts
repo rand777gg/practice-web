@@ -295,3 +295,29 @@ export function buildToc(blocks: ResourceBlock[]): TocEntry[] {
   }
   return toc
 }
+
+export interface TocSection {
+  /** 目录条目的 blockIndex —— 唯一, 所以下拉框用它当值 */
+  key: number
+  level: number
+  title: string
+  pageFrom: number
+  pageTo: number
+}
+
+/**
+ * 目录条目 → 一节一段的页码区间。最后一节到全书末尾。
+ *
+ * 为什么范围用页码而不是标题字符串: 同一本书里「小结」「思考题」这类标题会在每一章重复,
+ * 拿字符串去匹配块所属的标题路径, 选"小结"会一次命中全书所有章的小结; 而页码区间天然互不
+ * 重叠, 与标题重名无关。三个连续标题挤在同一页时会切出零宽区间, 这里夹成单页而不是丢掉。
+ */
+export function sectionsFromToc(toc: TocEntry[], totalPages: number): TocSection[] {
+  const lastPage = totalPages > 0 ? totalPages : (toc[toc.length - 1]?.pageNo ?? 0)
+  return toc.map((entry, i) => {
+    const next = toc[i + 1]
+    const from = Math.max(1, entry.pageNo)
+    const to = Math.max(from, next ? next.pageNo - 1 : lastPage)
+    return { key: entry.blockIndex, level: entry.level, title: entry.title, pageFrom: from, pageTo: to }
+  })
+}

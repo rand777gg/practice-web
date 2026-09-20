@@ -9,6 +9,7 @@
  * "还没确认的草稿"仍然在那儿等着确认。
  */
 import type { ParsedQuestion } from '@/lib/ai/types'
+import type { RagSource } from '@/lib/rag'
 import type { SkillId } from '@/lib/skills-catalog'
 import type { CreateSpec } from '@/lib/assistant-create'
 
@@ -106,8 +107,8 @@ export interface CreateDraftMeta {
   questions: ParsedQuestion[]
   /** 题目材料是否来自平台资料 */
   grounded: boolean
-  /** 出题依据了哪几处(文献名 + 页码 + 跳转地址) */
-  sources: { label: string; pageNo: number | null; anchor: string | null }[]
+  /** 出题依据了哪几处(来源类型 + 文献名 + 页码 + 跳转地址) */
+  sources: { type: RagSource; label: string; pageNo: number | null; anchor: string | null }[]
   /** 用户填的范围一条都没匹配上 —— 要如实说, 不能假装限定住了 */
   scopeMissed: boolean
   insertedCount?: number
