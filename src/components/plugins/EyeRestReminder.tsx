@@ -7,6 +7,7 @@ import { usePluginStore } from '@/stores/plugin-store'
 import { pluginDefaults } from '@/lib/plugin-catalog'
 import { onPluginSignal } from '@/lib/plugin-events'
 import { useT } from '@/i18n/use-t'
+import { Separator } from '@/components/ui/separator'
 
 export function EyeRestReminder() {
   const { lang } = useT()
@@ -90,8 +91,8 @@ export function EyeRestReminder() {
         </div>
         <p className="mt-3 text-[10px] text-muted-foreground">
           {zh
-            ? `每 ${intervalMin} 分钟提醒一次 · 可在「插件」页调整`
-            : `Every ${intervalMin} min · tune it on the Plugins page`}
+            ? <>每 {intervalMin} 分钟提醒一次<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />可在「插件」页调整</>
+            : <>Every {intervalMin} min<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />tune it on the Plugins page</>}
         </p>
       </div>
     </div>

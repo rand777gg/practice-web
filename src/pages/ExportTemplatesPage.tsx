@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { SeparatedList } from '@/components/ui/separated-list'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { DemoBadge } from '@/components/topics/TopicSidebar'
@@ -35,10 +36,8 @@ function formatLabel(key: ExportFormat): string {
   return EXPORT_FORMATS.find((item) => item.key === key)?.label ?? key
 }
 
-function fieldLabels(fields: ExportField[]): string {
-  return fields
-    .map((field) => EXPORT_FIELDS.find((item) => item.key === field)?.label ?? field)
-    .join(' · ')
+function fieldLabels(fields: ExportField[]): string[] {
+  return fields.map((field) => EXPORT_FIELDS.find((item) => item.key === field)?.label ?? field)
 }
 
 function TemplateCard({
@@ -97,7 +96,7 @@ function TemplateCard({
         <div className="space-y-1 text-[11px] text-muted-foreground">
           <p>
             <span className="text-muted-foreground/70">字段：</span>
-            {fieldLabels(template.fields) || '未选择'}
+            <SeparatedList items={fieldLabels(template.fields)} fallback="未选择" />
           </p>
           <p>
             <span className="text-muted-foreground/70">分组：</span>
@@ -107,13 +106,14 @@ function TemplateCard({
             {EXPORT_ORDERS.find((item) => item.key === template.orderBy)?.label}
           </p>
           <p>
-            {[
-              template.includeIndex ? '含题号' : null,
-              template.includeCover ? '含封面' : null,
-              template.includeToc ? '含目录' : null,
-            ]
-              .filter(Boolean)
-              .join(' · ') || '无附加项'}
+            <SeparatedList
+              items={[
+                template.includeIndex ? '含题号' : null,
+                template.includeCover ? '含封面' : null,
+                template.includeToc ? '含目录' : null,
+              ]}
+              fallback="无附加项"
+            />
           </p>
         </div>
 

@@ -13,6 +13,7 @@ import {
 } from '@/lib/topic-search-demo'
 import { topicIndexOf } from '@/lib/topics-demo'
 import { cn } from '@/lib/utils'
+import { Separator } from '@/components/ui/separator'
 
 const EXAM_TONE: Record<ExamType, string> = {
   全国统考: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
@@ -117,7 +118,7 @@ export function TopicSearchDialog({
 
         <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
           <p className="text-[11px] text-muted-foreground">
-            命中 {hits.length} 门专业课{query && ` · 关键词「${query}」`}
+            命中 {hits.length} 门专业课{query && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />关键词「{query}」</>}
           </p>
 
           {hits.length === 0 ? (

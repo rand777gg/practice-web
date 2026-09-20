@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { questionItemCount } from '@/lib/answer-utils'
 import type { Question } from '@/types'
+import { Separator } from '@/components/ui/separator'
 
 function LogoImage({ src, alt, className, fallbackClassName }: { src?: string | null; alt: string; className?: string; fallbackClassName?: string }) {
   const [loaded, setLoaded] = useState(false)
@@ -164,7 +165,7 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm text-muted-foreground">
-            共 {items.length} 道题目{itemTotal > items.length ? ` · ${itemTotal} 个小题` : ''}{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
+            共 {items.length} 道题目{itemTotal > items.length && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{itemTotal} 个小题</>}{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
           </p>
           {selectedItems.size > 0 && (
             <Button variant="destructive" size="sm" onClick={handleBatchRemove}>

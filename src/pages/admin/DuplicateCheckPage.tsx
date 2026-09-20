@@ -173,7 +173,7 @@ function QuestionPreview({ q, side }: { q: DupQuestion; side: 'a' | 'b' }) {
         </div>
       )}
       <div className="mt-2 text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
-        {q.importMode && <span>{IMPORT_MODE_LABELS[q.importMode] ?? q.importMode}{q.sourcePage ? ` · P${q.sourcePage}` : ''}</span>}
+        {q.importMode && <span>{IMPORT_MODE_LABELS[q.importMode] ?? q.importMode}{q.sourcePage && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />P{q.sourcePage}</>}</span>}
         {q.createdAt && <span>{q.createdAt.slice(0, 10)}</span>}
         {q.seqNumber != null && <span>#seq {q.seqNumber}</span>}
       </div>

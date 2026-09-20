@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { ResourceReader } from '@/components/resource/ResourceReader'
+import { SeparatedList } from '@/components/ui/separated-list'
 import {
   documentMarkdownFromParts, documentPagesFromParts, getResourceDocument,
   listResourceParts, loadResourceBlocks,
@@ -89,7 +90,7 @@ export function Component() {
             )}
           </div>
           <p className="truncate text-[11px] text-muted-foreground">
-            {doc ? [doc.authors, doc.source].filter(Boolean).join(' · ') || '未填写作者与来源' : ''}
+            {doc ? <SeparatedList items={[doc.authors, doc.source]} fallback="未填写作者与来源" /> : ''}
           </p>
           {doc && doc.tags.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">

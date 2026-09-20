@@ -153,11 +153,11 @@ export function normalizeSelection(input: unknown): CreateSelection | null {
 }
 
 /** 卡片/按钮上那行说明。段落数只有真的勾过才知道, 所以按有无 blocks 两套说法 */
-export function selectionSummary(selection: CreateSelection): string {
+export function selectionSummary(selection: CreateSelection): string[] {
   const pages = selection.to > selection.from ? `第 ${selection.from}-${selection.to} 页` : `第 ${selection.from} 页`
   return selection.blocks.length > 0
-    ? `${selection.label} · ${pages} · ${selection.blocks.length} 段`
-    : `${selection.label} · ${pages}`
+    ? [selection.label, pages, `${selection.blocks.length} 段`]
+    : [selection.label, pages]
 }
 
 /**
@@ -239,10 +239,10 @@ export function retrievalSources(spec: CreateSpec): RagSource[] {
 }
 
 /** 一句话概括这份参数, 给按钮旁边那行小字用 */
-export function describeSpec(spec: CreateSpec): string {
+export function describeSpec(spec: CreateSpec): string[] {
   const where = spec.source === 'resource'
-    ? (spec.selection ? selectionSummary(spec.selection) : '指定文献（还没选内容）')
-    : SOURCE_LABEL[spec.source]
+    ? (spec.selection ? selectionSummary(spec.selection) : ['指定文献（还没选内容）'])
+    : [SOURCE_LABEL[spec.source]]
   const types = spec.questionTypes.length > 1 ? `${spec.questionTypes.length} 种题型` : '单一题型'
-  return `${where} · ${spec.count} 道 · ${types}`
+  return [...where, `${spec.count} 道`, types]
 }

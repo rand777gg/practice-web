@@ -273,7 +273,10 @@ export function HeaderPlanMenu() {
                 const perDay = s.perDay
                 const pct = perDay > 0 ? Math.min(Math.round((s.doneToday / perDay) * 100), 100) : 0
                 const pace = perDay > 0
-                  ? `${s.round === null ? "" : `${t("plan.roundPrefix")}${s.round}${t("plan.roundsUnit")} · `}${t("plan.remaining")}${s.remaining}${t("plan.questions")} ÷ ${s.days}${t("plan.daysUnit")} ≈ ${perDay}${t("plan.perDay")}`
+                  ? <>
+                      {s.round !== null && <>{t("plan.roundPrefix")}{s.round}{t("plan.roundsUnit")}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" /></>}
+                      {t("plan.remaining")}{s.remaining}{t("plan.questions")} ÷ {s.days}{t("plan.daysUnit")} ≈ {perDay}{t("plan.perDay")}
+                    </>
                   : t("plan.roundsAllDone")
                 return (
                   <div key={s.subject} className="space-y-0.5">

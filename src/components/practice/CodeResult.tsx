@@ -3,6 +3,7 @@ import { useT } from '@/i18n/use-t'
 import { CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
 import type { SubmissionResult } from '@/types'
 import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   results: SubmissionResult[] | null
@@ -102,8 +103,8 @@ export function CodeResult({ results, status, testCasesCount, singleCaseIndex }:
                 </span>
                 {(r.time_ms != null || r.memory_kb != null) && (
                   <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
-                    {r.time_ms != null ? `${r.time_ms}ms` : ''}
-                    {r.memory_kb != null ? `${r.time_ms != null ? ' · ' : ''}${Math.round(r.memory_kb / 1024)}MB` : ''}
+                    {r.time_ms != null && `${r.time_ms}ms`}
+                    {r.memory_kb != null && <>{r.time_ms != null && <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />}{Math.round(r.memory_kb / 1024)}MB</>}
                   </span>
                 )}
               </div>

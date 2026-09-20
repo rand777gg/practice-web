@@ -35,6 +35,7 @@ import type { ParsedQuestion } from '@/lib/ai/types'
 import type { QuestionType } from '@/types'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
+import { SeparatedList } from '@/components/ui/separated-list'
 
 interface Doc { id: string; title: string }
 
@@ -207,7 +208,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         {done && meta.spec.subject && (
           <span className="text-muted-foreground">
            <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{meta.spec.subject}{meta.spec.categories[0] ? ` / ${meta.spec.categories[0]}` : ''}
-            {meta.spec.markVerified ? ' · 已标为已核对' : ''}
+            {meta.spec.markVerified && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />已标为已核对</>}
           </span>
         )}
         {done && <Link to="/admin/questions" className="ml-auto text-primary hover:underline">去题库看看</Link>}
@@ -290,7 +291,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
                 <span className="truncate">
                   {spec.source !== 'resource'
                     ? '先选「指定某一篇文献」'
-                    : spec.selection ? selectionSummary(spec.selection) : '选择资料内容'}
+                    : spec.selection ? <SeparatedList items={selectionSummary(spec.selection)} /> : '选择资料内容'}
                 </span>
               </span>
               <Search className="h-3 w-3 shrink-0 opacity-60" />
@@ -425,7 +426,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             />
           </Field>
           <Field label="出题范围小结" hint="确认一下这行是不是你要的">
-            <p className="pt-0.5 text-[11px] text-muted-foreground">{describeSpec(spec)}</p>
+            <p className="pt-0.5 text-[11px] text-muted-foreground"><SeparatedList items={describeSpec(spec)} /></p>
           </Field>
         </div>
 
@@ -467,7 +468,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
               ? '先选学科'
               : spec.source === 'resource' && !spec.selection
                 ? '先点「选择资料内容」'
-                : `${SOURCE_LABEL[spec.source]} · ${spec.count} 道`}
+                : <>{SOURCE_LABEL[spec.source]}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{spec.count} 道</>}
           </span>
         </div>
         </div>
@@ -491,7 +492,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
         </Badge>
         {meta.spec.selection && (
           <Badge variant="secondary" className="border-transparent font-normal">
-            {selectionSummary(meta.spec.selection)}
+            <SeparatedList items={selectionSummary(meta.spec.selection)} />
           </Badge>
         )}
         {meta.spec.source === 'platform' && meta.spec.sources.length < PLATFORM_SOURCES.length && (
@@ -513,7 +514,7 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
               <Badge variant="secondary" className="shrink-0 border-transparent text-[9px] font-normal">
                 {PLATFORM_SOURCE_LABEL[s.type]}
               </Badge>
-              <span className="truncate">{s.label}{s.pageNo ? ` · 第 ${s.pageNo} 页` : ''}</span>
+              <span className="truncate">{s.label}{s.pageNo && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />第 {s.pageNo} 页</>}</span>
               {s.anchor && <Link to={s.anchor} className="shrink-0 text-primary hover:underline">看原文</Link>}
             </p>
           ))}

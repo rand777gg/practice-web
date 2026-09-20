@@ -23,6 +23,7 @@ import {
 import { syncRagSource, autoIndex, type RagSource, type RagSyncResult } from '@/lib/rag'
 import { ResourceIngestDialog } from '@/components/resource/ResourceIngestDialog'
 import { ResourceMetaDialog } from '@/components/resource/ResourceMetaDialog'
+import { SeparatedList } from '@/components/ui/separated-list'
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
   pending: { label: '待解析', className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
@@ -295,7 +296,7 @@ export function Component() {
                         </Link>
                       </div>
                       <p className="truncate text-[10px] text-muted-foreground">
-                        {[doc.authors, doc.source, doc.pub_year].filter(Boolean).join(' · ') || '—'}
+                        <SeparatedList items={[doc.authors, doc.source, doc.pub_year]} fallback="—" />
                       </p>
                       {doc.parse_status === 'failed' && doc.parse_error && (
                         <p className="mt-0.5 line-clamp-2 text-[10px] text-destructive">{doc.parse_error}</p>

@@ -16,6 +16,7 @@ import {
 import { useT } from '@/i18n/use-t'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
+import { SeparatedList } from '@/components/ui/separated-list'
 
 function todayStart(): string {
   const now = new Date()
@@ -386,7 +387,7 @@ export function DashboardPlanCards() {
                 {deadline && <span className="ml-auto font-normal tabular-nums text-muted-foreground">{deadline}</span>}
               </div>
               <p className="text-muted-foreground">
-                {t('plan.subjectCol')} <span className="text-foreground/80">{planSubjects.length > 0 ? planSubjects.join(' · ') : t('plan.selectHint')}</span>
+                {t('plan.subjectCol')} <span className="text-foreground/80"><SeparatedList items={planSubjects} fallback={t('plan.selectHint')} /></span>
               </p>
               {deadline && totalScope > 0 && (
                 <p className="text-muted-foreground">
@@ -405,7 +406,7 @@ export function DashboardPlanCards() {
                     {s.next
                       ? <span className={cn('tabular-nums', s.next.state === 'overdue' ? 'text-destructive' : '')}>
                          <Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{s.next.target}{s.next.state === 'overdue' ? ` ${t('plan.roundStateOverdue')}` : ''}
-                          {pace ? ` · ${pace.remaining}${t('plan.questions')}/${pace.days}${t('plan.daysUnit')} ≈ ${pace.perDay}${t('plan.perDay')}` : ''}
+                          {pace && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{pace.remaining}{t('plan.questions')}/{pace.days}{t('plan.daysUnit')} ≈ {pace.perDay}{t('plan.perDay')}</>}
                         </span>
                       : <span className="text-emerald-600 dark:text-emerald-400"><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{t('plan.roundsAllDone')}</span>}
                   </p>
@@ -416,7 +417,7 @@ export function DashboardPlanCards() {
                 <p className="text-muted-foreground">
                   {t('plan.reviewIncluded')} <b className="text-foreground">{reviewGoal}</b> {t('plan.questions')}
                   <span className="ml-1 text-[10px] text-muted-foreground/70">
-                    ({reviewSubjects.join(' · ')})
+                    (<SeparatedList items={reviewSubjects} />)
                   </span>
                 </p>
               )}

@@ -624,13 +624,13 @@ export function Component() {
 
       <div className="flex flex-wrap gap-2 text-[11px]">
         {[
-          { icon: Cpu, text: '模拟客户端 · 无头浏览器 + 指纹轮换' },
-          { icon: ScanSearch, text: '多模态抽取 · 题干 / 公式 / 图表' },
-          { icon: Database, text: '语义查重 · 与现有题库双通道比对' },
-          { icon: Gauge, text: '限速与熔断 · 按 robots 与授权状态' },
+          { key: 'client', icon: Cpu, text: <>模拟客户端<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />无头浏览器 + 指纹轮换</> },
+          { key: 'extract', icon: ScanSearch, text: <>多模态抽取<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />题干 / 公式 / 图表</> },
+          { key: 'dedupe', icon: Database, text: <>语义查重<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />与现有题库双通道比对</> },
+          { key: 'limit', icon: Gauge, text: <>限速与熔断<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />按 robots 与授权状态</> },
         ].map((item) => (
           <span
-            key={item.text}
+            key={item.key}
             className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground"
           >
             <item.icon className="h-3 w-3 text-primary" />

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Box, Check, CheckCircle2, CircleSlash, Copy, Database, FileCode, Globe, HardDrive,
   Info, Pencil, Plus, Server, ShieldCheck, Trash2, TriangleAlert, Upload,
@@ -192,7 +192,7 @@ function QuestionEditor({
 export function Component() {
   const [connectionKind, setConnectionKind] = useState<BankConnectionKind>('docker')
   const [config, setConfig] = useState<Record<string, string>>({})
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: ReactNode } | null>(null)
   const [schemaReady, setSchemaReady] = useState(false)
 
   const [questions, setQuestions] = useState<LocalQuestion[]>(LOCAL_QUESTIONS)
@@ -215,7 +215,7 @@ export function Component() {
       setTestResult({ ok: true, message: '浏览器本地存储可用，题目会写入 IndexedDB' })
       return
     }
-    setTestResult({ ok: true, message: '连接成功（DEMO 模拟，未发起真实请求）· 已发现表 questions' })
+    setTestResult({ ok: true, message: <>连接成功（DEMO 模拟，未发起真实请求）<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />已发现表 questions</> })
   }
 
   function openNew() {

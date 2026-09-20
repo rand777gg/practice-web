@@ -16,6 +16,7 @@ import { MINERU_PAGE_LIMIT, selectedPageCount, slicePageRanges, sliceToRange } f
 import { ingestResource, type ParseMode } from '@/lib/resource-library'
 import { ResourceMetaFields } from './ResourceMetaFields'
 import { EMPTY_META, metaToInput, type MetaFormValue } from '@/lib/resource-meta-form'
+import { Separator } from '@/components/ui/separator'
 
 interface Props {
   open: boolean
@@ -133,8 +134,8 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
                 <FileUp className="h-3.5 w-3.5" />选择 PDF
               </Button>
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {file ? `${file.name} · ${formatSize(file.size)}` : '未选择文件'}
-                {totalPages !== null && ` · 共 ${totalPages} 页`}
+                {file ? <>{file.name}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{formatSize(file.size)}</> : '未选择文件'}
+                {totalPages !== null && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />共 {totalPages} 页</>}
               </span>
             </div>
             {autoSlices.length > 1 && (

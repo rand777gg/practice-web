@@ -512,10 +512,10 @@ export function Component() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {([
-                  { icon: Pencil, label: '继续练习', sub: '保持手感 · 每日打卡', to: '/practice', bg: 'var(--chart-brand)', iconColor: 'var(--chart-brand)' },
-                  { icon: Clock, label: '模拟考试', sub: '限时实战 · 检验水平', to: '/exam', bg: 'var(--chart-warn)', iconColor: 'var(--chart-warn)' },
-                  { icon: RotateCcw, label: '错题攻坚', sub: '重做错题 · 消灭盲点', to: '/review', bg: 'var(--chart-wrong)', iconColor: 'var(--chart-wrong)' },
-                  { icon: Star, label: '我的收藏', sub: '收藏回看 · 重点强化', to: '/favorites', bg: 'var(--chart-correct)', iconColor: 'var(--chart-correct)' },
+                  { icon: Pencil, label: '继续练习', sub: <>保持手感<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />每日打卡</>, to: '/practice', bg: 'var(--chart-brand)', iconColor: 'var(--chart-brand)' },
+                  { icon: Clock, label: '模拟考试', sub: <>限时实战<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />检验水平</>, to: '/exam', bg: 'var(--chart-warn)', iconColor: 'var(--chart-warn)' },
+                  { icon: RotateCcw, label: '错题攻坚', sub: <>重做错题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />消灭盲点</>, to: '/review', bg: 'var(--chart-wrong)', iconColor: 'var(--chart-wrong)' },
+                  { icon: Star, label: '我的收藏', sub: <>收藏回看<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />重点强化</>, to: '/favorites', bg: 'var(--chart-correct)', iconColor: 'var(--chart-correct)' },
                 ]).map((btn) => {
                   const Icon = btn.icon
                   return (

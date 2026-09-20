@@ -48,6 +48,7 @@ import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Icon } from '@/lib/icons'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Clock, Pencil, Play, Plus, Upload, X } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 type Step = 'upload' | 'parsing' | 'metadata' | 'preview' | 'importing' | 'done'
 type ParseMode = 'lightweight' | 'precision' | 'generate'
@@ -1686,7 +1687,9 @@ export function Component() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-                              {selectionMode === 'off' ? '段落选择' : selectionMode === 'single' ? `单击 · ${selectedSectionIdx.size}` : `范围 · ${selectedSectionIdx.size}`}
+                              {selectionMode === 'off'
+                                ? '段落选择'
+                                : <>{selectionMode === 'single' ? '单击' : '范围'}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{selectedSectionIdx.size}</>}
                               <ChevronDown className="h-3 w-3" />
                             </Button>
                           </DropdownMenuTrigger>

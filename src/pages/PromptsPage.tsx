@@ -223,7 +223,7 @@ export function Component() {
             <Wand2 className="h-5 w-5 text-primary" />
             {zh ? '提示词' : 'Prompts'}
             <Badge variant="secondary" className="font-normal">
-              {zh ? `${PROMPT_DEFS.length} 条内置 · 已改 ${customizedCount}` : `${PROMPT_DEFS.length} built-in · ${customizedCount} customized`}
+              {PROMPT_DEFS.length}{zh ? ' 条内置' : ' built-in'}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{zh ? <>已改 {customizedCount}</> : <>{customizedCount} customized</>}
             </Badge>
           </h1>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">

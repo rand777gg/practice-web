@@ -15,6 +15,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { listResourceDocuments, type ResourceDocument } from '@/lib/resource-library'
 import { searchBlocks, searchDocuments, type BlockHit, type DocumentHit } from '@/lib/resource-search'
 import { HighlightText } from '@/components/resource/HighlightText'
+import { SeparatedList } from '@/components/ui/separated-list'
+import { Separator } from '@/components/ui/separator'
 
 const ALL = '__all__'
 
@@ -251,7 +253,7 @@ export function Component() {
             <span className="text-[10px] text-muted-foreground">
               {mode === 'documents'
                 ? `${docHits?.length ?? 0} 篇文献`
-                : `${blockHits.length} 处命中 · ${blockHitDocs.length} 篇文献`}
+                : <>{blockHits.length} 处命中<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{blockHitDocs.length} 篇文献</>}
             </span>
           )}
         </div>
@@ -284,7 +286,7 @@ export function Component() {
                   <span className="line-clamp-2 text-sm font-medium leading-snug">{doc.title}</span>
                 </div>
                 <p className="line-clamp-1 text-[11px] text-muted-foreground">
-                  {[doc.authors, doc.source, doc.pub_year].filter(Boolean).join(' · ') || '未填写作者与来源'}
+                  <SeparatedList items={[doc.authors, doc.source, doc.pub_year]} fallback="未填写作者与来源" />
                 </p>
                 {doc.abstract && (
                   <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground/80">{doc.abstract}</p>

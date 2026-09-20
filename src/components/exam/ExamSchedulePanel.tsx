@@ -524,9 +524,10 @@ export function ExamSchedulePanel({ userId }: { userId: string }) {
                   </p>
                   {pendingNow ? (
                     <p className="text-[10px] text-muted-foreground/80">
+                      {t('examSched.todayAt')} {minutesToTime(s.fire_time)}<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />
                       {zh
-                        ? `${t('examSched.todayAt')} ${minutesToTime(s.fire_time)} 已到点 · 立即开始将按模板组卷并计时`
-                        : `${t('examSched.todayAt')} ${minutesToTime(s.fire_time)} · starting now composes the paper and starts the timer`}
+                        ? '已到点，立即开始将按模板组卷并计时'
+                        : 'starting now composes the paper and starts the timer'}
                     </p>
                   ) : next ? (
                     <p className="text-[10px] text-muted-foreground/80">

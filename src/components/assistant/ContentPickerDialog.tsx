@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { ResourceBlock, TocSection } from '@/lib/resource-blocks'
 import type { CreateSelection } from '@/lib/create-spec'
 import { cn } from '@/lib/utils'
+import { SeparatedList } from '@/components/ui/separated-list'
 
 interface Doc { id: string; title: string }
 
@@ -161,12 +162,12 @@ function PickerBody({ documents, initialDocumentId, initialSelection, onConfirm,
   }, [documents, docId, checkedSections, sections, checkedBlocks, blockCache])
 
   const summary = useMemo(() => {
-    if (!selection) return '还没选内容'
+    if (!selection) return []
     const pages = selection.to > selection.from ? `第 ${selection.from}-${selection.to} 页` : `第 ${selection.from} 页`
     const parts = [pages]
     if (checkedSections.size > 0) parts.push(`${checkedSections.size} 节`)
     if (selection.blocks.length > 0) parts.push(`${selection.blocks.length} 段`)
-    return parts.join(' · ')
+    return parts
   }, [selection, checkedSections])
 
   return (
@@ -270,7 +271,7 @@ function PickerBody({ documents, initialDocumentId, initialSelection, onConfirm,
       <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <FileText className="h-3 w-3" />
-          {selection ? `已选 ${summary}` : '至少勾一节或一段'}
+          {selection ? <>已选 <SeparatedList items={summary} /></> : '至少勾一节或一段'}
         </span>
         <span className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={() => { onConfirm(null); onClose() }}>清掉选择</Button>
