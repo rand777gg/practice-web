@@ -423,14 +423,19 @@ export function EnglishRealPaper({
       <EnglishRealPaperStyles />
 
       <div className={cn('erp-flow', spread && 'is-spread')} style={{ zoom: scale }}>
-      {/* ── Section I 完形：整篇一个题，挖空带题号，选项挨着排 ── */}
+      {/* ── Section I 完形：正文一页，20 个空的选项另起一页（真题也是这么排的）──
+          正文本身就占大半页，再塞 20 行选项会超过 A4（实测 329mm） */}
       {cloze && (
-        <PaperPage>
-          <h1 className="erp-title">{layout.title}</h1>
-          <h2 className="erp-sect">{cloze.ordinal} {cloze.title}</h2>
-          <p className="erp-dir"><b>Directions:</b> {cloze.directions}</p>
-          <ClozePassage passage={cloze.passage} pickedByNo={pickedByNo} currentNo={currentNo} onLocate={onLocate} />
-          <div style={{ marginTop: '5mm' }}>
+        <>
+          <PaperPage>
+            <h1 className="erp-title">{layout.title}</h1>
+            <h2 className="erp-sect">{cloze.ordinal} {cloze.title}</h2>
+            <p className="erp-dir"><b>Directions:</b> {cloze.directions}</p>
+            <ClozePassage passage={cloze.passage} pickedByNo={pickedByNo} currentNo={currentNo} onLocate={onLocate} />
+          </PaperPage>
+          <PaperPage>
+            <h2 className="erp-sect">{cloze.ordinal} {cloze.title}</h2>
+            <div style={{ marginTop: '3mm' }}>
             {cloze.blanks.map((b) => (
               <PaperItem key={b.no} {...itemProps(b.no)} className="erp-loc" style={{ marginBottom: '1.5mm' }}>
                 <div className="erp-options">
@@ -452,8 +457,9 @@ export function EnglishRealPaper({
                 </div>
               </PaperItem>
             ))}
-          </div>
-        </PaperPage>
+            </div>
+          </PaperPage>
+        </>
       )}
 
       {/* ── Section II Part A 阅读：文章占一页，题目选项另起一页 ──
@@ -481,54 +487,65 @@ export function EnglishRealPaper({
         </Fragment>
       ))}
 
-      {/* ── Part B 新题型：段落 + 顺序骨架 ── */}
+      {/* ── Part B 新题型：段落正文一页，顺序骨架 + 5 个空另起一页 ──
+          段落正文就有七八段，跟骨架、选项挤一页会超过 A4（实测 ~348mm） */}
       {partB && (
-        <PaperPage>
-          <h2 className="erp-sect">{partB.ordinal} {partB.title}</h2>
-          <p className="erp-dir"><b>Directions:</b> {partB.directions}</p>
-          <OrderSkeleton skeleton={partB.skeleton} answersByNo={answeredLetterByNo} />
-          {partB.paragraphs.map((p) => (
-            <p key={p.letter} className="erp-body erp-para" style={{ textIndent: 0 }}>
-              <b>{p.letter}.</b> {p.text}
-            </p>
-          ))}
-          <div style={{ marginTop: '4mm' }}>
-            {partB.questions.map((q) => (
-              <PaperItem key={q.no} {...itemProps(q.no)}>
-                <p className="erp-q"><Locator no={q.no} onLocate={onLocate} className="erp-qn">{q.no}.</Locator></p>
-                <OptionRow labels={['A', 'B', 'D', 'E', 'G']} options={q.options} picked={pickedOf(q.no)} onPick={pick(q.no)} />
-              </PaperItem>
+        <>
+          <PaperPage>
+            <h2 className="erp-sect">{partB.ordinal} {partB.title}</h2>
+            <p className="erp-dir"><b>Directions:</b> {partB.directions}</p>
+            {partB.paragraphs.map((p) => (
+              <p key={p.letter} className="erp-body erp-para" style={{ textIndent: 0 }}>
+                <b>{p.letter}.</b> {p.text}
+              </p>
             ))}
-          </div>
-        </PaperPage>
+          </PaperPage>
+          <PaperPage>
+            <h2 className="erp-sect">{partB.ordinal} {partB.title}</h2>
+            <OrderSkeleton skeleton={partB.skeleton} answersByNo={answeredLetterByNo} />
+            <div style={{ marginTop: '4mm' }}>
+              {partB.questions.map((q) => (
+                <PaperItem key={q.no} {...itemProps(q.no)}>
+                  <p className="erp-q"><Locator no={q.no} onLocate={onLocate} className="erp-qn">{q.no}.</Locator></p>
+                  <OptionRow labels={['A', 'B', 'D', 'E', 'G']} options={q.options} picked={pickedOf(q.no)} onPick={pick(q.no)} />
+                </PaperItem>
+              ))}
+            </div>
+          </PaperPage>
+        </>
       )}
 
-      {/* ── Part C 翻译：全文 + 待译处下划线 ── */}
+      {/* ── Part C 翻译：全文（待译处下划线）一页，5 句译文作答框另起一页 ── */}
       {partC && (
-        <PaperPage>
-          <h2 className="erp-sect">{partC.ordinal} {partC.title}</h2>
-          <p className="erp-dir"><b>Directions:</b> {partC.directions}</p>
-          <UnderlinedPassage passage={partC.passage} segments={partC.segments} />
-          <div style={{ marginTop: '5mm' }}>
-            {partC.segments.map((s) => {
-              const slot = slotByNo.get(s.no)
-              return (
-                <PaperItem key={s.no} {...itemProps(s.no)}>
-                  <p className="erp-q"><Locator no={s.no} onLocate={onLocate} className="erp-qn">({s.no})</Locator></p>
-                  <textarea
-                    value={slot ? textOf(s.no) : ''}
-                    onChange={(e) => { if (slot && onText) onText(slot, e.target.value) }}
-                    placeholder="译文…"
-                    style={{
-                      width: '100%', minHeight: '22mm', boxSizing: 'border-box',
-                      font: '10.5pt/1.6 "Times New Roman", Times, serif', padding: '2mm', resize: 'vertical',
-                    }}
-                  />
-                </PaperItem>
-              )
-            })}
-          </div>
-        </PaperPage>
+        <>
+          <PaperPage>
+            <h2 className="erp-sect">{partC.ordinal} {partC.title}</h2>
+            <p className="erp-dir"><b>Directions:</b> {partC.directions}</p>
+            <UnderlinedPassage passage={partC.passage} segments={partC.segments} />
+          </PaperPage>
+          <PaperPage>
+            <h2 className="erp-sect">{partC.ordinal} {partC.title}</h2>
+            <div>
+              {partC.segments.map((s) => {
+                const slot = slotByNo.get(s.no)
+                return (
+                  <PaperItem key={s.no} {...itemProps(s.no)}>
+                    <p className="erp-q"><Locator no={s.no} onLocate={onLocate} className="erp-qn">({s.no})</Locator></p>
+                    <textarea
+                      value={slot ? textOf(s.no) : ''}
+                      onChange={(e) => { if (slot && onText) onText(slot, e.target.value) }}
+                      placeholder="译文…"
+                      style={{
+                        width: '100%', minHeight: '22mm', boxSizing: 'border-box',
+                        font: '10.5pt/1.6 "Times New Roman", Times, serif', padding: '2mm', resize: 'vertical',
+                      }}
+                    />
+                  </PaperItem>
+                )
+              })}
+            </div>
+          </PaperPage>
+        </>
       )}
 
       {/* ── Section III Writing：两题都用 canvas 还原排版 ── */}
