@@ -1,9 +1,9 @@
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Award, Blocks, BookOpen, Bot, CalendarClock, ChartPie, ClipboardList, Clock, Compass, Database,
   FileDown, FileQuestion, FileText, FileWarning, Bookmark, GitMerge, GraduationCap, HardDrive, History,
   LayoutGrid, LayoutTemplate, Library, LibraryBig, List, PenLine, Pencil, Plug, Plus,
-  Puzzle, RotateCcw, Route, Settings2, Sparkles, Star, Swords, Terminal, Trophy, Users, UsersRound, Wand2,
+  Puzzle, RotateCcw, Route, Settings2, Shuffle, Sparkles, Star, Swords, Terminal, Trophy, Users, UsersRound, Wand2,
 } from 'lucide-react'
 
 import { useAuthStore } from '@/stores/auth-store'
@@ -31,9 +31,18 @@ export interface NavItem {
   items?: NavSubItem[]
 }
 
+export interface CrumbMenuItem {
+  title: string
+  url: string
+  icon?: React.ComponentType<{ className?: string }>
+  active?: boolean
+}
+
 export interface Crumb {
   title: string
   url?: string
+  /** 有它就把这一段渲染成下拉 (参考 shadcn breadcrumb 的 dropdown 例子) */
+  menu?: CrumbMenuItem[]
 }
 
 /** 按用户自定义顺序排序: 未出现在顺序表里的新入口排在末尾 */
@@ -168,34 +177,108 @@ export function useNavGroups(): Record<SidebarGroup, NavItem[]> {
 }
 
 /**
- * 面包屑: 优先用侧边栏条目, 子项带上它所属的一级入口作为父级。
- * 详情页(如 /learning-routes/:id)按最长前缀命中一级入口, 只显示入口名。
+ * 面包屑按侧边栏层级走, 每一层都是该层级的兄弟项下拉:
+ *   分组 dropdown{学习/智能/社区/管理} › 一级 dropdown{组内入口} › 二级 dropdown{该项的子入口}
+ * 练习模式页再多一段, 用来切三种刷题模式。
+ * 不在侧边栏里的页面(设置、仪表盘等)退回单段标题。
  */
 export function usePageCrumbs(): Crumb[] {
   const { pathname } = useLocation()
+  const [searchParams] = useSearchParams()
   const groups = useNavGroups()
   const { t } = useT()
 
-  const flat: (Crumb & { parent?: Crumb })[] = []
-  for (const group of Object.values(groups)) {
-    for (const item of group) {
-      flat.push({ title: item.title, url: item.url })
+  const groupLabels: Record<SidebarGroup, string> = {
+    learn: t('nav.groupLearn'),
+    smart: t('nav.groupSmart'),
+    community: t('nav.groupCommunity'),
+    admin: t('nav.admin'),
+  }
+  const visibleGroups = (Object.keys(groups) as SidebarGroup[]).filter((g) => groups[g].length > 0)
+
+  // 定位当前页在侧边栏层级里的位置: 同级取最长匹配(否则 /exam 会抢走 /exam/history)
+  let hit: { group: SidebarGroup; item: NavItem; sub?: NavSubItem } | null = null
+  let bestLen = -1
+  for (const group of visibleGroups) {
+    for (const item of groups[group]) {
+      if (isPathActive(pathname, item.url) && item.url.length > bestLen) {
+        bestLen = item.url.length
+        hit = { group, item }
+      }
       for (const sub of item.items ?? []) {
-        flat.push({ title: sub.title, url: sub.url, parent: { title: item.title, url: item.url } })
+        if (isPathActive(pathname, sub.url) && sub.url.length >= bestLen) {
+          bestLen = sub.url.length
+          hit = { group, item, sub }
+        }
       }
     }
   }
-  // 侧边栏里没有、但同样要显示标题的页面
-  flat.push({ title: t('settings.title'), url: '/settings' })
 
-  const hit = flat
-    .filter((c) => c.url && isPathActive(pathname, c.url))
-    .sort((a, b) => (b.url?.length ?? 0) - (a.url?.length ?? 0))[0]
+  if (hit) {
+    const { group, item, sub } = hit
+    const crumbs: Crumb[] = [
+      {
+        title: groupLabels[group],
+        menu: visibleGroups.map((g) => ({
+          title: groupLabels[g],
+          url: groups[g][0].url,
+          active: g === group,
+        })),
+      },
+      {
+        title: item.title,
+        url: item.url,
+        menu: groups[group].map((i) => ({
+          title: i.title,
+          url: i.url,
+          icon: i.icon,
+          active: i.id === item.id,
+        })),
+      },
+    ]
 
-  if (!hit) return []
-  // 父级与当前项同一个地址(如 /practice 的父项就是它自己)时不再重复显示
-  if (hit.parent && hit.parent.url !== hit.url) {
-    return [{ title: hit.parent.title, url: hit.parent.url }, { title: hit.title }]
+    if (item.items?.length) {
+      const activeSub = sub?.url ?? item.url
+      crumbs.push({
+        title: sub?.title ?? item.title,
+        menu: item.items.map((s) => ({
+          title: s.title,
+          url: s.url,
+          icon: s.icon ?? item.icon,
+          active: s.url === activeSub,
+        })),
+      })
+    }
+
+    // 练习页最后一段: seq / random / review
+    if (pathname === '/practice') {
+      const modes = [
+        { key: 'seq', title: t('plan.modeSequential'), icon: PenLine },
+        { key: 'random', title: t('plan.modeRandom'), icon: Shuffle },
+        { key: 'review', title: t('plan.modeReview'), icon: RotateCcw },
+      ]
+      const mode = searchParams.get('mode') ?? 'seq'
+      const current = modes.find((m) => m.key === mode) ?? modes[0]
+      crumbs.push({
+        title: current.title,
+        menu: modes.map((m) => ({
+          title: m.title,
+          url: `/practice?mode=${m.key}`,
+          icon: m.icon,
+          active: m.key === current.key,
+        })),
+      })
+    }
+
+    return crumbs
   }
-  return [{ title: hit.title }]
+
+  // 不在侧边栏分组里的页面: 仪表盘(固定在顶部区) + 设置
+  const extras: Crumb[] = [
+    { title: t('nav.dashboard'), url: '/' },
+    { title: t('settings.title'), url: '/settings' },
+  ]
+  const extra = extras.filter((c) => isPathActive(pathname, c.url!)).sort((a, b) => b.url!.length - a.url!.length)[0]
+  return extra ? [{ title: extra.title }] : []
 }
+

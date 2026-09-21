@@ -296,7 +296,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   offlineMode: loadOfflineMode(),
   assistantLauncherHidden: loadLauncherHidden(),
   eyeCare: localStorage.getItem(EYE_CARE_KEY) || '',
-  sidebarCollapsed: localStorage.getItem('sidebar_collapsed') !== 'false',
+  sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
   darkCodeTheme: loadDarkCodeTheme(),
   lightCodeTheme: loadLightCodeTheme(),
   fontFamily: loadFontFamily(),
