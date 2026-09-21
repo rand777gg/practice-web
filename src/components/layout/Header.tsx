@@ -30,18 +30,19 @@ export function Header() {
       <div className="flex min-w-0 flex-1 items-center gap-2 px-4 xl:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
-          <BreadcrumbList>
+        <Breadcrumb className="min-w-0">
+          <BreadcrumbList className="flex-nowrap">
             {crumbs.map((crumb, i) => {
               const isLast = i === crumbs.length - 1
+              // 窄屏只留当前页那一段(它的下拉最有用); 祖先层级交给侧边栏抽屉和底部导航
               return (
                 <Fragment key={crumb.url ?? `${crumb.title}-${i}`}>
-                  <BreadcrumbItem>
+                  <BreadcrumbItem className={cn('min-w-0', !isLast && 'hidden lg:inline-flex')}>
                     {crumb.menu ? (
                       <DropdownMenu>
-                        <DropdownMenuTrigger className="flex items-center gap-1 text-sm font-normal text-foreground transition-colors hover:text-muted-foreground">
-                          <span className="line-clamp-1">{crumb.title}</span>
-                          <ChevronDown className="size-3.5" />
+                        <DropdownMenuTrigger className="flex min-w-0 items-center gap-1 text-sm font-normal text-foreground transition-colors hover:text-muted-foreground">
+                          <span className="truncate">{crumb.title}</span>
+                          <ChevronDown className="size-3.5 shrink-0" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
                           {crumb.menu.map((item) => (
@@ -57,15 +58,15 @@ export function Header() {
                       </DropdownMenu>
                     ) : !isLast && crumb.url ? (
                       <BreadcrumbLink asChild>
-                        <Link to={crumb.url}>{crumb.title}</Link>
+                        <Link to={crumb.url} className="truncate">{crumb.title}</Link>
                       </BreadcrumbLink>
                     ) : !isLast ? (
-                      <span className="text-muted-foreground">{crumb.title}</span>
+                      <span className="truncate text-muted-foreground">{crumb.title}</span>
                     ) : (
-                      <BreadcrumbPage className="line-clamp-1">{crumb.title}</BreadcrumbPage>
+                      <BreadcrumbPage className="truncate">{crumb.title}</BreadcrumbPage>
                     )}
                   </BreadcrumbItem>
-                  {!isLast && <BreadcrumbSeparator />}
+                  {!isLast && <BreadcrumbSeparator className="hidden lg:block" />}
                 </Fragment>
               )
             })}
