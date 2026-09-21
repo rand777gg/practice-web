@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Columns2, FileText, ListTree, Search } from 'lucide-react'
+import { AlertCircle, Check, Columns2, FileText, Link2, ListTree, Loader2, Pencil, Search, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,13 +7,15 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { cn } from '@/lib/utils'
 import type { PageUrl } from '@/lib/pdf-page-renderer'
-import type { ResourceBlock } from '@/lib/resource-blocks'
+import type { ResourceBlock, TocEntry } from '@/lib/resource-blocks'
 import { buildToc } from '@/lib/resource-blocks'
 import { searchBlocks, type BlockHit } from '@/lib/resource-search'
+import { draftFromToc, blockIndexSet, staleEntryIds, tocFromDraft, updateEntry, type TocDraftEntry } from '@/lib/resource-toc'
+import { resetManualToc, saveManualToc } from '@/lib/resource-toc-store'
 import { HighlightText } from './HighlightText'
 import { ResourcePdfPane } from './ResourcePdfPane'
 import { ResourceSearchPanel } from './ResourceSearchPanel'
-import { ResourceToc } from './ResourceToc'
+import { ResourceToc, type TocEditorBridge } from './ResourceToc'
 import { Separator } from '@/components/ui/separator'
 
 interface Props {
@@ -29,6 +31,14 @@ interface Props {
   /** 从检索结果或外链带着目标区块进来时, 挂载后直接定位过去 */
   initialBlockIndex?: number | null
   initialQuery?: string
+  /** 管理员改过的人工目录; 传 null/不传就是用解析结果现推的那份 */
+  toc?: TocEntry[] | null
+  /** 管理员才能改目录 —— 目录改完直接影响出题范围, 不能让普通用户动 */
+  canEditToc?: boolean
+  /** 带 ?toc=edit 进来时直接进编辑态 (管理页的「编辑目录」就跳这里) */
+  initialTocEdit?: boolean
+  /** 目录存过之后通知外面重新拉一次, 否则退出编辑态会看到挂载时那份旧的 */
+  onTocSaved?: () => void
 }
 
 function blockClass(block: ResourceBlock): string {
@@ -53,7 +63,8 @@ function blockClass(block: ResourceBlock): string {
 }
 
 export function ResourceReader({
-  documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '',
+  documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '', toc,
+  canEditToc = false, initialTocEdit = false, onTocSaved,
 }: Props) {
   const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null)
   const [focusNonce, setFocusNonce] = useState(0)
@@ -63,6 +74,20 @@ export function ResourceReader({
   const [viewMode, setViewMode] = useState<'blocks' | 'document'>('blocks')
   const [pageInput, setPageInput] = useState('')
   const [jumpToPage, setJumpToPage] = useState<{ page: number; nonce: number } | null>(null)
+
+  // ── 目录编辑 (只有管理员) ──
+  // 编辑期间的唯一数据源是 draft; 存过之后外面重拉一份 toc, 退出编辑态才不会看到挂载时那份旧的
+  const canEdit = canEditToc
+  const [editMode, setEditMode] = useState(() => canEdit && initialTocEdit)
+  const [draft, setDraft] = useState<TocDraftEntry[] | null>(
+    () => (canEdit && initialTocEdit ? draftFromToc(toc ?? buildToc(blocks)) : null),
+  )
+  const [tocDirty, setTocDirty] = useState(false)
+  const [tocSaving, setTocSaving] = useState(false)
+  const [tocNotice, setTocNotice] = useState<string | null>(null)
+  const [tocError, setTocError] = useState<string | null>(null)
+  // 正在等"点正文选落点"的那条目录 id
+  const [mappingId, setMappingId] = useState<number | null>(null)
 
   const [searchQuery, setSearchQuery] = useState(initialQuery)
   // 命中结果连同"它属于哪个关键词"一起存: 关键词一变旧结果自动失效, 不用再写个 effect 去清空
@@ -83,9 +108,123 @@ export function ResourceReader({
   )
   const searchError = hitState.query === activeQuery ? hitState.error : null
 
-  const toc = useMemo(() => buildToc(blocks), [blocks])
+  // 人工目录优先: 管理员改过就以那份为准, 没改过还是按解析结果现推
+  const baseToc = useMemo(() => toc ?? buildToc(blocks), [toc, blocks])
+  const tocEntries = useMemo(() => (draft ? tocFromDraft(draft) : baseToc), [draft, baseToc])
+  const blockIndexes = useMemo(() => new Set(blocks.map((b) => b.blockIndex)), [blocks])
   const located = useMemo(() => blocks.filter((b) => b.bbox).length, [blocks])
   const hitIndexes = useMemo(() => new Set(hits.map((h) => h.blockIndex)), [hits])
+
+  const staleIds = useMemo(
+    () => (draft ? staleEntryIds(draft, blockIndexSet(blocks)) : new Set<number>()),
+    [draft, blocks],
+  )
+
+  const startEditToc = useCallback(() => {
+    setDraft((prev) => prev ?? draftFromToc(baseToc))
+    setTocDirty(false)
+    setTocNotice(null)
+    setTocError(null)
+    setEditMode(true)
+    setTocOpen(true)
+  }, [baseToc])
+
+  const changeDraft = useCallback((next: TocDraftEntry[]) => {
+    setDraft(next)
+    setTocDirty(true)
+    setTocNotice(null)
+  }, [])
+
+  /**
+   * 有未保存的目录改动时拦一下关页面/刷新。
+   *
+   * 目录编辑是"边看正文边改"的长动作, 一本 497 条的目录改下来要好几分钟;
+   * 手一抖关掉标签页就全没了, 而页面上没有任何地方能看出"还没保存"之外的东西。
+   * 这里只挡浏览器级的离开(SPA 内部跳转是 router 的事, 不值当为它上 blocker)。
+   */
+  useEffect(() => {
+    if (!editMode || !tocDirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [editMode, tocDirty])
+
+  /**
+   * 把某条的落点设成刚点的那一段。
+   * 页码跟着落点走 —— 目录项标着第 8 页却映射到第 30 页的段, 出题范围会切在第 8 页。
+   */
+  const assignMapping = useCallback((blockIndex: number, pageNo: number) => {
+    setDraft((prev) => {
+      if (!prev || mappingId === null) return prev
+      const at = prev.findIndex((e) => e.id === mappingId)
+      return at < 0 ? prev : updateEntry(prev, at, { blockIndex, pageNo })
+    })
+    setTocDirty(true)
+    setMappingId(null)
+    setTocNotice('落点已设, 别忘了保存')
+  }, [mappingId])
+
+  const saveToc = useCallback(async () => {
+    if (!draft) return
+    setTocSaving(true)
+    setTocError(null)
+    try {
+      await saveManualToc(documentId, draft)
+      setTocDirty(false)
+      setTocNotice('目录已保存, 阅读页目录与出题范围都按这份走')
+      onTocSaved?.()
+    } catch (err) {
+      setTocError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTocSaving(false)
+    }
+  }, [draft, documentId, onTocSaved])
+
+  const discardToc = useCallback(() => {
+    setDraft(draftFromToc(baseToc))
+    setTocDirty(false)
+    setMappingId(null)
+    setTocNotice('已回到上次保存的目录')
+    setTocError(null)
+  }, [baseToc])
+
+  const resetTocToAuto = useCallback(async () => {
+    if (!window.confirm('恢复自动目录会删掉所有人工修改, 之后目录按解析结果重新生成。继续?')) return
+    setTocSaving(true)
+    setTocError(null)
+    try {
+      await resetManualToc(documentId)
+      setDraft(draftFromToc(buildToc(blocks)))
+      setTocDirty(false)
+      setMappingId(null)
+      setTocNotice('已恢复自动目录(人工目录已删除)')
+      onTocSaved?.()
+    } catch (err) {
+      setTocError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTocSaving(false)
+    }
+  }, [blocks, documentId, onTocSaved])
+
+  const tocEditor = useMemo<TocEditorBridge | null>(() => (
+    editMode && draft
+      ? {
+        draft,
+        onChange: changeDraft,
+        onPickMapping: (id: number) => {
+          setMappingId((cur) => (cur === id ? null : id))
+          setTocNotice(null)
+        },
+        staleIds,
+        mappingId,
+        dirty: tocDirty,
+        saving: tocSaving,
+        onSave: () => void saveToc(),
+        onDiscard: discardToc,
+        onResetAuto: () => void resetTocToAuto(),
+      }
+      : null
+  ), [editMode, draft, changeDraft, staleIds, mappingId, tocDirty, tocSaving, saveToc, discardToc, resetTocToAuto])
 
   // ── 检索: 限定本篇文章, 关键词变了才发请求 ──
   useEffect(() => {
@@ -124,6 +263,19 @@ export function ResourceReader({
     setFocusNonce((n) => n + 1)
     suppressSpyUntil.current = Date.now() + 700
   }, [])
+
+  /**
+   * 点目录。落在正文里的就直接定位; 没有落点(纯分组项)或者映射已经失效的
+   * (重新解析后 block_index 会整体重排), 退化成翻到那条目录记的页码 ——
+   * 总比点了没反应好, 至少把 PDF 带到那一页。
+   */
+  const selectTocEntry = useCallback((entry: TocEntry) => {
+    if (entry.blockIndex === null || !blockIndexes.has(entry.blockIndex)) {
+      setJumpToPage({ page: entry.pageNo, nonce: Date.now() })
+      return
+    }
+    locate(entry.blockIndex)
+  }, [blockIndexes, locate])
 
   useEffect(() => {
     if (focusNonce === 0) return
@@ -219,8 +371,21 @@ export function ResourceReader({
   return (
     <div className="flex h-full min-h-0">
       {tocOpen && (
-        <div className="hidden w-56 shrink-0 border-r lg:block xl:w-64">
-          <ResourceToc entries={toc} activeBlockIndex={activeBlockIndex} onSelect={locate} />
+        <div
+          className={cn(
+            'shrink-0 border-r',
+            // 编辑态不跟 lg 断点走: 窄窗口下整个目录栏会被 hidden 掉, 管理员从「编辑目录」跳进来
+            // 却看不到任何可改的东西, 而且没有任何提示。编辑是显式进入的, 宁可挤一点。
+            editMode ? 'flex w-72' : 'hidden w-56 lg:block xl:w-64',
+          )}
+        >
+          <ResourceToc
+            entries={tocEntries}
+            activeBlockIndex={activeBlockIndex}
+            onSelect={selectTocEntry}
+            editor={tocEditor}
+            className="w-full"
+          />
         </div>
       )}
 
@@ -236,6 +401,22 @@ export function ResourceReader({
             <ListTree className="h-3 w-3" />
             目录
           </Button>
+
+          {canEdit && (
+            <Button
+              variant={editMode ? 'default' : 'ghost'}
+              size="sm"
+              className="h-6 gap-1 px-1.5 text-[11px]"
+              onClick={() => (editMode ? void saveToc() : startEditToc())}
+              disabled={editMode && (tocSaving || !tocDirty)}
+              title={editMode ? '保存目录改动' : '对照着正文改目录(层级/增删/改名/落点)'}
+            >
+              {tocSaving
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : editMode ? <Check className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+              {editMode ? '保存目录' : '改目录'}
+            </Button>
+          )}
 
           <span className="text-[10px] text-muted-foreground">
             共 {pages.length || pdfTotalPages || 0} 页<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{blocks.length} 段<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />可定位 {located}
@@ -296,6 +477,48 @@ export function ResourceReader({
           </Button>
         </div>
 
+        {editMode && mappingId !== null && (
+          <div className="flex shrink-0 items-center gap-2 border-b bg-primary/5 px-2.5 py-1.5 text-[11px]">
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 truncate">
+              点右边正文里的某一段, 把它设为「
+              {draft?.find((e) => e.id === mappingId)?.title || '这条目录'}
+              」的落点
+            </span>
+            <Button
+              variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[11px]"
+              onClick={() => setMappingId(null)}
+            >
+              <X className="h-3 w-3" />取消
+            </Button>
+          </div>
+        )}
+
+        {editMode && (tocNotice || tocError || staleIds.size > 0) && (
+          <div
+            className={cn(
+              'flex shrink-0 flex-wrap items-center gap-2 border-b px-2.5 py-1 text-[11px]',
+              tocError ? 'bg-destructive/5 text-destructive' : 'bg-muted/40 text-muted-foreground',
+            )}
+          >
+            {tocError ? (
+              <>
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{tocError}</span>
+              </>
+            ) : (
+              <>
+                {tocNotice && <span className="min-w-0 flex-1 truncate">{tocNotice}</span>}
+                {staleIds.size > 0 && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    {staleIds.size} 条映射失效(重新解析过), 在目录里点它们的页码可重设落点
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           <ResizablePanel defaultSize={52} minSize={25}>
             <div className="h-full border-r">
@@ -332,12 +555,19 @@ export function ResourceReader({
                       onAnimationEnd={(e) => {
                         if (e.animationName === 'flash') setFlashIndex(null)
                       }}
-                      onClick={() => locate(block.blockIndex)}
-                      title={`第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
+                      onClick={() => {
+                        // 选落点期间整篇正文就是一块"取点面板", 点到哪段就锚到哪段
+                        if (mappingId !== null) assignMapping(block.blockIndex, block.pageNo)
+                        else locate(block.blockIndex)
+                      }}
+                      title={mappingId !== null
+                        ? `把落点设在这一段 (第 ${block.pageNo} 页)`
+                        : `第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
                         'group relative cursor-pointer rounded-sm border-l-2 px-1.5 py-0.5 transition-colors',
                         flashIndex === block.blockIndex && 'animate-flash',
                         block.bbox ? 'border-l-amber-300/60' : 'border-l-transparent',
+                        mappingId !== null && 'ring-1 ring-primary/30 hover:bg-primary/10 hover:ring-primary',
                         active
                           ? 'border-l-primary bg-primary/10 ring-1 ring-primary/40'
                           : hit

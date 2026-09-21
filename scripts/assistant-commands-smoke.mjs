@@ -150,31 +150,37 @@ check('跨来源时清掉选中内容(几篇文献的页码各算各的)',
   normalizeSpec({ source: 'platform', selection: { documentId: 'doc-1', from: 1, to: 3 } }).selection === null)
 check('不用资料时也不留选中内容',
   normalizeSpec({ source: 'model', selection: { documentId: 'doc-1', from: 1, to: 3 } }).selection === null)
+// selectionSummary / describeSpec 返回的是卡片上那排分段文案(string[]), 不是拼好的整句
 check('选中内容的摘要写得清',
-  selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 9, blocks: [] }) === '第一章 · 第 3-9 页'
-  && selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 3, blocks: [1, 2] }) === '第一章 · 第 3 页 · 2 段')
+  eq(selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 9, blocks: [] }),
+    ['第一章', '第 3-9 页'])
+  && eq(selectionSummary({ documentId: 'd', documentTitle: 't', label: '第一章', from: 3, to: 3, blocks: [1, 2] }),
+    ['第一章', '第 3 页', '2 段']))
 check('describeSpec 会体现选中的内容',
-  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd', selection: { documentId: 'd', label: '第一章', from: 3, to: 9 } })).includes('第一章'))
+  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd', selection: { documentId: 'd', label: '第一章', from: 3, to: 9 } })).join(' ').includes('第一章'))
 check('指定文献但没选内容时说明白',
-  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd' })).includes('还没选内容'))
+  describeSpec(normalizeSpec({ source: 'resource', documentId: 'd' })).join(' ').includes('还没选内容'))
 
 // ── 目录 → 页码区间 ──
+// key 是目录条目的标识(人工目录下允许两条指同一段), 和 blockIndex 分工不同
 const toc = [
-  { blockIndex: 0, level: 1, title: '第 1 章 古代的医药卫生', pageNo: 10 },
-  { blockIndex: 5, level: 2, title: '（三）医学流派', pageNo: 40 },
-  { blockIndex: 9, level: 1, title: '第 2 章 中世纪', pageNo: 55 },
+  { key: 0, blockIndex: 0, level: 1, title: '第 1 章 古代的医药卫生', pageNo: 10 },
+  { key: 103, blockIndex: 5, level: 2, title: '（三）医学流派', pageNo: 40 },
+  { key: 9, blockIndex: 9, level: 1, title: '第 2 章 中世纪', pageNo: 55 },
 ]
 const secs = sectionsFromToc(toc, 120)
 check('每一节都切出页码区间', secs.length === 3)
 check('一节到下一节前一页为止', secs[0].pageFrom === 10 && secs[0].pageTo === 39)
 check('最后一节到全书末尾', secs[2].pageFrom === 55 && secs[2].pageTo === 120)
 check('区间互不重叠', secs.every((s, i) => i === 0 || s.pageFrom > secs[i - 1].pageTo))
-check('目录条目本身的 key 带出来了(同名标题也能区分)',
-  secs[1].key === 5 && secs[1].title === '（三）医学流派')
+check('用 key 当标识(不等于 blockIndex 时也照样带出来)',
+  secs[1].key === 103 && secs[1].blockIndex === 5 && secs[1].title === '（三）医学流派')
+check('纯分组项没有落点, key 仍然唯一',
+  sectionsFromToc([{ key: 7, blockIndex: null, level: 1, title: '第一篇 总论', pageNo: 1 }], 20)[0].blockIndex === null)
 const samePage = sectionsFromToc([
-  { blockIndex: 0, level: 1, title: 'A', pageNo: 7 },
-  { blockIndex: 1, level: 2, title: 'B', pageNo: 7 },
-  { blockIndex: 2, level: 2, title: 'C', pageNo: 7 },
+  { key: 0, blockIndex: 0, level: 1, title: 'A', pageNo: 7 },
+  { key: 1, blockIndex: 1, level: 2, title: 'B', pageNo: 7 },
+  { key: 2, blockIndex: 2, level: 2, title: 'C', pageNo: 7 },
 ], 30)
 check('三个标题挤在同一页时不会切出负宽区间',
   samePage.every((s) => s.pageFrom <= s.pageTo), JSON.stringify(samePage))

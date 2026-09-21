@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertCircle, CheckCircle2, Database, Eye, FileText, Loader2, MoreHorizontal, Pencil,
+  AlertCircle, CheckCircle2, Database, Eye, FileText, ListTree, Loader2, MoreHorizontal, Pencil,
   RefreshCw, Trash2, Upload,
 } from 'lucide-react'
 
@@ -383,6 +383,18 @@ export function Component() {
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => setEditing(doc)}>
                             <Pencil className="h-3.5 w-3.5" />编辑信息
                           </DropdownMenuItem>
+                          {doc.parse_status === 'ready' && (
+                            <DropdownMenuItem asChild>
+                              <Link to={`/resource-library/${doc.id}?toc=edit`} className="gap-2 text-xs">
+                                <ListTree className="h-3.5 w-3.5" />编辑目录
+                                {doc.toc_source === 'manual' && (
+                                  <Badge variant="secondary" className="ml-auto px-1 py-0 text-[9px] leading-none">
+                                    手工
+                                  </Badge>
+                                )}
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             className="gap-2 text-xs"
                             disabled={indexing}

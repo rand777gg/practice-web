@@ -9,10 +9,10 @@ import { ResourceReader } from '@/components/resource/ResourceReader'
 import { SeparatedList } from '@/components/ui/separated-list'
 import {
   documentMarkdownFromParts, documentPagesFromParts, getResourceDocument,
-  listResourceParts, loadResourceBlocks,
+  listResourceParts, loadDocumentToc, loadResourceBlocks,
   type ResourceDocumentDetail, type ResourcePart,
 } from '@/lib/resource-library'
-import type { ResourceBlock } from '@/lib/resource-blocks'
+import type { ResourceBlock, TocEntry } from '@/lib/resource-blocks'
 
 export function Component() {
   const { documentId = '' } = useParams()
@@ -22,6 +22,7 @@ export function Component() {
   const [doc, setDoc] = useState<ResourceDocumentDetail | null>(null)
   const [parts, setParts] = useState<ResourcePart[]>([])
   const [blocks, setBlocks] = useState<ResourceBlock[]>([])
+  const [toc, setToc] = useState<TocEntry[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,6 +33,13 @@ export function Component() {
     return Number.isInteger(n) && n >= 0 ? n : null
   }, [blockParam])
   const initialQuery = searchParams.get('q') ?? ''
+  const initialTocEdit = searchParams.get('toc') === 'edit'
+
+  /** 目录存过之后重拉一次: 不然退出编辑态会看到挂载时那份旧的 */
+  const reloadToc = useCallback(async () => {
+    if (!documentId) return
+    setToc(await loadDocumentToc(documentId).catch(() => null))
+  }, [documentId])
 
   const load = useCallback(async () => {
     if (!documentId) return
@@ -45,15 +53,18 @@ export function Component() {
       }
       setDoc(found)
       if (found.parse_status === 'ready') {
-        const [loadedParts, loadedBlocks] = await Promise.all([
+        const [loadedParts, loadedBlocks, loadedToc] = await Promise.all([
           listResourceParts(found.id),
           loadResourceBlocks(found.id),
+          loadDocumentToc(found.id),
         ])
         setParts(loadedParts)
         setBlocks(loadedBlocks)
+        setToc(loadedToc)
       } else {
         setParts([])
         setBlocks([])
+        setToc(null)
       }
       setError(null)
     } catch (err) {
@@ -167,6 +178,10 @@ export function Component() {
             pdfUrl={doc.pdf_url || null}
             pdfTotalPages={doc.pdf_total_pages}
             parts={parts}
+            toc={toc}
+            canEditToc={isAdmin}
+            initialTocEdit={initialTocEdit}
+            onTocSaved={() => void reloadToc()}
             initialBlockIndex={initialBlockIndex}
             initialQuery={initialQuery}
           />

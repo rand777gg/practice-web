@@ -13,7 +13,9 @@ import { autoIndex } from '@/lib/rag'
 import { MinerUClient, fetchZipAndExtractFiles } from '@/lib/ai/mineru'
 import { getMinerUModelVersion, getMinerUToken } from '@/lib/ai/config'
 import type { MinerUBatchFileResult, MinerUBatchStatus, MinerUPrecisionOptions } from '@/lib/ai/types'
-import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocSection } from '@/lib/resource-blocks'
+import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocEntry, type TocSection } from '@/lib/resource-blocks'
+import { tocFromDraft } from '@/lib/resource-toc'
+import { loadManualToc } from '@/lib/resource-toc-store'
 import { renderAndUploadPdfPages, countPdfPages, type PageUrl } from '@/lib/pdf-page-renderer'
 import { uploadBlobToR2 } from '@/lib/r2-upload'
 import {
@@ -46,6 +48,8 @@ export interface ResourceDocument {
   parse_status: string
   parse_error: string | null
   is_published: boolean
+  /** 'auto' = 目录按 heading_level 现推; 'manual' = 管理员改过, 以 resource_toc_entries 为准 */
+  toc_source: string
   uploaded_by: string | null
   created_at: string
   updated_at: string
@@ -69,7 +73,7 @@ export interface DocumentMetaInput {
 const LIST_COLUMNS = [
   'id', 'title', 'authors', 'source', 'pub_year', 'doc_type', 'subject', 'tags', 'abstract',
   'doi', 'language', 'pdf_url', 'pdf_key', 'pdf_total_pages', 'pdf_page_urls', 'parse_mode',
-  'parse_status', 'parse_error', 'is_published', 'uploaded_by', 'created_at', 'updated_at',
+  'parse_status', 'parse_error', 'is_published', 'toc_source', 'uploaded_by', 'created_at', 'updated_at',
 ].join(', ')
 
 // ── R2 ──
@@ -121,13 +125,10 @@ export function loadResourceBlocks(documentId: string): Promise<ResourceBlock[]>
 }
 
 /**
- * 一篇文献的章节目录(带页码区间), 给"限定章节出题"当选项。
- *
- * 只取标题行而不是整篇区块: 一本 295 页的书有近两千个区块, 为了一个下拉框把全文拉下来
- * 太浪费; 标题行通常只有几十条, 而且 PostgREST 的 1000 行上限对它没有威胁。
+ * 解析结果现推的那份目录 —— 只查标题行, 不拉正文。
+ * 编辑器"人工目录还不存在"时的初值, 以及阅读页/出题范围没人工目录时的回退都走它。
  */
-export async function loadDocumentSections(documentId: string): Promise<TocSection[]> {
-  const doc = await getResourceDocument(documentId)
+export async function loadAutoToc(documentId: string): Promise<TocEntry[]> {
   const { data, error } = await supabase
     .from('resource_blocks')
     .select('block_index, page_no, heading_level, text')
@@ -136,14 +137,38 @@ export async function loadDocumentSections(documentId: string): Promise<TocSecti
     .order('block_index', { ascending: true })
     .limit(1000)
   if (error) throw new Error(`加载目录失败: ${error.message}`)
-
-  const toc = (data ?? []).map((r) => ({
+  return (data ?? []).map((r) => ({
+    key: r.block_index as number,
     blockIndex: r.block_index as number,
     level: r.heading_level as number,
     title: r.text as string,
     pageNo: r.page_no as number,
   })).filter((e) => e.title.trim().length > 0)
+}
 
+/**
+ * 这篇文献现在该用哪份目录 —— 人工的优先, 没有人工的就返回 null 交给调用方现推。
+ *
+ * 判据是"表里有没有行", 而不是 resource_documents.toc_source 这个开关:
+ * 开关只是记录管理员的意图(以及管理页那个"手工"标记), 而"表里有行"才是目录真的存在。
+ * 万一出现开关说 manual、表里却是空的(改到一半、或将来某条写入路径漏了), 按开关走会让
+ * 阅读页目录栏整栏变空、/create 一个章节都选不出来 —— 静默退化成"这篇没有目录"。
+ */
+export async function loadDocumentToc(documentId: string): Promise<TocEntry[] | null> {
+  const manual = await loadManualToc(documentId).catch(() => [])
+  return manual.length > 0 ? tocFromDraft(manual) : null
+}
+
+/**
+ * 一篇文献的章节目录(带页码区间), 给"限定章节出题"当选项。
+ *
+ * 只取标题行而不是整篇区块: 一本 295 页的书有近两千个区块, 为了一个下拉框把全文拉下来
+ * 太浪费; 标题行通常只有几十条, 而且 PostgREST 的 1000 行上限对它没有威胁。
+ */
+export async function loadDocumentSections(documentId: string): Promise<TocSection[]> {
+  const doc = await getResourceDocument(documentId)
+  const manual = await loadDocumentToc(documentId)
+  const toc = manual ?? await loadAutoToc(documentId)
   return sectionsFromToc(toc, doc?.pdf_total_pages ?? 0)
 }
 
@@ -188,7 +213,32 @@ export async function loadDocumentBlocks(
   return out
 }
 
-export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {  if (!doc.pdf_page_urls) return []
+// ── 目录编辑器要用的两个轻量查询 ──
+
+/**
+ * 只取 block_index 的集合, 用来判断人工目录里哪些映射已经失效。
+ * 不复用 loadDocumentBlocks: 那个会连 text/bbox 一起拉, 一本 295 页的书六千多个块,
+ * 为了拿一组序号去拉好几 MB 正文不值得。
+ */
+export async function loadBlockIndexes(documentId: string): Promise<Set<number>> {
+  const out = new Set<number>()
+  for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('resource_blocks')
+      .select('block_index')
+      .eq('document_id', documentId)
+      .order('block_index', { ascending: true })
+      .range(offset, offset + BLOCK_PAGE_SIZE - 1)
+    if (error) throw new Error(`加载区块编号失败: ${error.message}`)
+    const rows = (data ?? []) as unknown as { block_index: number }[]
+    for (const r of rows) out.add(r.block_index)
+    if (rows.length < BLOCK_PAGE_SIZE) break
+  }
+  return out
+}
+
+export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {
+  if (!doc.pdf_page_urls) return []
   try {
     const parsed = JSON.parse(doc.pdf_page_urls) as PageUrl[]
     return Array.isArray(parsed) ? parsed.filter((p) => p && p.src) : []

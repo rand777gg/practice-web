@@ -4309,3 +4309,119 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]) TO authenticated;
 
+
+-- ============================================================================
+-- Section 60: 人工目录 —— MinerU 解析错的目录允许管理员改
+--
+--   目录原本是"读的时候现推": resource_blocks 里 heading_level > 0 的就是目录项,
+--   层级来自标题编号(「第一章」=1 级 / 「1.1」=2 级 / 「1.1.1」=3 级)。MinerU 会错在四处 ——
+--   把页眉当标题(多一条)、真标题被并进正文(少一条)、层级判错、标题被正文撑长。
+--   这些都是解析产物的性质, 改不了源头, 所以加一层人工覆盖。
+--
+--   为什么是"整份快照"而不是"逐条 diff": 人工改过之后这份目录就以人写的为准。
+--   diff 形式在重新解析后 block_index 会整体位移, 改动会静默错位到别的段落上 —— 那是
+--   "看不见的错"; 快照至少是"看得见的错", 编辑器里能把失效的映射标出来重指。
+--   toc_source 记住当前用哪一份, 一键可以退回自动。
+--
+--   为什么是 sort_order + level 的平铺表, 而不是 parent_id 的树: 下游(RAG 出题的章节范围 /
+--   阅读页目录 / PDF↔Markdown 双向定位)消费的全是 TocEntry[], 平铺 + 显式 level 就是它的
+--   形状 —— 一行对一条, 不用递归查也不用树转平; 改层级就是改这个数字, 「添加子目录」就是
+--   在它后面插一行 level+1, 删父节点也不会留下孤儿子树。
+--
+--   block_index 可空: 允许"纯分组项"(MinerU 整个漏掉的「第一篇 总论」)。它没有正文落点,
+--   只带页码 —— 点它跳 PDF 页, 正文里不高亮, 但出题范围照样按页码区间切得出来。
+-- ============================================================================
+ALTER TABLE public.resource_documents
+  ADD COLUMN IF NOT EXISTS toc_source TEXT NOT NULL DEFAULT 'auto'
+    CHECK (toc_source IN ('auto', 'manual'));
+
+CREATE TABLE IF NOT EXISTS public.resource_toc_entries (
+  id          BIGSERIAL PRIMARY KEY,
+  document_id UUID NOT NULL REFERENCES public.resource_documents(id) ON DELETE CASCADE,
+  sort_order  INTEGER NOT NULL,
+  level       SMALLINT NOT NULL DEFAULT 1 CHECK (level BETWEEN 1 AND 6),
+  title       TEXT NOT NULL DEFAULT '',
+  block_index INTEGER,
+  page_no     INTEGER NOT NULL DEFAULT 1,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (document_id, sort_order)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rte_doc ON public.resource_toc_entries(document_id, sort_order);
+
+DROP TRIGGER IF EXISTS trg_set_updated_at ON public.resource_toc_entries;
+CREATE TRIGGER trg_set_updated_at
+  BEFORE UPDATE ON public.resource_toc_entries
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+ALTER TABLE public.resource_toc_entries ENABLE ROW LEVEL SECURITY;
+
+-- 目录是给所有登录用户看的(阅读页左边那一栏), 所以沿用 resource_blocks 的口径:
+-- 已发布文献的目录谁都能读, 未发布的只有管理员读得到。
+DROP POLICY IF EXISTS rte_select ON public.resource_toc_entries;
+CREATE POLICY rte_select ON public.resource_toc_entries FOR SELECT
+  USING (EXISTS (SELECT 1 FROM public.resource_documents d
+                 WHERE d.id = document_id AND (d.is_published OR public.is_admin())));
+DROP POLICY IF EXISTS rte_write_admin ON public.resource_toc_entries;
+CREATE POLICY rte_write_admin ON public.resource_toc_entries FOR ALL
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- 保存人工目录: 删旧 + 插新 + 翻 toc_source 必须在同一个事务里。
+-- 客户端分两步(先 delete 再 insert)一旦中间失败, 管理员刚编了半天的目录就没了。
+-- 用 INVOKER + 显式 is_admin(): 走 RLS 更保险, 也不需要在函数里再判一遍权限口径。
+CREATE OR REPLACE FUNCTION public.save_resource_toc(p_document_id UUID, p_entries JSONB)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  n INTEGER;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION '只有管理员能改目录';
+  END IF;
+
+  DELETE FROM public.resource_toc_entries WHERE document_id = p_document_id;
+
+  INSERT INTO public.resource_toc_entries (document_id, sort_order, level, title, block_index, page_no)
+  SELECT p_document_id,
+         (e.ord - 1)::INTEGER,
+         greatest(1, least(6, coalesce((e.item ->> 'level')::INTEGER, 1))),
+         coalesce(e.item ->> 'title', ''),
+         nullif(e.item ->> 'block_index', '')::INTEGER,
+         greatest(1, coalesce((e.item ->> 'page_no')::INTEGER, 1))
+  FROM jsonb_array_elements(coalesce(p_entries, '[]'::JSONB)) WITH ORDINALITY AS e(item, ord);
+
+  GET DIAGNOSTICS n = ROW_COUNT;
+
+  UPDATE public.resource_documents
+     SET toc_source = 'manual', updated_at = NOW()
+   WHERE id = p_document_id;
+
+  RETURN n;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.save_resource_toc(UUID, JSONB) TO authenticated;
+
+-- 退回自动目录: 清掉人工条目, toc_source 回 'auto', 阅读页当场变回按 heading_level 现推的那份
+CREATE OR REPLACE FUNCTION public.reset_resource_toc(p_document_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION '只有管理员能改目录';
+  END IF;
+
+  DELETE FROM public.resource_toc_entries WHERE document_id = p_document_id;
+
+  UPDATE public.resource_documents
+     SET toc_source = 'auto', updated_at = NOW()
+   WHERE id = p_document_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.reset_resource_toc(UUID) TO authenticated;

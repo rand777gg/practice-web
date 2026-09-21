@@ -16,10 +16,19 @@ export interface ResourceBlock {
 }
 
 export interface TocEntry {
-  blockIndex: number
+  /**
+   * 目录条目的稳定标识, 只用来做 key/Set 成员。
+   *
+   * 不能继续拿 blockIndex 兼任: 人工目录允许两条指向同一段(比如「上篇」和「本篇小结」
+   * 都挂在同一页的开头), 也允许没有落点的纯分组项, 那样 blockIndex 既不唯一也可能为空,
+   * 当 key 会撞。自动目录里 key 就等于 blockIndex。
+   */
+  key: number
   level: number
   title: string
   pageNo: number
+  /** 映射到的正文区块; null = 纯分组项, 正文里没有落点 (只能跳 PDF 页) */
+  blockIndex: number | null
 }
 
 const MD_HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/
@@ -320,18 +329,26 @@ export function buildToc(blocks: ResourceBlock[]): TocEntry[] {
   const toc: TocEntry[] = []
   for (const b of blocks) {
     if (b.headingLevel <= 0) continue
-    toc.push({ blockIndex: b.blockIndex, level: b.headingLevel, title: b.text, pageNo: b.pageNo })
+    toc.push({
+      key: b.blockIndex,
+      blockIndex: b.blockIndex,
+      level: b.headingLevel,
+      title: b.text,
+      pageNo: b.pageNo,
+    })
   }
   return toc
 }
 
 export interface TocSection {
-  /** 目录条目的 blockIndex —— 唯一, 所以下拉框用它当值 */
+  /** 目录条目的稳定标识 —— 唯一, 所以下拉框用它当值 */
   key: number
   level: number
   title: string
   pageFrom: number
   pageTo: number
+  /** 这一节对应的正文首块; 纯分组项为 null, 出题范围仍然按页码区间切 */
+  blockIndex: number | null
 }
 
 /**
@@ -347,6 +364,6 @@ export function sectionsFromToc(toc: TocEntry[], totalPages: number): TocSection
     const next = toc[i + 1]
     const from = Math.max(1, entry.pageNo)
     const to = Math.max(from, next ? next.pageNo - 1 : lastPage)
-    return { key: entry.blockIndex, level: entry.level, title: entry.title, pageFrom: from, pageTo: to }
+    return { key: entry.key, level: entry.level, title: entry.title, pageFrom: from, pageTo: to, blockIndex: entry.blockIndex }
   })
 }
