@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { NoteEditor } from '@/components/notes/NoteEditor'
+import { ReadAloudButton } from '@/components/tts/ReadAloudButton'
+import { questionSpeech } from '@/lib/tts/question'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
@@ -309,6 +311,7 @@ export function Component() {
                     )}
                   </div>
                   <div className="flex gap-1 px-3 pb-3 pt-1 shrink-0 justify-end">
+                    <ReadAloudButton id={a.id} build={() => questionSpeech(q, a.note)} />
                     {(q.analysis || q.answer_explanation) && (
                       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAnalysisId(analysisId === a.id ? null : a.id)} title="查看解析">
                         <Lightbulb className={cn('h-3.5 w-3.5', analysisId === a.id ? 'text-amber-500' : '')} />

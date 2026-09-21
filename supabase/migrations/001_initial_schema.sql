@@ -3858,13 +3858,15 @@ CREATE TABLE IF NOT EXISTS public.rag_chunks (
   bbox         REAL[],
   block_index  INTEGER,
   anchor       TEXT,
-  embedding    vector(1024),
+  -- halfvec 而不是 vector: 1024 维 float 是 4KB/块, 18k 块光向量就 61MB(全在 TOAST 里),
+  -- 半精度把它砍到一半, 而实测 top-40 召回 40/40 完全一致、名次零位移。见 Section 59。
+  embedding    halfvec(1024),
   embedded_at  TIMESTAMPTZ,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (source, source_id, chunk_index)
 );
 
-CREATE INDEX IF NOT EXISTS idx_rag_embedding  ON public.rag_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_rag_embedding  ON public.rag_chunks USING hnsw (embedding halfvec_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_rag_search     ON public.rag_chunks USING GIN (search_text gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_rag_src        ON public.rag_chunks(source, source_id);
 
@@ -3913,11 +3915,11 @@ STABLE
 SET search_path = public
 AS $$
 DECLARE
-  v_emb   vector(1024);
+  v_emb   halfvec(1024);
   v_terms TEXT[];
 BEGIN
   IF p_embedding IS NOT NULL AND btrim(p_embedding) <> '' THEN
-    v_emb := p_embedding::vector;
+    v_emb := p_embedding::halfvec;
   END IF;
 
   -- 只用 2 个字以上的词, 单字命中太吵
@@ -4103,11 +4105,11 @@ STABLE
 SET search_path = public
 AS $$
 DECLARE
-  v_emb   vector(1024);
+  v_emb   halfvec(1024);
   v_terms TEXT[];
 BEGIN
   IF p_embedding IS NOT NULL AND btrim(p_embedding) <> '' THEN
-    v_emb := p_embedding::vector;
+    v_emb := p_embedding::halfvec;
   END IF;
 
   -- 只用 2 个字以上的词, 单字命中太吵
@@ -4167,3 +4169,143 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]) TO authenticated;
+
+-- ============================================================================
+-- Section 59: RAG 检索提速 —— 向量路回到 halfvec HNSW, 全文路匹配 search_text
+--
+--   症状: 小Q「查不到资料」。rag-search 里检索失败是被吞掉的(只 console.warn),
+--   于是看起来像"资料没了", 实际是检索语句撞了 authenticated 的 statement_timeout = 8s。
+--
+--   1) 向量路退化成顺序扫。1024 维 float 存 TOAST(≈4KB/块), 顺序扫 18k 块要多读
+--      1.5 万次 TOAST, 实测 9.5s。索引重建为 halfvec —— 121MB → 49MB, 而实测 top-40
+--      召回 40/40 完全一致、名次零位移, 半精度对召回没有可测影响。顺带 TOAST 里的
+--      向量 61MB → 30MB(这次连带把增量重建攒下的膨胀一起清了, 库 222MB → 150MB)。
+--
+--   2) 全文路(抽词那一路)匹配的是 c.content —— content 太大存 TOAST, 每个候选行都要
+--      先 detoast 才能做匹配, 实测 4.5s。改成匹配 search_text(生成列, 行内存得下):
+--      同一个 CTE 从 4.5s 降到 14ms。
+--      注意: 这不是"用上了 GIN 索引"。实测 EXPLAIN 里 planner 仍然选顺序扫 ——
+--      因为 LIMIT 40 能在扫到第 40 个命中时就停(常见词只扫百来行), 比走索引更便宜;
+--      冷门词也一样(扫 441 行)。idx_rag_search 留着只是保险, 目前基本不生效,
+--      真到了几万块以上再回头看要不要留。顺带修掉原来漏 lower() 的问题
+--      (search_text 存的是小写, 大写查询词永远匹配不上)。
+--
+--   实测(修复后, 直接打 RPC, 含 PostgREST 开销): 纯全文 621ms / 混合 394ms / 纯向量 172ms。
+--
+--   改列类型会重建表上的所有索引: 所以先把 idx_rag_embedding 删掉 —— 否则 ALTER 会因为
+--   halfvec 上不存在 vector_cosine_ops 而失败(生产上排障时已经手工删过, 这里是补上);
+--   idx_rag_search 一起删只是为了让这次重写快点(GIN 重建是重写里最贵的部分), 之后重建。
+--   新库按 Section 55 的定义直接就是 halfvec, 两个 DROP 都是空操作。
+-- ============================================================================
+DROP INDEX IF EXISTS public.idx_rag_embedding;
+DROP INDEX IF EXISTS public.idx_rag_search;
+
+ALTER TABLE public.rag_chunks
+  ALTER COLUMN embedding TYPE halfvec(1024) USING embedding::halfvec(1024);
+
+CREATE INDEX IF NOT EXISTS idx_rag_embedding
+  ON public.rag_chunks USING hnsw (embedding halfvec_cosine_ops);
+
+CREATE INDEX IF NOT EXISTS idx_rag_search ON public.rag_chunks USING GIN (search_text gin_trgm_ops);
+
+DROP FUNCTION IF EXISTS public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]);
+
+CREATE OR REPLACE FUNCTION public.search_rag(
+  p_query      TEXT,
+  p_embedding  TEXT    DEFAULT NULL,
+  p_sources    TEXT[]  DEFAULT NULL,
+  p_limit      INTEGER DEFAULT 12,
+  p_terms      TEXT[]  DEFAULT NULL,
+  p_source_ids TEXT[]  DEFAULT NULL
+) RETURNS TABLE (
+  id          BIGINT,
+  source      TEXT,
+  source_id   TEXT,
+  label       TEXT,
+  sub_label   TEXT,
+  content     TEXT,
+  page_no     INTEGER,
+  bbox        REAL[],
+  block_index INTEGER,
+  anchor      TEXT,
+  vec_rank    BIGINT,
+  txt_rank    BIGINT,
+  score       DOUBLE PRECISION
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_emb     halfvec(1024);
+  v_query   TEXT;
+  v_terms   TEXT[];
+BEGIN
+  IF p_embedding IS NOT NULL AND btrim(p_embedding) <> '' THEN
+    v_emb := p_embedding::halfvec;
+  END IF;
+
+  -- 逐字加空格后才是 search_text 里的形态; 顺带 lower, 和 search_text 的大小写一致
+  v_query := regexp_replace(lower(btrim(p_query)), '(.)', '\1 ', 'g');
+
+  -- 只用 2 个字以上的词, 单字命中太吵
+  IF p_terms IS NOT NULL THEN
+    SELECT array_agg(DISTINCT regexp_replace(lower(btrim(t)), '(.)', '\1 ', 'g'))
+      INTO v_terms
+      FROM unnest(p_terms) t
+     WHERE length(btrim(t)) >= 2;
+  END IF;
+
+  RETURN QUERY
+  WITH vec AS (
+    SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> v_emb) AS rnk
+    FROM public.rag_chunks c
+    WHERE v_emb IS NOT NULL
+      AND c.embedding IS NOT NULL
+      AND (p_sources IS NULL OR c.source = ANY(p_sources))
+      AND (p_source_ids IS NULL OR c.source_id = ANY(p_source_ids))
+    ORDER BY c.embedding <=> v_emb
+    LIMIT 40
+  ),
+  txt AS (
+    SELECT b.id, row_number() OVER (
+             ORDER BY b.hits DESC, similarity(b.content, p_query) DESC
+           ) AS rnk
+    FROM (
+      SELECT c.id,
+             c.content,
+             (CASE WHEN v_terms IS NULL THEN 0
+                   ELSE (SELECT count(*) FROM unnest(v_terms) t WHERE c.search_text LIKE '%' || t || '%')
+              END) AS hits
+      FROM public.rag_chunks c
+      WHERE (p_sources IS NULL OR c.source = ANY(p_sources))
+        AND (p_source_ids IS NULL OR c.source_id = ANY(p_source_ids))
+        AND (
+          c.search_text LIKE '%' || v_query || '%'
+          OR (v_terms IS NOT NULL
+              AND EXISTS (SELECT 1 FROM unnest(v_terms) t WHERE c.search_text LIKE '%' || t || '%'))
+        )
+    ) b
+    LIMIT 40
+  ),
+  fused AS (
+    SELECT coalesce(v.id, t.id) AS fid,
+           v.rnk AS vr,
+           t.rnk AS tr,
+           -- 必须 cast: 1.0 在 PG 里是 numeric, 不 cast 就对不上 RETURNS TABLE 声明的
+           -- double precision, 会报 structure of query does not match function result type
+           (coalesce(1.0 / (60 + v.rnk), 0) + coalesce(1.0 / (60 + t.rnk), 0))::double precision AS sc
+    FROM vec v FULL OUTER JOIN txt t ON v.id = t.id
+  )
+  SELECT c.id, c.source, c.source_id, c.label, c.sub_label, c.content,
+         c.page_no, c.bbox, c.block_index, c.anchor,
+         f.vr, f.tr, f.sc
+  FROM fused f
+  JOIN public.rag_chunks c ON c.id = f.fid
+  ORDER BY f.sc DESC, c.id
+  LIMIT greatest(1, least(coalesce(p_limit, 12), 40));
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]) TO authenticated;
+
