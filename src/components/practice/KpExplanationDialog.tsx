@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
+import { ReadAloudButton } from '@/components/tts/ReadAloudButton'
+import { markdownToSpeech, splitForSpeech } from '@/lib/tts/speech'
 
 interface Props {
   subject: string
@@ -44,6 +46,14 @@ export function KpExplanationDialog({ subject, kp, open, onOpenChange }: Props) 
             <span className="text-xs font-normal text-muted-foreground">知识点解读</span>
           </DialogTitle>
         </DialogHeader>
+        {status === 'ready' && (
+          <div className="-mt-2 flex justify-end">
+            <ReadAloudButton
+              id={`kp:${subject}:${kp}`}
+              build={() => ({ prompt: [], answer: splitForSpeech(markdownToSpeech(content)) })}
+            />
+          </div>
+        )}
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
           {status === 'loading' ? (
             <div className="space-y-2">
