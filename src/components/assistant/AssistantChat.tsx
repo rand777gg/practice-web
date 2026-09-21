@@ -170,6 +170,14 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [paletteHidden, setPaletteHidden] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const pendingInput = useAssistantStore((s) => s.pendingInput)
+
+  // 快速搜索里「询问小Q」带过来的问题: 直接填进输入框, 让用户看一眼再发
+  useEffect(() => {
+    if (!pendingInput) return
+    setInput(pendingInput)
+    useAssistantStore.getState().setPendingInput('')
+  }, [pendingInput])
 
   useEffect(() => {
     const node = scrollRef.current

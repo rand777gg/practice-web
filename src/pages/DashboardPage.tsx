@@ -9,7 +9,7 @@ import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
 import { hasAiConfig } from '@/lib/ai'
 import { useSettingsStore } from '@/stores/settings-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Pencil, Clock, RotateCcw, Star, CalendarDays, PieChart, ListChecks } from 'lucide-react'
+import { CalendarDays, PieChart, ListChecks } from 'lucide-react'
 import { DashboardPlanCards } from '@/components/layout/DashboardPlanCards'
 import { DashboardEbbinghaus } from '@/components/layout/DashboardEbbinghaus'
 import { SubjectAccuracyTodayList } from '@/components/charts/SubjectAccuracyTodayList'
@@ -36,7 +36,6 @@ const TimeDistributionHistogram = lazy(() => import('@/components/charts/TimeDis
 
 const TimeScatterChart = lazy(() => import('@/components/charts/TimeScatterChart').then(m => ({ default: m.TimeScatterChart })))
 const SubjectDailyStack = lazy(() => import('@/components/charts/SubjectDailyStack').then(m => ({ default: m.SubjectDailyStack })))
-const DailyTrendBars = lazy(() => import('@/components/charts/DailyTrendBars').then(m => ({ default: m.DailyTrendBars })))
 const AiChartInsight = lazy(() => import('@/components/charts/AiChartInsight').then(m => ({ default: m.AiChartInsight })))
 
 const ChartSkeleton = ({ h = 360 }: { h?: number }) => (
@@ -72,60 +71,6 @@ interface ChartData {
 }
 
 interface QMeta { id: string; subject: string; category: string; categories: string[]; question_type: string }
-
-type InsightTone = 'green' | 'amber' | 'blue' | 'red'
-interface Insight { tone: InsightTone; title: string; body: string }
-
-function toneBg(tone: InsightTone): string {
-  return tone === 'green' ? 'var(--chart-correct)'
-    : tone === 'amber' ? 'var(--chart-warn)'
-      : tone === 'red' ? 'var(--chart-wrong)'
-        : 'var(--chart-brand)'
-}
-
-function buildInsights(d: ChartData): Insight[] {
-  const out: Insight[] = []
-  const rate = d.totalAnswered > 0 ? Math.round((d.correctCount / d.totalAnswered) * 100) : 0
-  out.push({
-    tone: rate >= 80 ? 'green' : rate >= 60 ? 'amber' : 'red',
-    title: rate >= 80 ? '整体状态不错' : rate >= 60 ? '正确率有提升空间' : '正确率偏低',
-    body: `整体正确率 ${rate}%(累计 ${d.totalAnswered} 次答题),${rate >= 80 ? '保持当前节奏即可' : '建议放慢刷题、把解析看透再继续'}`,
-  })
-
-  const recent = d.barData.slice(-7).filter((b) => b.correct + b.wrong > 0)
-  if (recent.length >= 2) {
-    const rc = Math.round(
-      recent.reduce((s, b) => s + b.correct, 0) / Math.max(recent.reduce((s, b) => s + b.correct + b.wrong, 0), 1) * 100,
-    )
-    out.push({
-      tone: 'blue',
-      title: '近 7 日走势',
-      body: `近 ${recent.length} 天正确率 ${rc}%,${rc >= rate ? '稳中有升' : '略低于整体水平,多关注错题分布'}`,
-    })
-  }
-
-  const hourSum = new Array(24).fill(0)
-  for (const row of d.hourlyDistribution) row.forEach((v, h) => { hourSum[h] += v })
-  const peak = Math.max(...hourSum)
-  if (peak > 0) {
-    const best = hourSum.indexOf(peak)
-    out.push({
-      tone: 'blue',
-      title: '状态时段',
-      body: `周平均 ${String(best).padStart(2, '0')}:00 前后刷题最多,可以把难点章节安排在这个时段`,
-    })
-  }
-
-  if (d.dailyGoal > 0) {
-    const todayCount = d.barData.length > 0 ? d.barData[d.barData.length - 1].correct + d.barData[d.barData.length - 1].wrong : 0
-    out.push({
-      tone: todayCount >= d.dailyGoal ? 'green' : 'amber',
-      title: '今日目标',
-      body: `今日已做 ${todayCount} / 目标 ${d.dailyGoal} 题,${todayCount >= d.dailyGoal ? '已完成,很棒' : '还差一点点,加油'}`,
-    })
-  }
-  return out
-}
 
 export function Component() {
   const { t } = useT()
@@ -510,37 +455,6 @@ export function Component() {
 
               <DashboardPlanCards />
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {([
-                  { icon: Pencil, label: '继续练习', sub: <>保持手感<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />每日打卡</>, to: '/practice', bg: 'var(--chart-brand)', iconColor: 'var(--chart-brand)' },
-                  { icon: Clock, label: '模拟考试', sub: <>限时实战<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />检验水平</>, to: '/exam', bg: 'var(--chart-warn)', iconColor: 'var(--chart-warn)' },
-                  { icon: RotateCcw, label: '错题攻坚', sub: <>重做错题<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />消灭盲点</>, to: '/review', bg: 'var(--chart-wrong)', iconColor: 'var(--chart-wrong)' },
-                  { icon: Star, label: '我的收藏', sub: <>收藏回看<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />重点强化</>, to: '/favorites', bg: 'var(--chart-correct)', iconColor: 'var(--chart-correct)' },
-                ]).map((btn) => {
-                  const Icon = btn.icon
-                  return (
-                    <button
-                      key={btn.to}
-                      type="button"
-                      onClick={() => navigate(btn.to)}
-                      className="group flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left transition-colors cursor-pointer hover:bg-accent/40"
-                    >
-                      <span
-                        className="grid h-9 w-9 flex-none place-items-center rounded-[10px]"
-                        style={{ background: `color-mix(in srgb, ${btn.bg} 15%, transparent)`, color: btn.iconColor }}
-                      >
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13.5px] font-semibold text-foreground">{btn.label}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{btn.sub}</span>
-                      </span>
-                      <span className="flex-none text-lg text-muted-foreground transition-transform group-hover:translate-x-0.5">›</span>
-                    </button>
-                  )
-                })}
-              </div>
-
               {hasPlanOrTarget && (
                 <LazyChart rootMargin="260px">
                   <PlanCompletionChart planSubjects={planSubjectList} targetSubjects={targetSubjectList} />
@@ -548,67 +462,9 @@ export function Component() {
               )}
 
               {chartData ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                  <Card className="border-0 shadow-none flex flex-col">
-                    <CardHeader className="pb-1">
-                      <CardTitle className="text-sm text-muted-foreground">近 15 天对错趋势</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex-1">
-                      <Suspense fallback={<ChartSkeleton h={300} />}>
-                        <DailyTrendBars data={chartData.barData} />
-                      </Suspense>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-0 shadow-none flex flex-col">
-                    <CardHeader className="pb-1">
-                      <CardTitle className="text-sm text-muted-foreground">科目正确率</CardTitle>
-                      <p className="text-xs text-muted-foreground/70">今日正确率<Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />与昨日对比</p>
-                    </CardHeader>
-                    <CardContent className="flex-1">
-                      <SubjectAccuracyTodayList />
-                    </CardContent>
-                  </Card>
-                </div>
+                <DashboardEbbinghaus />
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <SkeletonCard />
-                  <SkeletonCard />
-                </div>
-              )}
-
-              {chartData ? (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
-                  <DashboardEbbinghaus />
-                  <Card className="border-0 shadow-none">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-muted-foreground flex items-center gap-1.5">
-                        AI 智能诊断
-                      </CardTitle>
-                      <p className="text-xs text-muted-foreground/70">基于近期答题数据生成,点击可查看 AI 深度总结</p>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-col gap-3.5">
-                        {buildInsights(chartData).map((ins) => (
-                          <div key={ins.title} className="flex items-start gap-2.5 text-[13px]">
-                            <span
-                              className="block w-1 self-stretch flex-none rounded-full"
-                              style={{ background: toneBg(ins.tone) }}
-                            />
-                            <span className="min-w-0">
-                              <b className="font-semibold text-foreground">{ins.title}</b>
-                              <span className="ml-1.5 text-muted-foreground">{ins.body}</span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="h-[260px] rounded-lg bg-muted/30 animate-pulse" />
-                  <div className="h-[260px] rounded-lg bg-muted/30 animate-pulse" />
-                </div>
+                <div className="h-[260px] rounded-lg bg-muted/30 animate-pulse" />
               )}
             </div>
           </TabsContent>

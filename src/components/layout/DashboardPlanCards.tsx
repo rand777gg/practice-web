@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
 import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
@@ -54,8 +53,6 @@ export function DashboardPlanCards() {
   /** 每个学科的题量进度, 用来算没排轮次的那些学科每天还要多少题 */
   const [ltRows, setLtRows] = useState<{ subject: string; total: number; doneAll: number }[]>([])
 
-  const [acc, setAcc] = useState<{ today: number; pct: number; delta: number | null } | null>(null)
-  const [streak, setStreak] = useState<number | null>(null)
   /** 错题 ∪ 收藏 去重后的题数(计划学科范围内) */
   const [reviewCount, setReviewCount] = useState<number | null>(null)
 
@@ -64,38 +61,6 @@ export function DashboardPlanCards() {
     const id = setInterval(() => setNowMs(Date.now()), 60_000)
     return () => clearInterval(id)
   }, [])
-
-  useEffect(() => {
-    if (!user) return
-    let live = true
-    supabase.rpc('get_accuracy_change', { p_user_id: user.id }).then(({ data: rows }) => {
-      if (!live) return
-      const list = ((rows ?? []) as {
-        today_correct: number; today_total: number; yesterday_correct: number; yesterday_total: number
-      }[])
-      let tc = 0, tt = 0, yc = 0, yt = 0
-      for (const r of list) {
-        tc += Number(r.today_correct); tt += Number(r.today_total)
-        yc += Number(r.yesterday_correct); yt += Number(r.yesterday_total)
-      }
-      const pct = tt > 0 ? Math.round((tc / tt) * 100) : 0
-      const yp = yt > 0 ? Math.round((yc / yt) * 100) : 0
-      setAcc({ today: tt, pct, delta: tt > 0 && yt > 0 ? pct - yp : null })
-    }, () => { /* noop */ })
-    supabase.from('user_daily_stats').select('date,total').eq('user_id', user.id).order('date', { ascending: false }).limit(400)
-      .then(({ data: rows }) => {
-        if (!live) return
-        const days = new Set(((rows ?? []) as { date: string; total: number }[]).filter((r) => Number(r.total) > 0).map((r) => r.date))
-        let n = 0
-        const t = new Date()
-        while (days.has(t.toISOString().slice(0, 10))) {
-          n++
-          t.setTime(t.getTime() - 86400000)
-        }
-        setStreak(n)
-      }, () => { /* noop */ })
-    return () => { live = false }
-  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -444,21 +409,6 @@ export function DashboardPlanCards() {
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">{t('plan.todayAccuracy')}</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums">{acc ? `${acc.pct}%` : '—'}</p>
-          <p className={cn('mt-0.5 text-[11px]', acc?.delta != null && (acc.delta >= 0 ? 'text-green-500' : 'text-red-500'))}>
-            {acc == null ? '统计中…' : acc.delta == null ? '数据不足' : `${acc.delta >= 0 ? '↑' : '↓'} ${Math.abs(acc.delta)}% ${t('plan.vsYesterday')}`}
-          </p>
-        </div>
-        <div className="rounded-xl border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">{t('plan.streak')}</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums">{streak != null ? `${streak} ${t('plan.daysUnit')}` : '—'}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{t('plan.streakHint')}</p>
-        </div>
       </div>
 
       <PlanDialog open={dialogOpen} onOpenChange={setDialogOpen} />

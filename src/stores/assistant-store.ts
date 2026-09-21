@@ -162,8 +162,11 @@ interface AssistantState {
   error: string | null
   /** 当前会话挂着的技能, 会作为固定上下文注入后面每一轮 */
   activeSkillId: SkillId | null
+  /** 快速搜索里「询问小Q」带过来的预填文本, 输入框取走后清空 */
+  pendingInput: string
 
   setOpen: (open: boolean) => void
+  setPendingInput: (text: string) => void
   toggle: () => void
   setView: (view: 'chat' | 'history') => void
   setMode: (mode: AssistantMode) => void
@@ -395,6 +398,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
 
   return {
     open: false,
+    pendingInput: '',
     view: 'chat',
     conversations: [],
     conversationsLoaded: false,
@@ -419,6 +423,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       if (activeId && messages.length === 0) void get().openConversation(activeId)
     },
     toggle: () => get().setOpen(!get().open),
+    setPendingInput: (text) => set({ pendingInput: text }),
     setView: (view) => set({ view }),
     setMode: (mode) => set({ mode }),
     clearError: () => set({ error: null }),

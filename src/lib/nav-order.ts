@@ -11,14 +11,12 @@ export interface SidebarItemMeta {
 }
 
 export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
-  { id: 'dashboard', group: 'learn', labelZh: '仪表盘', labelEn: 'Dashboard' },
   { id: 'dataCenter', group: 'learn', labelZh: '数据中心', labelEn: 'Data Center' },
   { id: 'practice', group: 'learn', labelZh: '练习', labelEn: 'Practice' },
   { id: 'exam', group: 'learn', labelZh: '考试', labelEn: 'Exam' },
   { id: 'questionBank', group: 'learn', labelZh: '题库', labelEn: 'Question Bank' },
   { id: 'templates', group: 'learn', labelZh: '模板', labelEn: 'Templates' },
   { id: 'topics', group: 'learn', labelZh: '专业专题', labelEn: 'Topics' },
-  { id: 'learningRoutes', group: 'learn', labelZh: '学习路线', labelEn: 'Learning Routes' },
   { id: 'notes', group: 'learn', labelZh: '公开笔记', labelEn: 'Public Notes' },
   { id: 'resourceLibrary', group: 'learn', labelZh: '资料库', labelEn: 'Resource Library' },
   { id: 'studyRooms', group: 'learn', labelZh: '自习室', labelEn: 'Study Rooms' },

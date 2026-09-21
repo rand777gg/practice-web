@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
 import { useAiStore } from '@/stores/ai-store'
-import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, HEADER_ACTIONS, BOTTOM_NAV_HIDE_DELAY_MIN, BOTTOM_NAV_HIDE_DELAY_MAX, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
+import { useSettingsStore, EYE_CARE_PALETTES, FONT_OPTIONS, FONT_WEIGHTS, BOTTOM_NAV_TABS, HEADER_ACTIONS, PINNED_NAV_ITEMS, BOTTOM_NAV_HIDE_DELAY_MIN, BOTTOM_NAV_HIDE_DELAY_MAX, USER_PAGE_OPTIONS, ADMIN_PAGE_OPTIONS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -74,7 +74,7 @@ export function Component() {
  const { t } = useT()
  const { user, profile, signOut, refreshProfile } = useAuthStore()
  const { lang, setLang } = useLangStore()
- const { flags, setFlag, offlineMode, setOfflineMode, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, headerActions, setHeaderActions, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode, practiceUiVariant, setPracticeUiVariant } = useSettingsStore()
+ const { flags, setFlag, offlineMode, setOfflineMode, assistantLauncherHidden, setAssistantLauncherHidden, eyeCare, setEyeCare, darkCodeTheme, lightCodeTheme, setCodeTheme, fontFamily, setFontFamily, fontSize, setFontSize, fontWeight, setFontWeight, noteRecognitionMode, setNoteRecognitionMode, bottomNavTabs, setBottomNavTabs, bottomNavHideDelay, setBottomNavHideDelay, headerActions, setHeaderActions, pinnedNav, setPinnedNav, practiceShortcuts, setPracticeShortcut, defaultPage, setDefaultPage, examViewMode, setExamViewMode, practiceUiVariant, setPracticeUiVariant } = useSettingsStore()
  const providers = useAiStore((s) => s.providers)
  const activeProvider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled))
  const currentPalette = EYE_CARE_PALETTES.find((p) => p.value === eyeCare) ?? EYE_CARE_PALETTES[0]
@@ -1064,6 +1064,13 @@ export function Component() {
        </div>
        <div className="flex items-center justify-between">
         <div>
+         <p className="text-sm">{t('settings.launcherHidden')}</p>
+         <p className="text-xs text-muted-foreground">{t('settings.launcherHiddenDesc')}</p>
+        </div>
+        <Switch checked={assistantLauncherHidden} onCheckedChange={setAssistantLauncherHidden} />
+       </div>
+       <div className="flex items-center justify-between">
+        <div>
          <p className="text-sm">{t('settings.offlineMode')}</p>
          <p className="text-xs text-muted-foreground">{t('settings.offlineModeDesc')}</p>
         </div>
@@ -1084,6 +1091,27 @@ export function Component() {
               onCheckedChange={() => {
                if (checked) setHeaderActions(headerActions.filter((k) => k !== action.key))
                else setHeaderActions([...headerActions, action.key])
+              }}
+             />
+            </div>
+           )
+          })}
+         </div>
+        </div>
+        <div className="pt-2 border-t">
+         <p className="text-sm mb-1">{t('settings.pinnedNav')}</p>
+         <p className="text-xs text-muted-foreground mb-3">{t('settings.pinnedNavDesc')}</p>
+         <div className="space-y-2">
+          {PINNED_NAV_ITEMS.map((item) => {
+           const checked = pinnedNav.includes(item.key)
+           return (
+            <div key={item.key} className="flex items-center justify-between">
+             <span className="text-sm">{lang === 'en' ? item.labelEn : item.labelZh}</span>
+             <Switch
+              checked={checked}
+              onCheckedChange={() => {
+               if (checked) setPinnedNav(pinnedNav.filter((k) => k !== item.key))
+               else setPinnedNav([...pinnedNav, item.key])
               }}
              />
             </div>

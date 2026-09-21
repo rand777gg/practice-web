@@ -19,9 +19,11 @@ export interface AiFeatureFlags {
 const FLAGS_KEY = 'ai_feature_flags'
 const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
 const HEADER_ACTIONS_KEY = 'header_actions'
+const PINNED_NAV_KEY = 'pinned_nav'
 const BOTTOM_NAV_HIDE_DELAY_KEY = 'bottom_nav_hide_delay'
 const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
 const OFFLINE_KEY = 'offline_mode'
+const LAUNCHER_HIDDEN_KEY = 'assistant_launcher_hidden'
 const PRACTICE_SHORTCUTS_KEY = 'practice_shortcuts'
 const DEFAULT_PAGE_KEY = 'default_page'
 const EYE_CARE_KEY = 'eye_care'
@@ -95,6 +97,14 @@ export const BOTTOM_NAV_TABS = [
 export type BottomNavTabKey = (typeof BOTTOM_NAV_TABS)[number]['key']
 const DEFAULT_BOTTOM_NAV_TABS: BottomNavTabKey[] = ['dashboard', 'practice', 'exam', 'favorites', 'review']
 
+/** 侧边栏固定区里可自定义的入口; 仪表盘是常驻项, 不在这里 */
+export const PINNED_NAV_ITEMS = [
+  { key: 'search' as const, labelZh: '快速搜索', labelEn: 'Quick search' },
+] as const
+
+export type PinnedNavKey = (typeof PINNED_NAV_ITEMS)[number]['key']
+const DEFAULT_PINNED_NAV: PinnedNavKey[] = ['search']
+
 /** 顶栏可配置的快捷按钮; 顺序即显示顺序 */
 export const HEADER_ACTIONS = [
   { key: 'theme' as const, labelZh: '深浅色切换', labelEn: 'Theme toggle' },
@@ -159,12 +169,28 @@ function loadOfflineMode(): boolean {
   return localStorage.getItem(OFFLINE_KEY) === 'true'
 }
 
+function loadLauncherHidden(): boolean {
+  return localStorage.getItem(LAUNCHER_HIDDEN_KEY) === 'true'
+}
+
 function loadBottomNavTabs(): BottomNavTabKey[] {
   try {
     const raw = localStorage.getItem(BOTTOM_NAV_TABS_KEY)
     if (raw) return JSON.parse(raw) as BottomNavTabKey[]
   } catch { /* ignore */ }
   return [...DEFAULT_BOTTOM_NAV_TABS]
+}
+
+function loadPinnedNav(): PinnedNavKey[] {
+  try {
+    const raw = localStorage.getItem(PINNED_NAV_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as PinnedNavKey[]
+      const valid = new Set(PINNED_NAV_ITEMS.map((a) => a.key))
+      return parsed.filter((k) => valid.has(k))
+    }
+  } catch { /* ignore */ }
+  return [...DEFAULT_PINNED_NAV]
 }
 
 function loadHeaderActions(): HeaderActionKey[] {
@@ -212,6 +238,7 @@ function loadBottomNavHideDelay(): number {
 interface SettingsState {
   flags: AiFeatureFlags
   offlineMode: boolean
+  assistantLauncherHidden: boolean
   eyeCare: string
   sidebarCollapsed: boolean
   darkCodeTheme: string
@@ -223,6 +250,7 @@ interface SettingsState {
   bottomNavTabs: BottomNavTabKey[]
   bottomNavHideDelay: number
   headerActions: HeaderActionKey[]
+  pinnedNav: PinnedNavKey[]
   practiceShortcuts: ShortcutConfig
   defaultPage: string
   examViewMode: ExamViewMode
@@ -230,6 +258,7 @@ interface SettingsState {
   sidebarOrder: SidebarOrder
   setFlag: (key: keyof AiFeatureFlags, value: boolean) => void
   setOfflineMode: (value: boolean) => void
+  setAssistantLauncherHidden: (value: boolean) => void
   setEyeCare: (value: string) => void
   setSidebarCollapsed: (value: boolean) => void
   setCodeTheme: (theme: string) => void
@@ -240,6 +269,7 @@ interface SettingsState {
   setBottomNavTabs: (tabs: BottomNavTabKey[]) => void
   setBottomNavHideDelay: (value: number) => void
   setHeaderActions: (actions: HeaderActionKey[]) => void
+  setPinnedNav: (keys: PinnedNavKey[]) => void
   setPracticeShortcut: (action: ShortcutAction, keys: string) => void
   setDefaultPage: (page: string) => void
   setSidebarOrder: (group: SidebarGroup, ids: string[]) => void
@@ -264,6 +294,7 @@ function loadFontWeight(): number {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   flags: loadFlags(),
   offlineMode: loadOfflineMode(),
+  assistantLauncherHidden: loadLauncherHidden(),
   eyeCare: localStorage.getItem(EYE_CARE_KEY) || '',
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') !== 'false',
   darkCodeTheme: loadDarkCodeTheme(),
@@ -275,6 +306,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   bottomNavTabs: loadBottomNavTabs(),
   bottomNavHideDelay: loadBottomNavHideDelay(),
   headerActions: loadHeaderActions(),
+  pinnedNav: loadPinnedNav(),
   practiceShortcuts: loadPracticeShortcuts(),
   defaultPage: loadDefaultPage(),
   sidebarOrder: loadSidebarOrder(),
@@ -290,6 +322,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setOfflineMode: (value) => {
     localStorage.setItem(OFFLINE_KEY, String(value))
     set({ offlineMode: value })
+  },
+  setAssistantLauncherHidden: (value) => {
+    localStorage.setItem(LAUNCHER_HIDDEN_KEY, String(value))
+    set({ assistantLauncherHidden: value })
   },
   setEyeCare: (value) => {
     localStorage.setItem(EYE_CARE_KEY, value)
@@ -337,6 +373,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setHeaderActions: (actions) => {
     localStorage.setItem(HEADER_ACTIONS_KEY, JSON.stringify(actions))
     set({ headerActions: actions })
+  },
+  setPinnedNav: (keys) => {
+    localStorage.setItem(PINNED_NAV_KEY, JSON.stringify(keys))
+    set({ pinnedNav: keys })
   },
   setPracticeShortcut: (action, keys) => {
     set((s) => {

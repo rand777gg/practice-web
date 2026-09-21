@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import ReactECharts from "echarts-for-react"
-import { Check, ChevronDown, Timer } from "lucide-react"
+import { Timer } from "lucide-react"
 
 import echarts from "@/lib/echarts"
 import { CATEGORY_COLORS, useChartPalette, withAlpha } from "@/lib/chart-theme"
+import { PlanRing } from './PlanRing'
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Progress } from "@/components/ui/progress"
@@ -191,7 +192,6 @@ export function HeaderPlanMenu() {
   if (plan.loading) return null
 
   const longPct = plan.dailyGoal > 0 ? Math.min(Math.round((plan.todayDone / plan.dailyGoal) * 100), 100) : 0
-  const targetPct = plan.goalPerDay > 0 ? Math.min(Math.round((plan.goalTodayDone / plan.goalPerDay) * 100), 100) : 0
   const allDone = (plan.dailyGoal === 0 || plan.todayDone >= plan.dailyGoal)
     && (plan.goals.length === 0 || plan.goals.every((g) => g.state === 'done'))
 
@@ -200,37 +200,13 @@ export function HeaderPlanMenu() {
       <Popover>
         <PopoverTrigger asChild>
           {plan.hasPlan ? (
-            <button
-              type="button"
-              className="flex items-center gap-2.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground transition-colors min-w-0"
-            >
-              {allDone ? (
-                <span className="flex items-center gap-1 font-medium text-green-600 dark:text-green-400">
-                  <Check className="hidden h-3.5 w-3.5 sm:inline" />
-                  <span className="hidden sm:inline">{t("plan.allDone")}</span>
-                  <span className="sm:hidden">✓</span>
-                </span>
-              ) : (
-                <>
-                  {plan.dailyGoal > 0 && (
-                    <span className="flex shrink-0 items-center gap-1">
-                      <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.today")}</span>
-                      <Progress value={longPct} className="h-2 w-10 [&>div]:bg-blue-500" />
-                      <span className="shrink-0 tabular-nums text-[10px]">{plan.todayDone}/{plan.dailyGoal}</span>
-                    </span>
-                  )}
-                  {plan.goalPerDay > 0 && (
-                    <span className="flex shrink-0 items-center gap-1">
-                      <span className="hidden text-[10px] text-muted-foreground sm:inline">{t("plan.daily")}</span>
-                      <Progress value={targetPct} className="h-2 w-10 [&>div]:bg-pink-500" />
-                      <span className="shrink-0 tabular-nums text-[10px]">{plan.goalTodayDone}/{plan.goalPerDay}</span>
-                    </span>
-                  )}
-                </>
-              )}
+            <PlanRing value={longPct} done={allDone}>
+              <span className="hidden shrink-0 items-baseline gap-1 sm:flex">
+                <span className="text-[10px] text-muted-foreground">{t("plan.today")}</span>
+                <span className="tabular-nums">{plan.todayDone}/{plan.dailyGoal}</span>
+              </span>
               {focusRunning && <Timer className="h-3.5 w-3.5 shrink-0 text-emerald-500" />}
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            </button>
+            </PlanRing>
           ) : (
             <button
               type="button"
