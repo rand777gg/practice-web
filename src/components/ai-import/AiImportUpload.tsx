@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type DragEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Upload, FileText, FileImage, FileSpreadsheet, File, FileCode, X } from 'lucide-react'
+import { rasterizeForParse } from '@/lib/image-compress'
 
 function fileIcon(ext: string) {
   switch (ext) {
@@ -8,7 +9,8 @@ function fileIcon(ext: string) {
     case 'doc': case 'docx': return { Icon: FileText, color: 'text-blue-500' }
     case 'xls': case 'xlsx': return { Icon: FileSpreadsheet, color: 'text-green-500' }
     case 'ppt': case 'pptx': return { Icon: File, color: 'text-orange-500' }
-    case 'png': case 'jpg': case 'jpeg': case 'webp': case 'gif': case 'bmp': return { Icon: FileImage, color: 'text-purple-500' }
+    case 'png': case 'jpg': case 'jpeg': case 'webp': case 'gif': case 'bmp':
+    case 'svg': case 'avif': return { Icon: FileImage, color: 'text-purple-500' }
     case 'html': return { Icon: FileCode, color: 'text-yellow-500' }
     default: return { Icon: FileText, color: 'text-muted-foreground' }
   }
@@ -26,13 +28,14 @@ interface Props {
   acceptFormats?: string
 }
 
-const IMG_EXTS = ['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp']
+// svg/avif 收, 但送解析前会先点阵化成 png —— MinerU 用 PIL 开图, 这两种它不认(见 rasterizeForParse)
+const IMG_EXTS = ['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'svg', 'avif']
 const DOC_EXTS = ['pdf', 'doc', 'docx']
 const OFFICE_EXTS = ['ppt', 'pptx', 'xls', 'xlsx']
 
 const ALL_EXTS = [...DOC_EXTS, ...OFFICE_EXTS, ...IMG_EXTS, 'html']
 
-const DEFAULT_ACCEPT = '.pdf,.doc,.docx,.png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp'
+const DEFAULT_ACCEPT = '.pdf,.doc,.docx,.png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp,.svg,.avif'
 const PRECISION_ACCEPT = [DEFAULT_ACCEPT, '.ppt,.pptx,.xls,.xlsx,.html'].join(',')
 
 const ACCEPT_EXTENSIONS: Record<string, string[]> = {
@@ -57,18 +60,30 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
     ? ACCEPT_EXTENSIONS.precision
     : ACCEPT_EXTENSIONS.lightweight
 
-  const acceptFile = (f: File) => {
-    const ext = f.name.split('.').pop()?.toLowerCase()
-    if (!ext || !acceptExts.includes(ext)) return
-
+  /**
+   * 收文件: 先按扩展名筛, 再把 svg/avif 点阵化成 png, 最后才交给上层。
+   * 放在这一层做是因为它是所有入口(选择/拖拽/粘贴)的必经之路 —— 上层拿到的永远是解析得了的文件。
+   */
+  const addFiles = async (incoming: File[]) => {
+    const accepted: File[] = []
+    for (const f of incoming) {
+      const ext = f.name.split('.').pop()?.toLowerCase()
+      if (!ext || !acceptExts.includes(ext)) continue
+      const rasterized = await rasterizeForParse(f)
+      if (rasterized !== f) console.info(`[ai-import] ${f.name} 已转成 ${rasterized.name} 再送去解析`)
+      accepted.push(rasterized)
+    }
+    if (accepted.length === 0) return
     if (multiple) {
-      setFiles(prev => [...prev, f])
-      onFiles?.([...files, f])
+      setFiles(prev => [...prev, ...accepted])
+      onFiles?.([...files, ...accepted])
     } else {
-      setFiles([f])
-      onFile(f)
+      setFiles([accepted[0]])
+      onFile(accepted[0])
     }
   }
+
+  const acceptFile = (f: File) => { void addFiles([f]) }
 
   const removeFile = (idx: number) => {
     setFiles(prev => {
@@ -82,14 +97,7 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
     e.preventDefault()
     setDragOver(false)
     if (multiple) {
-      const newFiles = Array.from(e.dataTransfer.files).filter(f => {
-        const ext = f.name.split('.').pop()?.toLowerCase()
-        return ext && acceptExts.includes(ext)
-      })
-      if (newFiles.length > 0) {
-        setFiles(prev => [...prev, ...newFiles])
-        onFiles?.([...files, ...newFiles])
-      }
+      void addFiles(Array.from(e.dataTransfer.files))
     } else {
       const f = e.dataTransfer.files[0]
       if (f) acceptFile(f)
@@ -116,8 +124,8 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
   }, [multiple, files])
 
   const formatLabel = multiple
-    ? '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx、PPTx、Xlsx'
-    : '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp）、Docx'
+    ? '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp/svg/avif）、Docx、PPTx、Xlsx'
+    : '支持 PDF、图片（png/jpg/jpeg/jp2/webp/gif/bmp/svg/avif）、Docx'
 
   const acceptAttr = multiple ? PRECISION_ACCEPT : DEFAULT_ACCEPT
 
@@ -140,20 +148,10 @@ export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
           disabled={disabled}
           onChange={(e) => {
             const selectedFiles = e.target.files
-            if (!selectedFiles) return
-            if (multiple) {
-              const valid = Array.from(selectedFiles).filter(f => {
-                const ext = f.name.split('.').pop()?.toLowerCase()
-                return ext && acceptExts.includes(ext)
-              })
-              if (valid.length > 0) {
-                setFiles(prev => [...prev, ...valid])
-                onFiles?.([...files, ...valid])
-              }
-            } else {
-              const f = selectedFiles[0]
-              if (f) acceptFile(f)
-            }
+            if (!selectedFiles || selectedFiles.length === 0) return
+            // 单选也是同一条路: 筛选 + svg/avif 点阵化都在 addFiles 里
+            if (multiple) void addFiles(Array.from(selectedFiles))
+            else acceptFile(selectedFiles[0])
           }}
         />
 
