@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
-  ChevronRight, CornerDownRight, GripVertical, Link2, ListPlus, ListTree, Minimize2,
-  Pencil, Plus, RotateCcw, Search, Trash2, Unlink, X,
+  ArrowLeftToLine, ArrowRightToLine, Check, ChevronRight, CornerDownRight, GripVertical,
+  Link2, ListPlus, ListTree, Minimize2, Pencil, Plus, RotateCcw, Search, Trash2, Unlink, X,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -115,6 +115,13 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
   const [drag, setDrag] = useState<DragState | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const [levelDelta, setLevelDelta] = useState(0)
+  /**
+   * 多选。存的是**条目 id 而不是下标** —— 批量删除/升降级都会让下标整体前移,
+   * 按下标存的话删到一半就删错行了。
+   */
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  /** shift 连选的锚点(也是 id) */
+  const [anchorId, setAnchorId] = useState<number | null>(null)
 
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
   const rowEls = useRef<(HTMLDivElement | null)[]>([])
@@ -186,6 +193,61 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
   const applyEdit = useCallback((next: TocDraftEntry[]) => {
     editor?.onChange(next)
   }, [editor])
+
+  // ── 多选 / 批量操作 ──
+
+  /** 选中的那些条目现在各自在第几行; 用 id 反查, 所以草稿怎么变都不会指错 */
+  const selectedIndexes = useMemo(
+    () => (draft ? draft.reduce<number[]>((acc, e, i) => (selected.has(e.id) ? [...acc, i] : acc), []) : []),
+    [draft, selected],
+  )
+
+  const clearSelection = useCallback(() => {
+    setSelected(new Set())
+    setAnchorId(null)
+  }, [])
+
+  const toggleSelect = useCallback((id: number, extend: boolean) => {
+    if (!draft) return
+    const ids = draft.map((e) => e.id)
+    const at = ids.indexOf(id)
+    if (at < 0) return
+    if (extend && anchorId !== null) {
+      const from = ids.indexOf(anchorId)
+      if (from >= 0) {
+        const [lo, hi] = from <= at ? [from, at] : [at, from]
+        setSelected(new Set(ids.slice(lo, hi + 1)))
+        return
+      }
+    }
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setAnchorId(id)
+  }, [draft, anchorId])
+
+  /**
+   * 批量删除。**倒序**删: removeEntry 会把后面的行整体前移, 正序删的话第二个下标就错位了。
+   * 倒序时先删子条目、后删父条目, 顺序天然是对的。
+   */
+  const removeSelected = useCallback(() => {
+    if (!draft || selectedIndexes.length === 0) return
+    let next = draft
+    for (const i of [...selectedIndexes].sort((a, b) => b - a)) next = removeEntry(next, i)
+    applyEdit(next)
+    clearSelection()
+  }, [draft, selectedIndexes, applyEdit, clearSelection])
+
+  /** 批量升降级。平移不改顺序, 所以按下标升序做就行 */
+  const shiftSelected = useCallback((delta: number) => {
+    if (!draft || selectedIndexes.length === 0) return
+    let next = draft
+    for (const i of selectedIndexes) next = shiftSubtreeLevel(next, i, delta)
+    applyEdit(next)
+  }, [draft, selectedIndexes, applyEdit])
 
   // ── 拖动: 与模板题型分区同款(指针捕获 + 让位动画), 多一维左右调层级 ──
 
@@ -378,11 +440,47 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
         </div>
       )}
 
-      {editing && (
+      {editing && selectedIndexes.length > 0 ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b bg-primary/5 px-2.5 py-1 text-[11px]">
+          <span className="text-muted-foreground">已选 {selectedIndexes.length} 条</span>
+          <Button
+            variant="ghost" size="sm" className="h-5 gap-1 px-1.5 text-[11px]"
+            title="选中的条目整体降一级(子树跟着走)"
+            onClick={() => shiftSelected(1)}
+          >
+            <ArrowRightToLine className="h-3 w-3" />降级
+          </Button>
+          <Button
+            variant="ghost" size="sm" className="h-5 gap-1 px-1.5 text-[11px]"
+            title="选中的条目整体升一级(子树跟着走)"
+            onClick={() => shiftSelected(-1)}
+          >
+            <ArrowLeftToLine className="h-3 w-3" />升级
+          </Button>
+          <Button
+            variant="ghost" size="sm"
+            className="h-5 gap-1 px-1.5 text-[11px] text-destructive hover:text-destructive"
+            title="删除选中的目录项(单项的子条目会上提)"
+            onClick={removeSelected}
+          >
+            <Trash2 className="h-3 w-3" />删除
+          </Button>
+          <span className="flex-1" />
+          <Button
+            variant="ghost" size="sm" className="h-5 px-1.5 text-[11px]"
+            onClick={() => { setSelected(new Set((draft ?? []).map((e) => e.id))); setAnchorId(null) }}
+          >
+            全选
+          </Button>
+          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[11px]" onClick={clearSelection}>
+            清除
+          </Button>
+        </div>
+      ) : editing ? (
         <p className="shrink-0 px-2.5 py-1 text-[10px] leading-relaxed text-muted-foreground">
-          拖拖动柄排序, 左右拉调层级; 右键出行内菜单。改动不会动正文。
+          拖拖动柄排序, 左右拉调层级; 右键出行内菜单。勾选左侧方框可多选, 再批量升降级或删除。改动不会动正文。
         </p>
-      )}
+      ) : null}
 
       <div
         ref={scrollRef}
@@ -404,6 +502,7 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
             const isMapping = editor?.mappingId === entry.key
             const isDragging = drag?.from === i
             const isRenaming = renamingId === entry.key
+            const isSelected = selected.has(entry.key)
             const childCount = editing && draft ? subtreeRange(draft, i).end - i - 1 : 0
             return (
               <div
@@ -427,6 +526,34 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
                   transform: transformOf(i),
                 }}
               >
+                {editing && (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    aria-label={`选择「${entry.title || '无标题'}」`}
+                    title="勾选后可批量升降级或删除(Shift 点标题连选一段)"
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(entry.key, e.shiftKey) }}
+                    className={cn(
+                      'mt-1 shrink-0 rounded border p-0.5 transition-colors',
+                      isSelected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-muted-foreground/40 text-transparent hover:border-foreground',
+                    )}
+                  >
+                    <Check className="h-2.5 w-2.5" />
+                  </button>
+                )}
+
+                {editing && (
+                  <span
+                    className="mt-1 w-5 shrink-0 text-[9px] tabular-nums text-muted-foreground/70"
+                    title={`第 ${entry.level} 级`}
+                  >
+                    L{entry.level}
+                  </span>
+                )}
+
                 {editing && (
                   <button
                     type="button"
@@ -459,7 +586,15 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
                       else itemRefs.current.delete(entry.key)
                     }}
                     type="button"
-                    onClick={() => onSelect(entry)}
+                    onClick={(e) => {
+                      // 编辑态下按住修饰键点标题 = 选中(Shift 连选一段), 不按住还是照旧定位过去
+                      if (editing && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+                        e.preventDefault()
+                        toggleSelect(entry.key, e.shiftKey)
+                        return
+                      }
+                      onSelect(entry)
+                    }}
                     onDoubleClick={() => { if (editing) { setMenu(null); setRenamingId(entry.key) } }}
                     className="min-w-0 flex-1 py-1 text-left"
                     title={`${entry.title} — 第 ${entry.pageNo} 页${entry.blockIndex === null ? ' (无正文落点)' : ''}`}
