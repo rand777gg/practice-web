@@ -821,6 +821,7 @@ export function ResourceReader({
                 onSelectBlock={locate}
                 jumpToPage={jumpToPage}
                 fit={pdfFit}
+                showLabels={showLabels}
               />
             </div>
           </ResizablePanel>

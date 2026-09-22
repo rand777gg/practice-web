@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { RENDER_SCALE, renderPdfPagesLocally, type PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock } from '@/lib/resource-blocks'
-import { TONE_HOTSPOT, typeLabel, typeTone } from '@/lib/mineru-types'
+import { TONE_CHIP, TONE_HOTSPOT, typeLabel, typeTone } from '@/lib/mineru-types'
 import { scrollElementToCenter } from './centered-scroll'
 
 interface Props {
@@ -24,6 +24,8 @@ interface Props {
    *           这个模式下每页正好一屏, 翻页是整屏整屏地滚。
    */
   fit?: 'width' | 'height'
+  /** 是否在每块热区的左上角显示类型标签(与右侧正文那个开关是同一个) */
+  showLabels?: boolean
 }
 
 const INITIAL_PAGES = 6
@@ -48,7 +50,7 @@ const PANE_PAD_Y = 16
 const PAGE_GAP = 12
 
 export function ResourcePdfPane({
-  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width',
+  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width', showLabels = true,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const roRef = useRef<ResizeObserver | null>(null)
@@ -297,7 +299,20 @@ export function ResourcePdfPane({
                     width: Math.max((x1 - x0) * bboxScale, 3),
                     height: Math.max((y1 - y0) * bboxScale, 3),
                   }}
-                />
+                >
+                  {/*
+                    和右边正文里同款的标签: 文字就是 type 的中文名, 颜色同色, 贴在框的左上角。
+                    不跟着页面缩放(写法是固定像素), 所以页面缩小后仍然看得清; 也不吃鼠标事件,
+                    悬停/点击照旧落在下面那个热区上。
+                  */}
+                  {showLabels && (
+                    <span
+                      className={`pointer-events-none absolute left-0 top-0 whitespace-nowrap border px-0.5 text-[8px] leading-[11px] ${TONE_CHIP[tone]}`}
+                    >
+                      {typeLabel(b.blockType)}
+                    </span>
+                  )}
+                </button>
               )
             })}
 
