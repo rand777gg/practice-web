@@ -94,6 +94,30 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(JSON.stringify({ text }), req)
     }
 
+    // GET /zip-proxy?url=<url> — 把 MinerU 的结果 zip 原样流给浏览器, 由前端解压。
+    //
+    // 为什么不继续在服务端解压: 结果里除了 full.md 还有 images/, 一本 300 页的书图片有几十 MB,
+    // 服务端解压 + base64 要同时持有 zip 原字节、解压后字节和 base64 字符串(约 2.4 倍),
+    // 256MB 的函数内存很容易被打爆, 而浏览器不在乎这点内存。
+    // 流式转发也让这里不用关心 zip 的实际大小。
+    if (req.method === 'GET' && pathname.endsWith('/zip-proxy')) {
+      const targetUrl = url.searchParams.get('url')
+      if (!targetUrl) {
+        return new Response(JSON.stringify({ error: 'missing url param' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const res = await fetch(targetUrl)
+      return new Response(res.body, {
+        status: res.status,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': res.headers.get('Content-Type') || 'application/zip',
+          'Content-Length': res.headers.get('Content-Length') || '',
+        },
+      })
+    }
+
     // GET /download-zip?url=<url> — proxy zip download and extract full.md (for v4 precision)
     if (req.method === 'GET' && pathname.endsWith('/download-zip')) {
       const targetUrl = url.searchParams.get('url')

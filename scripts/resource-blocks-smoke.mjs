@@ -8,7 +8,7 @@
  *
  * Usage: node scripts/resource-blocks-smoke.mjs
  */
-import { blocksFromLayout, blocksFromMarkdown, blocksFromParse, buildToc, layoutPageCount } from '../src/lib/resource-blocks.ts'
+import { blocksFromLayout, blocksFromMarkdown, blocksFromParse, buildToc, imagesInMarkdown, layoutPageCount } from '../src/lib/resource-blocks.ts'
 import { slicePageRanges, sliceToRange, selectedPageCount, planParts, rangeForSlice } from '../src/lib/page-slices.ts'
 
 let pass = 0
@@ -252,6 +252,76 @@ function deepTitle(depth) {
 }
 check('标题层级封顶 6', blocksFromLayout({ pdf_info: [{ para_blocks: [deepTitle(9)] }] }).map((b) => b.headingLevel), [6])
 check('深层嵌套仍只产出叶子块', blocksFromLayout({ pdf_info: [{ para_blocks: [deepTitle(9)] }] }).length, 1)
+
+// ── 图片与表格 ──
+// 图片块以前因为"自己没文字"被整块丢弃, 这就是图片一张都看不到的原因; 表格 HTML 以前
+// 只当纯文本塞进 text, 逐段视图里就成了一行挤在一起的字。
+
+const IMG_MD = [
+  '# 第一章',
+  '',
+  '正文。',
+  '',
+  '![](images/a1.jpg)',
+  '',
+  '图 1-1 钻颅术',
+  '',
+  '![](images/b2.jpg)',
+  '',
+  '![](images/a1.jpg)',
+].join('\n')
+
+check('按出现顺序取图片路径', imagesInMarkdown(IMG_MD), ['images/a1.jpg', 'images/b2.jpg'])
+
+// layout.json 的图片块长这样: 外层 image 容器 + image_body(空) + image_caption 子块
+function figBlock(caption) {
+  return {
+    type: 'image',
+    bbox: [72, 200, 520, 400],
+    blocks: [
+      { type: 'image_body', bbox: [72, 200, 520, 380], lines: [{ spans: [] }] },
+      ...(caption ? [{ type: 'image_caption', bbox: [72, 382, 520, 398], lines: [{ spans: [{ content: caption }] }] }] : []),
+    ],
+  }
+}
+const figDoc = {
+  pdf_info: [{
+    para_blocks: [
+      { type: 'text', bbox: [72, 60, 520, 90], lines: [{ spans: [{ content: '正文。' }] }] },
+      figBlock('图 1-1 钻颅术'),
+      figBlock(''),
+      {
+        type: 'table',
+        bbox: [72, 410, 520, 520],
+        blocks: [
+          { type: 'table_caption', bbox: [72, 402, 520, 410], lines: [{ spans: [{ content: '表 1-1' }] }] },
+          { type: 'table_body', bbox: [72, 412, 520, 520], lines: [{ spans: [{ content: '<table><tr><td>甲</td><td>乙</td></tr></table>' }] }] },
+        ],
+      },
+    ],
+  }],
+}
+const figUrls = { 'images/a1.jpg': 'https://r2/a1.jpg', 'images/b2.jpg': 'https://r2/b2.jpg' }
+const figBlocks = blocksFromLayout(figDoc, [5], { markdown: IMG_MD, imageUrls: figUrls })
+
+check('图片块不再被丢掉(含无图注的)', figBlocks.map((b) => b.blockType), ['text', 'image', 'image', 'table'])
+check('图片块数量', figBlocks.filter((b) => b.blockType === 'image').length, 2)
+check('图注成为图片块的文字', figBlocks[1].text, '图 1-1 钻颅术')
+check('图片按顺序对齐到 R2 地址', [figBlocks[1].imageUrl, figBlocks[2].imageUrl], ['https://r2/a1.jpg', 'https://r2/b2.jpg'])
+check('无图注的图片块文本为空但不丢', figBlocks[2].text, '')
+check('表格 HTML 被留住', figBlocks[3].tableHtml, '<table><tr><td>甲</td><td>乙</td></tr></table>')
+check('表格仍保留纯文本(检索用)', figBlocks[3].text, '表 1-1 <table><tr><td>甲</td><td>乙</td></tr></table>')
+check('带脚本的表格 HTML 不要', blocksFromLayout({
+  pdf_info: [{ para_blocks: [{ type: 'table', bbox: [1, 2, 3, 4], blocks: [{ type: 'table_body', lines: [{ spans: [{ content: '<table><script>x()</script></table>' }] }] }] }] }],
+})[0].tableHtml, null)
+check('图片块没有地址时也留着(降级成图注)', blocksFromLayout(figDoc, [5], { markdown: '# 无图' })[1].imageUrl, null)
+check('图片块不吃掉后面的兄弟块', blocksFromLayout(figDoc, [5], { markdown: IMG_MD, imageUrls: figUrls }).length, 4)
+
+// 轻量兜底路径: 独立成段的图片要成为图片块, 行内图片不动
+const mdImgBlocks = blocksFromMarkdown('正文。\n\n![](images/c3.jpg)\n\n还有 ![行内](images/d4.jpg) 收尾。', [1], figUrls)
+check('轻量路径: 独立图片成块', mdImgBlocks.map((b) => b.blockType), ['text', 'image', 'text'])
+check('轻量路径: 图片地址对齐', mdImgBlocks[1].imageUrl, null)
+check('轻量路径: 行内图片留在正文里', mdImgBlocks[2].text.includes('![行内](images/d4.jpg)'), true)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)

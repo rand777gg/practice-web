@@ -4425,3 +4425,23 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.reset_resource_toc(UUID) TO authenticated;
+
+
+-- ============================================================================
+-- Section 61: 区块带上图片地址与表格 HTML —— 让图片和表格真的显示出来
+--
+--   原来两者都看不到, 原因不是阅读页不渲染, 是数据里根本没有:
+--     图片: MinerU 的图片块自身没有文字(文字是图注), 而入库时按"没文本就跳过"处理,
+--           于是整个图片块被丢掉 —— 库里 image/figure 类型一条都没有。而且解析产物里的
+--           images/xxx.jpg 从来没上传过 R2, 连整篇视图里的图片引用都是悬空的。
+--     表格: 入库时把表格所有单元格拼成一个字符串存进 text, 结构没保留; "逐段"视图
+--           只能把这一长串原样显示, 所以看起来不像表格。
+--
+--   image_url 存的是**上传 R2 之后的地址**(解析时才拿得到), 不是产物里的文件名:
+--   文件名只对人有用, 阅读页要的是能直接放进 <img src> 的东西。
+--   table_html 直接用 MinerU 给的 table_body, 它本身就是一段 <table>;
+--   text 仍然保留(检索/摘要/无 HTML 时的降级都还要用它)。
+-- ============================================================================
+ALTER TABLE public.resource_blocks
+  ADD COLUMN IF NOT EXISTS image_url  TEXT,
+  ADD COLUMN IF NOT EXISTS table_html TEXT;

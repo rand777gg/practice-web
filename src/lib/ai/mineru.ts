@@ -7,49 +7,113 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 const PROXY_BASE = `${SUPABASE_URL}/functions/v1/mineru-proxy`
 const AUTH_HEADER = { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
 
-export async function fetchZipAndExtractFiles(zipUrl: string): Promise<{ markdown: string; jsonData?: string }> {
+export interface ZipImage {
+  /** 产物里的相对路径, 如 images/6f3a.jpg —— markdown 里引用的就是它 */
+  name: string
+  blob: Blob
+}
+
+export interface ZipAssets {
+  markdown: string
+  jsonData?: string
+  images: ZipImage[]
+}
+
+const IMAGE_EXT_MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+  gif: 'image/gif', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
+}
+
+function mimeOfImage(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return IMAGE_EXT_MIME[ext] ?? 'application/octet-stream'
+}
+
+/**
+ * 取 MinerU 的结果 zip 并解出 full.md / 坐标 JSON / images/。
+ *
+ * 走 /zip-proxy 把 zip 流到浏览器本地解压: 图片必须拿到手才能上传 R2,
+ * 而"服务端解压后把图片 base64 回来"要同时持有 zip 原字节 + 解压字节 + base64 字符串,
+ * 几十 MB 的图就会把函数内存打爆(详见 mineru-proxy 里的注释)。
+ * zip-proxy 不可用时退回服务端解压 —— 那条路拿不到图片, 但至少正文能解析出来,
+ * 不至于因为图片把整本书的解析卡死。
+ */
+export async function fetchZipAndExtractFiles(zipUrl: string): Promise<ZipAssets> {
+  let bytes: Uint8Array | null = null
+  try {
+    const res = await fetch(`${PROXY_BASE}/zip-proxy?url=${encodeURIComponent(zipUrl)}`, {
+      headers: { ...AUTH_HEADER },
+    })
+    if (res.ok) bytes = new Uint8Array(await res.arrayBuffer())
+  } catch {
+    bytes = null
+  }
+
+  if (bytes) {
+    try {
+      return await extractZip(bytes)
+    } catch (err) {
+      console.warn('[mineru] 本地解压失败, 退回服务端解压(本次拿不到图片):', err)
+    }
+  }
+
   const res = await fetch(`${PROXY_BASE}/download-zip?url=${encodeURIComponent(zipUrl)}`, {
     headers: { ...AUTH_HEADER },
   })
   if (!res.ok) throw new Error(`Failed to download zip: ${res.status}`)
-
   const { text, jsonData: serverJsonData } = await res.json() as { text: string; jsonData?: string }
+  if (serverJsonData) return { markdown: text, jsonData: serverJsonData, images: [] }
 
-  // Server-side extraction already got JSON
-  if (serverJsonData) return { markdown: text, jsonData: serverJsonData }
-
-  // Fallback: server returned base64 zip for client-side extraction
   if (text.startsWith('__B64ZIP__')) {
     const b64 = text.slice('__B64ZIP__'.length)
     const binary = atob(b64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    const JSZip = (await import('jszip')).default
-    const zip = await JSZip.loadAsync(bytes)
-    const mdFile = zip.file('full.md')
-    if (!mdFile) throw new Error('full.md not found in zip archive')
-    const markdown = await mdFile.async('text')
-
-    // Find coordinate data — middle.json / layout.json for span-level blocks (PDF coords with y-flip)
-    let jsonData: string | undefined
-    const candidates = ['layout.json', 'middle.json', 'content_list.json', 'model.json']
-    for (const name of candidates) {
-      const f = zip.file(name)
-      if (f) { jsonData = await f.async('text'); break }
-    }
-    if (!jsonData) {
-      const allFiles: string[] = []
-      zip.forEach((path) => allFiles.push(path))
-      const match = allFiles.find(f => f.endsWith('_layout.json') || f.endsWith('_middle.json') || f.endsWith('_content_list.json'))
-      if (match) {
-        const f = zip.file(match)
-        if (f) jsonData = await f.async('text')
-      }
-    }
-    return { markdown, jsonData }
+    const raw = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) raw[i] = binary.charCodeAt(i)
+    return await extractZip(raw)
   }
 
-  return { markdown: text }
+  return { markdown: text, images: [] }
+}
+
+const JSON_CANDIDATES = ['layout.json', 'middle.json', 'content_list.json', 'model.json']
+
+async function extractZip(bytes: Uint8Array): Promise<ZipAssets> {
+  const JSZip = (await import('jszip')).default
+  const zip = await JSZip.loadAsync(bytes)
+
+  const entries = Object.values(zip.files)
+  const pick = (name: string) => {
+    const exact = zip.file(name)
+    if (exact) return exact
+    return entries.find((f) => !f.dir && f.name.endsWith(`/${name}`)) ?? null
+  }
+
+  const mdFile = pick('full.md')
+  if (!mdFile) throw new Error('full.md not found in zip archive')
+  const markdown = await mdFile.async('text')
+
+  // 坐标数据: layout.json 最好(带嵌套层级), 其次 middle / content_list
+  let jsonData: string | undefined
+  for (const name of JSON_CANDIDATES) {
+    const f = pick(name)
+    if (f) { jsonData = await f.async('text'); break }
+  }
+  if (!jsonData) {
+    const alt = entries.find((f) => !f.dir && /_(layout|middle|content_list)\.json$/.test(f.name))
+    if (alt) jsonData = await alt.async('text')
+  }
+
+  const images: ZipImage[] = []
+  for (const entry of entries) {
+    if (entry.dir || !/(^|\/)images\//.test(entry.name)) continue
+    const ext = entry.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!(ext in IMAGE_EXT_MIME)) continue
+    // JSZip 自己产 Blob, 再包一层只是为了补上 Content-Type(R2 那边直接拿它当响应头)
+    const blob = await entry.async('blob')
+    images.push({ name: entry.name, blob: new Blob([blob], { type: mimeOfImage(entry.name) }) })
+  }
+
+  return { markdown, jsonData, images }
 }
 
 export class MinerUClient {

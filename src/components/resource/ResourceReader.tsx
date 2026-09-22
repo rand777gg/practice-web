@@ -741,10 +741,32 @@ export function ResourceReader({
                         blockClass(block),
                       )}
                     >
-                      {/* 公式块用 KaTeX 渲染: MinerU 存的是裸 LaTeX(含 \frac 的块实测 0 个带 $), 不定界就没人认得出它是公式。检索高亮只作用于普通文字 —— 往公式里塞 <mark> 会把 LaTeX 拆坏 */}
-                      {isEquationBlock(block.blockType)
-                        ? <MathText tex={block.text} display className="block overflow-x-auto py-0.5" />
-                        : <HighlightText text={block.text} query={searchOpen ? searchQuery : ''} />}
+                      {/* 表格块: 以前只把单元格拼成的一行文字显示出来, 现在直接渲染 MinerU 给的 <table>。整篇视图一直是这么做的(rehype-raw), 逐段这里补上 */}
+                      {block.tableHtml ? (
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_table]:text-[11px]"
+                          dangerouslySetInnerHTML={{ __html: block.tableHtml }}
+                        />
+                      ) : isEquationBlock(block.blockType) ? (
+                        /* 公式块用 KaTeX 渲染: MinerU 存的是裸 LaTeX(含 \frac 的块实测 0 个带 $), 不定界就没人认得出它是公式。检索高亮只作用于普通文字 —— 往公式里塞 <mark> 会把 LaTeX 拆坏 */
+                        <MathText tex={block.text} display className="block overflow-x-auto py-0.5" />
+                      ) : block.imageUrl ? (
+                        <figure className="my-1">
+                          <img
+                            src={block.imageUrl}
+                            alt={block.text}
+                            loading="lazy"
+                            className="max-h-80 w-auto max-w-full rounded border bg-muted/20"
+                          />
+                          {block.text && (
+                            <figcaption className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                              {block.text}
+                            </figcaption>
+                          )}
+                        </figure>
+                      ) : (
+                        <HighlightText text={block.text} query={searchOpen ? searchQuery : ''} />
+                      )}
                       <span className="pointer-events-none absolute right-1 top-0.5 hidden text-[9px] tabular-nums text-muted-foreground/50 group-hover:inline">
                         P{block.pageNo}
                       </span>

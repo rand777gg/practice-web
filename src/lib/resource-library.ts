@@ -10,7 +10,7 @@
 
 import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
-import { MinerUClient, fetchZipAndExtractFiles } from '@/lib/ai/mineru'
+import { MinerUClient, fetchZipAndExtractFiles, type ZipAssets } from '@/lib/ai/mineru'
 import { getMinerUModelVersion, getMinerUToken } from '@/lib/ai/config'
 import type { MinerUBatchFileResult, MinerUBatchStatus, MinerUPrecisionOptions } from '@/lib/ai/types'
 import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocEntry, type TocSection } from '@/lib/resource-blocks'
@@ -187,7 +187,7 @@ export async function loadDocumentBlocks(
   for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
     let query = supabase
       .from('resource_blocks')
-      .select('block_index, page_no, bbox, block_type, heading_level, text')
+      .select('block_index, page_no, bbox, block_type, heading_level, text, image_url, table_html')
       .eq('document_id', documentId)
       .order('block_index', { ascending: true })
     if (range) query = query.gte('page_no', range.from).lte('page_no', range.to)
@@ -197,6 +197,7 @@ export async function loadDocumentBlocks(
     const rows = (data ?? []) as unknown as {
       block_index: number; page_no: number; bbox: number[] | null
       block_type: string; heading_level: number; text: string
+      image_url: string | null; table_html: string | null
     }[]
     for (const r of rows) {
       out.push({
@@ -206,6 +207,8 @@ export async function loadDocumentBlocks(
         blockType: r.block_type,
         headingLevel: r.heading_level,
         text: r.text,
+        imageUrl: r.image_url,
+        tableHtml: r.table_html,
       })
     }
     if (rows.length < BLOCK_PAGE_SIZE) break
@@ -299,6 +302,8 @@ export async function replaceResourceBlocks(id: string, blocks: ResourceBlock[],
       block_type: b.blockType,
       heading_level: b.headingLevel,
       text: b.text,
+      image_url: b.imageUrl ?? null,
+      table_html: b.tableHtml ?? null,
     }))
     const { error } = await supabase.from('resource_blocks').insert(rows)
     if (error) throw new Error(`区块写入失败(第 ${i} 条起): ${error.message}`)
@@ -458,7 +463,7 @@ async function mapLimited<T>(
 async function parseWithMinerU(
   pdfUrl: string,
   options: ParseOptions,
-): Promise<{ markdown: string; jsonData?: string }> {
+): Promise<ZipAssets> {
   const mineru = new MinerUClient()
   const onProgress = (msg: string) => options.producer?.({ step: msg })
 
@@ -468,7 +473,8 @@ async function parseWithMinerU(
       { pageRanges: options.pageRanges },
       onProgress,
     )
-    return { markdown }
+    // 轻量模式不返回 zip, 没有图片可传
+    return { markdown, images: [] }
   }
 
   const token = getMinerUToken()
@@ -505,29 +511,81 @@ async function parseWithMinerU(
 }
 
 /**
+ * 图片传 R2, 并把 markdown 里的 images/xxx.jpg 换成 R2 地址。
+ *
+ * 为什么要在落库前改写: MinerU 的 markdown 引的是产物内的相对路径, 那些文件从没上传过,
+ * 于是整篇视图里每个图片位置都是 404 —— 正文本身是对的, 只是引用悬空。
+ * 单张失败不影响整卷: 那条引用保持原文, 至少能看出少的是哪张图。
+ */
+async function uploadPartImages(
+  documentId: string,
+  partIndex: number,
+  assets: ZipAssets,
+  producer?: (p: ParseProgress) => void,
+  label = '',
+): Promise<{ markdown: string; imageUrls: Record<string, string> }> {
+  const imageUrls: Record<string, string> = {}
+  const total = assets.images.length
+  if (total === 0) return { markdown: assets.markdown, imageUrls }
+
+  producer?.({ step: `${label}正在上传解析出的图片 (${total} 张)...`, done: 0, total })
+  const folder = `${documentPrefix(documentId)}/parts/${partIndex}/images`
+  let done = 0
+
+  await mapLimited(assets.images, 4, async (img) => {
+    // 只用文件名: 产物里的 images/ 是平的, 带上目录前缀只是白搭一层
+    const file = img.name.split('/').pop() || img.name
+    try {
+      imageUrls[img.name] = await putToR2(`${folder}/${file}`, img.blob, img.blob.type || 'image/jpeg')
+    } catch (err) {
+      console.warn('[resource] 图片上传失败, 正文里这条引用会保持原样:', img.name, err)
+    }
+    done++
+    producer?.({ step: `${label}上传图片... ${done}/${total}`, done, total })
+  })
+
+  return { markdown: rewriteImageRefs(assets.markdown, imageUrls), imageUrls }
+}
+
+function rewriteImageRefs(markdown: string, imageUrls: Record<string, string>): string {
+  if (Object.keys(imageUrls).length === 0) return markdown
+  return markdown.replace(
+    /(!\[[^\]]*\]\(\s*<?)([^)\s>]+)(>?\s*\))/g,
+    (all, head: string, src: string, tail: string) =>
+      imageUrls[src] ? `${head}${imageUrls[src]}${tail}` : all,
+  )
+}
+
+/**
  * 解析产物 → 区块。
  * 单独一步是为了让 jsonData 尽快走出作用域: 199 页的 layout.json 有十几 MB,
  * 和后面的页图渲染(pdfjs 自己还要吃内存)挤在一起很容易把标签页拖垮。
  */
-function blocksOf(parsed: { markdown: string; jsonData?: string }, pageNumbers: number[]): ResourceBlock[] {
-  const blocks = blocksFromParse(parsed.jsonData, parsed.markdown, pageNumbers)
+function blocksOf(
+  parsed: { markdown: string; jsonData?: string },
+  pageNumbers: number[],
+  imageUrls?: Record<string, string>,
+): ResourceBlock[] {
+  const blocks = blocksFromParse(parsed.jsonData, parsed.markdown, pageNumbers, imageUrls)
   if (blocks.length === 0) throw new Error('解析结果为空, 未取得任何正文区块')
   return blocks
 }
 
-/** 一卷解析成功后: 建区块 → 渲染页图传 R2 → 落库。 */
+/** 一卷解析成功后: 传图片 → 建区块 → 渲染页图传 R2 → 落库。 */
 async function finishPart(
   documentId: string,
   pdfUrl: string,
   part: ResourcePart,
   slice: PageSlice,
-  parsed: { markdown: string; jsonData?: string },
+  parsed: ZipAssets,
   useRange: string | undefined,
   label: string,
   producer?: (p: ParseProgress) => void,
 ): Promise<{ blocks: number; pages: number }> {
+  const { markdown, imageUrls } = await uploadPartImages(documentId, part.part_index, parsed, producer, label)
+
   producer?.({ step: `${label}正在建立目录与定位区块...` })
-  const blocks = blocksOf(parsed, parsePageNumbers(useRange, slice.to))
+  const blocks = blocksOf({ markdown, jsonData: parsed.jsonData }, parsePageNumbers(useRange, slice.to), imageUrls)
 
   producer?.({ step: `${label}正在渲染 PDF 页面并上传 R2...` })
   const pages = await renderAndUploadPdfPages(
@@ -543,7 +601,7 @@ async function finishPart(
   })
   await patchPart(part.id, {
     page_urls: goodPages.length ? JSON.stringify(goodPages) : null,
-    markdown: parsed.markdown,
+    markdown,
     parse_status: 'ready',
     parse_error: null,
   })
