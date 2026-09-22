@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { BlockHit } from '@/lib/resource-search'
+import { TONE_CHIP, typeLabel, typeTone } from '@/lib/mineru-types'
 import { HighlightText } from './HighlightText'
 
 interface Props {
@@ -88,6 +89,12 @@ export function ResourceSearchPanel({
                   <span className="rounded bg-muted px-1 text-[9px] tabular-nums text-muted-foreground">
                     P{hit.pageNo}
                   </span>
+                  {/* 命中块的类型; 标题那条已经在标签里写明了, 不必再来一个"标题" */}
+                  {hit.headingLevel === 0 && (
+                    <span className={cn('rounded-sm border px-1 text-[9px]', TONE_CHIP[typeTone(hit.blockType)])}>
+                      {typeLabel(hit.blockType)}
+                    </span>
+                  )}
                   {hit.headingLevel > 0 && (
                     <span className="rounded bg-blue-100 px-1 text-[9px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
                       标题

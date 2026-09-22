@@ -4445,3 +4445,84 @@ GRANT EXECUTE ON FUNCTION public.reset_resource_toc(UUID) TO authenticated;
 ALTER TABLE public.resource_blocks
   ADD COLUMN IF NOT EXISTS image_url  TEXT,
   ADD COLUMN IF NOT EXISTS table_html TEXT;
+
+-- ============================================================================
+-- Section 62: 区块类型标签 —— 代码语言 + 检索跳过页面装饰
+--
+--   1) code_language: MinerU 给的代码语言(middle.json 的 guess_lang, content_list_v2 的
+--      content.code_language)。阅读页按它选 shiki 的语法; 没有就只能当纯文本, 高亮等于没做。
+--   2) 页眉/页脚/页码/边注/脚注/注音这些"页面装饰"现在也会入区块(阅读页能看到、能一键藏起来),
+--      但它们是每页重复的页面家具: 不排掉的话搜一个常用词会命中几百条页眉, 把真正文挤出前 50 条。
+--      只影响检索, 阅读页照样显示。
+-- ============================================================================
+ALTER TABLE public.resource_blocks
+  ADD COLUMN IF NOT EXISTS code_language TEXT;
+
+DROP FUNCTION IF EXISTS public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER);
+CREATE OR REPLACE FUNCTION public.search_resource_blocks(
+  p_query       TEXT,
+  p_document_id UUID    DEFAULT NULL,
+  p_subject     TEXT    DEFAULT NULL,
+  p_doc_type    TEXT    DEFAULT NULL,
+  p_tag         TEXT    DEFAULT NULL,
+  p_limit       INTEGER DEFAULT 50
+) RETURNS TABLE (
+  document_id   UUID,
+  doc_title     TEXT,
+  page_no       INTEGER,
+  block_index   INTEGER,
+  bbox          REAL[],
+  block_type    TEXT,
+  heading_level SMALLINT,
+  snippet       TEXT,
+  score         REAL,
+  total_hits    BIGINT
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  q      TEXT := btrim(coalesce(p_query, ''));
+  padded TEXT;
+BEGIN
+  IF q = '' THEN RETURN; END IF;
+  padded := regexp_replace(q, '(.)', '\1 ', 'g');
+
+  RETURN QUERY
+  WITH hit AS (
+    SELECT b.document_id AS doc_id,
+           d.title       AS d_title,
+           b.page_no     AS p_no,
+           b.block_index AS b_idx,
+           b.bbox        AS b_box,
+           b.block_type  AS b_type,
+           b.heading_level AS b_level,
+           b.text        AS b_text,
+           (CASE WHEN b.heading_level > 0 THEN 2.0 ELSE 0.0 END
+            + CASE WHEN d.title ILIKE '%' || q || '%' THEN 1.5 ELSE 0.0 END
+            + CASE WHEN b.text ILIKE q || '%' THEN 0.5 ELSE 0.0 END)::REAL AS sc
+    FROM public.resource_blocks b
+    JOIN public.resource_documents d ON d.id = b.document_id
+    WHERE b.search_text ILIKE '%' || padded || '%'
+      AND b.block_type <> ALL (ARRAY[
+        'header', 'footer', 'page_number', 'aside_text', 'page_footnote', 'phonetic', 'discarded',
+        'page_header', 'page_footer', 'page_aside_text', 'abandon', 'low_score_text'
+      ])
+      AND (p_document_id IS NULL OR b.document_id = p_document_id)
+      AND (p_subject     IS NULL OR d.subject  = p_subject)
+      AND (p_doc_type    IS NULL OR d.doc_type = p_doc_type)
+      AND (p_tag         IS NULL OR p_tag = ANY(d.tags))
+  )
+  SELECT h.doc_id, h.d_title, h.p_no, h.b_idx, h.b_box, h.b_type, h.b_level,
+         substring(h.b_text FROM greatest(1, strpos(lower(h.b_text), lower(q)) - 40) FOR 160),
+         h.sc,
+         count(*) OVER ()
+  FROM hit h
+  ORDER BY h.sc DESC, h.d_title, h.p_no, h.b_idx
+  LIMIT greatest(1, least(coalesce(p_limit, 50), 200));
+END;
+$$;
+
+-- DROP + CREATE 会把权限一起丢掉, 这里补回来(原样沿用 Section 49 的那条)
+GRANT EXECUTE ON FUNCTION public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER) TO authenticated;

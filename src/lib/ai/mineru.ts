@@ -75,7 +75,7 @@ export async function fetchZipAndExtractFiles(zipUrl: string): Promise<ZipAssets
   return { markdown: text, images: [] }
 }
 
-const JSON_CANDIDATES = ['layout.json', 'middle.json', 'content_list.json', 'model.json']
+const JSON_CANDIDATES = ['layout.json', 'middle.json', 'content_list_v2.json', 'content_list.json', 'model.json']
 
 async function extractZip(bytes: Uint8Array): Promise<ZipAssets> {
   const JSZip = (await import('jszip')).default
@@ -92,14 +92,14 @@ async function extractZip(bytes: Uint8Array): Promise<ZipAssets> {
   if (!mdFile) throw new Error('full.md not found in zip archive')
   const markdown = await mdFile.async('text')
 
-  // 坐标数据: layout.json 最好(带嵌套层级), 其次 middle / content_list
+  // 坐标数据: layout.json 最好(带嵌套层级), 其次 middle / content_list_v2 / content_list / model
   let jsonData: string | undefined
   for (const name of JSON_CANDIDATES) {
     const f = pick(name)
     if (f) { jsonData = await f.async('text'); break }
   }
   if (!jsonData) {
-    const alt = entries.find((f) => !f.dir && /_(layout|middle|content_list)\.json$/.test(f.name))
+    const alt = entries.find((f) => !f.dir && /_(layout|middle|content_list(_v2)?|model)\.json$/.test(f.name))
     if (alt) jsonData = await alt.async('text')
   }
 

@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { RENDER_SCALE, renderPdfPagesLocally, type PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock } from '@/lib/resource-blocks'
+import { TONE_HOTSPOT, typeLabel, typeTone } from '@/lib/mineru-types'
 import { scrollElementToCenter } from './centered-scroll'
 
 interface Props {
@@ -277,16 +278,18 @@ export function ResourcePdfPane({
             {pageBlocks.map((b) => {
               const [x0, y0, x1, y1] = b.bbox as number[]
               const active = b.blockIndex === activeBlockIndex
+              const tone = typeTone(b.blockType)
               return (
                 <button
                   key={b.blockIndex}
                   type="button"
                   onClick={() => onSelectBlock(b.blockIndex)}
-                  title={b.text.slice(0, 120)}
+                  // 悬停时按类型上色, 和右边正文里的标签同色 —— 一眼能对上哪块是哪块
+                  title={`${typeLabel(b.blockType)}: ${b.text.slice(0, 120)}`}
                   className={`absolute cursor-pointer border text-left transition-colors ${
                     active
                       ? 'z-10 border-primary bg-primary/25 ring-1 ring-primary'
-                      : 'border-transparent hover:border-amber-400/70 hover:bg-amber-400/20'
+                      : `border-transparent ${TONE_HOTSPOT[tone]}`
                   }`}
                   style={{
                     left: x0 * bboxScale,

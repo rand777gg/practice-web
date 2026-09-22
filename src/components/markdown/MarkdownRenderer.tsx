@@ -13,6 +13,7 @@ const MarkdownVideo = lazy(() => import('./MarkdownVideo'))
 import { useSettingsStore } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { langDisplay } from '@/lib/lang-names'
+import { highlightCode } from '@/lib/shiki-highlight'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -290,28 +291,47 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   )
 }
 
-// Lazy Shiki highlighter — loaded once and cached
-let _highlighter: any = null
-let _highlighterLoading: Promise<any> | null = null
+// ── Shiki code highlighter ───────────────────────────────────────────
+function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: string }) {
+  const [html, setHtml] = useState<string | null>(null)
 
-async function getHighlighter() {
-  if (_highlighter) return _highlighter
-  if (_highlighterLoading) return _highlighterLoading
+  useEffect(() => {
+    let cancelled = false
+    // 主题名来自设置项(用户可改), 高亮器按需加载语言与主题, 见 @/lib/shiki-highlight
+    highlightCode(code, lang, { theme })
+      .then((h) => { if (!cancelled) setHtml(h) })
+      .catch(() => {
+        if (!cancelled) {
+          setHtml(`<div class="rounded-lg bg-muted p-3 overflow-x-auto"><code class="text-xs">${escapeHtml(code)}</code></div>`)
+        }
+      })
+    return () => { cancelled = true }
+  }, [lang, code, theme])
 
-  _highlighterLoading = (async () => {
-    const { createHighlighter } = await import('shiki')
-    const hl = await createHighlighter({
-      themes: ['github-light', 'github-dark'],
-      langs: [
-        'javascript', 'typescript', 'jsx', 'tsx', 'css', 'html', 'json',
-        'python', 'java', 'c', 'cpp', 'go', 'rust',
-        'sql', 'bash', 'yaml', 'xml', 'markdown', 'latex', 'text',
-      ],
-    })
-    _highlighter = hl
-    return hl
-  })()
-  return _highlighterLoading
+  if (!html) {
+    return (
+      <div className="relative my-2">
+        <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
+          {langDisplay(lang)}
+        </span>
+        <div className="rounded-lg bg-muted p-3 pt-7 overflow-x-auto text-xs">
+          <pre className="text-xs">{code}</pre>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative my-2">
+      <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
+        {langDisplay(lang)}
+      </span>
+      <div
+        className="rounded-lg overflow-hidden [&_pre]:!bg-muted/70 [&_pre]:p-3 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_code]:text-xs"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  )
 }
 
 // ── Mermaid diagram renderer ─────────────────────────────────────────
@@ -370,55 +390,6 @@ function PlantUMLBlock({ code }: { code: string }) {
   if (err) return <pre className="text-xs text-red-500 p-2 rounded bg-red-50 dark:bg-red-950">{err}</pre>
   if (!svg) return <div className="h-20 bg-muted/30 rounded animate-pulse" />
   return <div className="my-2 flex justify-center overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />
-}
-
-// ── Shiki code highlighter ───────────────────────────────────────────
-function CodeBlock({ lang, code, theme }: { lang: string; code: string; theme: string }) {
-  const [html, setHtml] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getHighlighter().then(async (hl) => {
-      if (cancelled) return
-      try {
-        // Load theme on demand if not already loaded
-        const loaded = await hl.getLoadedThemes()
-        if (!loaded.includes(theme)) {
-          await hl.loadTheme(theme)
-        }
-        const h = hl.codeToHtml(code, { lang, theme })
-        setHtml(h)
-      } catch {
-        setHtml(`<div class="rounded-lg bg-muted p-3 overflow-x-auto"><code class="text-xs">${escapeHtml(code)}</code></div>`)
-      }
-    })
-    return () => { cancelled = true }
-  }, [lang, code, theme])
-
-  if (!html) {
-    return (
-      <div className="relative my-2">
-        <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
-          {langDisplay(lang)}
-        </span>
-        <div className="rounded-lg bg-muted p-3 pt-7 overflow-x-auto text-xs">
-          <pre className="text-xs">{code}</pre>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="relative my-2">
-      <span className="absolute top-2 right-2.5 text-[10px] text-muted-foreground/60 font-mono z-10 pointer-events-none">
-        {langDisplay(lang)}
-      </span>
-      <div
-        className="rounded-lg overflow-hidden [&_pre]:!bg-muted/70 [&_pre]:p-3 [&_pre]:pt-7 [&_pre]:overflow-x-auto [&_code]:text-xs"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    </div>
-  )
 }
 
 function escapeHtml(s: string) {

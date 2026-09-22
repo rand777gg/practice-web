@@ -187,7 +187,7 @@ export async function loadDocumentBlocks(
   for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
     let query = supabase
       .from('resource_blocks')
-      .select('block_index, page_no, bbox, block_type, heading_level, text, image_url, table_html')
+      .select('block_index, page_no, bbox, block_type, heading_level, text, image_url, table_html, code_language')
       .eq('document_id', documentId)
       .order('block_index', { ascending: true })
     if (range) query = query.gte('page_no', range.from).lte('page_no', range.to)
@@ -197,7 +197,7 @@ export async function loadDocumentBlocks(
     const rows = (data ?? []) as unknown as {
       block_index: number; page_no: number; bbox: number[] | null
       block_type: string; heading_level: number; text: string
-      image_url: string | null; table_html: string | null
+      image_url: string | null; table_html: string | null; code_language: string | null
     }[]
     for (const r of rows) {
       out.push({
@@ -209,6 +209,7 @@ export async function loadDocumentBlocks(
         text: r.text,
         imageUrl: r.image_url,
         tableHtml: r.table_html,
+        codeLanguage: r.code_language,
       })
     }
     if (rows.length < BLOCK_PAGE_SIZE) break
@@ -304,6 +305,7 @@ export async function replaceResourceBlocks(id: string, blocks: ResourceBlock[],
       text: b.text,
       image_url: b.imageUrl ?? null,
       table_html: b.tableHtml ?? null,
+      code_language: b.codeLanguage ?? null,
     }))
     const { error } = await supabase.from('resource_blocks').insert(rows)
     if (error) throw new Error(`区块写入失败(第 ${i} 条起): ${error.message}`)
