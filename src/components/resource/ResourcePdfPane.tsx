@@ -168,6 +168,12 @@ export function ResourcePdfPane({
    * callback ref 在元素真正挂载/卸载时才调, 不受这些分支切换影响。
    *
    * root 用面板自己而不是视口: 加载与否该看哨兵有没有接近**面板**的底边, 与面板在屏幕上多高无关。
+   *
+   * 放页也不是从 loadedCount 往上加: 定位/跳页到远超已加载窗口的一页时, visibleCount 由
+   * activePageIdx/targetIdx 撑着(定位到第 200 页就是 visibleCount=201 而 loadedCount 还停在 6),
+   * 加在 loadedCount 上派生值纹丝不动 —— 不多渲染一页, 哨兵就停在原地, 观察器再等不到状态变化
+   * 而彻底静默, 内容也就到定位那页为止, 表现就是"只能翻到定位的那一页, 再往下翻不动了"。
+   * 所以这里按**真正挂在 DOM 上的页数**(= visibleCount, 页框都登记在 pageRefs 里)往上放。
    */
   const attachSentinel = useCallback((el: HTMLDivElement | null) => {
     ioRef.current?.disconnect()
@@ -175,7 +181,7 @@ export function ResourcePdfPane({
     if (!el) return
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
-        setLoadedCount((prev) => Math.min(prev + PAGE_STEP, totalRef.current))
+        setLoadedCount((prev) => Math.min(Math.max(prev, pageRefs.current.size) + PAGE_STEP, totalRef.current))
       }
     }, { root: containerRef.current, rootMargin: '300px' })
     io.observe(el)
