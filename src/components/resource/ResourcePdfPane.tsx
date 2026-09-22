@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -23,12 +23,24 @@ const PAGE_STEP = 3
 // 所以只在页数不多时自动渲染, 超了就让用户按需点 —— 正常路径(有 R2 页图)不受影响。
 const LOCAL_RENDER_MAX = 40
 
+/**
+ * 页框宽度小于这个值就不认这次测量。
+ *
+ * 首帧 ResizablePanel 还没定宽, 容器会被量到几十像素; 采信它就会先按 35px 宽排一遍页框,
+ * 等真实宽度(五百多)到了再跳一次 —— 实测一次 layout-shift 就是 0.245, 看起来就是整页抖一下。
+ * 真实的 PDF 阅读区不会只有 160px, 所以这个下限只会挡掉"还没布局好"那种测量。
+ */
+const MIN_USABLE_W = 160
+/** 至少留出这些宽度给滚动条, 免得页框压在滚动条下面 */
+const SCROLLBAR_GUTTER = 16
+
 export function ResourcePdfPane({
   pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-  const [containerW, setContainerW] = useState(700)
+  const [containerW, setContainerW] = useState(0)
   const [localPages, setLocalPages] = useState<PageUrl[]>([])
   const [localError, setLocalError] = useState<string | null>(null)
   const [localProgress, setLocalProgress] = useState<{ done: number; total: number } | null>(null)
@@ -70,13 +82,26 @@ export function ResourcePdfPane({
     return () => { run.cancelled = true }
   }, [needsFallback, pdfUrl, fallbackTooBig, localWanted])
 
-  useEffect(() => {
-    const el = containerRef.current
+  /**
+   * 用 callback ref 而不是 useEffect 量宽度, 有两个原因:
+   *   1) ref 是在 commit 阶段调的, 早于浏览器绘制 —— 首帧就量到真实宽度, 不会先按兜底宽度画一遍;
+   *   2) 页图缺失时上面那个分支会先返回一个没有容器的占位视图, 容器是后来才挂上的,
+   *      写死 deps 的 effect 那时早就跑过了(el 为 null), ResizeObserver 永远不会挂上去。
+   */
+  const attachContainer = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el
+    roRef.current?.disconnect()
+    roRef.current = null
     if (!el) return
-    const ro = new ResizeObserver(() => setContainerW(el.clientWidth))
+    const apply = () => {
+      const w = el.clientWidth
+      // 只挡下限: 面板被拖宽拖窄都是正常操作, 照单全收
+      if (w >= MIN_USABLE_W) setContainerW((prev) => (prev === w ? prev : w))
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
     ro.observe(el)
-    setContainerW(el.clientWidth)
-    return () => ro.disconnect()
+    roRef.current = ro
   }, [])
 
   const blocksByPage = useMemo(() => {
@@ -160,17 +185,32 @@ export function ResourcePdfPane({
     )
   }
 
+  // 还没量到可用宽度就只占位, 不按错误宽度把页框排一遍再跳 —— 那一次跳动正是"页面抖一下"
+  if (containerW < MIN_USABLE_W) {
+    return (
+      <div
+        ref={attachContainer}
+        className="h-full overflow-y-auto p-2 [scrollbar-gutter:stable]"
+      >
+        <Skeleton className="mx-auto mb-3 aspect-[1/1.414] w-full max-w-[520px] rounded" />
+        <Skeleton className="mx-auto mb-3 aspect-[1/1.414] w-full max-w-[520px] rounded" />
+      </div>
+    )
+  }
+
   return (
-    <div ref={containerRef} className="h-full overflow-y-auto p-2">
+    <div ref={attachContainer} className="h-full overflow-y-auto p-2 [scrollbar-gutter:stable]">
       {localError && (
         <p className="pb-2 text-center text-[10px] text-muted-foreground">{localError}</p>
       )}
 
       {visible.map((page) => {
-        const cssW = containerW - 16
-        const scale = cssW / page.w
-        const cssH = page.h * scale
-        const bboxScale = RENDER_SCALE * scale
+        const cssW = containerW - SCROLLBAR_GUTTER
+        // 页框用 aspect-ratio 而不是自己算像素高: 宽度一变浏览器直接就着重排, 不用等我们重渲染一轮;
+        // 而且 page.h 缺失时自己算会得到 NaN, 整块会塌成 0 高 —— 那才是真正会抖的形状。
+        const pw = page.w > 0 ? page.w : 1000
+        const ph = page.h > 0 ? page.h : 1414
+        const bboxScale = RENDER_SCALE * (cssW / pw)
         const pageBlocks = blocksByPage.get(page.p) ?? []
         const isActivePage = activePage === page.p
 
@@ -182,7 +222,7 @@ export function ResourcePdfPane({
               else pageRefs.current.delete(page.p)
             }}
             className={`relative mx-auto mb-3 transition-shadow ${isActivePage ? 'ring-1 ring-primary/40' : ''}`}
-            style={{ width: cssW, height: cssH }}
+            style={{ width: cssW, aspectRatio: `${pw} / ${ph}` }}
           >
             <img
               src={page.src}
