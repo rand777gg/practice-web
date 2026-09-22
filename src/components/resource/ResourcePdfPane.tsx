@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { RENDER_SCALE, renderPdfPagesLocally, type PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock } from '@/lib/resource-blocks'
+import { scrollElementToCenter } from './centered-scroll'
 
 interface Props {
   pages: PageUrl[]
@@ -137,11 +138,12 @@ export function ResourcePdfPane({
 
   const activePage = activeBlockIndex === null ? null : pageOfBlock.get(activeBlockIndex) ?? null
 
-  // 正文/目录/检索选中的区块, PDF 这边跟着走
+  // 正文/目录/检索选中的区块, PDF 这边跟着走 —— 选中页居中显示(比例不够高时自动退回顶对齐, 见 helper)
   useEffect(() => {
     if (activePage === null) return
+    const pane = containerRef.current
     const el = pageRefs.current.get(activePage)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    if (pane && el) scrollElementToCenter(pane, el)
   }, [activePage, activeBlockIndex])
 
   // 跳页目标可能还在懒加载后面, 用派生值把它前面的页一起放出来 —— 放到 state 里会晚一帧,

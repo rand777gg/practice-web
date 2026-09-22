@@ -13,6 +13,7 @@ import { searchBlocks, type BlockHit } from '@/lib/resource-search'
 import { draftFromToc, blockIndexSet, staleEntryIds, tocFromDraft, updateEntry, type TocDraftEntry } from '@/lib/resource-toc'
 import { resetManualToc, saveManualToc } from '@/lib/resource-toc-store'
 import { HighlightText } from './HighlightText'
+import { scrollElementToCenter } from './centered-scroll'
 import { ResourcePdfPane } from './ResourcePdfPane'
 import { ResourceSearchPanel } from './ResourceSearchPanel'
 import { ResourceToc, type TocEditorBridge } from './ResourceToc'
@@ -326,22 +327,63 @@ export function ResourceReader({
   }, [blockIndexes, locate])
 
   /**
-   * 定位之后把目标那一段滚到视口顶部 —— 这是"点目录/检索结果/PDF 热区 → 正文跳过去"的那一步。
+   * 定位之后把目标那一段滚到视口正中 —— 这是"点目录/检索结果/PDF 热区 → 正文跳过去"的那一步。
    *
    * 只认这一次定位的目标, **不能把 activeBlockIndex 放进依赖**: 那个值会随滚动、随换窗口比例
-   * 而变, 挂上去就等于"只要当前块变了就把正文拽到它置顶"。而这个拽动本身又会产生 scroll 事件、
+   * 而变, 挂上去就等于"只要当前块变了就把正文拽到它"。而这个拽动本身又会产生 scroll 事件、
    * 又改 activeBlockIndex —— 自己咬自己。实测: 点过一次目录之后收起侧边栏, 正文被拽走近 5000px、
    * 活动块在 258 → 300 → 262 之间连跳三次, 表现就是"一换比例, 选中的内容就抖成别的了"。
    *
-   * 用 start 而不是 center: 滚动监听认定的「当前块」是视口顶部那一段, 定位时若把目标居中,
-   * 滚完监听就会把 active 改成顶部那一段, 变成「定位到了却显示成别的块」。
+   * 居中而不是顶对齐: 上下留出等量上下文才看得出这一段在哪。滚动过程由 pendingLocateRef
+   * 全程挡着滚动监听, 所以目标居中之后不会再被"视口顶部那一段"顶掉。
    */
   useEffect(() => {
     if (focusNonce === 0) return
     const target = locateTargetRef.current
     if (target === null) return
+    const root = mdScrollRef.current
     const el = blockRefs.current.get(target)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (!root || !el) return
+    scrollElementToCenter(root, el)
+
+    /*
+     * 落位之后复核一次。
+     *
+     * 挂载那一刻容器/内容高度未必已经是终值(带 ?block= 进来时实测偶发落偏两千多像素,
+     * 表现就是"点了检索结果却停在半路")。平滑滚动是按发起时的排版算的目标位置, 之后排版一变
+     * 就停偏了, 所以等它停下来再看一眼, 偏了就纠一次(这次直接落位, 不再动画)。
+     *
+     * 只有用户在这期间没真的自己滚过才纠 —— 否则会把人家拽回去。
+     */
+    let cancelled = false
+    const userMoved = () => { cancelled = true }
+    window.addEventListener('wheel', userMoved, { passive: true })
+    window.addEventListener('touchstart', userMoved, { passive: true })
+    window.addEventListener('keydown', userMoved)
+    const timer = window.setTimeout(() => {
+      if (!cancelled && locateTargetRef.current === target) {
+        const now = blockRefs.current.get(target)
+        if (now) {
+          const cRect = root.getBoundingClientRect()
+          const eRect = now.getBoundingClientRect()
+          const expected = now.offsetHeight <= root.clientHeight
+            ? (root.clientHeight - now.offsetHeight) / 2
+            : 0
+          if (Math.abs(eRect.top - cRect.top - expected) > 24) scrollElementToCenter(root, now, 'auto')
+        }
+      }
+      window.removeEventListener('wheel', userMoved)
+      window.removeEventListener('touchstart', userMoved)
+      window.removeEventListener('keydown', userMoved)
+    }, 700)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      window.removeEventListener('wheel', userMoved)
+      window.removeEventListener('touchstart', userMoved)
+      window.removeEventListener('keydown', userMoved)
+    }
   }, [focusNonce])
 
   // 带着 ?block= 进来时, 等首屏排版稳定再定位, 否则量到的位置会偏。
@@ -373,7 +415,14 @@ export function ResourceReader({
     const root = mdScrollRef.current
     if (!root) return
     measureOffsets()
-    const ro = new ResizeObserver(measureOffsets)
+    const onResize = () => {
+      // 重排会连着带来一串 scroll 事件(滚动锚定要保住同一段文字), 但那不是用户在滚 ——
+      // 不能凭它改选中块。定位是居中的, 目标离视口顶部大半屏, 拿"顶部那一段"重算一次
+      // 就等于把用户选的那段换掉(实测换比例时 258 → 256)。
+      suppressSpyUntil.current = Date.now() + 400
+      measureOffsets()
+    }
+    const ro = new ResizeObserver(onResize)
     ro.observe(root)
     return () => ro.disconnect()
   }, [blocks, viewMode, measureOffsets])
