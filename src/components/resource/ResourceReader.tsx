@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Columns2, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, X } from 'lucide-react'
+import { AlertCircle, Check, Columns2, Crosshair, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,6 +63,8 @@ function blockClass(block: ResourceBlock): string {  if (block.headingLevel > 0)
 
 /** PDF 缩放方式的持久化键 */
 const PDF_FIT_KEY = 'resource.pdfFit'
+/** 「自动跟随」的持久化键 */
+const AUTO_FOLLOW_KEY = 'resource.autoFollow'
 
 export function ResourceReader({
   documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '', toc,
@@ -88,6 +90,26 @@ export function ResourceReader({
   useEffect(() => {
     try { localStorage.setItem(PDF_FIT_KEY, pdfFit) } catch { /* 隐私模式下写不了, 无所谓 */ }
   }, [pdfFit])
+
+  /**
+   * 正文滚动时要不要自动改"当前选中块"(并因此带着目录和 PDF 一起走)。
+   *
+   * 关掉以后: 滚动只滚动, 选中区锁在你上一次明确点的位置 —— 否则每往下翻一屏,
+   * 选中区就被换成视口顶部那一段, PDF 也跟着翻页, 想"盯住一段一边看一边对照"就没法用。
+   */
+  const [autoFollow, setAutoFollow] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_FOLLOW_KEY) !== 'off'
+    } catch {
+      return true
+    }
+  })
+  // 监听器是常驻的(只在 viewMode 变时重建), 所以用 ref 读最新值, 免得每次开关都重新订阅
+  const autoFollowRef = useRef(autoFollow)
+  autoFollowRef.current = autoFollow
+  useEffect(() => {
+    try { localStorage.setItem(AUTO_FOLLOW_KEY, autoFollow ? 'on' : 'off') } catch { /* 同上 */ }
+  }, [autoFollow])
   const [pageInput, setPageInput] = useState('')
   const [jumpToPage, setJumpToPage] = useState<{ page: number; nonce: number } | null>(null)
 
@@ -375,6 +397,10 @@ export function ResourceReader({
       if (raf) return
       raf = requestAnimationFrame(() => {
         raf = 0
+        // 「自动跟随」关掉时, 滚动不参与选块 —— 选中区就锁在用户自己点的那一段,
+        // 不会因为往下翻一屏就被换成视口顶部那一段, PDF 也就不会跟着乱翻。
+        // 显式定位(点目录/检索结果/PDF 热区/点段落)照旧生效, 那条路不经过这里。
+        if (!autoFollowRef.current) return
         if (Date.now() < suppressSpyUntil.current) return
         if (pendingLocateRef.current !== null) return
 
@@ -545,6 +571,23 @@ export function ResourceReader({
           >
             <Search className="h-3 w-3" />
             检索
+          </Button>
+
+          {/*
+            关掉之后滚动不再改选中块: 想"盯住这一段、一边往下看一边和 PDF 对照"时才不会被
+            滚动一路带走。放最右边是因为它管的是整个右栏的滚动行为, 和左边那些定位按钮不是一类。
+          */}
+          <Button
+            variant={autoFollow ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-6 gap-1 px-1.5 text-[11px]"
+            onClick={() => setAutoFollow((v) => !v)}
+            title={autoFollow
+              ? '自动跟随: 开 —— 滚动时选中区跟着视口顶部走, 目录与 PDF 一起跳。点一下锁住当前选中'
+              : '自动跟随: 关 —— 选中区已锁住, 滚动不再改它 (点目录/检索结果/PDF 热区仍可主动定位)'}
+          >
+            <Crosshair className={cn('h-3 w-3', autoFollow && 'fill-current')} />
+            跟随
           </Button>
         </div>
 
