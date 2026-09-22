@@ -309,10 +309,19 @@ interface ImageScan {
   urls?: Record<string, string>
 }
 
+/** 点号前有 scheme 的引用已经是绝对地址(不是产物里的相对路径) */
+const ABS_URL_RE = /^https?:\/\//i
+
 function takeImage(block: RawBlock, scan: ImageScan, explicit?: string | null): { name: string | null; url: string | null } {
   const name = explicit ?? imgPathOf(block) ?? scan.queue[scan.next.i++] ?? null
   if (!name) return { name: null, url: null }
-  const url = scan.urls?.[name] ?? null
+  /*
+   * 相对路径要在 imageUrls 表里换成 R2 地址; 但**建块时拿到的 markdown 可能已经被改写过了**
+   * (解析流程是: 先传图片 → 改写 markdown 里的引用 → 再建块), 这时队列里存的就是绝对地址,
+   * 拿它去查表必然查不到 —— 表现是线上 221 个图片块的 image_url 全为 NULL: 图明明在 R2 上,
+   * 逐段视图却只剩一句图注, 而整篇视图(直接渲染 markdown)是好的。
+   */
+  const url = ABS_URL_RE.test(name) ? name : scan.urls?.[name] ?? null
   return { name, url }
 }
 
@@ -474,6 +483,7 @@ export function blocksFromMarkdown(
     // 混在正文里的行内图片不动它, 那种情况正文本身就该按段落处理。
     const solo = chunk.match(/^!\[[^\]]*\]\(\s*<?([^)\s>]+?)>?\s*\)$/)
     if (solo) {
+      const src = solo[1]
       out.push({
         blockIndex: out.length,
         pageNo: pages[pageIdx],
@@ -481,7 +491,8 @@ export function blocksFromMarkdown(
         blockType: 'image',
         headingLevel: 0,
         text: '',
-        imageUrl: imageUrls?.[solo[1]] ?? null,
+        // 同上: markdown 可能已经是改写过的, 那 src 本身就是 R2 地址
+        imageUrl: imageUrls?.[src] ?? (ABS_URL_RE.test(src) ? src : null),
       })
       continue
     }

@@ -314,6 +314,18 @@ check('图注成为图片块的文字', figBlocks[1].text, '图 1-1 钻颅术')
 check('图片按顺序对齐到 R2 地址', [figBlocks[1].imageUrl, figBlocks[2].imageUrl], ['https://r2/a1.jpg', 'https://r2/b2.jpg'])
 check('无图注的图片块文本为空但不丢', figBlocks[2].text, '')
 check('表格 HTML 被留住', figBlocks[3].tableHtml, '<table><tr><td>甲</td><td>乙</td></tr></table>')
+
+// 线上就是这么建的块: 解析流程先上传图片、把 markdown 里的引用改写成 R2 地址, 再建块。
+// 所以建块时队列里已经是绝对地址, 再按相对路径查 imageUrls 必然查不到 —— 曾经整篇的图片块
+// image_url 全是 NULL, 图在 R2 上却只剩一句图注。
+const R2_A1 = 'https://r2-rpw.example.com/resources/doc/parts/0/images/a1.jpg'
+const R2_B2 = 'https://r2-rpw.example.com/resources/doc/parts/0/images/b2.jpg'
+const REWRITTEN_MD = IMG_MD.replaceAll('images/a1.jpg', R2_A1).replaceAll('images/b2.jpg', R2_B2)
+check('markdown 已改写时队列里是绝对地址', imagesInMarkdown(REWRITTEN_MD), [R2_A1, R2_B2])
+const rewrittenBlocks = blocksFromLayout(figDoc, [5], { markdown: REWRITTEN_MD, imageUrls: figUrls })
+check('markdown 已改写成 R2 地址, 图片块照样拿到地址', [rewrittenBlocks[1].imageUrl, rewrittenBlocks[2].imageUrl], [R2_A1, R2_B2])
+const mdFallback = blocksFromMarkdown(`正文。\n\n![](${R2_A1})`, [1], figUrls)
+check('轻量兜底路径同理(独立图片直接用绝对地址)', mdFallback[1].imageUrl, R2_A1)
 check('表格仍保留纯文本(检索用)', figBlocks[3].text, '表 1-1 <table><tr><td>甲</td><td>乙</td></tr></table>')
 check('带脚本的表格 HTML 不要', blocksFromLayout({
   pdf_info: [{ para_blocks: [{ type: 'table', bbox: [1, 2, 3, 4], blocks: [{ type: 'table_body', lines: [{ spans: [{ content: '<table><script>x()</script></table>' }] }] }] }] }],
