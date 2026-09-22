@@ -99,6 +99,8 @@ export function ResourceReader({
   const mdScrollRef = useRef<HTMLDivElement>(null)
   const blockRefs = useRef<Map<number, HTMLElement>>(new Map())
   const offsetsRef = useRef<{ idx: number; top: number }[]>([])
+  /** 上次量偏移量时正文的总高; 对不上就说明内容重排过, 偏移量作废 */
+  const measuredHeightRef = useRef(0)
   const suppressSpyUntil = useRef(0)
 
   const activeQuery = searchOpen ? searchQuery.trim() : ''
@@ -255,9 +257,17 @@ export function ResourceReader({
   // 光靠一个固定时长的抑制窗口挡不住滚动监听 —— 滚动途中它就会把 active 改成当前可见的块,
   // 于是"点第 250 页的检索结果却跳到 166 页"。所以改成: 目标没进入视口之前, 监听器不抢。
   const pendingLocateRef = useRef<number | null>(null)
+  /**
+   * 最近一次"明确要求定位"的目标。
+   *
+   * 和 pendingLocateRef 分开是因为那个会被滚动监听在滚动停下时清掉; 这个只由 locate() 写,
+   * 所以下面那个 effect 不管什么时候跑都能拿到"该滚去哪一段"。
+   */
+  const locateTargetRef = useRef<number | null>(null)
 
   const locate = useCallback((blockIndex: number) => {
     pendingLocateRef.current = blockIndex
+    locateTargetRef.current = blockIndex
     setActiveBlockIndex(blockIndex)
     setFlashIndex(blockIndex)
     setFocusNonce((n) => n + 1)
@@ -277,13 +287,24 @@ export function ResourceReader({
     locate(entry.blockIndex)
   }, [blockIndexes, locate])
 
+  /**
+   * 定位之后把目标那一段滚到视口顶部 —— 这是"点目录/检索结果/PDF 热区 → 正文跳过去"的那一步。
+   *
+   * 只认这一次定位的目标, **不能把 activeBlockIndex 放进依赖**: 那个值会随滚动、随换窗口比例
+   * 而变, 挂上去就等于"只要当前块变了就把正文拽到它置顶"。而这个拽动本身又会产生 scroll 事件、
+   * 又改 activeBlockIndex —— 自己咬自己。实测: 点过一次目录之后收起侧边栏, 正文被拽走近 5000px、
+   * 活动块在 258 → 300 → 262 之间连跳三次, 表现就是"一换比例, 选中的内容就抖成别的了"。
+   *
+   * 用 start 而不是 center: 滚动监听认定的「当前块」是视口顶部那一段, 定位时若把目标居中,
+   * 滚完监听就会把 active 改成顶部那一段, 变成「定位到了却显示成别的块」。
+   */
   useEffect(() => {
     if (focusNonce === 0) return
-    const el = activeBlockIndex === null ? null : blockRefs.current.get(activeBlockIndex)
-    // 用 start 而不是 center: 滚动监听认定的「当前块」是视口顶部那一段, 定位时若把目标居中,
-    // 滚完监听就会把 active 改成顶部那一段, 变成「定位到了却显示成别的块」。
+    const target = locateTargetRef.current
+    if (target === null) return
+    const el = blockRefs.current.get(target)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [focusNonce, activeBlockIndex])
+  }, [focusNonce])
 
   // 带着 ?block= 进来时, 等首屏排版稳定再定位, 否则量到的位置会偏。
   // 检索面板的初始关键词已经在 useState 里取自 props —— 详情页给 Reader 挂了 key,
@@ -305,6 +326,8 @@ export function ResourceReader({
     }
     list.sort((a, b) => a.top - b.top)
     offsetsRef.current = list
+    // 记下这次量的是"多高的内容": 高度一变(换窗口比例、拖面板、折叠目录)偏移量就全作废了
+    measuredHeightRef.current = root.scrollHeight
   }, [])
 
   useEffect(() => {
@@ -339,6 +362,12 @@ export function ResourceReader({
         if (Date.now() < suppressSpyUntil.current) return
         if (pendingLocateRef.current !== null) return
 
+        // 换窗口比例/拖面板会让正文重排, 每个块的偏移量随即作废, 但重排本身会带着 scrollTop
+        // 一起变(滚动锚定要保住同一段文字), 于是跟着来的这次 scroll 事件就是"新 scrollTop + 旧偏移量"。
+        // 用它算出来的块是错的 —— 表现就是一换比例, 高亮和 PDF 那一页跳到别的段上。
+        // 所以先用一次 scrollHeight 判断内容高度有没有变(单次读取, 很便宜), 变了就重量。
+        if (root.scrollHeight !== measuredHeightRef.current) measureOffsets()
+
         const list = offsetsRef.current
         if (list.length === 0) return
         // 取"盖住视口顶边的那一块", 而不是"顶部往下 90px 内最靠后的那一块":
@@ -360,7 +389,7 @@ export function ResourceReader({
       if (raf) cancelAnimationFrame(raf)
       if (settle !== null) window.clearTimeout(settle)
     }
-  }, [viewMode])
+  }, [viewMode, measureOffsets])
 
   const submitPage = () => {
     const page = Number(pageInput.trim())
