@@ -301,13 +301,13 @@ export function ResourcePdfPane({
                   }}
                 >
                   {/*
-                    和右边正文里同款的标签: 文字就是 type 的中文名, 颜色同色, 贴在框的左上角。
-                    不跟着页面缩放(写法是固定像素), 所以页面缩小后仍然看得清; 也不吃鼠标事件,
-                    悬停/点击照旧落在下面那个热区上。
+                    和右边正文里同款的标签: 文字就是 type 的中文名, 颜色同色, 挂在框**外面**的左上角
+                    (压在框的上边缘上, 和 MinerU 客户端一致)。不吃鼠标事件, 悬停/点击照旧落在
+                    下面那个热区上; 字号不跟页面缩放, 页面缩小后仍然看得清。
                   */}
                   {showLabels && (
                     <span
-                      className={`pointer-events-none absolute left-0 top-0 whitespace-nowrap border px-0.5 text-[8px] leading-[11px] ${TONE_CHIP[tone]}`}
+                      className={`pointer-events-none absolute -left-px -top-[13px] whitespace-nowrap border px-1 text-[9px] leading-[11px] ${TONE_CHIP[tone]}`}
                     >
                       {typeLabel(b.blockType)}
                     </span>

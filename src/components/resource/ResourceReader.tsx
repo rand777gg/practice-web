@@ -858,8 +858,8 @@ export function ResourceReader({
                         : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
                         'group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
-                        // 标签是压在第一行上沿的, 得给它让出一条: 不然会盖住上一段的末尾
-                        showLabels && 'mt-2',
+                        // 标签挂在块外面上沿(见下), 得给它让出一条: 不然会压住上一段
+                        showLabels && 'mt-3.5',
                         flashIndex === block.blockIndex && 'animate-flash',
                         block.bbox ? TONE_BORDER[tone] : 'border-l-transparent',
                         mappingId !== null && 'ring-1 ring-primary/30 hover:bg-primary/10 hover:ring-primary',
@@ -871,11 +871,15 @@ export function ResourceReader({
                         blockClass(block),
                       )}
                     >
-                      {/* MinerU 的 type 取值对应的中文名; 认不出来的类型原样显示, 免得静默变"未知" */}
+                      {/*
+                        MinerU 的 type 取值对应的中文名, 挂在块的**外面上沿**、左对齐(和 MinerU 客户端一致,
+                        也省得压住第一行正文); 认不出来的类型原样显示, 免得静默变"未知"。
+                      */}
                       {showLabels && (
                         <span
                           className={cn(
-                            'pointer-events-none absolute -top-[9px] left-0.5 border px-1 text-[9px] leading-[12px]',
+                            // -left-[2px] 抵掉 border-l-2: 绝对定位的参照是 padding box, 不抵会缩进 2px
+                            'pointer-events-none absolute -left-[2px] -top-[13px] whitespace-nowrap border px-1 text-[9px] leading-[11px]',
                             TONE_CHIP[tone],
                           )}
                         >
