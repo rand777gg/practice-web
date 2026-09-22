@@ -14,6 +14,7 @@ import { draftFromToc, blockIndexSet, staleEntryIds, tocFromDraft, updateEntry, 
 import { resetManualToc, saveManualToc } from '@/lib/resource-toc-store'
 import { HighlightText } from './HighlightText'
 import { scrollElementToCenter } from './centered-scroll'
+import { MathText, isEquationBlock } from '@/components/markdown/MathText'
 import { ResourcePdfPane } from './ResourcePdfPane'
 import { ResourceSearchPanel } from './ResourceSearchPanel'
 import { ResourceToc, type TocEditorBridge } from './ResourceToc'
@@ -740,7 +741,10 @@ export function ResourceReader({
                         blockClass(block),
                       )}
                     >
-                      <HighlightText text={block.text} query={searchOpen ? searchQuery : ''} />
+                      {/* 公式块用 KaTeX 渲染: MinerU 存的是裸 LaTeX(含 \frac 的块实测 0 个带 $), 不定界就没人认得出它是公式。检索高亮只作用于普通文字 —— 往公式里塞 <mark> 会把 LaTeX 拆坏 */}
+                      {isEquationBlock(block.blockType)
+                        ? <MathText tex={block.text} display className="block overflow-x-auto py-0.5" />
+                        : <HighlightText text={block.text} query={searchOpen ? searchQuery : ''} />}
                       <span className="pointer-events-none absolute right-1 top-0.5 hidden text-[9px] tabular-nums text-muted-foreground/50 group-hover:inline">
                         P{block.pageNo}
                       </span>

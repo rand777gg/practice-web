@@ -2,41 +2,14 @@ import { useMemo, useState, useCallback, useRef, useEffect, lazy, Suspense } fro
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
-import { visit } from 'unist-util-visit'
+import rehypeKatex from 'rehype-katex'
+import type { PluggableList } from 'unified'
 import { X, ZoomIn } from 'lucide-react'
+import 'katex/dist/katex.min.css'
+import 'katex/contrib/mhchem'
 
 // Video player chunk is only fetched when a <video> appears in the markdown
 const MarkdownVideo = lazy(() => import('./MarkdownVideo'))
-
-// rehype plugin: remark-math nodes → MathJax \(...\) / \[...\] delimiters
-// In remark-math v6 + mdast-util-to-hast v13, inlineMath produces
-// <code class="language-math math-inline">, displayMath produces
-// <pre><code class="language-math math-display">.
-function rehypeMathJax() {
-  return (tree: any) => {
-    visit(tree, 'element', (node: any, idx: number | undefined, parent: any) => {
-      if (idx == null) return
-      const cls = node.properties?.className
-      if (!Array.isArray(cls)) return
-      // Inline math: <code class="language-math math-inline"> or legacy <span class="math math-inline">
-      if (cls.includes('math-inline')) {
-        const text = extractText(node)
-        parent.children[idx] = { type: 'raw', value: `\\(${text}\\)` }
-      }
-      // Display math: <code class="language-math math-display"> or legacy <div class="math math-display">
-      if (cls.includes('math-display')) {
-        const text = extractText(node)
-        parent.children[idx] = { type: 'raw', value: `\\[${text}\\]` }
-      }
-    })
-  }
-}
-
-function extractText(node: any): string {
-  if (node.type === 'text') return node.value
-  if (node.children) return node.children.map((c: any) => extractText(c)).join('')
-  return ''
-}
 import { useSettingsStore } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { langDisplay } from '@/lib/lang-names'
@@ -170,7 +143,6 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   useEffect(() => { onImageActionRef.current = onImageAction }, [onImageAction])
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const mathJaxLoaded = useRef(false)
 
   const [zoomedSrc, setZoomedSrc] = useState<string | null>(null)
 
@@ -185,42 +157,18 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
     }
   }, [zoomedSrc])
 
-  // Load MathJax from CDN + typeset after content changes
-  useEffect(() => {
-    if (!content) return
-    const win = window as any
-    const doTypeset = () => {
-      if (win.MathJax?.typesetPromise) {
-        win.MathJax.typesetPromise([containerRef.current]).catch(() => {})
-      }
-    }
-    if (mathJaxLoaded.current) {
-      requestAnimationFrame(doTypeset)
-      return
-    }
-    // Prevent double-load
-    if (document.getElementById('mathjax-script')) {
-      mathJaxLoaded.current = true
-      requestAnimationFrame(doTypeset)
-      return
-    }
-    // Config must be set BEFORE script loads
-    win.MathJax = {
-      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], packages: { '[+]': ['mhchem'] } },
-      loader: { load: ['[tex]/mhchem'] },
-      startup: { typeset: false },
-    }
-    const script = document.createElement('script')
-    script.id = 'mathjax-script'
-    script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
-    script.async = true
-    script.onload = () => {
-      mathJaxLoaded.current = true
-      win.MathJax.startup.defaultReady()
-      doTypeset()
-    }
-    document.head.appendChild(script)
-  }, [content])
+  /*
+   * 公式交给本地的 rehype-katex 排版。
+   *
+   * 原来是从 cdn.jsdelivr.net 拉 MathJax 脚本, 再异步 typesetPromise —— 首次要等网络, 拿不到就
+   * 整篇一个公式都不显示; 而且那之前公式已经被插件换成裸 \(...\) 文本, 用户看到的是定界符本身。
+   * KaTeX 是本地依赖, 渲染在构建好的 HTML 里, 既没有网络依赖也没有那次异步排版。
+   */
+  // PluggableList 是显式标注: 不标的话 [plugin, options] 这种元组会被推断成联合数组, 对不上类型
+  const rehypePlugins = useMemo<PluggableList>(
+    () => [rehypeRaw, [rehypeKatex, { throwOnError: false, errorColor: '#dc2626', strict: false }]],
+    [],
+  )
 
   const components = useMemo(() => ({
     // Inline code
@@ -313,7 +261,7 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
   return (
     <>
       <div ref={containerRef} className={`prose prose-sm dark:prose-invert max-w-none ${className || ''}`}>
-        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeMathJax]} components={components}>
+        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={rehypePlugins} components={components}>
           {content}
         </ReactMarkdown>
       </div>
