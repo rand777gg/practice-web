@@ -419,6 +419,14 @@ export interface ParseOptions {
   mode: ParseMode
   pageRanges?: string
   producer?: (p: ParseProgress) => void
+  /**
+   * 强制重解析: 已成功的卷也重跑。
+   *
+   * 默认的 reparseResource 是"重试"语义 —— 跳过 parse_status=ready 且已有页图的卷,
+   * 所以对一本已经解析好的书点「重新解析」等于什么都没做。
+   * 解析器升级后要把旧产物刷掉(比如区块里缺 image_url / table_html)时会需要真重跑。
+   */
+  force?: boolean
 }
 
 /** 并发跑几卷。每卷自己会开一个 pdfjs 文档并同时渲染多页图, 所以这里只能给到 2。 */
@@ -827,7 +835,9 @@ async function runVolumeJobs(
     }
   }
 
-  await mapLimited(pending, VOLUME_CONCURRENCY, async (job, i) => {
+  // 强制重解析改成串行: 区块是先清空再重建的, 而 block_index 由"本卷之前有多少个区块"现数出来,
+  // 并发跑两卷会同时数到同一个数字, 撞 (document_id, block_index) 唯一索引。
+  await mapLimited(pending, options.force ? 1 : VOLUME_CONCURRENCY, async (job, i) => {
     options.producer?.({ step: `${job.label}开始解析 (${i + 1}/${pending.length})...` })
     try {
       const r = await runPart(documentId, pdfUrl, job.part, job.slice, options, job.useRange, job.label)
@@ -929,7 +939,9 @@ export async function reparseResource(
     && existing.every((p, i) => p.page_from === slices[i].from && p.page_to === slices[i].to)
   const parts = sameLayout ? existing : await replaceParts(documentId, slices, options.mode)
 
-  if (!sameLayout) await clearResourceBlocks(documentId)
+  // 强制重解析必须先把旧区块清掉: block_index 是按"本卷之前有多少个区块"现数出来的,
+  // 同一段页码范围再插一遍就会和旧区块混在一起, 要么重复要么撞唯一索引。
+  if (!sameLayout || options.force) await clearResourceBlocks(documentId)
 
   try {
     await updateResourceDocument(documentId, {
@@ -943,7 +955,8 @@ export async function reparseResource(
     const jobs: VolumeJob[] = []
     for (let i = 0; i < parts.length; i++) {
       const label = parts.length > 1 ? `[第 ${slices[i].from}-${slices[i].to} 页] ` : ''
-      if (sameLayout && parts[i].parse_status === 'ready' && parts[i].page_urls) {
+      // force 时不看卷的状态, 每个卷都要重新提交一次 MinerU 任务
+      if (!options.force && sameLayout && parts[i].parse_status === 'ready' && parts[i].page_urls) {
         skipped++
         producer?.({ step: `${label}已成功, 跳过` })
         continue

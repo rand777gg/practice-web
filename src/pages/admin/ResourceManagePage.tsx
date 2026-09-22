@@ -133,7 +133,14 @@ export function Component() {
     return map
   }, [docs])
 
-  const retry = async (doc: ResourceDocument, mode: ParseMode) => {
+  const retry = async (doc: ResourceDocument, mode: ParseMode, force = false) => {
+    if (force && !window.confirm(
+      `强制重新解析《${doc.title}》?\n\n`
+      + `· 已解析成功的卷也会重新提交 MinerU 任务, 会再消耗一次额度\n`
+      + `· 这本书现有的区块会先清空、按新结果重建; 中途失败要再跑一次才能补齐\n`
+      + `· 解析在这个标签页里跑, 过程中不要关闭或刷新它\n\n`
+      + `只是想补齐失败的那一卷, 用普通的「重新解析」即可。`,
+    )) return
     setBusyId(doc.id)
     setNotice(null)
     setJob({
@@ -143,6 +150,7 @@ export function Component() {
     try {
       await reparseResource(doc.id, {
         mode,
+        force,
         // 把解析器内部的 step/done/total 接出来 —— 这是唯一能证明"还活着"的信号
         producer: (p) => setJob((prev) => (prev && prev.docId === doc.id
           ? { ...prev, step: p.step, done: p.done ?? 0, total: p.total ?? 0 }
@@ -507,6 +515,10 @@ export function Component() {
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'precision')}>
                             <RefreshCw className="h-3.5 w-3.5" />重新解析 (精准)
                           </DropdownMenuItem>
+                          {/* 普通「重新解析」是重试语义, 会跳过已成功的卷 —— 已解析好的书要用这一条才会真重跑 */}
+                          <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'precision', true)}>
+                            <RefreshCw className="h-3.5 w-3.5" />强制重新解析 (精准)
+                          </DropdownMenuItem>
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'lightweight')}>
                             <RefreshCw className="h-3.5 w-3.5" />重新解析 (轻量)
                           </DropdownMenuItem>
@@ -530,6 +542,7 @@ export function Component() {
 
       <p className="text-[10px] text-muted-foreground">
         解析失败时用行尾菜单里的「重新解析」即可, 不必重新上传 PDF。
+        已经解析成功的书要用「强制重新解析」才会真的重跑 —— 普通那个只补失败或缺页图的卷。
       </p>
 
       <ResourceIngestDialog
