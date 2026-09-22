@@ -24,8 +24,12 @@ interface Props {
    *           这个模式下每页正好一屏, 翻页是整屏整屏地滚。
    */
   fit?: 'width' | 'height'
-  /** 是否在每块热区的左上角显示类型标签(与右侧正文那个开关是同一个) */
-  showLabels?: boolean
+  /**
+   * 类型标签显示方式, 与右侧正文那个开关是同一个:
+   *   'active' 只给选中那一块显示(默认, 和 MinerU 客户端一致)
+   *   'all'    每块都显示
+   */
+  labels?: 'active' | 'all'
 }
 
 const INITIAL_PAGES = 6
@@ -50,7 +54,7 @@ const PANE_PAD_Y = 16
 const PAGE_GAP = 12
 
 export function ResourcePdfPane({
-  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width', showLabels = true,
+  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width', labels = 'active',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const roRef = useRef<ResizeObserver | null>(null)
@@ -302,10 +306,11 @@ export function ResourcePdfPane({
                 >
                   {/*
                     和右边正文里同款的标签: 文字就是 type 的中文名, 颜色同色, 挂在框**外面**的左上角
-                    (压在框的上边缘上, 和 MinerU 客户端一致)。不吃鼠标事件, 悬停/点击照旧落在
-                    下面那个热区上; 字号不跟页面缩放, 页面缩小后仍然看得清。
+                    (压在框的上边缘上, 和 MinerU 客户端一致)。默认只给选中那一块显示 —— 一页几十个标签
+                    会把扫描件糊住。不吃鼠标事件, 悬停/点击照旧落在下面那个热区上;
+                    字号不跟页面缩放, 页面缩小后仍然看得清。
                   */}
-                  {showLabels && (
+                  {(labels === 'all' || active) && (
                     <span
                       className={`pointer-events-none absolute -left-px -top-[13px] whitespace-nowrap border px-1 text-[9px] leading-[11px] ${TONE_CHIP[tone]}`}
                     >

@@ -75,8 +75,13 @@ const PDF_FIT_KEY = 'resource.pdfFit'
 const AUTO_FOLLOW_KEY = 'resource.autoFollow'
 /** 按类型隐藏区块的持久化键 */
 const HIDDEN_TYPES_KEY = 'resource.hiddenTypes'
-/** 是否在块上显示类型标签 */
-const BLOCK_LABELS_KEY = 'resource.blockLabels'
+/**
+ * 标签显示方式的持久化键。
+ *
+ * 默认只给**选中那一块**打标签(和 MinerU 客户端一致, 一页几十个标签反而看不清正文);
+ * 存成 'all' 才是每块都显示。
+ */
+const LABEL_MODE_KEY = 'resource.blockLabels'
 
 /** 过滤面板里类型的分组顺序 */
 const TONE_ORDER: BlockTone[] = [
@@ -145,15 +150,15 @@ export function ResourceReader({
    * 它们每一页都来一遍, 摆在正文里只会把内容冲散; 真要看的时候在这一栏勾回来即可。
    */
   const [hiddenTypes, setHiddenTypes] = useState<string[]>(loadHiddenTypes)
-  const [showLabels, setShowLabels] = useState(() => {
-    try { return localStorage.getItem(BLOCK_LABELS_KEY) !== 'off' } catch { return true }
+  const [allLabels, setAllLabels] = useState(() => {
+    try { return localStorage.getItem(LABEL_MODE_KEY) === 'all' } catch { return false }
   })
   useEffect(() => {
     try { localStorage.setItem(HIDDEN_TYPES_KEY, JSON.stringify(hiddenTypes)) } catch { /* 同上 */ }
   }, [hiddenTypes])
   useEffect(() => {
-    try { localStorage.setItem(BLOCK_LABELS_KEY, showLabels ? 'on' : 'off') } catch { /* 同上 */ }
-  }, [showLabels])
+    try { localStorage.setItem(LABEL_MODE_KEY, allLabels ? 'all' : 'active') } catch { /* 同上 */ }
+  }, [allLabels])
 
   const hiddenSet = useMemo(() => new Set(hiddenTypes), [hiddenTypes])
   const shownBlocks = useMemo(() => blocks.filter((b) => !hiddenSet.has(b.blockType)), [blocks, hiddenSet])
@@ -732,8 +737,9 @@ export function ResourceReader({
               </div>
 
               <label className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-1 text-[11px] hover:bg-accent/50">
-                <Checkbox checked={showLabels} onCheckedChange={(v) => setShowLabels(v === true)} />
-                显示类型标签
+                <Checkbox checked={allLabels} onCheckedChange={(v) => setAllLabels(v === true)} />
+                每块都显示标签
+                <span className="text-[10px] text-muted-foreground/70">默认只显示选中那一块</span>
               </label>
 
               <div className="max-h-72 overflow-y-auto pt-0.5">
@@ -821,7 +827,7 @@ export function ResourceReader({
                 onSelectBlock={locate}
                 jumpToPage={jumpToPage}
                 fit={pdfFit}
-                showLabels={showLabels}
+                labels={allLabels ? 'all' : 'active'}
               />
             </div>
           </ResizablePanel>
@@ -858,8 +864,8 @@ export function ResourceReader({
                         : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
                         'group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
-                        // 标签挂在块外面上沿(见下), 得给它让出一条: 不然会压住上一段
-                        showLabels && 'mt-3.5',
+                        // 外挂标签的位置**常驻**: 只在选中那一块身上加减, 换一段就要跳 14px, 还会带着滚动锚定一起抖
+                        'mt-3.5',
                         flashIndex === block.blockIndex && 'animate-flash',
                         block.bbox ? TONE_BORDER[tone] : 'border-l-transparent',
                         mappingId !== null && 'ring-1 ring-primary/30 hover:bg-primary/10 hover:ring-primary',
@@ -873,9 +879,10 @@ export function ResourceReader({
                     >
                       {/*
                         MinerU 的 type 取值对应的中文名, 挂在块的**外面上沿**、左对齐(和 MinerU 客户端一致,
-                        也省得压住第一行正文); 认不出来的类型原样显示, 免得静默变"未知"。
+                        也省得压住第一行正文)。默认只给选中那一块打标签, 「每块都显示标签」才全部显示;
+                        认不出来的类型原样显示, 免得静默变"未知"。
                       */}
-                      {showLabels && (
+                      {(allLabels || active) && (
                         <span
                           className={cn(
                             // -left-[2px] 抵掉 border-l-2: 绝对定位的参照是 padding box, 不抵会缩进 2px
