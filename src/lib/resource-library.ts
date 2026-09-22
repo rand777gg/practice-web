@@ -10,10 +10,12 @@
 
 import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
-import { MinerUClient, fetchZipAndExtractFiles } from '@/lib/ai/mineru'
+import { MinerUClient, fetchZipAndExtractFiles, type ZipAssets } from '@/lib/ai/mineru'
 import { getMinerUModelVersion, getMinerUToken } from '@/lib/ai/config'
 import type { MinerUBatchFileResult, MinerUBatchStatus, MinerUPrecisionOptions } from '@/lib/ai/types'
-import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocSection } from '@/lib/resource-blocks'
+import { blocksFromParse, layoutPageCount, sectionsFromToc, type ResourceBlock, type TocEntry, type TocSection } from '@/lib/resource-blocks'
+import { tocFromDraft } from '@/lib/resource-toc'
+import { loadManualToc } from '@/lib/resource-toc-store'
 import { renderAndUploadPdfPages, countPdfPages, type PageUrl } from '@/lib/pdf-page-renderer'
 import { uploadBlobToR2 } from '@/lib/r2-upload'
 import {
@@ -46,6 +48,8 @@ export interface ResourceDocument {
   parse_status: string
   parse_error: string | null
   is_published: boolean
+  /** 'auto' = 目录按 heading_level 现推; 'manual' = 管理员改过, 以 resource_toc_entries 为准 */
+  toc_source: string
   uploaded_by: string | null
   created_at: string
   updated_at: string
@@ -69,7 +73,7 @@ export interface DocumentMetaInput {
 const LIST_COLUMNS = [
   'id', 'title', 'authors', 'source', 'pub_year', 'doc_type', 'subject', 'tags', 'abstract',
   'doi', 'language', 'pdf_url', 'pdf_key', 'pdf_total_pages', 'pdf_page_urls', 'parse_mode',
-  'parse_status', 'parse_error', 'is_published', 'uploaded_by', 'created_at', 'updated_at',
+  'parse_status', 'parse_error', 'is_published', 'toc_source', 'uploaded_by', 'created_at', 'updated_at',
 ].join(', ')
 
 // ── R2 ──
@@ -121,13 +125,10 @@ export function loadResourceBlocks(documentId: string): Promise<ResourceBlock[]>
 }
 
 /**
- * 一篇文献的章节目录(带页码区间), 给"限定章节出题"当选项。
- *
- * 只取标题行而不是整篇区块: 一本 295 页的书有近两千个区块, 为了一个下拉框把全文拉下来
- * 太浪费; 标题行通常只有几十条, 而且 PostgREST 的 1000 行上限对它没有威胁。
+ * 解析结果现推的那份目录 —— 只查标题行, 不拉正文。
+ * 编辑器"人工目录还不存在"时的初值, 以及阅读页/出题范围没人工目录时的回退都走它。
  */
-export async function loadDocumentSections(documentId: string): Promise<TocSection[]> {
-  const doc = await getResourceDocument(documentId)
+export async function loadAutoToc(documentId: string): Promise<TocEntry[]> {
   const { data, error } = await supabase
     .from('resource_blocks')
     .select('block_index, page_no, heading_level, text')
@@ -136,14 +137,38 @@ export async function loadDocumentSections(documentId: string): Promise<TocSecti
     .order('block_index', { ascending: true })
     .limit(1000)
   if (error) throw new Error(`加载目录失败: ${error.message}`)
-
-  const toc = (data ?? []).map((r) => ({
+  return (data ?? []).map((r) => ({
+    key: r.block_index as number,
     blockIndex: r.block_index as number,
     level: r.heading_level as number,
     title: r.text as string,
     pageNo: r.page_no as number,
   })).filter((e) => e.title.trim().length > 0)
+}
 
+/**
+ * 这篇文献现在该用哪份目录 —— 人工的优先, 没有人工的就返回 null 交给调用方现推。
+ *
+ * 判据是"表里有没有行", 而不是 resource_documents.toc_source 这个开关:
+ * 开关只是记录管理员的意图(以及管理页那个"手工"标记), 而"表里有行"才是目录真的存在。
+ * 万一出现开关说 manual、表里却是空的(改到一半、或将来某条写入路径漏了), 按开关走会让
+ * 阅读页目录栏整栏变空、/create 一个章节都选不出来 —— 静默退化成"这篇没有目录"。
+ */
+export async function loadDocumentToc(documentId: string): Promise<TocEntry[] | null> {
+  const manual = await loadManualToc(documentId).catch(() => [])
+  return manual.length > 0 ? tocFromDraft(manual) : null
+}
+
+/**
+ * 一篇文献的章节目录(带页码区间), 给"限定章节出题"当选项。
+ *
+ * 只取标题行而不是整篇区块: 一本 295 页的书有近两千个区块, 为了一个下拉框把全文拉下来
+ * 太浪费; 标题行通常只有几十条, 而且 PostgREST 的 1000 行上限对它没有威胁。
+ */
+export async function loadDocumentSections(documentId: string): Promise<TocSection[]> {
+  const doc = await getResourceDocument(documentId)
+  const manual = await loadDocumentToc(documentId)
+  const toc = manual ?? await loadAutoToc(documentId)
   return sectionsFromToc(toc, doc?.pdf_total_pages ?? 0)
 }
 
@@ -162,7 +187,7 @@ export async function loadDocumentBlocks(
   for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
     let query = supabase
       .from('resource_blocks')
-      .select('block_index, page_no, bbox, block_type, heading_level, text')
+      .select('block_index, page_no, bbox, block_type, heading_level, text, image_url, table_html')
       .eq('document_id', documentId)
       .order('block_index', { ascending: true })
     if (range) query = query.gte('page_no', range.from).lte('page_no', range.to)
@@ -172,6 +197,7 @@ export async function loadDocumentBlocks(
     const rows = (data ?? []) as unknown as {
       block_index: number; page_no: number; bbox: number[] | null
       block_type: string; heading_level: number; text: string
+      image_url: string | null; table_html: string | null
     }[]
     for (const r of rows) {
       out.push({
@@ -181,6 +207,8 @@ export async function loadDocumentBlocks(
         blockType: r.block_type,
         headingLevel: r.heading_level,
         text: r.text,
+        imageUrl: r.image_url,
+        tableHtml: r.table_html,
       })
     }
     if (rows.length < BLOCK_PAGE_SIZE) break
@@ -188,7 +216,32 @@ export async function loadDocumentBlocks(
   return out
 }
 
-export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {  if (!doc.pdf_page_urls) return []
+// ── 目录编辑器要用的两个轻量查询 ──
+
+/**
+ * 只取 block_index 的集合, 用来判断人工目录里哪些映射已经失效。
+ * 不复用 loadDocumentBlocks: 那个会连 text/bbox 一起拉, 一本 295 页的书六千多个块,
+ * 为了拿一组序号去拉好几 MB 正文不值得。
+ */
+export async function loadBlockIndexes(documentId: string): Promise<Set<number>> {
+  const out = new Set<number>()
+  for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('resource_blocks')
+      .select('block_index')
+      .eq('document_id', documentId)
+      .order('block_index', { ascending: true })
+      .range(offset, offset + BLOCK_PAGE_SIZE - 1)
+    if (error) throw new Error(`加载区块编号失败: ${error.message}`)
+    const rows = (data ?? []) as unknown as { block_index: number }[]
+    for (const r of rows) out.add(r.block_index)
+    if (rows.length < BLOCK_PAGE_SIZE) break
+  }
+  return out
+}
+
+export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {
+  if (!doc.pdf_page_urls) return []
   try {
     const parsed = JSON.parse(doc.pdf_page_urls) as PageUrl[]
     return Array.isArray(parsed) ? parsed.filter((p) => p && p.src) : []
@@ -249,6 +302,8 @@ export async function replaceResourceBlocks(id: string, blocks: ResourceBlock[],
       block_type: b.blockType,
       heading_level: b.headingLevel,
       text: b.text,
+      image_url: b.imageUrl ?? null,
+      table_html: b.tableHtml ?? null,
     }))
     const { error } = await supabase.from('resource_blocks').insert(rows)
     if (error) throw new Error(`区块写入失败(第 ${i} 条起): ${error.message}`)
@@ -364,6 +419,14 @@ export interface ParseOptions {
   mode: ParseMode
   pageRanges?: string
   producer?: (p: ParseProgress) => void
+  /**
+   * 强制重解析: 已成功的卷也重跑。
+   *
+   * 默认的 reparseResource 是"重试"语义 —— 跳过 parse_status=ready 且已有页图的卷,
+   * 所以对一本已经解析好的书点「重新解析」等于什么都没做。
+   * 解析器升级后要把旧产物刷掉(比如区块里缺 image_url / table_html)时会需要真重跑。
+   */
+  force?: boolean
 }
 
 /** 并发跑几卷。每卷自己会开一个 pdfjs 文档并同时渲染多页图, 所以这里只能给到 2。 */
@@ -408,7 +471,7 @@ async function mapLimited<T>(
 async function parseWithMinerU(
   pdfUrl: string,
   options: ParseOptions,
-): Promise<{ markdown: string; jsonData?: string }> {
+): Promise<ZipAssets> {
   const mineru = new MinerUClient()
   const onProgress = (msg: string) => options.producer?.({ step: msg })
 
@@ -418,7 +481,8 @@ async function parseWithMinerU(
       { pageRanges: options.pageRanges },
       onProgress,
     )
-    return { markdown }
+    // 轻量模式不返回 zip, 没有图片可传
+    return { markdown, images: [] }
   }
 
   const token = getMinerUToken()
@@ -455,29 +519,81 @@ async function parseWithMinerU(
 }
 
 /**
+ * 图片传 R2, 并把 markdown 里的 images/xxx.jpg 换成 R2 地址。
+ *
+ * 为什么要在落库前改写: MinerU 的 markdown 引的是产物内的相对路径, 那些文件从没上传过,
+ * 于是整篇视图里每个图片位置都是 404 —— 正文本身是对的, 只是引用悬空。
+ * 单张失败不影响整卷: 那条引用保持原文, 至少能看出少的是哪张图。
+ */
+async function uploadPartImages(
+  documentId: string,
+  partIndex: number,
+  assets: ZipAssets,
+  producer?: (p: ParseProgress) => void,
+  label = '',
+): Promise<{ markdown: string; imageUrls: Record<string, string> }> {
+  const imageUrls: Record<string, string> = {}
+  const total = assets.images.length
+  if (total === 0) return { markdown: assets.markdown, imageUrls }
+
+  producer?.({ step: `${label}正在上传解析出的图片 (${total} 张)...`, done: 0, total })
+  const folder = `${documentPrefix(documentId)}/parts/${partIndex}/images`
+  let done = 0
+
+  await mapLimited(assets.images, 4, async (img) => {
+    // 只用文件名: 产物里的 images/ 是平的, 带上目录前缀只是白搭一层
+    const file = img.name.split('/').pop() || img.name
+    try {
+      imageUrls[img.name] = await putToR2(`${folder}/${file}`, img.blob, img.blob.type || 'image/jpeg')
+    } catch (err) {
+      console.warn('[resource] 图片上传失败, 正文里这条引用会保持原样:', img.name, err)
+    }
+    done++
+    producer?.({ step: `${label}上传图片... ${done}/${total}`, done, total })
+  })
+
+  return { markdown: rewriteImageRefs(assets.markdown, imageUrls), imageUrls }
+}
+
+function rewriteImageRefs(markdown: string, imageUrls: Record<string, string>): string {
+  if (Object.keys(imageUrls).length === 0) return markdown
+  return markdown.replace(
+    /(!\[[^\]]*\]\(\s*<?)([^)\s>]+)(>?\s*\))/g,
+    (all, head: string, src: string, tail: string) =>
+      imageUrls[src] ? `${head}${imageUrls[src]}${tail}` : all,
+  )
+}
+
+/**
  * 解析产物 → 区块。
  * 单独一步是为了让 jsonData 尽快走出作用域: 199 页的 layout.json 有十几 MB,
  * 和后面的页图渲染(pdfjs 自己还要吃内存)挤在一起很容易把标签页拖垮。
  */
-function blocksOf(parsed: { markdown: string; jsonData?: string }, pageNumbers: number[]): ResourceBlock[] {
-  const blocks = blocksFromParse(parsed.jsonData, parsed.markdown, pageNumbers)
+function blocksOf(
+  parsed: { markdown: string; jsonData?: string },
+  pageNumbers: number[],
+  imageUrls?: Record<string, string>,
+): ResourceBlock[] {
+  const blocks = blocksFromParse(parsed.jsonData, parsed.markdown, pageNumbers, imageUrls)
   if (blocks.length === 0) throw new Error('解析结果为空, 未取得任何正文区块')
   return blocks
 }
 
-/** 一卷解析成功后: 建区块 → 渲染页图传 R2 → 落库。 */
+/** 一卷解析成功后: 传图片 → 建区块 → 渲染页图传 R2 → 落库。 */
 async function finishPart(
   documentId: string,
   pdfUrl: string,
   part: ResourcePart,
   slice: PageSlice,
-  parsed: { markdown: string; jsonData?: string },
+  parsed: ZipAssets,
   useRange: string | undefined,
   label: string,
   producer?: (p: ParseProgress) => void,
 ): Promise<{ blocks: number; pages: number }> {
+  const { markdown, imageUrls } = await uploadPartImages(documentId, part.part_index, parsed, producer, label)
+
   producer?.({ step: `${label}正在建立目录与定位区块...` })
-  const blocks = blocksOf(parsed, parsePageNumbers(useRange, slice.to))
+  const blocks = blocksOf({ markdown, jsonData: parsed.jsonData }, parsePageNumbers(useRange, slice.to), imageUrls)
 
   producer?.({ step: `${label}正在渲染 PDF 页面并上传 R2...` })
   const pages = await renderAndUploadPdfPages(
@@ -493,7 +609,7 @@ async function finishPart(
   })
   await patchPart(part.id, {
     page_urls: goodPages.length ? JSON.stringify(goodPages) : null,
-    markdown: parsed.markdown,
+    markdown,
     parse_status: 'ready',
     parse_error: null,
   })
@@ -719,7 +835,9 @@ async function runVolumeJobs(
     }
   }
 
-  await mapLimited(pending, VOLUME_CONCURRENCY, async (job, i) => {
+  // 强制重解析改成串行: 区块是先清空再重建的, 而 block_index 由"本卷之前有多少个区块"现数出来,
+  // 并发跑两卷会同时数到同一个数字, 撞 (document_id, block_index) 唯一索引。
+  await mapLimited(pending, options.force ? 1 : VOLUME_CONCURRENCY, async (job, i) => {
     options.producer?.({ step: `${job.label}开始解析 (${i + 1}/${pending.length})...` })
     try {
       const r = await runPart(documentId, pdfUrl, job.part, job.slice, options, job.useRange, job.label)
@@ -821,7 +939,9 @@ export async function reparseResource(
     && existing.every((p, i) => p.page_from === slices[i].from && p.page_to === slices[i].to)
   const parts = sameLayout ? existing : await replaceParts(documentId, slices, options.mode)
 
-  if (!sameLayout) await clearResourceBlocks(documentId)
+  // 强制重解析必须先把旧区块清掉: block_index 是按"本卷之前有多少个区块"现数出来的,
+  // 同一段页码范围再插一遍就会和旧区块混在一起, 要么重复要么撞唯一索引。
+  if (!sameLayout || options.force) await clearResourceBlocks(documentId)
 
   try {
     await updateResourceDocument(documentId, {
@@ -835,7 +955,8 @@ export async function reparseResource(
     const jobs: VolumeJob[] = []
     for (let i = 0; i < parts.length; i++) {
       const label = parts.length > 1 ? `[第 ${slices[i].from}-${slices[i].to} 页] ` : ''
-      if (sameLayout && parts[i].parse_status === 'ready' && parts[i].page_urls) {
+      // force 时不看卷的状态, 每个卷都要重新提交一次 MinerU 任务
+      if (!options.force && sameLayout && parts[i].parse_status === 'ready' && parts[i].page_urls) {
         skipped++
         producer?.({ step: `${label}已成功, 跳过` })
         continue

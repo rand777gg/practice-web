@@ -13,13 +13,26 @@ export interface ResourceBlock {
   blockType: string
   headingLevel: number
   text: string
+  /** R2 上的图片地址(解析时上传完才知道); 只有图片块有 */
+  imageUrl?: string | null
+  /** MinerU 给的 <table>...</table> 原文; 只有表格块有。text 是它的纯文本降级 */
+  tableHtml?: string | null
 }
 
 export interface TocEntry {
-  blockIndex: number
+  /**
+   * 目录条目的稳定标识, 只用来做 key/Set 成员。
+   *
+   * 不能继续拿 blockIndex 兼任: 人工目录允许两条指向同一段(比如「上篇」和「本篇小结」
+   * 都挂在同一页的开头), 也允许没有落点的纯分组项, 那样 blockIndex 既不唯一也可能为空,
+   * 当 key 会撞。自动目录里 key 就等于 blockIndex。
+   */
+  key: number
   level: number
   title: string
   pageNo: number
+  /** 映射到的正文区块; null = 纯分组项, 正文里没有落点 (只能跳 PDF 页) */
+  blockIndex: number | null
 }
 
 const MD_HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/
@@ -86,6 +99,10 @@ interface RawBlock {
   page_idx?: number
   page_index?: number
   category?: string
+  img_path?: string
+  image_path?: string
+  table_body?: string
+  html?: string
   img_caption?: { content?: string }[]
   image_caption?: { content?: string }[]
   table_caption?: { content?: string }[]
@@ -131,7 +148,70 @@ function deepText(block: RawBlock): string {
   return [own, ...kids].filter(Boolean).join(' ')
 }
 
-const CONTAINER_TYPES = new Set(['table', 'figure'])
+const CONTAINER_TYPES = new Set(['table', 'figure', 'image', 'chart'])
+
+/** 图片类容器。它们自己没文字, 加进来才能整块留住而不是只留下图注 */
+const IMAGE_TYPES = new Set(['image', 'figure', 'chart'])
+
+const MD_IMAGE_RE = /!\[[^\]]*\]\(\s*<?([^)\s>]+?)>?\s*\)/g
+
+/**
+ * markdown 里按出现顺序排的图片路径。
+ *
+ * 为什么不能只从 JSON 里读文件名: 解析产物优先用 layout.json, 而 layout.json 的图片块
+ * **不带文件名**(只有 bbox), 文件名只出现在 content_list.json 和 full.md 里。
+ * full.md 与区块都是 MinerU 按同一阅读顺序产出的, 所以第 N 个图片块对应第 N 个引用;
+ * JSON 里带 img_path 时用 JSON 的, 顺序队列只当兜底。
+ */
+export function imagesInMarkdown(markdown: string): string[] {
+  const out: string[] = []
+  for (const m of markdown.matchAll(MD_IMAGE_RE)) {
+    const src = m[1]
+    if (src && !out.includes(src)) out.push(src)
+  }
+  return out
+}
+
+/** 图片文件名: content_list.json 用 img_path, 个别版本用 image_path */
+function imgPathOf(block: RawBlock): string | null {
+  const p = block.img_path || block.image_path
+  return typeof p === 'string' && p ? p : null
+}
+
+const HTML_OPEN_RE = /<(?:table|html|div|span)\b/i
+/** 表格 HTML 会原样交给浏览器解析, 所以带脚本的一律不要(产物理论上不该有, 代价只有一行) */
+const SCRIPT_RE = /<\s*(?:script|iframe|object|embed)\b/i
+
+/**
+ * 表格 HTML。两种产物形态不同: content_list.json 的 table_body 是字符串字段,
+ * 而 layout.json 把 <table> 当成一个 table_body 子块的 span 内容塞着 —— 后者正是
+ * 之前"表格被压成一行文字"的来源: deepText 把 HTML 当纯文本拼进了 text。
+ */
+function tableHtmlOf(block: RawBlock): string | null {
+  const own = block.table_body || block.html
+  if (own && HTML_OPEN_RE.test(own) && !SCRIPT_RE.test(own)) return own
+  for (const child of block.blocks ?? []) {
+    const t = child.table_body || spansText(child)
+    if (t && HTML_OPEN_RE.test(t) && !SCRIPT_RE.test(t)) return t
+  }
+  return null
+}
+
+/** 一次解析里图片名/地址的分配状态 —— 队列按出现顺序取, 不能重复用同一个名字 */
+interface ImageScan {
+  /** full.md 里的图片路径, 按顺序 */
+  queue: string[]
+  next: { i: number }
+  /** 相对路径 → R2 地址; 解析阶段才拿得到 */
+  urls?: Record<string, string>
+}
+
+function takeImage(block: RawBlock, scan: ImageScan): { name: string | null; url: string | null } {
+  const name = imgPathOf(block) ?? scan.queue[scan.next.i++] ?? null
+  if (!name) return { name: null, url: null }
+  const url = scan.urls?.[name] ?? null
+  return { name, url }
+}
 
 /**
  * MinerU 传 page_ranges 时返回的页码是**相对本卷**的(实测解析 3-5 页 → pdf_info 只有 3 项,
@@ -148,7 +228,7 @@ function pageAt(pages: number[] | undefined, relativeIndex: number): number {
   return pages[relativeIndex] ?? relativeIndex + 1
 }
 
-function flattenTree(items: RawBlock[], pageNo: number, depth: number, out: ResourceBlock[]): void {
+function flattenTree(items: RawBlock[], pageNo: number, depth: number, out: ResourceBlock[], scan: ImageScan): void {
   for (const item of items) {
     const bbox = item.bbox
     if (!Array.isArray(bbox) || bbox.length < 4) continue
@@ -156,15 +236,19 @@ function flattenTree(items: RawBlock[], pageNo: number, depth: number, out: Reso
     const type = item.type || 'text'
     const children = item.blocks ?? []
     const isHeading = type === 'title' || type === 'heading'
+    const isImage = IMAGE_TYPES.has(type)
 
     if (children.length > 0 && !CONTAINER_TYPES.has(type)) {
       // 每下一层都算深一层: 标题层级来自嵌套深度, 这跟 AI 解析页那个已验证的解析器保持一致
-      flattenTree(children, pageNo, depth + 1, out)
+      flattenTree(children, pageNo, depth + 1, out, scan)
       continue
     }
 
     const text = deepText(item).trim()
-    if (!text) continue
+    const image = isImage ? takeImage(item, scan) : { name: null, url: null }
+    const tableHtml = type === 'table' ? tableHtmlOf(item) : null
+    // 没有图注的图片块本来会被丢掉(没有文字), 那正是"图片一张都看不到"的直接原因
+    if (!text && !image.name && !tableHtml) continue
 
     out.push({
       blockIndex: out.length,
@@ -173,11 +257,13 @@ function flattenTree(items: RawBlock[], pageNo: number, depth: number, out: Reso
       blockType: type,
       headingLevel: isHeading ? clampLevel(depth + 1) : 0,
       text,
+      imageUrl: image.url,
+      tableHtml,
     })
   }
 }
 
-function flattenContentList(items: RawBlock[], out: ResourceBlock[], pages?: number[]): void {
+function flattenContentList(items: RawBlock[], out: ResourceBlock[], scan: ImageScan, pages?: number[]): void {
   for (const item of items) {
     const pageIdx = item.page_idx ?? item.page_index
     const type = item.category || item.type || 'text'
@@ -185,7 +271,10 @@ function flattenContentList(items: RawBlock[], out: ResourceBlock[], pages?: num
 
     if (pageIdx !== undefined && Array.isArray(bbox) && bbox.length >= 4) {
       const text = deepText(item).trim()
-      if (text) {
+      const isImage = IMAGE_TYPES.has(type)
+      const image = isImage ? takeImage(item, scan) : { name: null, url: null }
+      const tableHtml = type === 'table' ? tableHtmlOf(item) : null
+      if (text || image.name || tableHtml) {
         const explicit = Number(item.text_level) || 0
         const heading = explicit > 0 || type === 'title'
         out.push({
@@ -195,12 +284,14 @@ function flattenContentList(items: RawBlock[], out: ResourceBlock[], pages?: num
           blockType: type,
           headingLevel: heading ? clampLevel(explicit || 1) : 0,
           text,
+          imageUrl: image.url,
+          tableHtml,
         })
       }
     }
 
-    if (Array.isArray(item.children)) flattenContentList(item.children, out, pages)
-    if (Array.isArray(item.blocks)) flattenContentList(item.blocks, out, pages)
+    if (Array.isArray(item.children)) flattenContentList(item.children, out, scan, pages)
+    if (Array.isArray(item.blocks)) flattenContentList(item.blocks, out, scan, pages)
   }
 }
 
@@ -209,6 +300,7 @@ function flattenContentList(items: RawBlock[], out: ResourceBlock[], pages?: num
 export function blocksFromMarkdown(
   markdown: string,
   pageNumbers: number[],
+  imageUrls?: Record<string, string>,
 ): ResourceBlock[] {
   // 先按空行分段, 再把段首连续的标题行拆出来单独成块。
   // 不加这一步的话, "# 标题\n正文" 这种标题后面没空行的写法会把正文一起并进标题,
@@ -229,6 +321,21 @@ export function blocksFromMarkdown(
   for (const chunk of chunks) {
     const heading = headingOf(chunk)
     const pageIdx = Math.min(pages.length - 1, Math.floor((out.length / total) * pages.length))
+    // 独立成段的图片: 存成图片块, 图片地址在阅读页才渲染得出来。
+    // 混在正文里的行内图片不动它, 那种情况正文本身就该按段落处理。
+    const solo = chunk.match(/^!\[[^\]]*\]\(\s*<?([^)\s>]+?)>?\s*\)$/)
+    if (solo) {
+      out.push({
+        blockIndex: out.length,
+        pageNo: pages[pageIdx],
+        bbox: null,
+        blockType: 'image',
+        headingLevel: 0,
+        text: '',
+        imageUrl: imageUrls?.[solo[1]] ?? null,
+      })
+      continue
+    }
     out.push({
       blockIndex: out.length,
       pageNo: pages[pageIdx],
@@ -241,7 +348,11 @@ export function blocksFromMarkdown(
   return out
 }
 
-export function blocksFromLayout(rawJson: unknown, pages?: number[]): ResourceBlock[] {
+export function blocksFromLayout(
+  rawJson: unknown,
+  pages?: number[],
+  opts?: { markdown?: string; imageUrls?: Record<string, string> },
+): ResourceBlock[] {
   const out: ResourceBlock[] = []
   let data: unknown = rawJson
   if (typeof rawJson === 'string') {
@@ -253,18 +364,24 @@ export function blocksFromLayout(rawJson: unknown, pages?: number[]): ResourceBl
   }
 
   if (Array.isArray(data)) {
-    flattenContentList(data as RawBlock[], out, pages)
+    flattenContentList(data as RawBlock[], out, { queue: [], next: { i: 0 }, urls: opts?.imageUrls }, pages)
     refineHeadingLevels(out)
     return out
   }
 
   const root = data as { pdf_info?: RawPage[] } | null
   if (root?.pdf_info && Array.isArray(root.pdf_info)) {
+    // 队列只建一次: 图片在 full.md 里的顺序就是区块顺序, 逐页重置会从头重复取名字
+    const scan: ImageScan = {
+      queue: imagesInMarkdown(opts?.markdown ?? ''),
+      next: { i: 0 },
+      urls: opts?.imageUrls,
+    }
     root.pdf_info.forEach((page, i) => {
       // 注意不能用 ?? 挑: 空的 preproc_blocks 不是 nullish, 会让整页变成 0 个块
       const blocks = [page.preproc_blocks, page.para_blocks, page.blocks]
         .find((list) => Array.isArray(list) && list.length > 0) ?? []
-      flattenTree(blocks, pageAt(pages, i), 0, out)
+      flattenTree(blocks, pageAt(pages, i), 0, out, scan)
     })
   }
   refineHeadingLevels(out)
@@ -274,17 +391,19 @@ export function blocksFromLayout(rawJson: unknown, pages?: number[]): ResourceBl
 /**
  * 优先用坐标数据, 拿不到就退化成按页摊分的段落。
  * pageNumbers 是本次解析覆盖的原文页码(按顺序), 分卷时由页码区间算出来。
+ * imageUrls 是「产物里的相对路径 → R2 地址」, 图片块靠它拿到能直接渲染的地址。
  */
 export function blocksFromParse(
   jsonData: string | null | undefined,
   markdown: string,
   pageNumbers: number[],
+  imageUrls?: Record<string, string>,
 ): ResourceBlock[] {
   if (jsonData) {
-    const blocks = blocksFromLayout(jsonData, pageNumbers)
+    const blocks = blocksFromLayout(jsonData, pageNumbers, { markdown, imageUrls })
     if (blocks.length > 0) return blocks
   }
-  return blocksFromMarkdown(markdown, pageNumbers)
+  return blocksFromMarkdown(markdown, pageNumbers, imageUrls)
 }
 
 /**
@@ -320,18 +439,26 @@ export function buildToc(blocks: ResourceBlock[]): TocEntry[] {
   const toc: TocEntry[] = []
   for (const b of blocks) {
     if (b.headingLevel <= 0) continue
-    toc.push({ blockIndex: b.blockIndex, level: b.headingLevel, title: b.text, pageNo: b.pageNo })
+    toc.push({
+      key: b.blockIndex,
+      blockIndex: b.blockIndex,
+      level: b.headingLevel,
+      title: b.text,
+      pageNo: b.pageNo,
+    })
   }
   return toc
 }
 
 export interface TocSection {
-  /** 目录条目的 blockIndex —— 唯一, 所以下拉框用它当值 */
+  /** 目录条目的稳定标识 —— 唯一, 所以下拉框用它当值 */
   key: number
   level: number
   title: string
   pageFrom: number
   pageTo: number
+  /** 这一节对应的正文首块; 纯分组项为 null, 出题范围仍然按页码区间切 */
+  blockIndex: number | null
 }
 
 /**
@@ -347,6 +474,6 @@ export function sectionsFromToc(toc: TocEntry[], totalPages: number): TocSection
     const next = toc[i + 1]
     const from = Math.max(1, entry.pageNo)
     const to = Math.max(from, next ? next.pageNo - 1 : lastPage)
-    return { key: entry.blockIndex, level: entry.level, title: entry.title, pageFrom: from, pageTo: to }
+    return { key: entry.key, level: entry.level, title: entry.title, pageFrom: from, pageTo: to, blockIndex: entry.blockIndex }
   })
 }

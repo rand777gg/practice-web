@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertCircle, CheckCircle2, Database, Eye, FileText, Loader2, MoreHorizontal, Pencil,
+  AlertCircle, CheckCircle2, Database, Eye, FileText, ListTree, Loader2, MoreHorizontal, Pencil,
   RefreshCw, Trash2, Upload,
 } from 'lucide-react'
 
@@ -34,6 +34,21 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
 
 type StatusFilter = 'all' | 'ready' | 'failed' | 'parsing' | 'pending'
 
+/**
+ * 停在「解析中」多久算可疑。
+ *
+ * 解析由发起它的那个标签页驱动, 关掉页面就断在半路, 库里永远停在 parsing ——
+ * 但服务端分不清"这个还在慢慢跑"和"发起它的人跑了": 一整卷 199 页跑十几分钟是正常的,
+ * 期间几乎不写库。所以阈值给得宽松, 措辞也是"可能", 只用来提示去重跑, 不当作结论。
+ */
+const STALE_PARSE_MS = 25 * 60 * 1000
+
+function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(s / 60)
+  return m > 0 ? `${m} 分 ${String(s % 60).padStart(2, '0')} 秒` : `${s} 秒`
+}
+
 /** 索引同步结果说人话: 关键是让管理员看出"这次到底重算了多少", 而不是又看到一个块数 */
 function describeSync(r: RagSyncResult, suffix: string): string {
   if (r.embedded === 0 && r.removed === 0) return `内容无变化, 未重算向量${suffix}(共 ${r.total} 块)`
@@ -65,9 +80,23 @@ export function Component() {
   const [notice, setNotice] = useState<string | null>(null)
   const [partsByDoc, setPartsByDoc] = useState<Map<string, ResourcePart[]>>(new Map())
   const [indexing, setIndexing] = useState(false)
+  /**
+   * 正在跑的那次解析的实时进度。
+   *
+   * 解析是**这个标签页**在驱动(pdfjs 渲染页图 + 轮询 MinerU), 所以进度只有这里有;
+   * 不显式接出来, 一次 400 页三卷的解析就是十几分钟一个转圈, 管理员只能干等 —— 既看不出
+   * 是活着还是卡住了, 也不知道关掉页面会怎样。
+   */
+  const [job, setJob] = useState<{ docId: string; title: string; mode: ParseMode; step: string; done: number; total: number; startedAt: number } | null>(null)
+  // 每秒重渲染一次, 让"已经跑了多久"是活的 —— 秒数不走, 人就以为死了
+  const [tick, setTick] = useState(0)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  /**
+   * silent 用于后台轮询: 定时刷新不能走 loading 分支 —— 那个分支会把整张表换成一行转圈,
+   * 结果就是解析期间表格每 4 秒闪一次白, 连带着行上的按钮都点不着。
+   */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const [list, parts] = await Promise.all([listResourceDocuments(), listResourceParts()])
       setDocs(list)
@@ -82,7 +111,7 @@ export function Component() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -104,20 +133,61 @@ export function Component() {
     return map
   }, [docs])
 
-  const retry = async (doc: ResourceDocument, mode: ParseMode) => {
+  const retry = async (doc: ResourceDocument, mode: ParseMode, force = false) => {
+    if (force && !window.confirm(
+      `强制重新解析《${doc.title}》?\n\n`
+      + `· 已解析成功的卷也会重新提交 MinerU 任务, 会再消耗一次额度\n`
+      + `· 这本书现有的区块会先清空、按新结果重建; 中途失败要再跑一次才能补齐\n`
+      + `· 解析在这个标签页里跑, 过程中不要关闭或刷新它\n\n`
+      + `只是想补齐失败的那一卷, 用普通的「重新解析」即可。`,
+    )) return
     setBusyId(doc.id)
     setNotice(null)
+    setJob({
+      docId: doc.id, title: doc.title, mode,
+      step: '正在准备...', done: 0, total: 0, startedAt: Date.now(),
+    })
     try {
-      await reparseResource(doc.id, { mode })
+      await reparseResource(doc.id, {
+        mode,
+        force,
+        // 把解析器内部的 step/done/total 接出来 —— 这是唯一能证明"还活着"的信号
+        producer: (p) => setJob((prev) => (prev && prev.docId === doc.id
+          ? { ...prev, step: p.step, done: p.done ?? 0, total: p.total ?? 0 }
+          : prev)),
+      })
       setNotice(`《${doc.title}》重新解析完成`)
-      await load()
     } catch (err) {
       setNotice(`重新解析失败: ${err instanceof Error ? err.message : String(err)}`)
-      await load()
     } finally {
       setBusyId(null)
+      setJob(null)
+      await load()
     }
   }
+
+  /**
+   * 只要有文献处于「解析中」就每 4 秒重拉一次分卷状态。
+   *
+   * 不能只在"本页发起的解析"期间轮询: 解析常常是另一个标签页(或刷新之前的那次)在跑,
+   * 而一卷跑完就落库、页面不重拉就一直显示"…" —— 明明在推进, 看起来却像卡死。
+   * 这是最让人以为"它不动了"的地方, 所以把条件放宽到"库里有东西在解析"。
+   */
+  const anyParsing = useMemo(() => docs.some((d) => d.parse_status === 'parsing'), [docs])
+
+  useEffect(() => {
+    if (!busyId && !anyParsing) return
+    const timer = setInterval(() => { void load(true) }, 4000)
+    return () => clearInterval(timer)
+  }, [busyId, anyParsing, load])
+
+  useEffect(() => {
+    if (!job) return
+    const timer = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(timer)
+  }, [job])
+
+  void tick
 
   /**
    * 建检索索引。索引带时间预算, 单次调用可能跑不完(一本 295 页的书近千个块),
@@ -220,6 +290,34 @@ export function Component() {
         </div>
       )}
 
+      {job && (
+        <div className="space-y-1.5 rounded-md border border-blue-200 bg-blue-50/60 p-2.5 dark:border-blue-900/60 dark:bg-blue-900/15">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
+            <span className="font-medium">《{job.title}》正在解析{job.mode === 'lightweight' ? '(轻量)' : '(精准)'}</span>
+            <span className="tabular-nums text-muted-foreground">已跑 {formatElapsed(Date.now() - job.startedAt)}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{job.step}</span>
+            {job.total > 0 && (
+              <span className="shrink-0 tabular-nums text-muted-foreground">{job.done}/{job.total}</span>
+            )}
+          </div>
+
+          {job.total > 0 && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-200/70 dark:bg-blue-900/50">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all duration-500 dark:bg-blue-400"
+                style={{ width: `${Math.min(100, Math.round((job.done / job.total) * 100))}%` }}
+              />
+            </div>
+          )}
+
+          <p className="text-[11px] text-muted-foreground">
+            解析是在这个页面里跑的: <b className="font-medium text-foreground">期间别关标签页、别刷新、别离开这一页</b>,
+            否则这次解析会断在半路, 状态会一直停在「解析中」。分卷进度见下表的页码块。
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <button
@@ -282,6 +380,9 @@ export function Component() {
               visible.map((doc) => {
                 const status = STATUS_META[doc.parse_status] ?? STATUS_META.pending
                 const busy = busyId === doc.id
+                // 本页正在跑的那次不算可疑; 其余的"解析中"久了多半是发起它的标签页关了
+                const stale = !busy && doc.parse_status === 'parsing'
+                  && Date.now() - new Date(doc.updated_at).getTime() > STALE_PARSE_MS
                 return (
                   <TableRow key={doc.id} className={cn(busy && 'opacity-60')}>
                     <TableCell className="max-w-0">
@@ -327,6 +428,14 @@ export function Component() {
                       <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', status.className)}>
                         {status.label}
                       </span>
+                      {stale && (
+                        <div
+                          className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                          title={`最后一次进展是 ${new Date(doc.updated_at).toLocaleString()}, 已经超过 ${STALE_PARSE_MS / 60000} 分钟。解析是在浏览器里跑的, 当时关掉页面就会断在这里。`}
+                        >
+                          <AlertCircle className="h-2.5 w-2.5" />可能已中断
+                        </div>
+                      )}
                       {(partsByDoc.get(doc.id)?.length ?? 0) > 1 && (
                         <div className="mt-1 flex flex-wrap gap-0.5">
                           {partsByDoc.get(doc.id)!.map((p) => (
@@ -383,6 +492,18 @@ export function Component() {
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => setEditing(doc)}>
                             <Pencil className="h-3.5 w-3.5" />编辑信息
                           </DropdownMenuItem>
+                          {doc.parse_status === 'ready' && (
+                            <DropdownMenuItem asChild>
+                              <Link to={`/resource-library/${doc.id}?toc=edit`} className="gap-2 text-xs">
+                                <ListTree className="h-3.5 w-3.5" />编辑目录
+                                {doc.toc_source === 'manual' && (
+                                  <Badge variant="secondary" className="ml-auto px-1 py-0 text-[9px] leading-none">
+                                    手工
+                                  </Badge>
+                                )}
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             className="gap-2 text-xs"
                             disabled={indexing}
@@ -393,6 +514,10 @@ export function Component() {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'precision')}>
                             <RefreshCw className="h-3.5 w-3.5" />重新解析 (精准)
+                          </DropdownMenuItem>
+                          {/* 普通「重新解析」是重试语义, 会跳过已成功的卷 —— 已解析好的书要用这一条才会真重跑 */}
+                          <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'precision', true)}>
+                            <RefreshCw className="h-3.5 w-3.5" />强制重新解析 (精准)
                           </DropdownMenuItem>
                           <DropdownMenuItem className="gap-2 text-xs" onSelect={() => void retry(doc, 'lightweight')}>
                             <RefreshCw className="h-3.5 w-3.5" />重新解析 (轻量)
@@ -417,6 +542,7 @@ export function Component() {
 
       <p className="text-[10px] text-muted-foreground">
         解析失败时用行尾菜单里的「重新解析」即可, 不必重新上传 PDF。
+        已经解析成功的书要用「强制重新解析」才会真的重跑 —— 普通那个只补失败或缺页图的卷。
       </p>
 
       <ResourceIngestDialog

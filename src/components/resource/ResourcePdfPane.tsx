@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { RENDER_SCALE, renderPdfPagesLocally, type PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock } from '@/lib/resource-blocks'
+import { scrollElementToCenter } from './centered-scroll'
 
 interface Props {
   pages: PageUrl[]
@@ -15,6 +16,13 @@ interface Props {
   onSelectBlock: (blockIndex: number) => void
   /** 直接跳页(工具栏页码框); nonce 变化才触发, 便于重复跳同一页 */
   jumpToPage?: { page: number; nonce: number } | null
+  /**
+   * 'width'  适宽: 页宽铺满面板(默认, 字最大, 矮窗口下看不全一整页)
+   * 'height' 适高: 整页放进面板 —— 取宽高两个方向都放得下的缩放比, 所以也绝不会横向溢出。
+   *           窗口一矮(实测 1280×700 时面板只有 489px 而一页要 550px)必然看不全整页,
+   *           这个模式下每页正好一屏, 翻页是整屏整屏地滚。
+   */
+  fit?: 'width' | 'height'
 }
 
 const INITIAL_PAGES = 6
@@ -23,18 +31,35 @@ const PAGE_STEP = 3
 // 所以只在页数不多时自动渲染, 超了就让用户按需点 —— 正常路径(有 R2 页图)不受影响。
 const LOCAL_RENDER_MAX = 40
 
+/**
+ * 页框宽度小于这个值就不认这次测量。
+ *
+ * 首帧 ResizablePanel 还没定宽, 容器会被量到几十像素; 采信它就会先按 35px 宽排一遍页框,
+ * 等真实宽度(五百多)到了再跳一次 —— 实测一次 layout-shift 就是 0.245, 看起来就是整页抖一下。
+ * 真实的 PDF 阅读区不会只有 160px, 所以这个下限只会挡掉"还没布局好"那种测量。
+ */
+const MIN_USABLE_W = 160
+const MIN_USABLE_H = 160
+/** 面板的 p-2: 上下左右各 8px, 页框要减掉才是可用尺寸 */
+const PANE_PAD_X = 16
+const PANE_PAD_Y = 16
+/** 页框的 mb-3; 适高时把它一起算进去, 才能"一页正好一屏" */
+const PAGE_GAP = 12
+
 export function ResourcePdfPane({
-  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage,
+  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-  const [containerW, setContainerW] = useState(700)
+  // 高度也要量: 适高模式是按"一页放进面板高度"来定缩放的
+  const [box, setBox] = useState({ w: 0, h: 0 })
   const [localPages, setLocalPages] = useState<PageUrl[]>([])
   const [localError, setLocalError] = useState<string | null>(null)
   const [localProgress, setLocalProgress] = useState<{ done: number; total: number } | null>(null)
   const [loadedCount, setLoadedCount] = useState(INITIAL_PAGES)
   const [localWanted, setLocalWanted] = useState(false)
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  const ioRef = useRef<IntersectionObserver | null>(null)
 
   const effectivePages = pages.length > 0 ? pages : localPages
 
@@ -70,13 +95,28 @@ export function ResourcePdfPane({
     return () => { run.cancelled = true }
   }, [needsFallback, pdfUrl, fallbackTooBig, localWanted])
 
-  useEffect(() => {
-    const el = containerRef.current
+  /**
+   * 用 callback ref 而不是 useEffect 量尺寸, 有两个原因:
+   *   1) ref 是在 commit 阶段调的, 早于浏览器绘制 —— 首帧就量到真实尺寸, 不会先按兜底值画一遍;
+   *   2) 页图缺失时上面那个分支会先返回一个没有容器的占位视图, 容器是后来才挂上的,
+   *      写死 deps 的 effect 那时早就跑过了(el 为 null), ResizeObserver 永远不会挂上去。
+   */
+  const attachContainer = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el
+    roRef.current?.disconnect()
+    roRef.current = null
     if (!el) return
-    const ro = new ResizeObserver(() => setContainerW(el.clientWidth))
+    const apply = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      // 只挡下限: 面板被拖宽拖窄都是正常操作, 照单全收
+      if (w < MIN_USABLE_W || h < MIN_USABLE_H) return
+      setBox((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
     ro.observe(el)
-    setContainerW(el.clientWidth)
-    return () => ro.disconnect()
+    roRef.current = ro
   }, [])
 
   const blocksByPage = useMemo(() => {
@@ -98,11 +138,12 @@ export function ResourcePdfPane({
 
   const activePage = activeBlockIndex === null ? null : pageOfBlock.get(activeBlockIndex) ?? null
 
-  // 正文/目录/检索选中的区块, PDF 这边跟着走
+  // 正文/目录/检索选中的区块, PDF 这边跟着走 —— 选中页居中显示(比例不够高时自动退回顶对齐, 见 helper)
   useEffect(() => {
     if (activePage === null) return
+    const pane = containerRef.current
     const el = pageRefs.current.get(activePage)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    if (pane && el) scrollElementToCenter(pane, el)
   }, [activePage, activeBlockIndex])
 
   // 跳页目标可能还在懒加载后面, 用派生值把它前面的页一起放出来 —— 放到 state 里会晚一帧,
@@ -114,22 +155,38 @@ export function ResourcePdfPane({
   const visibleCount = Math.max(loadedCount, targetIdx + 1, activePageIdx + 1)
   const visible = effectivePages.slice(0, visibleCount)
   const hasMore = visibleCount < effectivePages.length
+  // 哨兵的回调里要用到总页数, 又不能把它写进依赖(见下)
+  const totalRef = useRef(effectivePages.length)
+  totalRef.current = effectivePages.length
+
+  /**
+   * 哨兵用 callback ref 挂 IntersectionObserver, 而不是 useEffect([hasMore, ...])。
+   *
+   * 上面那个"还没量到可用宽度就先显示骨架"的分支**不渲染哨兵**, 而 effect 会在首帧就执行一次
+   * (那时 sentinelRef.current 还是 null), 之后 hasMore / 页数都不再变, effect 也就不会再跑 ——
+   * 观察器永远挂不上, 无限滚动整个失效, 表现就是"滚到底部不出下一页"。
+   * callback ref 在元素真正挂载/卸载时才调, 不受这些分支切换影响。
+   *
+   * root 用面板自己而不是视口: 加载与否该看哨兵有没有接近**面板**的底边, 与面板在屏幕上多高无关。
+   */
+  const attachSentinel = useCallback((el: HTMLDivElement | null) => {
+    ioRef.current?.disconnect()
+    ioRef.current = null
+    if (!el) return
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setLoadedCount((prev) => Math.min(prev + PAGE_STEP, totalRef.current))
+      }
+    }, { root: containerRef.current, rootMargin: '300px' })
+    io.observe(el)
+    ioRef.current = io
+  }, [])
 
   useEffect(() => {
     if (!jumpToPage) return
     const el = pageRefs.current.get(jumpToPage.page)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [jumpToPage])
-
-  useEffect(() => {
-    const el = sentinelRef.current
-    if (!el || !hasMore) return
-    const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setLoadedCount((prev) => Math.min(prev + PAGE_STEP, effectivePages.length))
-    }, { rootMargin: '300px' })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [hasMore, effectivePages.length])
 
   if (effectivePages.length === 0) {
     return (
@@ -160,17 +217,37 @@ export function ResourcePdfPane({
     )
   }
 
+  // 还没量到可用尺寸就只占位, 不按错误尺寸把页框排一遍再跳 —— 那一次跳动正是"页面抖一下"
+  if (box.w < MIN_USABLE_W || box.h < MIN_USABLE_H) {
+    return (
+      <div
+        ref={attachContainer}
+        className="h-full overflow-y-auto p-2 [scrollbar-gutter:stable]"
+      >
+        <Skeleton className="mx-auto mb-3 aspect-[1/1.414] w-full max-w-[520px] rounded" />
+        <Skeleton className="mx-auto mb-3 aspect-[1/1.414] w-full max-w-[520px] rounded" />
+      </div>
+    )
+  }
+
+  const availW = box.w - PANE_PAD_X
+  // 适高时把 mb-3 一起扣掉, 于是"一页 + 它的下边距"正好等于面板的可视高度, 每页正好一屏
+  const availH = box.h - PANE_PAD_Y - (fit === 'height' ? PAGE_GAP : 0)
+
   return (
-    <div ref={containerRef} className="h-full overflow-y-auto p-2">
+    <div ref={attachContainer} className="h-full overflow-y-auto p-2 [scrollbar-gutter:stable]">
       {localError && (
         <p className="pb-2 text-center text-[10px] text-muted-foreground">{localError}</p>
       )}
 
       {visible.map((page) => {
-        const cssW = containerW - 16
-        const scale = cssW / page.w
-        const cssH = page.h * scale
-        const bboxScale = RENDER_SCALE * scale
+        // 页框用 aspect-ratio 而不是自己算像素高: 宽度一变浏览器直接就着重排, 不用等我们重渲染一轮;
+        // 而且 page.h 缺失时自己算会得到 NaN, 整块会塌成 0 高 —— 那才是真正会抖的形状。
+        const pw = page.w > 0 ? page.w : 1000
+        const ph = page.h > 0 ? page.h : 1414
+        // 适高 = 整页放进面板: 取宽、高两个方向都能放下的那个缩放比, 所以纵向放得下、横向也不会溢出
+        const cssW = fit === 'height' ? Math.min(availW, (availH * pw) / ph) : availW
+        const bboxScale = RENDER_SCALE * (cssW / pw)
         const pageBlocks = blocksByPage.get(page.p) ?? []
         const isActivePage = activePage === page.p
 
@@ -182,7 +259,7 @@ export function ResourcePdfPane({
               else pageRefs.current.delete(page.p)
             }}
             className={`relative mx-auto mb-3 transition-shadow ${isActivePage ? 'ring-1 ring-primary/40' : ''}`}
-            style={{ width: cssW, height: cssH }}
+            style={{ width: cssW, aspectRatio: `${pw} / ${ph}` }}
           >
             <img
               src={page.src}
@@ -222,7 +299,7 @@ export function ResourcePdfPane({
         )
       })}
 
-      {hasMore && <div ref={sentinelRef} className="h-4" />}
+      {hasMore && <div ref={attachSentinel} className="h-4" />}
     </div>
   )
 }
