@@ -46,7 +46,7 @@ export function ResourcePdfPane({
   const [localProgress, setLocalProgress] = useState<{ done: number; total: number } | null>(null)
   const [loadedCount, setLoadedCount] = useState(INITIAL_PAGES)
   const [localWanted, setLocalWanted] = useState(false)
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  const ioRef = useRef<IntersectionObserver | null>(null)
 
   const effectivePages = pages.length > 0 ? pages : localPages
 
@@ -139,22 +139,38 @@ export function ResourcePdfPane({
   const visibleCount = Math.max(loadedCount, targetIdx + 1, activePageIdx + 1)
   const visible = effectivePages.slice(0, visibleCount)
   const hasMore = visibleCount < effectivePages.length
+  // 哨兵的回调里要用到总页数, 又不能把它写进依赖(见下)
+  const totalRef = useRef(effectivePages.length)
+  totalRef.current = effectivePages.length
+
+  /**
+   * 哨兵用 callback ref 挂 IntersectionObserver, 而不是 useEffect([hasMore, ...])。
+   *
+   * 上面那个"还没量到可用宽度就先显示骨架"的分支**不渲染哨兵**, 而 effect 会在首帧就执行一次
+   * (那时 sentinelRef.current 还是 null), 之后 hasMore / 页数都不再变, effect 也就不会再跑 ——
+   * 观察器永远挂不上, 无限滚动整个失效, 表现就是"滚到底部不出下一页"。
+   * callback ref 在元素真正挂载/卸载时才调, 不受这些分支切换影响。
+   *
+   * root 用面板自己而不是视口: 加载与否该看哨兵有没有接近**面板**的底边, 与面板在屏幕上多高无关。
+   */
+  const attachSentinel = useCallback((el: HTMLDivElement | null) => {
+    ioRef.current?.disconnect()
+    ioRef.current = null
+    if (!el) return
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setLoadedCount((prev) => Math.min(prev + PAGE_STEP, totalRef.current))
+      }
+    }, { root: containerRef.current, rootMargin: '300px' })
+    io.observe(el)
+    ioRef.current = io
+  }, [])
 
   useEffect(() => {
     if (!jumpToPage) return
     const el = pageRefs.current.get(jumpToPage.page)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [jumpToPage])
-
-  useEffect(() => {
-    const el = sentinelRef.current
-    if (!el || !hasMore) return
-    const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setLoadedCount((prev) => Math.min(prev + PAGE_STEP, effectivePages.length))
-    }, { rootMargin: '300px' })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [hasMore, effectivePages.length])
 
   if (effectivePages.length === 0) {
     return (
@@ -262,7 +278,7 @@ export function ResourcePdfPane({
         )
       })}
 
-      {hasMore && <div ref={sentinelRef} className="h-4" />}
+      {hasMore && <div ref={attachSentinel} className="h-4" />}
     </div>
   )
 }
