@@ -91,7 +91,7 @@ export function ResourceSearchPanel({
                   </span>
                   {/* 命中块的类型; 标题那条已经在标签里写明了, 不必再来一个"标题" */}
                   {hit.headingLevel === 0 && (
-                    <span className={cn('rounded-sm border px-1 text-[9px]', TONE_CHIP[typeTone(hit.blockType)])}>
+                    <span className={cn('border px-1 text-[9px]', TONE_CHIP[typeTone(hit.blockType)])}>
                       {typeLabel(hit.blockType)}
                     </span>
                   )}

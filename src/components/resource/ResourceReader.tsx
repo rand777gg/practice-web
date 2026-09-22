@@ -753,7 +753,7 @@ export function ResourceReader({
                           className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-[11px] hover:bg-accent/50"
                         >
                           <Checkbox checked={!hiddenSet.has(type)} onCheckedChange={() => toggleType(type)} />
-                          <span className={cn('rounded-sm border px-1 text-[9px] leading-[14px]', TONE_CHIP[tone])}>
+                          <span className={cn('border px-1 text-[9px] leading-[14px]', TONE_CHIP[tone])}>
                             {typeLabel(type)}
                           </span>
                           <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">{n}</span>
@@ -856,7 +856,7 @@ export function ResourceReader({
                         ? `把落点设在这一段 (第 ${block.pageNo} 页)`
                         : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
-                        'group relative cursor-pointer rounded-sm border-l-2 px-1.5 py-0.5 transition-colors',
+                        'group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
                         // 标签是压在第一行上沿的, 得给它让出一条: 不然会盖住上一段的末尾
                         showLabels && 'mt-2',
                         flashIndex === block.blockIndex && 'animate-flash',
@@ -874,7 +874,7 @@ export function ResourceReader({
                       {showLabels && (
                         <span
                           className={cn(
-                            'pointer-events-none absolute -top-[9px] left-0.5 rounded-sm border px-1 text-[9px] leading-[12px]',
+                            'pointer-events-none absolute -top-[9px] left-0.5 border px-1 text-[9px] leading-[12px]',
                             TONE_CHIP[tone],
                           )}
                         >
@@ -892,7 +892,7 @@ export function ResourceReader({
                         <CodeBlock
                           code={block.text}
                           lang={block.codeLanguage}
-                          className="overflow-x-auto rounded border bg-muted/20 p-1.5 font-mono text-[11px] leading-relaxed"
+                          className="overflow-x-auto border bg-muted/20 p-1.5 font-mono text-[11px] leading-relaxed"
                         />
                       ) : isEquationBlock(block.blockType) ? (
                         /* 公式块用 KaTeX 渲染: MinerU 存的是裸 LaTeX(含 \frac 的块实测 0 个带 $), 不定界就没人认得出它是公式。检索高亮只作用于普通文字 —— 往公式里塞 <mark> 会把 LaTeX 拆坏 */
