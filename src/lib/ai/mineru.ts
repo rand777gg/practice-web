@@ -19,9 +19,22 @@ export interface ZipAssets {
   images: ZipImage[]
 }
 
+/**
+ * 这张表管两件事, 不只是"收哪些文件":
+ *   1) 从产物 `images/` 里挑哪些文件当图片收下来;
+ *   2) 上传时给 R2 的 Content-Type(mimeOfImage 认不出来就是 application/octet-stream)。
+ * 所以不在表里的后果不是"不能渲染", 而是"没有 MIME" —— 以 octet-stream 存进 R2 后, 公开地址
+ * 也按 octet-stream 返回, 浏览器会当下载而不是当图片显示。收发两端都得认, 表才准。
+ *
+ * 口径是"MinerU 可能产出什么"(所以 bmp/tif 也在, 尽管浏览器基本不显示 tiff), 不是"浏览器能显示什么"。
+ * svg / avif 都能渲染(svg 全支持, avif Chrome 85+ / Safari 16+ / Firefox 93+), 之前漏了, 补上。
+ * svg 唯一要注意的是别改成内联注入: 这里只用 <img src> 引用, 脚本不执行、外部资源不加载;
+ * 一旦改成 dangerouslySetInnerHTML 或当 HTML 塞进页面, 就得重新考虑安全问题。
+ */
 const IMAGE_EXT_MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
   gif: 'image/gif', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
+  svg: 'image/svg+xml', avif: 'image/avif',
 }
 
 function mimeOfImage(name: string): string {
