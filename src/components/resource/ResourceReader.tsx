@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Columns2, FileText, Link2, ListTree, Loader2, Pencil, Search, X } from 'lucide-react'
+import { AlertCircle, Check, Columns2, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,8 +41,7 @@ interface Props {
   onTocSaved?: () => void
 }
 
-function blockClass(block: ResourceBlock): string {
-  if (block.headingLevel > 0) {
+function blockClass(block: ResourceBlock): string {  if (block.headingLevel > 0) {
     switch (block.headingLevel) {
       case 1: return 'text-[15px] font-semibold leading-snug pt-3 pb-1'
       case 2: return 'text-[13px] font-semibold leading-snug pt-2.5 pb-0.5'
@@ -62,6 +61,9 @@ function blockClass(block: ResourceBlock): string {
   return 'text-xs leading-relaxed'
 }
 
+/** PDF 缩放方式的持久化键 */
+const PDF_FIT_KEY = 'resource.pdfFit'
+
 export function ResourceReader({
   documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '', toc,
   canEditToc = false, initialTocEdit = false, onTocSaved,
@@ -72,6 +74,20 @@ export function ResourceReader({
   const [tocOpen, setTocOpen] = useState(true)
   const [searchOpen, setSearchOpen] = useState(() => initialQuery.trim().length > 0)
   const [viewMode, setViewMode] = useState<'blocks' | 'document'>('blocks')
+  /**
+   * PDF 缩放方式。存 localStorage: 窗口矮是"这台机器/这个屏幕"的属性, 不是一次性选择 ——
+   * 每次进来都要再点一下就很烦。
+   */
+  const [pdfFit, setPdfFit] = useState<'width' | 'height'>(() => {
+    try {
+      return localStorage.getItem(PDF_FIT_KEY) === 'height' ? 'height' : 'width'
+    } catch {
+      return 'width'
+    }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(PDF_FIT_KEY, pdfFit) } catch { /* 隐私模式下写不了, 无所谓 */ }
+  }, [pdfFit])
   const [pageInput, setPageInput] = useState('')
   const [jumpToPage, setJumpToPage] = useState<{ page: number; nonce: number } | null>(null)
 
@@ -469,6 +485,32 @@ export function ResourceReader({
             </Button>
           </div>
 
+          {/* PDF 缩放方式: 窗口一矮, 适宽就再也看不全一整页(实测 1280×700 面板 489px / 一页 550px) */}
+          <div className="flex items-center rounded-md border">
+            <button
+              type="button"
+              onClick={() => setPdfFit('width')}
+              className={cn(
+                'flex h-6 items-center gap-1 px-1.5 text-[11px]',
+                pdfFit === 'width' ? 'bg-secondary font-medium' : 'text-muted-foreground hover:bg-accent/60',
+              )}
+              title="页宽铺满面板: 字最大, 但窗口矮时要滚动才能看全一整页"
+            >
+              <MoveHorizontal className="h-3 w-3" />适宽
+            </button>
+            <button
+              type="button"
+              onClick={() => setPdfFit('height')}
+              className={cn(
+                'flex h-6 items-center gap-1 px-1.5 text-[11px]',
+                pdfFit === 'height' ? 'bg-secondary font-medium' : 'text-muted-foreground hover:bg-accent/60',
+              )}
+              title="整页放进面板: 每页正好一屏, 不用滚就能看全一页(页面会小一些)"
+            >
+              <MoveVertical className="h-3 w-3" />适高
+            </button>
+          </div>
+
           <div className="flex items-center rounded-md border">
             <button
               type="button"
@@ -559,6 +601,7 @@ export function ResourceReader({
                 activeBlockIndex={activeBlockIndex}
                 onSelectBlock={locate}
                 jumpToPage={jumpToPage}
+                fit={pdfFit}
               />
             </div>
           </ResizablePanel>
