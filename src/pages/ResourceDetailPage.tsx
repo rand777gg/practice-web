@@ -82,48 +82,56 @@ export function Component() {
 
   return (
     <div className="flex h-[calc(100vh-10.5rem)] min-h-[420px] min-w-0 flex-col xl:h-[calc(100vh-6.5rem)]">
-      <div className="flex shrink-0 flex-wrap items-start gap-2 border-b px-3 py-2">
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" asChild>
+      {/*
+        头部压成一行。
+        原来是"标题 / 作者·来源 / 标签"三行, 中间那列高 52px, 加上 py-2 整条 69px ——
+        860 高的窗口里顶部一共吃掉 180px, 正文只剩 649px, 窗口一矮就明显不够读。
+        现在作者·来源跟在标题后面(窄屏隐掉), 标签只在 xl 上显示前三个, 整条回到 36px。
+      */}
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+        <Button variant="ghost" size="sm" className="h-6 shrink-0 gap-1 px-1.5 text-[11px]" asChild>
           <Link to="/resource-library">
-            <ArrowLeft className="h-3.5 w-3.5" />资料库
+            <ArrowLeft className="h-3 w-3" />资料库
           </Link>
         </Button>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h1 className="truncate text-sm font-semibold">{doc?.title ?? (loading ? '加载中...' : '—')}</h1>
-            {doc && <Badge variant="secondary" className="px-1 py-0 text-[9px] leading-none">{doc.doc_type}</Badge>}
-            {doc?.subject && (
-              <Badge variant="outline" className="px-1 py-0 text-[9px] leading-none">{doc.subject}</Badge>
-            )}
-            {doc?.pub_year && (
-              <span className="text-[10px] text-muted-foreground">{doc.pub_year}</span>
-            )}
-          </div>
-          <p className="truncate text-[11px] text-muted-foreground">
-            {doc ? <SeparatedList items={[doc.authors, doc.source]} fallback="未填写作者与来源" /> : ''}
-          </p>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <h1 className="truncate text-sm font-semibold">{doc?.title ?? (loading ? '加载中...' : '—')}</h1>
+          {doc && <Badge variant="secondary" className="shrink-0 px-1 py-0 text-[9px] leading-none">{doc.doc_type}</Badge>}
+          {doc?.subject && (
+            <Badge variant="outline" className="shrink-0 px-1 py-0 text-[9px] leading-none">{doc.subject}</Badge>
+          )}
+          {doc?.pub_year && (
+            <span className="shrink-0 text-[10px] text-muted-foreground">{doc.pub_year}</span>
+          )}
+          {/* 窄屏把作者/来源与标签隐掉: 它们挤掉的是标题, 而这几项在资料库列表页也看得到 */}
+          <span className="hidden min-w-0 truncate text-[10px] text-muted-foreground md:inline">
+            {doc ? <SeparatedList items={[doc.authors, doc.source]} fallback="" /> : ''}
+          </span>
           {doc && doc.tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {doc.tags.map((t) => (
+            <span className="hidden shrink-0 items-center gap-1 xl:flex">
+              {doc.tags.slice(0, 3).map((t) => (
                 <Badge key={t} variant="outline" className="px-1 py-0 text-[9px] leading-none">{t}</Badge>
               ))}
-            </div>
+              {doc.tags.length > 3 && (
+                <span className="text-[9px] text-muted-foreground">+{doc.tags.length - 3}</span>
+              )}
+            </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           {doc?.pdf_url && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" asChild>
+            <Button variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[11px]" asChild>
               <a href={doc.pdf_url} target="_blank" rel="noreferrer">
-                <ExternalLink className="h-3.5 w-3.5" />原件
+                <ExternalLink className="h-3 w-3" />原件
               </a>
             </Button>
           )}
           {isAdmin && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" asChild>
+            <Button variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[11px]" asChild>
               <Link to="/admin/resource-library">
-                <Settings2 className="h-3.5 w-3.5" />管理
+                <Settings2 className="h-3 w-3" />管理
               </Link>
             </Button>
           )}
