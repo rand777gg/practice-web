@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Columns2, Crosshair, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, X } from 'lucide-react'
+import { AlertCircle, Check, Columns2, Crosshair, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, Tags, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,12 @@ import { ResourcePdfPane } from './ResourcePdfPane'
 import { ResourceSearchPanel } from './ResourceSearchPanel'
 import { ResourceToc, type TocEditorBridge } from './ResourceToc'
 import { Separator } from '@/components/ui/separator'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Checkbox } from '@/components/ui/checkbox'
+import { CodeBlock } from '@/components/markdown/CodeBlock'
+import {
+  FURNITURE_TYPES, TONE_BORDER, TONE_CHIP, TONE_ZH, isCodeType, typeLabel, typeTone, type BlockTone,
+} from '@/lib/mineru-types'
 
 interface Props {
   documentId: string
@@ -67,6 +73,32 @@ function blockClass(block: ResourceBlock): string {  if (block.headingLevel > 0)
 const PDF_FIT_KEY = 'resource.pdfFit'
 /** 「自动跟随」的持久化键 */
 const AUTO_FOLLOW_KEY = 'resource.autoFollow'
+/** 按类型隐藏区块的持久化键 */
+const HIDDEN_TYPES_KEY = 'resource.hiddenTypes'
+/**
+ * 标签显示方式的持久化键。
+ *
+ * 默认只给**选中那一块**打标签(和 MinerU 客户端一致, 一页几十个标签反而看不清正文);
+ * 存成 'all' 才是每块都显示。
+ */
+const LABEL_MODE_KEY = 'resource.blockLabels'
+
+/** 过滤面板里类型的分组顺序 */
+const TONE_ORDER: BlockTone[] = [
+  'title', 'text', 'list', 'table', 'image', 'caption', 'equation', 'code', 'reference', 'furniture', 'unknown',
+]
+
+/** 没存过设置时的默认: 藏掉页面装饰 */
+function loadHiddenTypes(): string[] {
+  try {
+    const raw = localStorage.getItem(HIDDEN_TYPES_KEY)
+    if (!raw) return [...FURNITURE_TYPES]
+    const arr: unknown = JSON.parse(raw)
+    return Array.isArray(arr) ? arr.filter((t): t is string => typeof t === 'string') : [...FURNITURE_TYPES]
+  } catch {
+    return [...FURNITURE_TYPES]
+  }
+}
 
 export function ResourceReader({
   documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '', toc,
@@ -112,6 +144,34 @@ export function ResourceReader({
   useEffect(() => {
     try { localStorage.setItem(AUTO_FOLLOW_KEY, autoFollow ? 'on' : 'off') } catch { /* 同上 */ }
   }, [autoFollow])
+
+  /**
+   * 按类型显示/隐藏。默认藏的是"页面装饰" —— 页眉/页脚/页码/边注/脚注/注音,
+   * 它们每一页都来一遍, 摆在正文里只会把内容冲散; 真要看的时候在这一栏勾回来即可。
+   */
+  const [hiddenTypes, setHiddenTypes] = useState<string[]>(loadHiddenTypes)
+  const [allLabels, setAllLabels] = useState(() => {
+    try { return localStorage.getItem(LABEL_MODE_KEY) === 'all' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(HIDDEN_TYPES_KEY, JSON.stringify(hiddenTypes)) } catch { /* 同上 */ }
+  }, [hiddenTypes])
+  useEffect(() => {
+    try { localStorage.setItem(LABEL_MODE_KEY, allLabels ? 'all' : 'active') } catch { /* 同上 */ }
+  }, [allLabels])
+
+  const hiddenSet = useMemo(() => new Set(hiddenTypes), [hiddenTypes])
+  const shownBlocks = useMemo(() => blocks.filter((b) => !hiddenSet.has(b.blockType)), [blocks, hiddenSet])
+  /** 类型 → 出现次数, 过滤面板按它列条目(只列这篇里真有的类型) */
+  const typeCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const b of blocks) map.set(b.blockType, (map.get(b.blockType) ?? 0) + 1)
+    return map
+  }, [blocks])
+  const hiddenCount = blocks.length - shownBlocks.length
+  const toggleType = useCallback((type: string) => {
+    setHiddenTypes((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]))
+  }, [])
   const [pageInput, setPageInput] = useState('')
   const [jumpToPage, setJumpToPage] = useState<{ page: number; nonce: number } | null>(null)
 
@@ -306,13 +366,18 @@ export function ResourceReader({
   const locateTargetRef = useRef<number | null>(null)
 
   const locate = useCallback((blockIndex: number) => {
+    // 目标那一类正被"块类型"过滤藏着就先放出来 —— 元素根本没渲染, 否则点了没反应
+    const target = blocks.find((b) => b.blockIndex === blockIndex)
+    if (target) {
+      setHiddenTypes((prev) => (prev.includes(target.blockType) ? prev.filter((t) => t !== target.blockType) : prev))
+    }
     pendingLocateRef.current = blockIndex
     locateTargetRef.current = blockIndex
     setActiveBlockIndex(blockIndex)
     setFlashIndex(blockIndex)
     setFocusNonce((n) => n + 1)
     suppressSpyUntil.current = Date.now() + 700
-  }, [])
+  }, [blocks])
 
   /**
    * 点目录。落在正文里的就直接定位; 没有落点(纯分组项)或者映射已经失效的
@@ -639,6 +704,73 @@ export function ResourceReader({
             <Crosshair className={cn('h-3 w-3', autoFollow && 'fill-current')} />
             跟随
           </Button>
+
+          {/*
+            按 MinerU 的 type 取值显示/隐藏区块。
+            默认藏的是页面装饰(页眉/页脚/页码/边注/脚注/注音): 它们每一页都来一遍, 摆在正文里只会把内容冲散。
+            条目只列这篇文献里真有的类型, 名字就是 type 取值对应的中文名。
+          */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant={hiddenCount > 0 ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 gap-1 px-1.5 text-[11px]"
+                title="按类型显示/隐藏区块 (正文、图表题注、页眉页脚…)"
+              >
+                <Tags className="h-3 w-3" />
+                块类型
+                {hiddenCount > 0 && <span className="text-[10px] tabular-nums opacity-70">-{hiddenCount}</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-2">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <span className="text-[11px] font-medium">区块类型</span>
+                <div className="flex gap-0.5">
+                  <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px]" onClick={() => setHiddenTypes([])}>
+                    全部显示
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px]" onClick={() => setHiddenTypes([...FURNITURE_TYPES])}>
+                    只藏装饰
+                  </Button>
+                </div>
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-1 text-[11px] hover:bg-accent/50">
+                <Checkbox checked={allLabels} onCheckedChange={(v) => setAllLabels(v === true)} />
+                每块都显示标签
+                <span className="text-[10px] text-muted-foreground/70">默认只显示选中那一块</span>
+              </label>
+
+              <div className="max-h-72 overflow-y-auto pt-0.5">
+                {TONE_ORDER.map((tone) => {
+                  const items = [...typeCounts.entries()]
+                    .filter(([type]) => typeTone(type) === tone)
+                    .sort((a, b) => b[1] - a[1])
+                  if (items.length === 0) return null
+                  // 只有一条、而且标签就等于分组名时不再多印一行分组标题(标题/正文/表格都是这种)
+                  const solo = items.length === 1 && typeLabel(items[0][0]) === TONE_ZH[tone]
+                  return (
+                    <div key={tone} className="pb-1">
+                      {!solo && <p className="px-1 py-0.5 text-[10px] text-muted-foreground/70">{TONE_ZH[tone]}</p>}
+                      {items.map(([type, n]) => (
+                        <label
+                          key={type}
+                          className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-[11px] hover:bg-accent/50"
+                        >
+                          <Checkbox checked={!hiddenSet.has(type)} onCheckedChange={() => toggleType(type)} />
+                          <span className={cn('border px-1 text-[9px] leading-[14px]', TONE_CHIP[tone])}>
+                            {typeLabel(type)}
+                          </span>
+                          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">{n}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {editMode && mappingId !== null && (
@@ -688,13 +820,14 @@ export function ResourceReader({
             <div className="h-full border-r">
               <ResourcePdfPane
                 pages={pages}
-                blocks={blocks}
+                blocks={shownBlocks}
                 pdfUrl={pdfUrl}
                 partRanges={parts?.map((p) => ({ from: p.page_from, to: p.page_to }))}
                 activeBlockIndex={activeBlockIndex}
                 onSelectBlock={locate}
                 jumpToPage={jumpToPage}
                 fit={pdfFit}
+                labels={allLabels ? 'all' : 'active'}
               />
             </div>
           </ResizablePanel>
@@ -706,9 +839,10 @@ export function ResourceReader({
               </div>
             ) : (
               <div ref={mdScrollRef} className="h-full overflow-y-auto px-3 py-2">
-                {blocks.map((block) => {
+                {shownBlocks.map((block) => {
                   const active = block.blockIndex === activeBlockIndex
                   const hit = hitIndexes.has(block.blockIndex)
+                  const tone = typeTone(block.blockType)
                   return (
                     <div
                       key={block.blockIndex}
@@ -727,11 +861,13 @@ export function ResourceReader({
                       }}
                       title={mappingId !== null
                         ? `把落点设在这一段 (第 ${block.pageNo} 页)`
-                        : `第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
+                        : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
-                        'group relative cursor-pointer rounded-sm border-l-2 px-1.5 py-0.5 transition-colors',
+                        'group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
+                        // 外挂标签的位置**常驻**: 只在选中那一块身上加减, 换一段就要跳 14px, 还会带着滚动锚定一起抖
+                        'mt-3.5',
                         flashIndex === block.blockIndex && 'animate-flash',
-                        block.bbox ? 'border-l-amber-300/60' : 'border-l-transparent',
+                        block.bbox ? TONE_BORDER[tone] : 'border-l-transparent',
                         mappingId !== null && 'ring-1 ring-primary/30 hover:bg-primary/10 hover:ring-primary',
                         active
                           ? 'border-l-primary bg-primary/10 ring-1 ring-primary/40'
@@ -741,11 +877,34 @@ export function ResourceReader({
                         blockClass(block),
                       )}
                     >
+                      {/*
+                        MinerU 的 type 取值对应的中文名, 挂在块的**外面上沿**、左对齐(和 MinerU 客户端一致,
+                        也省得压住第一行正文)。默认只给选中那一块打标签, 「每块都显示标签」才全部显示;
+                        认不出来的类型原样显示, 免得静默变"未知"。
+                      */}
+                      {(allLabels || active) && (
+                        <span
+                          className={cn(
+                            // -left-[2px] 抵掉 border-l-2: 绝对定位的参照是 padding box, 不抵会缩进 2px
+                            'pointer-events-none absolute -left-[2px] -top-[13px] whitespace-nowrap border px-1 text-[9px] leading-[11px]',
+                            TONE_CHIP[tone],
+                          )}
+                        >
+                          {typeLabel(block.blockType)}
+                        </span>
+                      )}
                       {/* 表格块: 以前只把单元格拼成的一行文字显示出来, 现在直接渲染 MinerU 给的 <table>。整篇视图一直是这么做的(rehype-raw), 逐段这里补上 */}
                       {block.tableHtml ? (
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_table]:text-[11px]"
                           dangerouslySetInnerHTML={{ __html: block.tableHtml }}
+                        />
+                      ) : isCodeType(block.blockType) ? (
+                        /* 代码块交给 shiki, 语言取 MinerU 给的 guess_lang / code_language(认不出来就纯文本) */
+                        <CodeBlock
+                          code={block.text}
+                          lang={block.codeLanguage}
+                          className="overflow-x-auto border bg-muted/20 p-1.5 font-mono text-[11px] leading-relaxed"
                         />
                       ) : isEquationBlock(block.blockType) ? (
                         /* 公式块用 KaTeX 渲染: MinerU 存的是裸 LaTeX(含 \frac 的块实测 0 个带 $), 不定界就没人认得出它是公式。检索高亮只作用于普通文字 —— 往公式里塞 <mark> 会把 LaTeX 拆坏 */

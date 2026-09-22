@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { segmentMarkdownForPages } from '@/lib/ai/markdown-match'
+import { mineruBlockText } from '@/lib/resource-blocks'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -157,7 +158,8 @@ export function parseLayoutTree(rawJson: unknown, pageRanges?: string): { sectio
       for (const item of items) {
         const pageIdx = (item.page_idx ?? item.page_index) as number | undefined
         const type = (item.category || item.type || 'text') as string
-        const text = (item.text as string) || ''
+        // content_list_v2 把正文放在 content 里, 直接读 item.text 会全是空段落
+        const text = mineruBlockText(item)
         const bbox = item.bbox as [number, number, number, number] | undefined
         if (pageIdx !== undefined && bbox) {
           const blockIndex = flatBlocks.length
@@ -195,6 +197,8 @@ function renderBlockToMd(node: BlockNode, level: number): string {
       return `- ${text}`
     case 'formula':
     case 'equation':
+    case 'interline_equation':
+    case 'equation_interline':
       return `$${text}$`
     case 'image':
     case 'figure':

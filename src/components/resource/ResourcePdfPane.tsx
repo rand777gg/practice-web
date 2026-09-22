@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { RENDER_SCALE, renderPdfPagesLocally, type PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock } from '@/lib/resource-blocks'
+import { TONE_CHIP, TONE_HOTSPOT, typeLabel, typeTone } from '@/lib/mineru-types'
 import { scrollElementToCenter } from './centered-scroll'
 
 interface Props {
@@ -23,6 +24,12 @@ interface Props {
    *           这个模式下每页正好一屏, 翻页是整屏整屏地滚。
    */
   fit?: 'width' | 'height'
+  /**
+   * 类型标签显示方式, 与右侧正文那个开关是同一个:
+   *   'active' 只给选中那一块显示(默认, 和 MinerU 客户端一致)
+   *   'all'    每块都显示
+   */
+  labels?: 'active' | 'all'
 }
 
 const INITIAL_PAGES = 6
@@ -47,7 +54,7 @@ const PANE_PAD_Y = 16
 const PAGE_GAP = 12
 
 export function ResourcePdfPane({
-  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width',
+  pages, blocks, pdfUrl, partRanges, activeBlockIndex, onSelectBlock, jumpToPage, fit = 'width', labels = 'active',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const roRef = useRef<ResizeObserver | null>(null)
@@ -277,16 +284,18 @@ export function ResourcePdfPane({
             {pageBlocks.map((b) => {
               const [x0, y0, x1, y1] = b.bbox as number[]
               const active = b.blockIndex === activeBlockIndex
+              const tone = typeTone(b.blockType)
               return (
                 <button
                   key={b.blockIndex}
                   type="button"
                   onClick={() => onSelectBlock(b.blockIndex)}
-                  title={b.text.slice(0, 120)}
+                  // 悬停时按类型上色, 和右边正文里的标签同色 —— 一眼能对上哪块是哪块
+                  title={`${typeLabel(b.blockType)}: ${b.text.slice(0, 120)}`}
                   className={`absolute cursor-pointer border text-left transition-colors ${
                     active
                       ? 'z-10 border-primary bg-primary/25 ring-1 ring-primary'
-                      : 'border-transparent hover:border-amber-400/70 hover:bg-amber-400/20'
+                      : `border-transparent ${TONE_HOTSPOT[tone]}`
                   }`}
                   style={{
                     left: x0 * bboxScale,
@@ -294,7 +303,21 @@ export function ResourcePdfPane({
                     width: Math.max((x1 - x0) * bboxScale, 3),
                     height: Math.max((y1 - y0) * bboxScale, 3),
                   }}
-                />
+                >
+                  {/*
+                    和右边正文里同款的标签: 文字就是 type 的中文名, 颜色同色, 挂在框**外面**的左上角
+                    (压在框的上边缘上, 和 MinerU 客户端一致)。默认只给选中那一块显示 —— 一页几十个标签
+                    会把扫描件糊住。不吃鼠标事件, 悬停/点击照旧落在下面那个热区上;
+                    字号不跟页面缩放, 页面缩小后仍然看得清。
+                  */}
+                  {(labels === 'all' || active) && (
+                    <span
+                      className={`pointer-events-none absolute -left-px -top-[13px] whitespace-nowrap border px-1 text-[9px] leading-[11px] ${TONE_CHIP[tone]}`}
+                    >
+                      {typeLabel(b.blockType)}
+                    </span>
+                  )}
+                </button>
               )
             })}
 

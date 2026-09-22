@@ -189,7 +189,7 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
 
   let markdown = ''
   let jsonData: string | undefined
-  let jsonPriority = 0  // 3=layout, 2=middle, 1=content_list
+  let jsonPriority = 0  // 5=layout, 4=middle, 3=content_list_v2, 2=content_list, 1=model
 
   let offset = 0
   while (offset < zipBytes.length - 30) {
@@ -226,14 +226,23 @@ async function extractZipFiles(zipBytes: Uint8Array): Promise<{ markdown: string
       }
       const isLayout = fileName === 'layout.json' || fileName.endsWith('_layout.json')
       const isMiddle = fileName === 'middle.json' || fileName.endsWith('_middle.json')
-      const isContentList = fileName === 'content_list.json' || fileName.endsWith('_content_list.json')
-      const filePriority = isLayout ? 3 : isMiddle ? 2 : isContentList ? 1 : 0
+      // v2 必须排在 v1 前面判断: xxx_content_list_v2.json 也以 content_list 开头
+      const isContentListV2 = fileName === 'content_list_v2.json' || fileName.endsWith('_content_list_v2.json')
+      const isContentList = !isContentListV2
+        && (fileName === 'content_list.json' || fileName.endsWith('_content_list.json'))
+      const isModel = fileName === 'model.json' || fileName.endsWith('_model.json')
+      const filePriority = isLayout ? 5
+        : isMiddle ? 4
+        : isContentListV2 ? 3
+        : isContentList ? 2
+        : isModel ? 1
+        : 0
       if (filePriority > jsonPriority) {
         const text = await tryDecompress()
         if (text) { jsonData = text; jsonPriority = filePriority }
       }
 
-      if (markdown && jsonPriority >= 3) break
+      if (markdown && jsonPriority >= 5) break
     }
 
     offset = dataEnd

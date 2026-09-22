@@ -6,6 +6,9 @@
  * 三者共用 blockIndex, 所以"点目录跳 PDF"和"点 PDF 回目录"走的是同一张映射表。
  */
 
+// 带扩展名: 这个模块要被 scripts/resource-blocks-smoke.mjs 直接跑(和 assistant-commands 同理)
+import { CATEGORY_ID_META, isCodeType } from './mineru-types.ts'
+
 export interface ResourceBlock {
   blockIndex: number
   pageNo: number
@@ -17,6 +20,8 @@ export interface ResourceBlock {
   imageUrl?: string | null
   /** MinerU 给的 <table>...</table> 原文; 只有表格块有。text 是它的纯文本降级 */
   tableHtml?: string | null
+  /** 代码语言(middle 的 guess_lang / content_list_v2 的 code_language); 只有代码块有 */
+  codeLanguage?: string | null
 }
 
 export interface TocEntry {
@@ -94,11 +99,13 @@ interface RawBlock {
   blocks?: RawBlock[]
   children?: RawBlock[]
   text?: string
-  content?: string
+  content?: unknown
   text_level?: number
   page_idx?: number
   page_index?: number
   category?: string
+  /** model.json 给的是数字类别号, 不是 type 字符串 */
+  category_id?: number
   img_path?: string
   image_path?: string
   table_body?: string
@@ -106,12 +113,22 @@ interface RawBlock {
   img_caption?: { content?: string }[]
   image_caption?: { content?: string }[]
   table_caption?: { content?: string }[]
+  /** 代码语言: middle.json 的代码块叫 guess_lang, content_list_v2 藏在 content.code_language 里 */
+  guess_lang?: string
+  code_language?: string
+  /** layout_dets: model.json 的原始框 */
+  layout_dets?: RawBlock[]
+  /** model.json 的框是 8 个坐标的多边形, 不是 bbox */
+  poly?: number[]
 }
 
 interface RawPage {
   preproc_blocks?: RawBlock[]
   para_blocks?: RawBlock[]
   blocks?: RawBlock[]
+  /** MinerU 判定"不该抽取"的块: 页眉/页脚/页码/边注/脚注/参考文献… 单独一列, 不混在阅读顺序里 */
+  discarded_blocks?: RawBlock[]
+  layout_dets?: RawBlock[]
 }
 
 function spansText(block: RawBlock): string {
@@ -197,6 +214,92 @@ function tableHtmlOf(block: RawBlock): string | null {
   return null
 }
 
+// ── content_list_v2.json: type + content 结构 ──
+
+/**
+ * content 里这些键不是正文: 图片地址、表格类型、语言、层级……
+ * 混进 text 会直接变成可检索的噪声(搜 "txt" 命中一堆代码块的语言标记)。
+ */
+const V2_META_KEYS = new Set([
+  'type', 'path', 'html', 'image_source', 'table_type', 'list_type', 'math_type',
+  'level', 'table_nest_level', 'item_type', 'code_language', 'guess_lang', 'page_size', 'bbox',
+])
+
+/** v2 的正文按 <type>_content 命名, 值是 span 列表(元素形如 {type, content}); 递归收字符串即可 */
+function v2CollectText(value: unknown, out: string[]): void {
+  if (value === null || value === undefined) return
+  if (typeof value === 'string') {
+    const t = value.trim()
+    if (t) out.push(t)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) v2CollectText(v, out)
+    return
+  }
+  if (typeof value !== 'object') return
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (V2_META_KEYS.has(k)) continue
+    v2CollectText(v, out)
+  }
+}
+
+function v2Content(item: RawBlock): Record<string, unknown> {
+  return (item.content ?? {}) as Record<string, unknown>
+}
+
+function v2Text(item: RawBlock): string {
+  const out: string[] = []
+  v2CollectText(item.content, out)
+  return out.join(' ').trim()
+}
+
+/** v2 的图片地址在 content.image_source.path(形如 images/xxx.jpg), 与 v1 的 img_path 同形 */
+function v2ImagePath(item: RawBlock): string | null {
+  const src = v2Content(item).image_source
+  const p = src && typeof src === 'object' ? (src as { path?: unknown }).path : null
+  return typeof p === 'string' && p ? p : null
+}
+
+/** v2 的表格 HTML 在 content.html */
+function v2TableHtml(item: RawBlock): string | null {
+  const html = v2Content(item).html
+  if (typeof html !== 'string' || !html) return null
+  return HTML_OPEN_RE.test(html) && !SCRIPT_RE.test(html) ? html : null
+}
+
+function v2CodeLanguage(item: RawBlock): string | null {
+  const lang = v2Content(item).code_language
+  return typeof lang === 'string' && lang ? lang : null
+}
+
+/**
+ * 代码/算法的正文只在 <x>_content 里; 题注(code_caption/algorithm_caption)是另一回事。
+ * 一起收进 text 的话, 题注会当成代码跟着上色 —— 而这一块是要交给 shiki 渲染的。
+ * 只有题注没有正文时(残缺产物)仍然退回全收, 免得整块消失。
+ */
+function v2CodeBody(item: RawBlock): string {
+  const c = v2Content(item)
+  const out: string[] = []
+  for (const key of ['code_content', 'algorithm_content']) {
+    if (c[key] !== undefined) v2CollectText(c[key], out)
+  }
+  return out.join('\n').trim()
+}
+
+/** 表格类取值: v2 的 simple_table / complex_table 是"表格"的取值, 不是别的类型 */
+const TABLE_TYPES = new Set(['table', 'simple_table', 'complex_table'])
+
+/**
+ * 任意形态的 MinerU 块取纯文本: 早期产物是平铺的 text / lines[].spans[] / caption,
+ * content_list_v2 则把正文全塞在 content 里。资料库入库和 AI 解析页预览都要这一份判断, 所以导出。
+ */
+export function mineruBlockText(block: unknown): string {
+  const b = (block ?? {}) as RawBlock
+  if (b.content && typeof b.content === 'object') return v2Text(b)
+  return deepText(b).trim()
+}
+
 /** 一次解析里图片名/地址的分配状态 —— 队列按出现顺序取, 不能重复用同一个名字 */
 interface ImageScan {
   /** full.md 里的图片路径, 按顺序 */
@@ -206,8 +309,8 @@ interface ImageScan {
   urls?: Record<string, string>
 }
 
-function takeImage(block: RawBlock, scan: ImageScan): { name: string | null; url: string | null } {
-  const name = imgPathOf(block) ?? scan.queue[scan.next.i++] ?? null
+function takeImage(block: RawBlock, scan: ImageScan, explicit?: string | null): { name: string | null; url: string | null } {
+  const name = explicit ?? imgPathOf(block) ?? scan.queue[scan.next.i++] ?? null
   if (!name) return { name: null, url: null }
   const url = scan.urls?.[name] ?? null
   return { name, url }
@@ -228,25 +331,34 @@ function pageAt(pages: number[] | undefined, relativeIndex: number): number {
   return pages[relativeIndex] ?? relativeIndex + 1
 }
 
-function flattenTree(items: RawBlock[], pageNo: number, depth: number, out: ResourceBlock[], scan: ImageScan): void {
+function flattenTree(
+  items: RawBlock[],
+  pageNo: number,
+  depth: number,
+  out: ResourceBlock[],
+  scan: ImageScan,
+  lang: string | null = null,
+): void {
   for (const item of items) {
     const bbox = item.bbox
     if (!Array.isArray(bbox) || bbox.length < 4) continue
 
-    const type = item.type || 'text'
+    const type = (item.type || 'text').trim().toLowerCase()
     const children = item.blocks ?? []
     const isHeading = type === 'title' || type === 'heading'
     const isImage = IMAGE_TYPES.has(type)
+    // 代码语言挂在 code 容器上, 而成块的是它的子块 code_body —— 顺着嵌套带下去
+    const nextLang = item.guess_lang || item.code_language || lang
 
     if (children.length > 0 && !CONTAINER_TYPES.has(type)) {
       // 每下一层都算深一层: 标题层级来自嵌套深度, 这跟 AI 解析页那个已验证的解析器保持一致
-      flattenTree(children, pageNo, depth + 1, out, scan)
+      flattenTree(children, pageNo, depth + 1, out, scan, nextLang)
       continue
     }
 
     const text = deepText(item).trim()
     const image = isImage ? takeImage(item, scan) : { name: null, url: null }
-    const tableHtml = type === 'table' ? tableHtmlOf(item) : null
+    const tableHtml = TABLE_TYPES.has(type) ? tableHtmlOf(item) : null
     // 没有图注的图片块本来会被丢掉(没有文字), 那正是"图片一张都看不到"的直接原因
     if (!text && !image.name && !tableHtml) continue
 
@@ -259,23 +371,59 @@ function flattenTree(items: RawBlock[], pageNo: number, depth: number, out: Reso
       text,
       imageUrl: image.url,
       tableHtml,
+      codeLanguage: isCodeType(type) ? nextLang : null,
     })
   }
+}
+
+/**
+ * discarded_blocks: MinerU 判定"不该进阅读顺序"的那些块(页眉/页脚/页码/边注/脚注/参考文献)。
+ *
+ * 收进来是为了阅读页能显示、也能一键藏起来(它们本来就带 bbox, 是真实存在的块);
+ * 但 type 是 text/title 的那些不收 —— MinerU 已经判定它们不该被抽取(重叠、水印、乱码),
+ * 硬收进来就是把噪声当正文。
+ */
+function flattenDiscarded(items: RawBlock[], pageNo: number, out: ResourceBlock[], scan: ImageScan): void {
+  const keep = items.filter((b) => {
+    const t = (b.type || '').trim().toLowerCase()
+    return t !== '' && t !== 'text' && t !== 'title'
+  })
+  flattenTree(keep, pageNo, 0, out, scan)
+}
+
+/**
+ * 把装饰块按纵坐标插回本页, 而不是一律甩到页尾: 页眉本就该在页首、脚注在页尾。
+ * 只在原序列上做插入, 不会重排主块 —— 双栏页面按 y 排序会把左右栏交错, 那是排版灾难。
+ */
+function spliceByY(main: ResourceBlock[], extra: ResourceBlock[]): ResourceBlock[] {
+  const out = main.slice()
+  for (const b of extra) {
+    const y = b.bbox?.[1] ?? 0
+    let i = out.length
+    for (let k = 0; k < out.length; k++) {
+      if ((out[k].bbox?.[1] ?? 0) > y) { i = k; break }
+    }
+    out.splice(i, 0, b)
+  }
+  return out
 }
 
 function flattenContentList(items: RawBlock[], out: ResourceBlock[], scan: ImageScan, pages?: number[]): void {
   for (const item of items) {
     const pageIdx = item.page_idx ?? item.page_index
-    const type = item.category || item.type || 'text'
+    const type = (item.category || item.type || 'text').trim().toLowerCase()
     const bbox = item.bbox
+    // v1 是平铺的 text / img_path / table_body; v2 把正文全塞在 content 里(paragraph / title / …)
+    const v2 = !!item.content && typeof item.content === 'object'
 
     if (pageIdx !== undefined && Array.isArray(bbox) && bbox.length >= 4) {
-      const text = deepText(item).trim()
+      const codeBody = v2 && isCodeType(type) ? v2CodeBody(item) : null
+      const text = codeBody ? codeBody : mineruBlockText(item)
       const isImage = IMAGE_TYPES.has(type)
-      const image = isImage ? takeImage(item, scan) : { name: null, url: null }
-      const tableHtml = type === 'table' ? tableHtmlOf(item) : null
+      const image = isImage ? takeImage(item, scan, v2 ? v2ImagePath(item) : null) : { name: null, url: null }
+      const tableHtml = TABLE_TYPES.has(type) ? (v2 ? v2TableHtml(item) : tableHtmlOf(item)) : null
       if (text || image.name || tableHtml) {
-        const explicit = Number(item.text_level) || 0
+        const explicit = v2 ? Number(v2Content(item).level) || 0 : Number(item.text_level) || 0
         const heading = explicit > 0 || type === 'title'
         out.push({
           blockIndex: out.length,
@@ -286,6 +434,7 @@ function flattenContentList(items: RawBlock[], out: ResourceBlock[], scan: Image
           text,
           imageUrl: image.url,
           tableHtml,
+          codeLanguage: isCodeType(type) ? (v2CodeLanguage(item) ?? item.code_language ?? null) : null,
         })
       }
     }
@@ -348,6 +497,36 @@ export function blocksFromMarkdown(
   return out
 }
 
+/**
+ * model.json 的框: 类型是数字 category_id, 框是 poly(8 个坐标)。转成与别处同形的 type + bbox,
+ * 下游(标签、热区、定位)才能用同一条路。类别号对不上就退回 text。
+ */
+function normalizeDet(det: RawBlock): RawBlock {
+  const meta = typeof det.category_id === 'number' ? CATEGORY_ID_META[det.category_id] : undefined
+  let bbox = det.bbox
+  const poly = det.poly
+  if (!bbox && Array.isArray(poly) && poly.length >= 8) {
+    const xs: number[] = []
+    const ys: number[] = []
+    for (let i = 0; i + 1 < poly.length; i += 2) {
+      xs.push(Number(poly[i]))
+      ys.push(Number(poly[i + 1]))
+    }
+    if (xs.length > 0) bbox = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+  }
+  // 检测框上的正文另存: 公式在 latex 里(13/14), 表格在 html/latex 里(5), OCR 文本在 text 里(15)
+  const extra = det as { latex?: string; html?: string; text?: string }
+  const text = det.text || extra.latex || ''
+  const html = typeof extra.html === 'string' && HTML_OPEN_RE.test(extra.html) ? extra.html : undefined
+  return {
+    ...det,
+    type: det.type || meta?.name || 'text',
+    bbox,
+    text,
+    table_body: det.table_body || html,
+  }
+}
+
 export function blocksFromLayout(
   rawJson: unknown,
   pages?: number[],
@@ -364,9 +543,8 @@ export function blocksFromLayout(
   }
 
   if (Array.isArray(data)) {
-    flattenContentList(data as RawBlock[], out, { queue: [], next: { i: 0 }, urls: opts?.imageUrls }, pages)
-    refineHeadingLevels(out)
-    return out
+    flattenContentList(data as RawBlock[], out, { queue: imagesInMarkdown(opts?.markdown ?? ''), next: { i: 0 }, urls: opts?.imageUrls }, pages)
+    return renumber(out)
   }
 
   const root = data as { pdf_info?: RawPage[] } | null
@@ -378,14 +556,38 @@ export function blocksFromLayout(
       urls: opts?.imageUrls,
     }
     root.pdf_info.forEach((page, i) => {
+      const pageNo = pageAt(pages, i)
       // 注意不能用 ?? 挑: 空的 preproc_blocks 不是 nullish, 会让整页变成 0 个块
       const blocks = [page.preproc_blocks, page.para_blocks, page.blocks]
         .find((list) => Array.isArray(list) && list.length > 0) ?? []
-      flattenTree(blocks, pageAt(pages, i), 0, out, scan)
+      const start = out.length
+      flattenTree(blocks, pageNo, 0, out, scan)
+
+      // model.json: 只有 layout_dets(数字类别 + poly), 主块一个都没有时按它落框
+      if (blocks.length === 0 && Array.isArray(page.layout_dets)) {
+        flattenTree(page.layout_dets.map(normalizeDet), pageNo, 0, out, scan)
+      }
+
+      // 页眉页脚这些是**另给**的一列, 按纵坐标插回本页, 而不是一律甩到页尾
+      if (Array.isArray(page.discarded_blocks) && page.discarded_blocks.length > 0) {
+        const extra: ResourceBlock[] = []
+        flattenDiscarded(page.discarded_blocks, pageNo, extra, scan)
+        if (extra.length > 0) {
+          const merged = spliceByY(out.slice(start), extra)
+          out.length = start
+          for (const b of merged) out.push(b)
+        }
+      }
     })
   }
-  refineHeadingLevels(out)
-  return out
+  return renumber(out)
+}
+
+/** 块序号必须是这一篇里的下标: 插回/合并会让构建过程中的临时序号重复, 撞唯一索引 */
+function renumber(blocks: ResourceBlock[]): ResourceBlock[] {
+  blocks.forEach((b, i) => { b.blockIndex = i })
+  refineHeadingLevels(blocks)
+  return blocks
 }
 
 /**
