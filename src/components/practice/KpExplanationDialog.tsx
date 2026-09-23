@@ -1,9 +1,5 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
-import { ReadAloudButton } from '@/components/tts/ReadAloudButton'
-import { markdownToSpeech, splitForSpeech } from '@/lib/tts/speech'
+import { KpExplanationContent } from './KpExplanationContent'
 
 interface Props {
   subject: string
@@ -12,30 +8,11 @@ interface Props {
   onOpenChange: (open: boolean) => void
 }
 
+/**
+ * 练习页的知识点解读弹窗 —— 壳很薄, 正文与"依据原文"都在 KpExplanationContent 里。
+ * 阅读页用的是同一个正文组件, 只是换成右侧抽屉(见 KpExplanationSheet)。
+ */
 export function KpExplanationDialog({ subject, kp, open, onOpenChange }: Props) {
-  const [content, setContent] = useState('')
-  const [status, setStatus] = useState<'loading' | 'ready' | 'empty'>('loading')
-
-  useEffect(() => {
-    if (!open || !subject || !kp) return
-    let cancelled = false
-    setStatus('loading')
-    setContent('')
-    ;(async () => {
-      try {
-        const { data } = await supabase
-          .from('kp_explanations')
-          .select('content')
-          .eq('subject', subject)
-          .eq('kp', kp)
-          .maybeSingle()
-        if (cancelled) return
-        if (data?.content) { setContent(data.content as string); setStatus('ready') } else setStatus('empty')
-      } catch { if (!cancelled) setStatus('empty') }
-    })()
-    return () => { cancelled = true }
-  }, [open, subject, kp])
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[82vh] flex flex-col">
@@ -46,26 +23,7 @@ export function KpExplanationDialog({ subject, kp, open, onOpenChange }: Props) 
             <span className="text-xs font-normal text-muted-foreground">知识点解读</span>
           </DialogTitle>
         </DialogHeader>
-        {status === 'ready' && (
-          <div className="-mt-2 flex justify-end">
-            <ReadAloudButton
-              id={`kp:${subject}:${kp}`}
-              build={() => ({ prompt: [], answer: splitForSpeech(markdownToSpeech(content)) })}
-            />
-          </div>
-        )}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          {status === 'loading' ? (
-            <div className="space-y-2">
-              <div className="h-4 w-3/4 rounded bg-muted animate-pulse" />
-              <div className="h-4 w-1/2 rounded bg-muted animate-pulse" />
-            </div>
-          ) : status === 'empty' ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">该知识点暂未配置解读内容</p>
-          ) : (
-            <MarkdownRenderer content={content} />
-          )}
-        </div>
+        <KpExplanationContent subject={subject} kp={kp} />
       </DialogContent>
     </Dialog>
   )

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Columns2, Crosshair, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, Tags, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { AlertCircle, BookOpen, Check, ChevronRight, Columns2, Crosshair, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, Tags, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +11,9 @@ import type { PageUrl } from '@/lib/pdf-page-renderer'
 import type { ResourceBlock, TocEntry } from '@/lib/resource-blocks'
 import { buildToc } from '@/lib/resource-blocks'
 import { searchBlocks, type BlockHit } from '@/lib/resource-search'
+import { refAnchor, refsByBlock, type KpResourceRef } from '@/lib/kp-resource-refs'
+import { listDocumentRefs } from '@/lib/kp-resource-refs-store'
+import { KpExplanationSheet } from '@/components/practice/KpExplanationSheet'
 import { draftFromToc, blockIndexSet, staleEntryIds, tocFromDraft, updateEntry, type TocDraftEntry } from '@/lib/resource-toc'
 import { resetManualToc, saveManualToc } from '@/lib/resource-toc-store'
 import { HighlightText } from './HighlightText'
@@ -38,6 +42,11 @@ interface Props {
   pdfTotalPages?: number | null
   /** 从检索结果或外链带着目标区块进来时, 挂载后直接定位过去 */
   initialBlockIndex?: number | null
+  /**
+   * 带着目标页码进来(?page=)。给的是"映射已经失效的依据"用的 ——
+   * 知识点解读里的依据存的是 (文献, 段落), 而段落序号在重新解析后会整体重排, 认不出来时至少翻到那一页。
+   */
+  initialPage?: number | null
   initialQuery?: string
   /** 管理员改过的人工目录; 传 null/不传就是用解析结果现推的那份 */
   toc?: TocEntry[] | null
@@ -101,9 +110,10 @@ function loadHiddenTypes(): string[] {
 }
 
 export function ResourceReader({
-  documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialQuery = '', toc,
+  documentId, blocks, pages, markdown, pdfUrl, parts, pdfTotalPages, initialBlockIndex, initialPage, initialQuery = '', toc,
   canEditToc = false, initialTocEdit = false, onTocSaved,
 }: Props) {
+  const navigate = useNavigate()
   const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null)
   const [focusNonce, setFocusNonce] = useState(0)
   const [flashIndex, setFlashIndex] = useState<number | null>(null)
@@ -216,6 +226,26 @@ export function ResourceReader({
   const blockIndexes = useMemo(() => new Set(blocks.map((b) => b.blockIndex)), [blocks])
   const located = useMemo(() => blocks.filter((b) => b.bbox).length, [blocks])
   const hitIndexes = useMemo(() => new Set(hits.map((h) => h.blockIndex)), [hits])
+
+  // ── 知识点解读的依据 ──
+  // 反向: 这篇文献的哪些段被知识点解读引为依据(见 Section 63)。标记落在块上, 点开能进解读。
+  const [kpRefs, setKpRefs] = useState<KpResourceRef[]>([])
+  /** 正在看哪个知识点的解读(null = 抽屉关着) */
+  const [kpView, setKpView] = useState<{ subject: string; kp: string } | null>(null)
+  /** 哪一段的"依据"气泡开着 */
+  const [refPopover, setRefPopover] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!documentId) return
+    let cancelled = false
+    // 读不到就当这篇没被引用过: 依据标记是锦上添花, 不该因为它把整页阅读拖垮
+    listDocumentRefs(documentId)
+      .then((list) => { if (!cancelled) setKpRefs(list) })
+      .catch(() => { if (!cancelled) setKpRefs([]) })
+    return () => { cancelled = true }
+  }, [documentId])
+
+  const refMap = useMemo(() => refsByBlock(kpRefs, blocks), [kpRefs, blocks])
 
   const staleIds = useMemo(
     () => (draft ? staleEntryIds(draft, blockIndexSet(blocks)) : new Set<number>()),
@@ -380,6 +410,24 @@ export function ResourceReader({
   }, [blocks])
 
   /**
+   * 解读里的"看原文"。
+   *
+   * 同篇就地定位(顺手关掉抽屉, 别让面板压着刚跳过去的那一段); 别的文献就跳路由。
+   * 段落序号认不出来(重新解析过, block_index 整体重排了)就退到那条依据的页码 ——
+   * 和目录条目的失效回退是同一个道理。
+   */
+  const openRef = useCallback((item: KpResourceRef) => {
+    setKpView(null)
+    if (item.documentId && item.documentId !== documentId) {
+      const anchor = refAnchor(item)
+      if (anchor) navigate(anchor)
+      return
+    }
+    if (item.blockIndex !== null && blockIndexes.has(item.blockIndex)) locate(item.blockIndex)
+    else setJumpToPage({ page: item.pageFrom, nonce: Date.now() })
+  }, [blockIndexes, documentId, locate, navigate])
+
+  /**
    * 点目录。落在正文里的就直接定位; 没有落点(纯分组项)或者映射已经失效的
    * (重新解析后 block_index 会整体重排), 退化成翻到那条目录记的页码 ——
    * 总比点了没反应好, 至少把 PDF 带到那一页。
@@ -469,14 +517,32 @@ export function ResourceReader({
     }
   }, [focusNonce])
 
-  // 带着 ?block= 进来时, 等首屏排版稳定再定位, 否则量到的位置会偏。
+  // 带着 ?block= / ?page= 进来时, 等首屏排版稳定再定位, 否则量到的位置会偏。
   // 检索面板的初始关键词已经在 useState 里取自 props —— 详情页给 Reader 挂了 key,
   // 换关键词跳转就是新组件, 不需要在这里再 setState。
+  //
+  // 段落锚点认不出来时退到页码: 知识点解读里的依据存的是 (文献, 段落), 而重新解析会让
+  // block_index 整体重排 —— 那种情况下按段落必然找不到, 至少得把 PDF 翻到那一页去。
+  const initialJumpDone = useRef(false)
   useEffect(() => {
-    if (initialBlockIndex === null || initialBlockIndex === undefined) return
-    const timer = setTimeout(() => locate(initialBlockIndex), 60)
-    return () => clearTimeout(timer)
-  }, [initialBlockIndex, locate])
+    if (initialJumpDone.current) return
+    if (initialBlockIndex !== null && initialBlockIndex !== undefined && blockIndexes.has(initialBlockIndex)) {
+      const target = initialBlockIndex
+      const timer = setTimeout(() => {
+        initialJumpDone.current = true
+        locate(target)
+      }, 60)
+      return () => clearTimeout(timer)
+    }
+    if (initialPage !== null && initialPage !== undefined && initialPage >= 1) {
+      const target = initialPage
+      const timer = setTimeout(() => {
+        initialJumpDone.current = true
+        setJumpToPage({ page: target, nonce: Date.now() })
+      }, 60)
+      return () => clearTimeout(timer)
+    }
+  }, [initialBlockIndex, initialPage, blockIndexes, locate])
 
   // ── 正文滚动 → 目录与 PDF 跟随 ──
   const measureOffsets = useCallback(() => {
@@ -492,23 +558,6 @@ export function ResourceReader({
     // 记下这次量的是"多高的内容": 高度一变(换窗口比例、拖面板、折叠目录)偏移量就全作废了
     measuredHeightRef.current = root.scrollHeight
   }, [])
-
-  useEffect(() => {
-    if (viewMode !== 'blocks') return
-    const root = mdScrollRef.current
-    if (!root) return
-    measureOffsets()
-    const onResize = () => {
-      // 重排会连着带来一串 scroll 事件(滚动锚定要保住同一段文字), 但那不是用户在滚 ——
-      // 不能凭它改选中块。定位是居中的, 目标离视口顶部大半屏, 拿"顶部那一段"重算一次
-      // 就等于把用户选的那段换掉(实测换比例时 258 → 256)。
-      suppressSpyUntil.current = Date.now() + 400
-      measureOffsets()
-    }
-    const ro = new ResizeObserver(onResize)
-    ro.observe(root)
-    return () => ro.disconnect()
-  }, [blocks, viewMode, measureOffsets])
 
   /**
    * 二分出来的候选块, 再按**真实 rect** 在它附近校准一次(±40 段, 也就几十次 rect 读取)。
@@ -532,6 +581,24 @@ export function ResourceReader({
     }
     return bestTop === -Infinity ? candidate : best
   }, [])
+
+  useEffect(() => {
+    if (viewMode !== 'blocks') return
+    const root = mdScrollRef.current
+    if (!root) return
+    measureOffsets()
+    const onResize = () => {
+      // 重排会连着带来一串 scroll 事件(滚动锚定要保住同一段文字), 但那不是用户在滚 ——
+      // 不能凭它改选中块。定位是居中的, 目标离视口顶部大半屏, 拿"顶部那一段"重算一次
+      // 就等于把用户选的那段换掉(实测换比例时 258 → 256)。
+      suppressSpyUntil.current = Date.now() + 400
+      measureOffsets()
+    }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(root)
+    return () => ro.disconnect()
+  }, [blocks, viewMode, measureOffsets])
+
 
   useEffect(() => {
     if (viewMode !== 'blocks') return
@@ -918,6 +985,7 @@ export function ResourceReader({
                   const active = block.blockIndex === activeBlockIndex
                   const hit = hitIndexes.has(block.blockIndex)
                   const tone = typeTone(block.blockType)
+                  const citedBy = refMap.get(block.blockIndex)
                   return (
                     <div
                       key={block.blockIndex}
@@ -967,6 +1035,56 @@ export function ResourceReader({
                         >
                           {typeLabel(block.blockType)}
                         </span>
+                      )}
+                      {/*
+                        这一块被知识点解读引为依据时的标记, 挂在块的外面上沿、右对齐(和左边的类型标签对称)。
+                        常驻显示而不是跟着 hover 走: 它的用处就是扫读时看出"这几段是有份量的"; 点开进解读。
+                        目录编辑期间整篇正文是一块"取点面板", 标记会抢点击, 所以那时不渲染。
+                      */}
+                      {citedBy && mappingId === null && (
+                        <Popover
+                          open={refPopover === block.blockIndex}
+                          onOpenChange={(next) => setRefPopover(next ? block.blockIndex : null)}
+                        >
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`这一段被 ${citedBy.length} 个知识点引为依据`}
+                              className="absolute -top-[13px] right-0 flex items-center gap-0.5 border border-primary/30 bg-primary/10 px-1 text-[9px] leading-[11px] text-primary hover:bg-primary/20"
+                            >
+                              <BookOpen className="h-2.5 w-2.5" />
+                              {citedBy.length > 1 ? citedBy.length : '知识点'}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-80 p-1.5" onClick={(e) => e.stopPropagation()}>
+                            <p className="px-1 pb-1 text-[10px] text-muted-foreground">
+                              第 {block.pageNo} 页这一段的依据 · 点开看解读
+                            </p>
+                            <div className="space-y-0.5">
+                              {citedBy.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setRefPopover(null)
+                                    setKpView({ subject: item.subject, kp: item.kp })
+                                  }}
+                                  className="block w-full rounded px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
+                                >
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="shrink-0 rounded-full bg-primary/10 px-1.5 text-[9px] text-primary">{item.subject}</span>
+                                    <span className="min-w-0 flex-1 truncate text-[11px]">{item.kp}</span>
+                                    <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                  </span>
+                                  {item.note && (
+                                    <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">{item.note}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       )}
                       {/* 表格块: 以前只把单元格拼成的一行文字显示出来, 现在直接渲染 MinerU 给的 <table>。整篇视图一直是这么做的(rehype-raw), 逐段这里补上 */}
                       {block.tableHtml ? (
@@ -1028,6 +1146,15 @@ export function ResourceReader({
           />
         </div>
       )}
+
+      {/* 解读抽屉: 从"依据"标记点进来, 抽屉里的"看原文"再滚回这一段 */}
+      <KpExplanationSheet
+        subject={kpView?.subject ?? ''}
+        kp={kpView?.kp ?? ''}
+        open={kpView !== null}
+        onOpenChange={(next) => { if (!next) setKpView(null) }}
+        onOpenRef={openRef}
+      />
     </div>
   )
 }

@@ -4526,3 +4526,240 @@ $$;
 
 -- DROP + CREATE 会把权限一起丢掉, 这里补回来(原样沿用 Section 49 的那条)
 GRANT EXECUTE ON FUNCTION public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER) TO authenticated;
+
+-- ============================================================================
+-- Section 63: 知识点解读的「依据原文」—— 把解读挂回资料库的具体段落
+--   知识点的来源之一就是资料库文献, 所以一条解读要能说清"依据的是哪几段":
+--     · 编写端(KpExplanationManagerDialog) 按文献 → 章节 → 段落挑, 或按关键词搜库挑
+--     · 解读端(KpExplanationDialog / 阅读页右侧抽屉) 展示依据并可跳回原文那一段
+--     · 阅读端反向(ResourceReader) 给被引用的区块打标记, 点开就看到"这段支撑了哪个知识点"
+--
+--   为什么独立成表而不是 kp_explanations 上的一个 JSONB 列: 反向查询("这一段被哪些知识点引用")
+--   是三条路径里的一条, 存 JSONB 就只能全表扫; 而且改一条依据要重写整个数组。
+--
+--   为什么不把引用嵌进解读正文的 Markdown: 解读是给人读的散文, 嵌 token 会把编辑器复杂一大截;
+--   文献重解析/下线后正文里还会留下死链, 又要多养一套清洗逻辑。
+--
+--   生命周期(这张表最容易埋坑的地方):
+--     · block_index 是区块在**本篇内的下标**, 重新解析后会整体重排(人工目录已经踩过这个坑),
+--       所以同时存 page_from/page_to 兜底: 映射失效时至少还能翻到那一页去看。
+--     · doc_title / label / snippet 都是落库那一刻的**快照**。依据是"当初确实引了这段"的历史
+--       事实: 文献被删或改成未发布时, 依据本身不该跟着消失, 而是显示成"原文已下线", 摘录照旧
+--       可读。所以 document_id 是 ON DELETE SET NULL, 不是 CASCADE。
+--     · 解读被删时依据一起删(复合外键 CASCADE): 没有解读, 依据无从展示。
+--     · 可见性跟 resource_documents.is_published 对齐 —— 否则未发布草稿的段落会顺着解读漏出去。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.kp_resource_refs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject      TEXT NOT NULL,
+  kp           TEXT NOT NULL,
+  document_id  UUID REFERENCES public.resource_documents(id) ON DELETE SET NULL,
+  -- 精确到段时就是 blocks 的第一段; **整节选中的依据为 NULL**(落点是下面的页码区间)
+  block_index  INTEGER,
+  page_from    INTEGER NOT NULL DEFAULT 1,
+  page_to      INTEGER NOT NULL DEFAULT 1,
+  -- 精确勾中的段落下标; 空数组 = 整个 [page_from, page_to] 区间
+  blocks       INTEGER[] NOT NULL DEFAULT '{}',
+  doc_title    TEXT NOT NULL DEFAULT '',
+  label        TEXT NOT NULL DEFAULT '',
+  snippet      TEXT NOT NULL DEFAULT '',
+  note         TEXT NOT NULL DEFAULT '',
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (subject, kp) REFERENCES public.kp_explanations(subject, kp) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_krr_kp  ON public.kp_resource_refs(subject, kp, sort_order);
+-- 阅读页要按文献反查"这些段被哪些知识点引用", 走这条
+CREATE INDEX IF NOT EXISTS idx_krr_doc ON public.kp_resource_refs(document_id);
+
+ALTER TABLE public.kp_resource_refs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS krr_select ON public.kp_resource_refs;
+CREATE POLICY krr_select ON public.kp_resource_refs FOR SELECT
+  USING (
+    auth.role() = 'authenticated'
+    AND (
+      public.is_admin()
+      -- document_id IS NULL = 原文献已删, 只剩快照; 一段摘录本身不泄露什么
+      OR document_id IS NULL
+      OR EXISTS (SELECT 1 FROM public.resource_documents d
+                  WHERE d.id = document_id AND d.is_published)
+    )
+  );
+
+DROP POLICY IF EXISTS krr_write_admin ON public.kp_resource_refs;
+CREATE POLICY krr_write_admin ON public.kp_resource_refs FOR ALL
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- 一次保存某条解读的全部依据: 删旧 + 插新 + **由服务端补快照**。
+--
+-- 快照为什么不让前端传: 前端为了取摘录得把整篇正文拉下来, 而"整节"这种粗选本来就没有逐段
+-- 内容; 服务端一句 SQL 就能从 resource_blocks 里取到。所以前端只传"选了哪篇、哪几段或哪段
+-- 页码区间"以及那句备注, 页码、标题、摘录一律在这里补齐。
+CREATE OR REPLACE FUNCTION public.save_kp_resource_refs(
+  p_subject TEXT,
+  p_kp      TEXT,
+  p_refs    JSONB
+) RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  n INTEGER;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION '只有管理员能维护知识点解读的依据';
+  END IF;
+  -- 复合外键会拦住"解读还不存在"的情况, 但那样报的是外键错误, 看不出是为什么
+  IF NOT EXISTS (SELECT 1 FROM public.kp_explanations WHERE subject = p_subject AND kp = p_kp) THEN
+    RAISE EXCEPTION '解读正文还不存在, 依据无处挂靠';
+  END IF;
+
+  DELETE FROM public.kp_resource_refs WHERE subject = p_subject AND kp = p_kp;
+
+  INSERT INTO public.kp_resource_refs (
+    subject, kp, document_id, block_index, page_from, page_to, blocks,
+    doc_title, label, snippet, note, sort_order
+  )
+  SELECT p_subject,
+         p_kp,
+         r.document_id,
+         CASE WHEN cardinality(r.blocks) > 0 THEN r.blocks[1] ELSE NULL END,
+         r.page_from,
+         r.page_to,
+         r.blocks,
+         coalesce(d.title, ''),
+         coalesce(r.label, ''),
+         -- 摘录取"区间里第一个有正文的块": 精确到段时就是那几段里最靠前的一段, 整节时就是本节开头
+         left(coalesce(sn.snippet, ''), 400),
+         coalesce(r.note, ''),
+         (e.ord - 1)::INTEGER
+  FROM jsonb_array_elements(coalesce(p_refs, '[]'::JSONB)) WITH ORDINALITY AS e(item, ord)
+  CROSS JOIN LATERAL (
+    SELECT (e.item ->> 'document_id')::UUID AS document_id,
+           least(greatest(1, coalesce((e.item ->> 'page_from')::INTEGER, 1)),
+                 greatest(1, coalesce((e.item ->> 'page_to')::INTEGER, 1))) AS page_from,
+           greatest(greatest(1, coalesce((e.item ->> 'page_from')::INTEGER, 1)),
+                    greatest(1, coalesce((e.item ->> 'page_to')::INTEGER, 1))) AS page_to,
+           coalesce(
+             (SELECT array_agg(x::INTEGER ORDER BY x::INTEGER)
+                FROM jsonb_array_elements_text(coalesce(e.item -> 'blocks', '[]'::JSONB)) AS t(x)),
+             '{}'::INTEGER[]
+           ) AS blocks,
+           e.item ->> 'label' AS label,
+           e.item ->> 'note'  AS note
+  ) r
+  LEFT JOIN public.resource_documents d ON d.id = r.document_id
+  -- LEFT JOIN 而不是 CROSS JOIN: 取不到摘录(区间里全是图片/公式块)时不能把整条依据丢掉
+  LEFT JOIN LATERAL (
+    SELECT b.text AS snippet
+    FROM public.resource_blocks b
+    WHERE b.document_id = r.document_id
+      AND b.text <> ''
+      AND (
+        (cardinality(r.blocks) > 0 AND b.block_index = ANY(r.blocks))
+        OR (cardinality(r.blocks) = 0 AND b.page_no BETWEEN r.page_from AND r.page_to)
+      )
+    ORDER BY b.block_index
+    LIMIT 1
+  ) sn ON TRUE;
+
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.save_kp_resource_refs(TEXT, TEXT, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 64: 知识点解读的「相关真题」—— 把历年真题挂到解读上
+--   「真题」在这套题库里不是一个独立实体, 而是**分类约定**: questions.category / categories
+--   里形如 `2024年真题` 的那一条(见 lib/kp-question-refs.ts 的 REAL_YEAR_RE)。所以这里挂的
+--   就是一道具体的题: 读者在解读里展开就能看到题干、选项、答案与解析 —— 这正是"这个知识点
+--   历年是怎么考的"。
+--
+--   为什么不复用 Section 63 的 kp_resource_refs: 那边引的是"文献里的一段"(文档 + 页码 +
+--   段落 + 摘录快照), 这边引的是一道题(题目 id), 两类东西的字段与生命周期都对不上; 硬塞一张表
+--   会让两边都多出一堆恒为 NULL 的列。
+--
+--   为什么 question_id 用 ON DELETE CASCADE, 而文献那边留快照: 文献被删时"当初确实引了这一段"
+--   仍有价值(摘录还在); 题目被删或被合并(题库里天天在合并重复题)时, 这条关联指向的东西已经
+--   不存在了, 留个空壳只会让读者点到一个空条目。题干也不需要快照 —— 题本身还在题库里。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.kp_question_refs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject     TEXT NOT NULL,
+  kp          TEXT NOT NULL,
+  question_id UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  -- 这道真题考的是这个知识点的哪一面(选填)
+  note        TEXT NOT NULL DEFAULT '',
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (subject, kp) REFERENCES public.kp_explanations(subject, kp) ON DELETE CASCADE,
+  -- 同一条解读里同一道题只挂一次
+  UNIQUE (subject, kp, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_kqr_kp       ON public.kp_question_refs(subject, kp, sort_order);
+CREATE INDEX IF NOT EXISTS idx_kqr_question ON public.kp_question_refs(question_id);
+
+ALTER TABLE public.kp_question_refs ENABLE ROW LEVEL SECURITY;
+
+-- 题目本身就是所有登录用户可读的(questions_select_all), 这里跟同一个口径
+DROP POLICY IF EXISTS kqr_select ON public.kp_question_refs;
+CREATE POLICY kqr_select ON public.kp_question_refs FOR SELECT
+  USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS kqr_write_admin ON public.kp_question_refs;
+CREATE POLICY kqr_write_admin ON public.kp_question_refs FOR ALL
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- 一次保存某条解读的全部真题(删旧插新), 与 save_kp_resource_refs 同一个套路
+CREATE OR REPLACE FUNCTION public.save_kp_question_refs(
+  p_subject TEXT,
+  p_kp      TEXT,
+  p_refs    JSONB
+) RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  n INTEGER;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION '只有管理员能维护知识点解读的真题';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.kp_explanations WHERE subject = p_subject AND kp = p_kp) THEN
+    RAISE EXCEPTION '解读正文还不存在, 真题无处挂靠';
+  END IF;
+
+  DELETE FROM public.kp_question_refs WHERE subject = p_subject AND kp = p_kp;
+
+  INSERT INTO public.kp_question_refs (subject, kp, question_id, note, sort_order)
+  -- DISTINCT ON: 同一次提交里勾重了不该整个保存失败(界面那边也会去重, 这里兜住)
+  SELECT p_subject,
+         p_kp,
+         x.qid,
+         x.note,
+         (row_number() OVER (ORDER BY x.ord))::INTEGER - 1
+  FROM (
+    SELECT DISTINCT ON ((e.item ->> 'question_id')::UUID)
+           (e.item ->> 'question_id')::UUID AS qid,
+           coalesce(e.item ->> 'note', '')  AS note,
+           e.ord
+    FROM jsonb_array_elements(coalesce(p_refs, '[]'::JSONB)) WITH ORDINALITY AS e(item, ord)
+    WHERE (e.item ->> 'question_id') ~ '^[0-9a-fA-F-]{36}$'
+    ORDER BY (e.item ->> 'question_id')::UUID, e.ord
+  ) x;
+
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.save_kp_question_refs(TEXT, TEXT, JSONB) TO authenticated;
