@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { autoIndex } from '@/lib/rag'
 import {
   Dialog,
   DialogContent,
@@ -179,6 +180,8 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
     )
     if (error) { setMessage(error.message); setState('error') }
     else {
+      // 一次导入可能上百道, 逐条同步还不如整源跑一遍(服务端按内容差分, 新题才会算向量)
+      autoIndex('question')
       setMessage(`成功导入 ${parsed.length} 道题目`)
       setState('done')
       onImported()

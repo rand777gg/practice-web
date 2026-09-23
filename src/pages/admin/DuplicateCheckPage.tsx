@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { autoIndex } from '@/lib/rag'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS, IMPORT_MODE_LABELS, TYPE_COLORS } from '@/lib/constants'
@@ -277,6 +278,8 @@ export function Component() {
       }
       setStats((s) => ({ ...s, merged: s.merged + 1 }))
       setLastAction(`已合并重复组：保留 1 条，删除 ${removedIds.length} 条`)
+      // 删掉的行由数据库触发器清索引; 但保留下来的那条并了别人的分类, 正文变了得自己重索引
+      autoIndex('question')
       pruneByRemoved(removedIds)
       return
     }
@@ -296,6 +299,7 @@ export function Component() {
     }
     setStats((s) => ({ ...s, merged: s.merged + 1 }))
     setLastAction(`已合并：保留 ${keepId.slice(0, 8)}…，删除 ${removeId.slice(0, 8)}…`)
+    autoIndex('question')
     pruneByRemoved([removeId])
   }
 

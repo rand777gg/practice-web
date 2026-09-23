@@ -2,7 +2,7 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Award, Blocks, BookOpen, Bot, Bug, CalendarClock, ChartPie, ClipboardList, Clock, Compass, Database, DatabaseZap,
   FileDown, FileQuestion, FileText, FileWarning, Bookmark, GitMerge, GraduationCap, HardDrive, History,
-  LayoutGrid, LayoutTemplate, Library, LibraryBig, List, PenLine, Pencil, Plug, Plus,
+  LayoutGrid, LayoutTemplate, Library, LibraryBig, List, ListTree, PenLine, Pencil, Plug, Plus,
   Puzzle, RotateCcw, Route, Settings2, Shuffle, Sparkles, Star, Swords, Terminal, Trophy, Users, UsersRound, Wand2,
 } from 'lucide-react'
 
@@ -169,6 +169,7 @@ export function useNavGroups(): Record<SidebarGroup, NavItem[]> {
       ],
     },
     { id: 'adminRag', title: t('nav.rag'), url: '/admin/rag', icon: DatabaseZap },
+    { id: 'adminExperienceParse', title: t('nav.experienceParse'), url: '/admin/experience-parse', icon: ListTree },
     { id: 'adminLearningRoutes', title: t('nav.learningRoutes'), url: '/admin/learning-routes', icon: Route, tone: 'beta', label: t('nav.beta') },
     { id: 'adminCrawler', title: t('nav.crawler'), url: '/admin/crawler', icon: Bot, tone: 'demo', label: t('nav.demo') },
     { id: 'adminOrganizeExam', title: t('nav.organizeExam'), url: '/admin/organize-exam', icon: CalendarClock, tone: 'demo', label: t('nav.demo') },

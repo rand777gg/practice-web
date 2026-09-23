@@ -5672,3 +5672,82 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT, UUID, TEXT[], TEXT[]) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT, UUID, TEXT[], TEXT[]) TO authenticated;
+
+-- ============================================================================
+-- Section 75: 删题目/删笔记/删解读时清掉检索块 —— Section 65 只补了文献这一路
+--   症状: 题库页「批量删除」直接 delete().in('id', ids), 查重合并走 RPC 里的
+--   DELETE FROM questions, 两者都不经过前端那个 autoIndex 调用, 于是 rag_chunks 里
+--   留下 source='question' 的孤儿块 —— 删掉的题小Q 照旧检索得到、照旧引用得出来。
+--   同一条链上还有三处:
+--     · 删题目会级联删掉 user_answers(ON DELETE CASCADE), 别人挂在这道题上的**公开笔记**
+--       一起没了, 但 source='note' 的块留着;
+--     · 收藏页/错题页改笔记走的是裸 update, 只有练习页那条(useUserAnswers)会同步;
+--     · 删账号(delete-account / admin-delete-user)整批删 user_answers, 同样没人清块。
+--
+--   为什么四源统一放数据库这层, 而不是把前端漏掉的 autoIndex 补齐就完事:
+--   前端补得完"我这页点得到"的路径, 补不完 RPC、级联、Edge Function、导入脚本 ——
+--   那些地方根本没有前端代码可以下手。删块是纯 SQL, 没有算向量的代价,
+--   而删除没有"稍后重试"的机会(行都没了, 差分同步再也看不到它), 所以只能在这里兜底。
+--   改内容的路径仍然留在 rag-index: 那要发外部请求, 放触发器上会让保存变慢。
+--
+--   source_id 的拼法各源不同, 必须和 rag-index 的 chunksFor* 完全一致:
+--     question / note → 行 id 的文本;  kp → '学科::知识点';  subject → 学科名。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.purge_rag_chunks_on_delete() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+  v_source TEXT := TG_ARGV[0];
+BEGIN
+  IF v_source = 'kp' THEN
+    DELETE FROM public.rag_chunks WHERE source = 'kp' AND source_id = OLD.subject || '::' || OLD.kp;
+  ELSIF v_source = 'subject' THEN
+    DELETE FROM public.rag_chunks WHERE source = 'subject' AND source_id = OLD.subject;
+  ELSE
+    DELETE FROM public.rag_chunks WHERE source = v_source AND source_id = OLD.id::text;
+  END IF;
+  RETURN OLD;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_purge_rag_chunks ON public.questions;
+CREATE TRIGGER trg_purge_rag_chunks
+  AFTER DELETE ON public.questions
+  FOR EACH ROW EXECUTE FUNCTION public.purge_rag_chunks_on_delete('question');
+
+DROP TRIGGER IF EXISTS trg_purge_rag_chunks ON public.user_answers;
+CREATE TRIGGER trg_purge_rag_chunks
+  AFTER DELETE ON public.user_answers
+  FOR EACH ROW EXECUTE FUNCTION public.purge_rag_chunks_on_delete('note');
+
+DROP TRIGGER IF EXISTS trg_purge_rag_chunks ON public.kp_explanations;
+CREATE TRIGGER trg_purge_rag_chunks
+  AFTER DELETE ON public.kp_explanations
+  FOR EACH ROW EXECUTE FUNCTION public.purge_rag_chunks_on_delete('kp');
+
+DROP TRIGGER IF EXISTS trg_purge_rag_chunks ON public.subject_explanations;
+CREATE TRIGGER trg_purge_rag_chunks
+  AFTER DELETE ON public.subject_explanations
+  FOR EACH ROW EXECUTE FUNCTION public.purge_rag_chunks_on_delete('subject');
+
+-- 存量清理: 触发器只管以后。已经在表里的孤儿块手工删一次, 之后重放这段是幂等的空操作。
+-- 先按 id 文本的形态筛一下再 cast: 万一有非 uuid 的 source_id, 直接 ::uuid 会让整段报错回滚。
+DELETE FROM public.rag_chunks c
+WHERE c.source = 'question'
+  AND (c.source_id !~ '^[0-9a-fA-F-]{36}$'
+       OR NOT EXISTS (SELECT 1 FROM public.questions q WHERE q.id = c.source_id::uuid));
+
+DELETE FROM public.rag_chunks c
+WHERE c.source = 'note'
+  AND (c.source_id !~ '^[0-9a-fA-F-]{36}$'
+       OR NOT EXISTS (SELECT 1 FROM public.user_answers a WHERE a.id = c.source_id::uuid));
+
+DELETE FROM public.rag_chunks c
+WHERE c.source = 'kp'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.kp_explanations k WHERE k.subject || '::' || k.kp = c.source_id);
+
+DELETE FROM public.rag_chunks c
+WHERE c.source = 'subject'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.subject_explanations s WHERE s.subject = c.source_id);
+
+REVOKE EXECUTE ON FUNCTION public.purge_rag_chunks_on_delete() FROM PUBLIC, anon, authenticated;

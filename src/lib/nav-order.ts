@@ -35,6 +35,7 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
 
   { id: 'adminQuestions', group: 'admin', labelZh: '题目管理', labelEn: 'Questions' },
   { id: 'adminRag', group: 'admin', labelZh: '检索索引', labelEn: 'RAG Index' },
+  { id: 'adminExperienceParse', group: 'admin', labelZh: '经验解析', labelEn: 'Experience Parse' },
   { id: 'adminLearningRoutes', group: 'admin', labelZh: '学习路线', labelEn: 'Learning Routes' },
   { id: 'adminCrawler', group: 'admin', labelZh: '分布式采集', labelEn: 'Crawler' },
   { id: 'adminOrganizeExam', group: 'admin', labelZh: '组织考试', labelEn: 'Organize Exam' },

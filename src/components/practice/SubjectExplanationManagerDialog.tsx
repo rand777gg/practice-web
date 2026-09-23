@@ -87,6 +87,7 @@ export function SubjectExplanationManagerDialog({ open, onOpenChange }: Props) {
               onClick={async () => {
                 setSaving(true)
                 await supabase.from('subject_explanations').delete().eq('subject', selected)
+                autoIndex('subject')
                 setSaving(false)
                 setDraft('')
                 await refresh()

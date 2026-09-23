@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { autoIndex } from '@/lib/rag'
 import { naturalSort } from '@/lib/utils'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
@@ -130,6 +131,8 @@ export function Component() {
   const handleSaveNote = useCallback(async (questionId: string, answerId: string | null) => {
     if (!answerId) return
     await supabase.from('user_answers').update({ note: editText }).eq('id', answerId)
+    // 公开笔记的正文进了检索索引, 收藏页这里改完也得同步(练习页走 useUserAnswers 那条已经同步了)
+    autoIndex('note', answerId)
     setQuestions(prev => prev.map(q => q.id === questionId ? { ...q, note: editText } : q))
     setEditingId(null)
   }, [editText])

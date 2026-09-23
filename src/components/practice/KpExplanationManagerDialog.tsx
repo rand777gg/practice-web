@@ -520,6 +520,7 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
                 if (!selectedSubject || !selectedKp) return
                 setSaving(true)
                 await supabase.from('kp_explanations').delete().eq('subject', selectedSubject).eq('kp', selectedKp)
+                autoIndex('kp')
                 setSaving(false)
                 setDraft('')
                 setRefState({ key: refsKey, drafts: [], orphans: [] })
