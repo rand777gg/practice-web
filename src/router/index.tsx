@@ -268,6 +268,10 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/pages/admin/RagManagePage'),
                   },
                   {
+                    path: 'experience-parse',
+                    lazy: () => import('@/pages/admin/ExperienceParsePage'),
+                  },
+                  {
                     path: 'organize-exam',
                     lazy: () => import('@/pages/admin/OrganizeExamPage'),
                   },

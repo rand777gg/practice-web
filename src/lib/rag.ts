@@ -30,6 +30,8 @@ export interface RagHit {
   blockIndex: number | null
   /** 能直接跳转的站内地址(目前只有文献有) */
   anchor: string | null
+  /** 融合得分(RRF, 服务端算的)。按"命中落在哪一节"投票时要用它当权重 */
+  score: number
 }
 
 export interface RagSearchResult {
@@ -50,6 +52,7 @@ interface RawHit {
   page_no: number | null
   block_index: number | null
   anchor: string | null
+  score: number | null
 }
 
 export async function searchKnowledge(
@@ -81,6 +84,7 @@ export async function searchKnowledge(
       pageNo: h.page_no,
       blockIndex: h.block_index,
       anchor: h.anchor,
+      score: h.score ?? 0,
     })),
     mode: payload.mode === 'hybrid' ? 'hybrid' : 'text-only',
     error: payload.embed_error ?? null,
@@ -177,6 +181,10 @@ export async function syncRagSource(
  * 为什么不做成数据库触发器: 触发器的活是同步的, 而算向量要发外部请求, 放到写入路径上
  * 会让"保存一道题"变成"等 1 秒"。为什么不放 Edge Function 里定时扫: 增量差分已经让
  * 闲置同步几乎免费, 但定时任务总归有延迟, 而用户刚写的东西立刻搜不到会被当成 bug。
+ *
+ * 所以"改内容"(增/改)必须由写入方自己调这里, 每处新写入路径都要想着补一句 ——
+ * 漏了的症状是"改完还按旧内容搜得到"。**删行**是唯一的例外: 它没有稍后重试的机会,
+ * 交给数据库触发器兜底(见迁移 Section 65 / 75), 批量删、RPC 合并、级联删、删账号都覆盖到。
  */
 export function autoIndex(source: RagSource, id?: string): void {
   void syncRagSource(source, id, { maxRounds: 20 }).catch((err) => {

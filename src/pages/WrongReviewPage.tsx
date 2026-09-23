@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { autoIndex } from '@/lib/rag'
 import { naturalSort } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
@@ -182,6 +183,8 @@ export function Component() {
 
   const handleSaveNote = async (id: string) => {
     await supabase.from('user_answers').update({ note: editText }).eq('id', id)
+    // 公开笔记改了正文要跟着重索引(删行那条不用管: 数据库触发器会清块)
+    autoIndex('note', id)
     setAnswers(prev => prev.map(a => a.id === id ? { ...a, note: editText } : a))
     setEditingId(null)
   }

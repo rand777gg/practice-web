@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { naturalSort } from '@/lib/utils'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
+import { autoIndex } from '@/lib/rag'
 import type { QuestionType } from '@/types'
 import { QUESTION_TYPE_OPTIONS, IMPORT_MODE_OPTIONS, PAGE_SIZE_OPTIONS } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
@@ -239,6 +240,8 @@ export function Component() {
     } else {
       await supabase.from('questions').update({ key_points: data.key_points }).eq('key_points', kpConfirm?.oldKp ?? '')
     }
+    // 批量改的是 subject/category/key_points, 三者都在检索块的正文里 —— 不重索引就是拿旧值搜
+    autoIndex('question')
     setBulkSubject('')
     setBulkCategory('')
     setBulkKeyPoints('')

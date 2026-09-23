@@ -6,6 +6,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { updateResourceDocument, type ResourceDocument } from '@/lib/resource-library'
+import { autoIndex } from '@/lib/rag'
 import { metaToInput, type MetaFormValue } from '@/lib/resource-meta-form'
 import { ResourceMetaFields } from './ResourceMetaFields'
 
@@ -44,6 +45,9 @@ export function ResourceMetaDialog({ document, onOpenChange, onSaved }: Props) {
     setError(null)
     try {
       await updateResourceDocument(document.id, metaToInput(meta))
+      // 标题在检索块正文的前缀里(【标题 › 章节路径】), 改名不重索引就还是旧标题;
+      // 只改标签/摘要时服务端差分会发现正文没变, 一次向量都不算
+      autoIndex('resource', document.id)
       onSaved()
       onOpenChange(false)
     } catch (err) {
