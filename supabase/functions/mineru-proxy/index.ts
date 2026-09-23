@@ -46,7 +46,7 @@ function isAllowedTarget(raw: string): boolean {
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-MinerU-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info, X-MinerU-Token',
 }
 
 // ponytail: gzip text responses to cut egress ~80% for markdown/JSON
