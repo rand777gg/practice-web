@@ -510,13 +510,13 @@ export function CreateCard({ messageId, meta }: { messageId: number; meta: Creat
             出题依据（{meta.sources.length} 处）
           </p>
           {meta.sources.map((s, i) => (
-            <p key={i} className="flex items-center gap-1 truncate">
+            <div key={i} className="flex items-center gap-1 truncate">
               <Badge variant="secondary" className="shrink-0 border-transparent text-[9px] font-normal">
                 {PLATFORM_SOURCE_LABEL[s.type]}
               </Badge>
               <span className="truncate">{s.label}{s.pageNo && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />第 {s.pageNo} 页</>}</span>
               {s.anchor && <Link to={s.anchor} className="shrink-0 text-primary hover:underline">看原文</Link>}
-            </p>
+            </div>
           ))}
         </div>
       ) : (

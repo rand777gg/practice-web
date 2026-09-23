@@ -531,7 +531,7 @@ function ExperiencePanel() {
                   </div>
 
                   <div className="w-full space-y-1.5 text-[11px] sm:w-64">
-                    <p className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5">
                       <MessageSquareText className="h-3 w-3 shrink-0 text-muted-foreground" />
                       <span className="font-medium">{post.platform}</span>
                       <a
@@ -547,7 +547,7 @@ function ExperiencePanel() {
                           含配图
                         </Badge>
                       )}
-                    </p>
+                    </div>
                     <p className="flex items-center gap-1.5 text-muted-foreground">
                       <UserRound className="h-3 w-3 shrink-0" />
                       原作者 <span className="text-foreground">{post.author}</span>

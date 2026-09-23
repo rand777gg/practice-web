@@ -202,12 +202,12 @@ function PublicTab() {
           <p>· 题目数量按「已发布且通过查重」计，被下架或驳回的采集题目不计入。</p>
           <p>· 知识点勾选量按用户在一道题上勾选的每个知识点各计 1 次，同一用户重复勾选不重复计数。</p>
           <p>· 弦图两侧弧长分别等于该节点在全部关系中的权重之和，因此可为不同量级的集合做同图对比。</p>
-          <p className="flex items-center gap-1">
+          <div className="flex items-center gap-1">
             <Badge variant="secondary" className="border-transparent bg-violet-100 text-[10px] font-normal text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
               DEMO
             </Badge>
             本页所有数字均为内置示例数据，未接入真实统计。
-          </p>
+          </div>
         </CardContent>
       </Card>
     </div>

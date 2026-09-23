@@ -182,8 +182,8 @@ export function ExamCodingPanel({ question, value, onChange }: Props) {
           </div>
           {activeCaseData && (
             <div className="border-t border-border px-2 py-1.5 text-[11px] space-y-1">
-              <p className="text-muted-foreground">{t('codeEditor.input') ?? '输入'}<WhitespaceBlock text={activeCaseData.input || (t('codeEditor.emptyMark') ?? '(空)')} className="mt-0.5 text-foreground" dim={false} /></p>
-              <p className="text-muted-foreground">{t('codeEditor.expected') ?? '期望'}<WhitespaceBlock text={activeCaseData.expected || (t('codeEditor.emptyMark') ?? '(空)')} className="mt-0.5 text-emerald-600 dark:text-emerald-400" dim={false} /></p>
+              <div className="text-muted-foreground">{t('codeEditor.input') ?? '输入'}<WhitespaceBlock text={activeCaseData.input || (t('codeEditor.emptyMark') ?? '(空)')} className="mt-0.5 text-foreground" dim={false} /></div>
+              <div className="text-muted-foreground">{t('codeEditor.expected') ?? '期望'}<WhitespaceBlock text={activeCaseData.expected || (t('codeEditor.emptyMark') ?? '(空)')} className="mt-0.5 text-emerald-600 dark:text-emerald-400" dim={false} /></div>
             </div>
           )}
         </div>
