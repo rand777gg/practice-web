@@ -257,7 +257,7 @@ src/
 supabase/
 ├── migrations/       数据库迁移（单文件 001_initial_schema.sql，按 Section 追加）
 └── functions/        Edge Functions（verify-totp、manage-passkey、qr-login、admin-delete-user、
-                      delete-account、unlink-identity、login-notify、cloudflare-turnstile、
+                      delete-account、unlink-identity、login-notify、
                       judge、study-room、notify-exam、parse-paper-cover、mineru-proxy、r2-*）
 ```
 
