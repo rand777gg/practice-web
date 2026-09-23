@@ -416,6 +416,10 @@ serve(async (req: Request) => {
 
   // ---------- remind ----------
   if (body.action === "remind") {
+    // 提醒邮件只给房主发: 以前任何成员都能指定 memberIds 给其他成员群发邮件,
+    // 等于把一个 Resend 额度 + 收件箱骚扰的入口开给每个房间成员(唯一的节流是"同一人 2 小时")。
+    if (ownerId !== callerId) return json({ error: "only_owner_can_remind" }, 403)
+
     const apiKey = Deno.env.get("RESEND_API_KEY")
     const from = Deno.env.get("RESEND_FROM")
     if (!apiKey || !from) {

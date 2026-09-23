@@ -7,12 +7,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-// Rate limiting: per-IP sliding-window counter (max 5 req/min)
-const rateMap = new Map<string, { count: number; resetAt: number }>()
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of rateMap) { if (v.resetAt < now) rateMap.delete(k) }
-}, 30_000)
+// 限流改成**落库按用户计数**(见 auth_attempt())。
+// 原来这里是个 per-isolate 的内存 Map, 还以 x-forwarded-for 的第一跳为键:
+//   · 边缘函数实例是短命且横向扩展的, 计数器既不全局也不持久;
+//   · 而 security_sb_forwarded_for_enabled=false, 那个头调用方可以自己填 —— 换个头就重置。
+// 对"拿到密码的人暴力试 6 位 TOTP"这个真实的攻击场景, 内存限流基本等于没有。
+const ATTEMPT_WINDOW_SECONDS = 300
+const ATTEMPT_LIMIT = 10
 
 // Recovery code helpers
 const RECOVERY_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -31,18 +32,6 @@ async function hashCode(code: string): Promise<string> {
   const data = new TextEncoder().encode(normalized)
   const digest = await crypto.subtle.digest("SHA-256", data)
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
-}
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateMap.get(ip)
-  if (!entry || entry.resetAt < now) {
-    rateMap.set(ip, { count: 1, resetAt: now + 60_000 })
-    return false
-  }
-  entry.count++
-  if (entry.count > 5) return true
-  return false
 }
 
 /** Decode a JWT payload (base64url) without verification — token is already trusted via getUser. */
@@ -106,15 +95,6 @@ serve(async (req: Request) => {
     })
   }
 
-  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    || req.headers.get("x-real-ip") || "unknown"
-  if (body.action !== "status" && isRateLimited(clientIp)) {
-    return new Response(JSON.stringify({ error: "Too many requests" }), {
-      status: 429,
-      headers: corsHeaders,
-    })
-  }
-
   try {
     const authHeader = req.headers.get("Authorization")
     if (!authHeader) {
@@ -130,6 +110,22 @@ serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders })
+    }
+
+    // 限流: 在**验证身份之后**按用户计数, 所以既不会误伤共用出口 IP 的其他人,
+    // 也没法靠伪造请求头绕开。"status" 是只读查询, 不计数。
+    if (body.action !== "status") {
+      const { data: attempts } = await supabaseAdmin.rpc("auth_attempt", {
+        p_user_id: user.id,
+        p_kind: String(body.action ?? "unknown"),
+        p_window_seconds: ATTEMPT_WINDOW_SECONDS,
+      })
+      if (typeof attempts === "number" && attempts > ATTEMPT_LIMIT) {
+        return new Response(JSON.stringify({ error: "Too many attempts", retry_after: ATTEMPT_WINDOW_SECONDS }), {
+          status: 429,
+          headers: corsHeaders,
+        })
+      }
     }
 
     const userId = user.id

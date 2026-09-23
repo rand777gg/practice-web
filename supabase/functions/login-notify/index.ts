@@ -6,29 +6,46 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
+/** 进飞书卡片前洗一遍: lark_md 认 * _ ~ ` [ ] ( ) 这些记号, 换行还能把卡片撑变形 */
+function larkSafe(value: unknown, max = 120): string {
+  return String(value ?? "")
+    .replace(/[*_~`\[\]()<>|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max) || "unknown"
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
   }
 
   try {
-    const body = await req.json()
-    const ip = body.ip_address || body.ip || req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown"
-    const userAgent = body.user_agent || body.userAgent || req.headers.get("user-agent") || "unknown"
-    const userId = body.user?.id || body.userId
-    const email = body.user?.email || body.email || ""
-
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "missing userId" }), {
-        status: 400,
-        headers: corsHeaders,
-      })
-    }
-
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
     )
+
+    // 身份只能来自 JWT。以前直接读 body.userId, 于是任何访客都能:
+    //   · 以任意用户的名义往 auth_log 写"登录记录"(服务端身份写, RLS 拦不住);
+    //   · 往飞书群推伪造的"新设备登录"卡片 —— ip / user_agent 也是调用方传的,
+    //     拼进 lark_md 还能注入格式。
+    // 现在: 调用者必须登录, user_id 取验证过的会话; ip/UA 只信网关头, 且进卡片前先洗一遍。
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "")
+    const { data: { user }, error: userError } = token
+      ? await supabaseAdmin.auth.getUser(token)
+      : { data: { user: null }, error: new Error("no token") }
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: corsHeaders })
+    }
+
+    const userId = user.id
+    const email = user.email ?? ""
+    // security_sb_forwarded_for_enabled=false, 所以这个头本身也可能是调用方伪造的 —— 只当参考信息用,
+    // 绝不参与任何判定
+    const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown"
+    const userAgent = req.headers.get("user-agent") ?? "unknown"
 
     // 记录本次登录（记录 IP 供参考，但不作为判定依据）
     await supabaseAdmin
@@ -86,7 +103,7 @@ serve(async (req: Request) => {
                 tag: "div",
                 text: {
                   tag: "lark_md",
-                  content: `用户 **${userName}** 从新设备登录\n\n**时间：** ${time}\n**设备：** ${deviceLabel}\n**IP：** ${ip}`,
+                  content: `用户 **${larkSafe(email || userId.slice(0, 8))}** 从新设备登录\n\n**时间：** ${time}\n**设备：** ${larkSafe(deviceLabel)}\n**IP：** ${larkSafe(ip, 45)}`,
                 },
               },
             ],

@@ -5075,3 +5075,97 @@ CREATE POLICY files_rw_own ON storage.objects FOR ALL TO authenticated
     bucket_id = 'files'
     AND (public.is_admin() OR auth.uid()::text = ANY (storage.foldername(name)))
   );
+
+-- ============================================================================
+-- Section 70: 二审剩下的几处 —— 登录日志限流、题库归属、空库首人成管理员
+-- ============================================================================
+
+-- 70.1 二次验证的限流落到库里。
+--   原来 verify-totp 用的是 per-isolate 的内存 Map, 键还是 x-forwarded-for 的第一跳 ——
+--   边缘实例短命又横向扩展, 计数器既不持久也不全局; 而 security_sb_forwarded_for_enabled=false,
+--   那个头调用方可以自己写, 换个头就"重置"了。对"拿到密码后暴力试 6 位 TOTP"这个真实场景等于没有。
+CREATE TABLE IF NOT EXISTS public.auth_attempts (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    UUID NOT NULL,
+  kind       TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.auth_attempts ENABLE ROW LEVEL SECURITY;
+-- 不给任何策略: 只有服务端(service_role)读写
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON public.auth_attempts(user_id, kind, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.auth_attempt(
+  p_user_id UUID,
+  p_kind TEXT,
+  p_window_seconds INTEGER DEFAULT 300
+) RETURNS INTEGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  IF p_user_id IS NULL THEN RAISE EXCEPTION 'missing user'; END IF;
+  INSERT INTO public.auth_attempts(user_id, kind) VALUES (p_user_id, p_kind);
+  SELECT COUNT(*) INTO v_count
+    FROM public.auth_attempts
+   WHERE user_id = p_user_id
+     AND kind = p_kind
+     AND created_at > NOW() - make_interval(secs => GREATEST(p_window_seconds, 1));
+  -- 顺手清掉过期记录, 免得这张表只涨不消
+  DELETE FROM public.auth_attempts WHERE created_at < NOW() - INTERVAL '1 day';
+  RETURN v_count;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.auth_attempt(uuid, text, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.auth_attempt(uuid, text, integer) TO service_role;
+
+-- 70.4 自习室的两个判定函数不再接受"别人的 user_id"。
+--   它们被 RLS 策略调用(策略里传的就是 auth.uid()), 但因为是默认的 PUBLIC 可执行, 谁都能
+--   拿任意 (room_id, user_id) 组合去问"这个人在不在这间房" —— 一个成员关系预言机。
+--   加上"只能问自己"之后, 策略行为不变, 预言机没了。
+CREATE OR REPLACE FUNCTION public.is_study_room_member(p_room_id UUID, p_user_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.study_room_members m
+     WHERE m.room_id = p_room_id
+       AND m.user_id = p_user_id
+       AND (auth.role() = 'service_role' OR p_user_id = auth.uid())
+  );
+$$;
+REVOKE EXECUTE ON FUNCTION public.is_study_room_member(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_study_room_member(uuid, uuid) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.is_study_room_owner(p_room_id UUID, p_user_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.study_rooms r
+     WHERE r.id = p_room_id
+       AND r.owner_id = p_user_id
+       AND (auth.role() = 'service_role' OR p_user_id = auth.uid())
+  );
+$$;
+REVOKE EXECUTE ON FUNCTION public.is_study_room_owner(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_study_room_owner(uuid, uuid) TO authenticated, service_role;
+
+-- 70.2 题库归属: 原策略只要求"已登录", 于是可以建一个挂在别人名下的题库
+-- (公开题库随后会显示成那个人的), 而自己又改不动它(update 策略要求 created_by = auth.uid())。
+DROP POLICY IF EXISTS qb_insert ON public.question_banks;
+CREATE POLICY qb_insert ON public.question_banks FOR INSERT TO authenticated
+  WITH CHECK (created_by = auth.uid());
+
+-- 70.3 "第一个人自动成为管理员"的判据换个表。
+--   原来数的是 public.profiles —— 而这张表是能被清空的(admin-delete-user 会删 profile,
+--   手工清数据同理), 一旦为空, 下一个注册的人就直接拿到管理员。改数 auth.users:
+--   只有"这个项目至今只有你一个账号"才命中, 即真正全新的库。
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE existing_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO existing_count FROM auth.users WHERE id <> NEW.id;
+  IF existing_count = 0 THEN
+    INSERT INTO public.profiles (id, role) VALUES (NEW.id, 'admin');
+  ELSE
+    INSERT INTO public.profiles (id, role) VALUES (NEW.id, 'user');
+  END IF;
+  RETURN NEW;
+END;
+$$;

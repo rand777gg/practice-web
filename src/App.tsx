@@ -173,8 +173,10 @@ function AuthInitializer({ children }: { children: ReactNode }) {
             headers: {
               'Content-Type': 'application/json',
               apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              // 函数现在要求登录: 身份取自这个 JWT, 不再接受 body 里的 userId
+              Authorization: `Bearer ${session.access_token}`,
             },
-            body: JSON.stringify({ userId: session.user.id }),
+            body: JSON.stringify({}),
           }).catch(() => {})
         }
 
