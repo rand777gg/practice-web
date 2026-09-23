@@ -271,7 +271,7 @@ export function ResourcePdfPane({
               if (el) pageRefs.current.set(page.p, el)
               else pageRefs.current.delete(page.p)
             }}
-            className={`relative mx-auto mb-3 transition-shadow ${isActivePage ? 'ring-1 ring-primary/40' : ''}`}
+            className={`lib-page relative mx-auto mb-3 transition-shadow ${isActivePage ? 'ring-1 ring-primary/40' : ''}`}
             style={{ width: cssW, aspectRatio: `${pw} / ${ph}` }}
           >
             <img

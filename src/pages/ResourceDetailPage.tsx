@@ -33,6 +33,13 @@ export function Component() {
     return Number.isInteger(n) && n >= 0 ? n : null
   }, [blockParam])
   const initialQuery = searchParams.get('q') ?? ''
+  // 段落锚点失效的依据(文献重新解析过)退化成页码进来, 见 Section 63
+  const pageParam = searchParams.get('page')
+  const initialPage = useMemo(() => {
+    if (pageParam === null) return null
+    const n = Number(pageParam)
+    return Number.isInteger(n) && n >= 1 ? n : null
+  }, [pageParam])
   const initialTocEdit = searchParams.get('toc') === 'edit'
 
   /** 目录存过之后重拉一次: 不然退出编辑态会看到挂载时那份旧的 */
@@ -178,7 +185,7 @@ export function Component() {
       ) : doc ? (
         <div className="min-h-0 flex-1">
           <ResourceReader
-            key={`${doc.id}:${initialBlockIndex ?? ''}:${initialQuery}`}
+            key={`${doc.id}:${initialBlockIndex ?? ''}:${initialPage ?? ''}:${initialQuery}`}
             documentId={doc.id}
             blocks={blocks}
             pages={pages}
@@ -191,6 +198,7 @@ export function Component() {
             initialTocEdit={initialTocEdit}
             onTocSaved={() => void reloadToc()}
             initialBlockIndex={initialBlockIndex}
+            initialPage={initialPage}
             initialQuery={initialQuery}
           />
         </div>
