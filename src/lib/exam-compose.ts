@@ -9,6 +9,15 @@ export interface ComposeRequest {
   categories?: string[]
   questionTypes?: string[]
   sampleMode?: ExamSampleMode
+  /** 只在指定试题库的题目里组卷(套卷用) */
+  bankId?: string
+  /**
+   * 套卷范围分类(年份标签 / 章节名)。与 categories 不同, 它是**硬过滤**:
+   * 年份范围必须始终生效, 不能被分区自带的 categories 顶掉。
+   */
+  scopeCategories?: string[]
+  /** 套卷范围知识点, 命中 kp_question_map */
+  keyPoints?: string[]
 }
 
 export interface ComposeResult {
@@ -45,6 +54,9 @@ export async function composeExamIds(req: ComposeRequest): Promise<ComposeResult
     p_types: hasSections ? null : req.questionTypes?.length ? req.questionTypes : null,
     p_sample_mode: req.sampleMode ?? req.template?.sample_mode ?? 'random',
     p_order_mode: req.template?.order_mode ?? 'section',
+    p_bank_id: req.bankId ?? null,
+    p_scope_categories: req.scopeCategories?.length ? req.scopeCategories : null,
+    p_key_points: req.keyPoints?.length ? req.keyPoints : null,
   })
 
   if (error) throw new Error(error.message)

@@ -9,9 +9,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { useQuestionBanks, type QuestionBank } from '@/hooks/use-question-banks'
+import { useQuestionBanks, type BankItem, type QuestionBank } from '@/hooks/use-question-banks'
 import { useAuthStore } from '@/stores/auth-store'
 import { QuestionPicker } from './QuestionPicker'
+import { BankPapers } from './BankPapers'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { ArrowLeft, Check, ChevronDown, Globe, Library, Lock, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -49,8 +51,9 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
   const user = useAuthStore((s) => s.user)
   const { fetchBankItems, addBankItems, removeBankItem, removeBankItems } = useQuestionBanks()
   const isOwner = user?.id === bank.created_by
-  const [items, setItems] = useState<Array<{ id: string; bank_id: string; question_id: string; added_at: string; questions: Record<string, unknown> }>>([])
+  const [items, setItems] = useState<BankItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('questions')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
@@ -162,221 +165,234 @@ export function BankDetail({ bank, onBack, onEdit }: Props) {
         {isOwner && <Button variant="outline" size="sm" onClick={() => onEdit(bank)}>编辑</Button>}
       </div>
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm text-muted-foreground">
-            共 {items.length} 道题目{itemTotal > items.length && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{itemTotal} 个小题</>}{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
-          </p>
-          {selectedItems.size > 0 && (
-            <Button variant="destructive" size="sm" onClick={handleBatchRemove}>
-              <Trash2 className="h-3.5 w-3.5 mr-1" />删除选中 ({selectedItems.size})
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
-                {filterSubject || '学科'}
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-              <DropdownMenuItem onClick={() => setFilterSubject('')}>
-                <span className="text-muted-foreground">全部学科</span>
-                {!filterSubject && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-              {subjects.map((s) => (
-                <DropdownMenuItem key={s} onClick={() => setFilterSubject(s)}>
-                  {s}
-                  {filterSubject === s && <Check className="h-4 w-4 ml-auto" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
-                {filterCategory || '分类'}
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-              <DropdownMenuItem onClick={() => setFilterCategory('')}>
-                <span className="text-muted-foreground">全部分类</span>
-                {!filterCategory && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-              {categories.map((c) => (
-                <DropdownMenuItem key={c} onClick={() => setFilterCategory(c)}>
-                  {c}
-                  {filterCategory === c && <Check className="h-4 w-4 ml-auto" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
-                {filterType ? QUESTION_TYPE_LABELS[filterType as keyof typeof QUESTION_TYPE_LABELS] || filterType : '题型'}
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => setFilterType('')}>
-                <span className="text-muted-foreground">全部题型</span>
-                {!filterType && <Check className="h-4 w-4 ml-auto" />}
-              </DropdownMenuItem>
-              {types.map((t) => (
-                <DropdownMenuItem key={t} onClick={() => setFilterType(t)}>
-                  {QUESTION_TYPE_LABELS[t as keyof typeof QUESTION_TYPE_LABELS] || t}
-                  {filterType === t && <Check className="h-4 w-4 ml-auto" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {isOwner && (
-            <Button size="sm" onClick={() => setPickerOpen(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1" />添加题目
-            </Button>
-          )}
-        </div>
-      </div>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="questions" className="text-xs">题目</TabsTrigger>
+          <TabsTrigger value="papers" className="text-xs">套卷</TabsTrigger>
+        </TabsList>
 
-      {loading ? (
-        <Card>
-          <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
-            <Table className="table-fixed w-full min-w-[700px]">
-              <TableHeader>
-                <TableRow>
-                  {isOwner && <TableHead className="w-[40px]" />}
-                  <TableHead className="text-xs w-[50%]">题目</TableHead>
-                  <TableHead className="text-xs w-[80px]">学科</TableHead>
-                  <TableHead className="text-xs w-[110px]">分类</TableHead>
-                  <TableHead className="text-xs w-[70px]">题型</TableHead>
-                  <TableHead className="text-xs w-[80px]">知识点</TableHead>
-                  {isOwner && <TableHead className="text-xs w-[40px]" />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[...Array(5)].map((_, i) => (
-                  <TableRow key={i}>
-                    {isOwner && <TableCell><Skeleton className="h-4 w-4" /></TableCell>}
-                    <TableCell className="py-2"><Skeleton className="h-4 w-3/4" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-10" /></TableCell>
-                    <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
-                    {isOwner && <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ) : items.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Library className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
-            <p className="text-sm text-muted-foreground">试题库为空</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">点击"添加题目"从题库中选择</p>
-            <Button size="sm" className="mt-4" onClick={() => setPickerOpen(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1" />添加题目
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
-            <Table className="table-fixed w-full min-w-[700px]">
-              <TableHeader>
-                <TableRow>
-                  {isOwner && (
-                    <TableHead className="w-[40px]">
-                      <button type="button" onClick={toggleAll} className="flex items-center">
-                        <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${filteredAllChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
-                          {filteredAllChecked && <Check className="h-3 w-3" />}
-                        </div>
-                      </button>
-                    </TableHead>
-                  )}
-                  <TableHead className="text-xs w-[50%]">题目</TableHead>
-                  <TableHead className="text-xs w-[80px]">学科</TableHead>
-                  <TableHead className="text-xs w-[110px]">分类</TableHead>
-                  <TableHead className="text-xs w-[70px]">题型</TableHead>
-                  <TableHead className="text-xs w-[80px]">知识点</TableHead>
-                  {isOwner && <TableHead className="text-xs w-[40px]" />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredItems.map((item) => {
-                  const q = item.questions
-                  const checked = selectedItems.has(item.id)
-                  return (
-                    <TableRow key={item.id}>
-                      {isOwner && (
-                        <TableCell>
-                          <button type="button" onClick={() => toggleItem(item.id)}
-                            className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'}`}>
-                            {checked && <Check className="h-3 w-3" />}
-                          </button>
-                        </TableCell>
-                      )}
-                      <TableCell className="text-xs py-2 overflow-hidden text-ellipsis whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
-                        {(() => {
-                          const cats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]
-                          if (!cats.length) return '—'
-                          const yearPattern = /^\d{4}年真题$/
-                          const yearCats = cats.filter((c: string) => yearPattern.test(c))
-                          const otherCats = cats.filter((c: string) => !yearPattern.test(c))
-                          return (
-                            <span className="inline-flex gap-1">
-                              {yearCats.length >= 2 && (
-                                <HoverCard openDelay={200} closeDelay={100}>
-                                  <HoverCardTrigger asChild>
-                                    <span className="inline-block rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1 text-[10px] font-medium cursor-default">{yearCats.length}年真题</span>
-                                  </HoverCardTrigger>
-                                  <HoverCardContent side="bottom" align="start" className="w-auto px-3 py-2 text-xs">
-                                    <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {yearCats.map((y: string) => (
-                                        <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
-                                      ))}
-                                    </div>
-                                  </HoverCardContent>
-                                </HoverCard>
-                              )}
-                              {yearCats.length === 1 && (
-                                <span>{yearCats[0]}</span>
-                              )}
-                              {otherCats.map((cat: string, i: number) => (
-                                <span key={cat}>
-                                  {(yearCats.length >= 1 || i > 0) && '、'}{cat}
-                                </span>
-                              ))}
-                            </span>
-                          )
-                        })()}
-                      </TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q?.question_type as keyof typeof QUESTION_TYPE_LABELS] || '—'}</TableCell>
-                      <TableCell className="text-xs py-2 text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">{q?.key_points as string || '—'}</TableCell>
-                      {isOwner && (
-                        <TableCell className="text-xs py-2">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => handleRemove(item.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </TableCell>
-                      )}
+        <TabsContent value="questions" className="space-y-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm text-muted-foreground">
+                共 {items.length} 道题目{itemTotal > items.length && <><Separator orientation="vertical" className="mx-1.5 inline-block h-3 align-middle" />{itemTotal} 个小题</>}{filteredItems.length !== items.length ? ` (筛选 ${filteredItems.length})` : ''}
+              </p>
+              {selectedItems.size > 0 && (
+                <Button variant="destructive" size="sm" onClick={handleBatchRemove}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />删除选中 ({selectedItems.size})
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                    {filterSubject || '学科'}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  <DropdownMenuItem onClick={() => setFilterSubject('')}>
+                    <span className="text-muted-foreground">全部学科</span>
+                    {!filterSubject && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                  {subjects.map((s) => (
+                    <DropdownMenuItem key={s} onClick={() => setFilterSubject(s)}>
+                      {s}
+                      {filterSubject === s && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                    {filterCategory || '分类'}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  <DropdownMenuItem onClick={() => setFilterCategory('')}>
+                    <span className="text-muted-foreground">全部分类</span>
+                    {!filterCategory && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                  {categories.map((c) => (
+                    <DropdownMenuItem key={c} onClick={() => setFilterCategory(c)}>
+                      {c}
+                      {filterCategory === c && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs h-8">
+                    {filterType ? QUESTION_TYPE_LABELS[filterType as keyof typeof QUESTION_TYPE_LABELS] || filterType : '题型'}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => setFilterType('')}>
+                    <span className="text-muted-foreground">全部题型</span>
+                    {!filterType && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                  {types.map((t) => (
+                    <DropdownMenuItem key={t} onClick={() => setFilterType(t)}>
+                      {QUESTION_TYPE_LABELS[t as keyof typeof QUESTION_TYPE_LABELS] || t}
+                      {filterType === t && <Check className="h-4 w-4 ml-auto" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {isOwner && (
+                <Button size="sm" onClick={() => setPickerOpen(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />添加题目
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {loading ? (
+            <Card>
+              <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
+                <Table className="table-fixed w-full min-w-[700px]">
+                  <TableHeader>
+                    <TableRow>
+                      {isOwner && <TableHead className="w-[40px]" />}
+                      <TableHead className="text-xs w-[50%]">题目</TableHead>
+                      <TableHead className="text-xs w-[80px]">学科</TableHead>
+                      <TableHead className="text-xs w-[110px]">分类</TableHead>
+                      <TableHead className="text-xs w-[70px]">题型</TableHead>
+                      <TableHead className="text-xs w-[80px]">知识点</TableHead>
+                      {isOwner && <TableHead className="text-xs w-[40px]" />}
                     </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                  </TableHeader>
+                  <TableBody>
+                    {[...Array(5)].map((_, i) => (
+                      <TableRow key={i}>
+                        {isOwner && <TableCell><Skeleton className="h-4 w-4" /></TableCell>}
+                        <TableCell className="py-2"><Skeleton className="h-4 w-3/4" /></TableCell>
+                        <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+                        <TableCell className="py-2"><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell className="py-2"><Skeleton className="h-4 w-10" /></TableCell>
+                        <TableCell className="py-2"><Skeleton className="h-4 w-12" /></TableCell>
+                        {isOwner && <TableCell className="py-2"><Skeleton className="h-7 w-7" /></TableCell>}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : items.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Library className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground">试题库为空</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">点击"添加题目"从题库中选择</p>
+                <Button size="sm" className="mt-4" onClick={() => setPickerOpen(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />添加题目
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0 overflow-x-scroll scrollbar-visible">
+                <Table className="table-fixed w-full min-w-[700px]">
+                  <TableHeader>
+                    <TableRow>
+                      {isOwner && (
+                        <TableHead className="w-[40px]">
+                          <button type="button" onClick={toggleAll} className="flex items-center">
+                            <div className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${filteredAllChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'}`}>
+                              {filteredAllChecked && <Check className="h-3 w-3" />}
+                            </div>
+                          </button>
+                        </TableHead>
+                      )}
+                      <TableHead className="text-xs w-[50%]">题目</TableHead>
+                      <TableHead className="text-xs w-[80px]">学科</TableHead>
+                      <TableHead className="text-xs w-[110px]">分类</TableHead>
+                      <TableHead className="text-xs w-[70px]">题型</TableHead>
+                      <TableHead className="text-xs w-[80px]">知识点</TableHead>
+                      {isOwner && <TableHead className="text-xs w-[40px]" />}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredItems.map((item) => {
+                      const q = item.questions
+                      const checked = selectedItems.has(item.id)
+                      return (
+                        <TableRow key={item.id}>
+                          {isOwner && (
+                            <TableCell>
+                              <button type="button" onClick={() => toggleItem(item.id)}
+                                className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary/50'}`}>
+                                {checked && <Check className="h-3 w-3" />}
+                              </button>
+                            </TableCell>
+                          )}
+                          <TableCell className="text-xs py-2 overflow-hidden text-ellipsis whitespace-nowrap">{q?.question_text as string || '—'}</TableCell>
+                          <TableCell className="text-xs py-2 text-muted-foreground">{q?.subject as string || '—'}</TableCell>
+                          <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
+                            {(() => {
+                              const cats = ((q as any)?.categories?.length ? (q as any).categories : (q as any)?.category ? [(q as any).category] : []) as string[]
+                              if (!cats.length) return '—'
+                              const yearPattern = /^\d{4}年真题$/
+                              const yearCats = cats.filter((c: string) => yearPattern.test(c))
+                              const otherCats = cats.filter((c: string) => !yearPattern.test(c))
+                              return (
+                                <span className="inline-flex gap-1">
+                                  {yearCats.length >= 2 && (
+                                    <HoverCard openDelay={200} closeDelay={100}>
+                                      <HoverCardTrigger asChild>
+                                        <span className="inline-block rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1 text-[10px] font-medium cursor-default">{yearCats.length}年真题</span>
+                                      </HoverCardTrigger>
+                                      <HoverCardContent side="bottom" align="start" className="w-auto px-3 py-2 text-xs">
+                                        <p className="text-muted-foreground mb-1.5">该题在以下年份出现过：</p>
+                                        <div className="flex flex-wrap gap-1">
+                                          {yearCats.map((y: string) => (
+                                            <span key={y} className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-medium whitespace-nowrap">{y}</span>
+                                          ))}
+                                        </div>
+                                      </HoverCardContent>
+                                    </HoverCard>
+                                  )}
+                                  {yearCats.length === 1 && (
+                                    <span>{yearCats[0]}</span>
+                                  )}
+                                  {otherCats.map((cat: string, i: number) => (
+                                    <span key={cat}>
+                                      {(yearCats.length >= 1 || i > 0) && '、'}{cat}
+                                    </span>
+                                  ))}
+                                </span>
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell className="text-xs py-2 text-muted-foreground">{QUESTION_TYPE_LABELS[q?.question_type as keyof typeof QUESTION_TYPE_LABELS] || '—'}</TableCell>
+                          <TableCell className="text-xs py-2 text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">{q?.key_points as string || '—'}</TableCell>
+                          {isOwner && (
+                            <TableCell className="text-xs py-2">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                onClick={() => handleRemove(item.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="papers">
+          <BankPapers bank={bank} items={items} canEdit={isOwner} />
+        </TabsContent>
+      </Tabs>
 
       <QuestionPicker
         open={pickerOpen}

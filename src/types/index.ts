@@ -579,6 +579,37 @@ export interface ExamTemplate {
   builtin?: boolean
 }
 
+/** 套卷来源: real = 历年真题(按年份), mock = 模拟真题(按章节/知识点/综合) */
+export type BankPaperKind = 'real' | 'mock'
+
+/** 套卷范围: year 年份真题 / chapter 章节 / key_point 知识点 / comprehensive 整库综合 */
+export type BankPaperScopeType = 'year' | 'chapter' | 'key_point' | 'comprehensive'
+
+/**
+ * 试题库套卷: 「题库范围 + 组卷模板」生成的一份**固定题单**。
+ * question_ids 在生成时冻结 —— 同一套卷反复练, 分数才可比; 真题也才能保住卷面原序。
+ * template 是模板快照, 模板后续被改/删不影响已生成的卷。
+ */
+export interface QuestionBankPaper {
+  id: string
+  bank_id: string
+  created_by: string
+  name: string
+  kind: BankPaperKind
+  scope_type: BankPaperScopeType
+  /** 仅 scope_type='year' 时有值 */
+  year: number | null
+  /** 年份分类标签 / 章节名 / 知识点名(可多选); 综合卷为空 */
+  scope_values: string[]
+  subject: string[] | null
+  duration_min: number
+  template: ExamTemplate
+  question_ids: string[]
+  generated_at: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ExamComposeStat {
   type: string | null
   requested: number

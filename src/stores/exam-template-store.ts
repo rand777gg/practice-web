@@ -112,7 +112,8 @@ function normalizeCover(raw: unknown): ExamTemplateCover | null {
   }
 }
 
-function rowToTemplate(row: Record<string, unknown>): ExamTemplate {
+/** 读一行 exam_templates(或一份模板快照 JSONB) → 模板对象 */
+export function normalizeTemplate(row: Record<string, unknown>): ExamTemplate {
   return {
     id: String(row.id),
     user_id: row.user_id == null ? null : String(row.user_id),
@@ -162,7 +163,7 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
       set({ isLoading: false, error: error.message })
       return
     }
-    set({ templates: (data ?? []).map((r) => rowToTemplate(r as Record<string, unknown>)), isLoading: false })
+    set({ templates: (data ?? []).map((r) => normalizeTemplate(r as Record<string, unknown>)), isLoading: false })
   },
 
   create: async (userId, draft) => {
@@ -189,7 +190,7 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
       set({ error: error?.message ?? 'Failed to create template' })
       return null
     }
-    const created = rowToTemplate(data as Record<string, unknown>)
+    const created = normalizeTemplate(data as Record<string, unknown>)
     set({ templates: [...get().templates, created] })
     return created
   },
@@ -218,7 +219,7 @@ export const useExamTemplateStore = create<ExamTemplateState>((set, get) => ({
       set({ error: error?.message ?? 'Failed to update template' })
       return
     }
-    const updated = rowToTemplate(data as Record<string, unknown>)
+    const updated = normalizeTemplate(data as Record<string, unknown>)
     set({ templates: get().templates.map((t) => (t.id === id ? updated : t)) })
   },
 

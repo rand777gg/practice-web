@@ -5433,3 +5433,242 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.ai_usage_overview(integer) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.ai_usage_overview(integer) TO authenticated;
+
+-- ============================================================================
+-- Section 73: 修回 questions 的写入 —— Section 68 回收执行权时把触发器一起带走了
+--   Section 68 把 refresh_question_meta_cache / refresh_kp_question_map /
+--   sync_dup_cache_question 的 EXECUTE 从 authenticated 收回, 本意是"客户端别自己
+--   触发全表重建"。但 questions 上那两个触发器函数是 **SECURITY INVOKER**,
+--   触发器以调用者身份执行, 里面的 PERFORM 于是在 42501 上被拒。
+--   表现: 管理员在题库页删题 → PostgREST 把 42501 映射成 403, 浏览器只看到
+--   "Failed to load resource: the server responded with a status of 403"。
+--   删/改/增一起挂(row 级 trg_dup_cache_sync 先炸 UPDATE/INSERT, statement 级
+--   trg_refresh_question_meta 炸 DELETE)。表权限和 is_admin() 都是好的, 别去查 RLS。
+--
+--   修法: 这两个函数只可能由 questions 的写入触发, 而该表的写策略已经限定
+--   is_admin(), 所以给它们 SECURITY DEFINER 不会给客户端多开任何能力
+--   (refresh_question_meta_cache 本身已经是 SECURITY DEFINER, 不新增暴露面)。
+--   不要反过来给 authenticated 重新 GRANT EXECUTE —— 那正是 Section 68 要封的口子。
+--   触发器函数直接调用会被 Postgres 拒掉("can only be called as triggers"),
+--   所以权限维持原样即可, 这里不动 ACL。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.trg_refresh_question_meta()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$ BEGIN PERFORM public.refresh_question_meta_cache(); PERFORM public.refresh_kp_question_map(); RETURN NULL; END; $$;
+
+CREATE OR REPLACE FUNCTION public.trg_dup_cache_sync()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM public.question_dup_cache WHERE question_id = OLD.id;
+  ELSE
+    PERFORM public.sync_dup_cache_question(NEW.id);
+  END IF;
+  RETURN NULL;
+END
+$$;
+
+-- ============================================================================
+-- Section 74: 试题库套卷 —— 历年真题(按年份) 与 模拟真题(按章节/知识点/综合)
+--   套卷 = 「题库范围 + 组卷模板」生成出来的一份**固定题单**。范围直接取题目自身的标签:
+--     历年真题: categories 里的 `YYYY年真题`(平台既有约定, 见 Section 51)
+--     章节模拟: 该库里除年份标签以外的 categories
+--     知识点模拟: key_points 按 [,，;；] 拆出的知识点, 走 kp_question_map 保证与
+--                 平台知识点统计同一口径(不是 ILIKE 扫 key_points)
+--     综合模拟: 整库
+--   题单落库(question_ids)而不是每次开考重抽, 有两个理由:
+--     - 同一套卷反复练, 分数才可比;
+--     - 真题必须按卷面原序抽题(sample_mode='seq'), 重抽会让"完形第 3 空"变成别的题。
+--   想换一套就点「重新组卷」, 已开考的 exam_sessions 各自留着当时的 question_ids 快照,
+--   不受影响。template 存模板快照, 之后模板被改/删, 已生成的卷照旧能还原卷首与排版。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.question_bank_papers (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_id      UUID NOT NULL REFERENCES public.question_banks(id) ON DELETE CASCADE,
+  created_by   UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('real', 'mock')),
+  scope_type   TEXT NOT NULL
+                 CHECK (scope_type IN ('year', 'chapter', 'key_point', 'comprehensive')),
+  -- 仅 scope_type='year' 时有值; 年份同时冗余进 scope_values(`2024年真题`)当分类过滤用
+  year         INT,
+  -- 章节名 / 知识点名(可多选); 综合卷为空数组
+  scope_values JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- 该卷限定的学科, 取模板快照的整卷学科; null = 不限
+  subject      TEXT[],
+  duration_min INT NOT NULL DEFAULT 60,
+  -- 组卷模板快照(含 sections/cover/layout)
+  template     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  question_ids UUID[] NOT NULL DEFAULT '{}',
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_qbp_bank    ON public.question_bank_papers(bank_id, kind, year DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_qbp_creator ON public.question_bank_papers(created_by);
+
+ALTER TABLE public.question_bank_papers ENABLE ROW LEVEL SECURITY;
+
+-- 读: 跟着试题库的可见性走(公开库的套卷人人可看可考)
+DROP POLICY IF EXISTS qbp_select ON public.question_bank_papers;
+CREATE POLICY qbp_select ON public.question_bank_papers FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.question_banks b
+    WHERE b.id = bank_id AND (b.is_public = true OR b.created_by = auth.uid() OR public.is_admin())
+  ));
+
+-- 写: 只有库主/管理员(与 question_bank_items 同口径), 且 created_by 必须是本人
+DROP POLICY IF EXISTS qbp_insert ON public.question_bank_papers;
+CREATE POLICY qbp_insert ON public.question_bank_papers FOR INSERT TO authenticated
+  WITH CHECK (
+    created_by = auth.uid() AND EXISTS (
+      SELECT 1 FROM public.question_banks b
+      WHERE b.id = bank_id AND (b.created_by = auth.uid() OR public.is_admin())
+    )
+  );
+
+DROP POLICY IF EXISTS qbp_update ON public.question_bank_papers;
+CREATE POLICY qbp_update ON public.question_bank_papers FOR UPDATE
+  USING (EXISTS (
+    SELECT 1 FROM public.question_banks b
+    WHERE b.id = bank_id AND (b.created_by = auth.uid() OR public.is_admin())
+  ));
+
+DROP POLICY IF EXISTS qbp_delete ON public.question_bank_papers;
+CREATE POLICY qbp_delete ON public.question_bank_papers FOR DELETE
+  USING (EXISTS (
+    SELECT 1 FROM public.question_banks b
+    WHERE b.id = bank_id AND (b.created_by = auth.uid() OR public.is_admin())
+  ));
+
+DROP TRIGGER IF EXISTS trg_question_bank_papers_updated_at ON public.question_bank_papers;
+CREATE TRIGGER trg_question_bank_papers_updated_at BEFORE UPDATE ON public.question_bank_papers
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 74.1 compose_exam 加「题库范围」—— 同一个模板在某个试题库里组卷
+--   新增的三个参数全部可选, 老的 6 参数命名调用行为完全不变(POST 时缺省即 NULL):
+--     p_bank_id          只在指定试题库的题目里抽题
+--     p_scope_categories 套卷范围分类, **硬过滤(AND)**。与分区 categories 的「回落」语义
+--                        不同: 年份/章节范围必须始终生效, 不能被分区自带的 categories 顶掉,
+--                        否则一份"2024 年真题卷"会混进别的年份。
+--     p_key_points       知识点范围, 命中 kp_question_map
+-- ============================================================================
+DROP FUNCTION IF EXISTS public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT);
+
+CREATE OR REPLACE FUNCTION public.compose_exam(
+  p_subjects         TEXT[],
+  p_categories       TEXT[],
+  p_sections         JSONB,
+  p_types            TEXT[] DEFAULT NULL,
+  p_sample_mode      TEXT DEFAULT 'random',
+  p_order_mode       TEXT DEFAULT 'section',
+  p_bank_id          UUID DEFAULT NULL,
+  p_scope_categories TEXT[] DEFAULT NULL,
+  p_key_points       TEXT[] DEFAULT NULL
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  v_uid  UUID := auth.uid();
+  v_sec  JSONB;
+  v_ids  UUID[];
+  v_all  UUID[] := ARRAY[]::UUID[];
+  v_stat JSONB  := '[]'::jsonb;
+  v_want INT;
+  v_sec_cats TEXT[];
+  v_sec_subjs TEXT[];
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'not authenticated'; END IF;
+
+  IF p_sections IS NULL OR jsonb_array_length(p_sections) = 0 THEN
+    RETURN jsonb_build_object('question_ids', '[]'::jsonb, 'sections', '[]'::jsonb);
+  END IF;
+
+  FOR v_sec IN SELECT value FROM jsonb_array_elements(p_sections) AS t(value) LOOP
+    v_want := GREATEST(COALESCE(NULLIF(v_sec->>'count', '')::INT, 0), 0);
+    CONTINUE WHEN v_want = 0;
+
+    -- 分区自带分类时优先用它, 否则回落到整卷分类
+    v_sec_cats := CASE
+      WHEN jsonb_typeof(v_sec->'categories') = 'array' AND jsonb_array_length(v_sec->'categories') > 0
+      THEN ARRAY(SELECT jsonb_array_elements_text(v_sec->'categories'))
+      ELSE NULL END;
+
+    -- 分区自带学科(可多选数组, 兼容旧版单字符串)时按该批学科抽题; 缺省回落整卷学科(p_subjects)
+    v_sec_subjs := CASE
+      WHEN jsonb_typeof(v_sec->'subject') = 'array' AND jsonb_array_length(v_sec->'subject') > 0
+      THEN ARRAY(SELECT trim(x) FROM jsonb_array_elements_text(v_sec->'subject') AS x WHERE trim(x) <> '')
+      WHEN jsonb_typeof(v_sec->'subject') = 'string' AND NULLIF(v_sec->>'subject', '') IS NOT NULL
+      THEN ARRAY[v_sec->>'subject']
+      ELSE NULL END;
+
+    WITH picked AS (
+      SELECT q.id,
+             CASE p_sample_mode
+               WHEN 'wrong_first'  THEN -COALESCE(a.wrong_count, 0)
+               WHEN 'unseen_first' THEN  COALESCE(a.answer_count, 0)
+               ELSE 0
+             END AS rank_key,
+             q.seq_number,
+             random() AS rnd
+      FROM public.questions q
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) FILTER (WHERE NOT ua.is_correct) AS wrong_count,
+               COUNT(*) AS answer_count
+        FROM public.user_answers ua
+        WHERE ua.user_id = v_uid AND ua.question_id = q.id
+      ) a ON TRUE
+      WHERE (v_sec_subjs IS NOT NULL AND q.subject = ANY(v_sec_subjs)
+             OR v_sec_subjs IS NULL
+                AND (p_subjects IS NULL OR cardinality(p_subjects) = 0 OR q.subject = ANY(p_subjects)))
+        AND ((NULLIF(v_sec->>'type', '') IS NOT NULL AND q.question_type = v_sec->>'type')
+             OR (NULLIF(v_sec->>'type', '') IS NULL
+                 AND (p_types IS NULL OR cardinality(p_types) = 0 OR q.question_type = ANY(p_types))))
+        AND (cardinality(COALESCE(v_sec_cats, p_categories)) IS NULL
+             OR cardinality(COALESCE(v_sec_cats, p_categories)) = 0
+             OR q.categories ?| COALESCE(v_sec_cats, p_categories))
+        AND (p_bank_id IS NULL
+             OR EXISTS (SELECT 1 FROM public.question_bank_items i
+                        WHERE i.bank_id = p_bank_id AND i.question_id = q.id))
+        AND (p_scope_categories IS NULL OR cardinality(p_scope_categories) = 0
+             OR q.categories ?| p_scope_categories)
+        AND (p_key_points IS NULL OR cardinality(p_key_points) = 0
+             OR EXISTS (SELECT 1 FROM public.kp_question_map m
+                        WHERE m.question_id = q.id AND m.kp = ANY(p_key_points)))
+        AND NOT (q.id = ANY(v_all))
+      ORDER BY rank_key ASC,
+               CASE WHEN p_sample_mode = 'seq' THEN q.seq_number END ASC NULLS LAST,
+               rnd
+      LIMIT v_want
+    )
+    SELECT COALESCE(
+             ARRAY(
+               SELECT p.id FROM picked p
+               ORDER BY p.rank_key ASC,
+                        CASE WHEN p_sample_mode = 'seq' THEN p.seq_number END ASC NULLS LAST,
+                        p.rnd
+             ),
+             ARRAY[]::UUID[]
+           )
+      INTO v_ids;
+
+    v_all  := v_all || v_ids;
+    v_stat := v_stat || jsonb_build_object(
+      'type',      NULLIF(v_sec->>'type', ''),
+      'requested', v_want,
+      'got',       cardinality(v_ids)
+    );
+  END LOOP;
+
+  IF p_order_mode = 'shuffle' THEN
+    SELECT ARRAY(SELECT u FROM unnest(v_all) AS u ORDER BY random()) INTO v_all;
+  END IF;
+
+  RETURN jsonb_build_object('question_ids', to_jsonb(v_all), 'sections', v_stat);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT, UUID, TEXT[], TEXT[]) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.compose_exam(TEXT[], TEXT[], JSONB, TEXT[], TEXT, TEXT, UUID, TEXT[], TEXT[]) TO authenticated;
