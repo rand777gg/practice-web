@@ -413,20 +413,27 @@ export function ResourceReader({
     scrollElementToCenter(root, el)
 
     /*
-     * 落位之后复核一次。
+     * 落位之后复核, 一直复核到不再偏为止(最多 6 次)。
      *
      * 挂载那一刻容器/内容高度未必已经是终值(带 ?block= 进来时实测偶发落偏两千多像素,
      * 表现就是"点了检索结果却停在半路")。平滑滚动是按发起时的排版算的目标位置, 之后排版一变
      * 就停偏了, 所以等它停下来再看一眼, 偏了就纠一次(这次直接落位, 不再动画)。
      *
+     * 为什么不是"纠一次就完": 区块带 content-visibility(长文档靠它才不卡), 屏幕外的块是占位高度,
+     * 滚过去之后它们才一帧一帧渲染成真实高度, 于是纠完一次可能又偏了 —— 实测只纠一次会停在
+     * 偏 250px 的地方, 而纠到不动为止就稳定落在中间。
+     *
      * 只有用户在这期间没真的自己滚过才纠 —— 否则会把人家拽回去。
      */
     let cancelled = false
+    let timer = 0
+    let attempts = 0
     const userMoved = () => { cancelled = true }
     window.addEventListener('wheel', userMoved, { passive: true })
     window.addEventListener('touchstart', userMoved, { passive: true })
     window.addEventListener('keydown', userMoved)
-    const timer = window.setTimeout(() => {
+
+    const settle = () => {
       if (!cancelled && locateTargetRef.current === target) {
         const now = blockRefs.current.get(target)
         if (now) {
@@ -435,12 +442,22 @@ export function ResourceReader({
           const expected = now.offsetHeight <= root.clientHeight
             ? (root.clientHeight - now.offsetHeight) / 2
             : 0
-          if (Math.abs(eRect.top - cRect.top - expected) > 24) scrollElementToCenter(root, now, 'auto')
+          if (Math.abs(eRect.top - cRect.top - expected) > 24) {
+            scrollElementToCenter(root, now, 'auto')
+            attempts += 1
+            if (attempts < 6) timer = window.setTimeout(settle, 120)
+          }
         }
       }
-      window.removeEventListener('wheel', userMoved)
-      window.removeEventListener('touchstart', userMoved)
-      window.removeEventListener('keydown', userMoved)
+    }
+    // 第一次等平滑滚动停下来(700ms), 之后每 120ms 复看一次
+    timer = window.setTimeout(() => {
+      settle()
+      if (attempts === 0) {
+        window.removeEventListener('wheel', userMoved)
+        window.removeEventListener('touchstart', userMoved)
+        window.removeEventListener('keydown', userMoved)
+      }
     }, 700)
 
     return () => {
@@ -493,12 +510,61 @@ export function ResourceReader({
     return () => ro.disconnect()
   }, [blocks, viewMode, measureOffsets])
 
+  /**
+   * 二分出来的候选块, 再按**真实 rect** 在它附近校准一次(±40 段, 也就几十次 rect 读取)。
+   *
+   * 为什么需要: 区块带 content-visibility(长文档靠它才不卡), 屏幕外的块给的是占位高度,
+   * 所以偏移量表在大跳之后可能已经过期 —— 表现是选中的块比实际压住视口顶边的那一块**早七八段**,
+   * PDF 那边也就跟着差一页。全量重量一次要遍历几千个块(实测 4ms), 每次滚动都做不值;
+   * 在候选附近走一圈只要几十次读取, 顺手还把"偏移量表过期"这类问题一起兜住了。
+   */
+  const refineByRect = useCallback((root: HTMLElement, candidate: number, target: number): number => {
+    const range = 40
+    // 和 measureOffsets 同一套坐标: base = 容器顶 - scrollTop, 于是 top 就是"内容坐标系里的位置"
+    const base = root.getBoundingClientRect().top - root.scrollTop
+    let best = candidate
+    let bestTop = -Infinity
+    for (let idx = Math.max(0, candidate - range); idx <= candidate + range; idx++) {
+      const el = blockRefs.current.get(idx)
+      if (!el) continue
+      const top = el.getBoundingClientRect().top - base
+      if (top <= target && top > bestTop) { bestTop = top; best = idx }
+    }
+    return bestTop === -Infinity ? candidate : best
+  }, [])
+
   useEffect(() => {
     if (viewMode !== 'blocks') return
     const root = mdScrollRef.current
     if (!root) return
     let raf = 0
+    let followUp = 0
     let settle: number | null = null
+
+    /** 选一次"压住视口顶边的那一块", 返回选中的块号 */
+    const runSpy = (): number => {
+      // 换窗口比例/拖面板会让正文重排, 每个块的偏移量随即作废, 但重排本身会带着 scrollTop
+      // 一起变(滚动锚定要保住同一段文字), 于是跟着来的这次 scroll 事件就是"新 scrollTop + 旧偏移量"。
+      // 用它算出来的块是错的 —— 表现就是一换比例, 高亮和 PDF 那一页跳到别的段上。
+      // 所以先用一次 scrollHeight 判断内容高度有没有变(单次读取, 很便宜), 变了就重量。
+      if (root.scrollHeight !== measuredHeightRef.current) measureOffsets()
+
+      const list = offsetsRef.current
+      if (list.length === 0) return -1
+      // 取"盖住视口顶边的那一块", 而不是"顶部往下 90px 内最靠后的那一块":
+      // 后者在短段落上会选中定位目标的下一个块, 让定位结果看起来偏了一屏。
+      const target = root.scrollTop + 4
+      let lo = 0
+      let hi = list.length - 1
+      let found = list[0].idx
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1
+        if (list[mid].top <= target) { found = list[mid].idx; lo = mid + 1 } else hi = mid - 1
+      }
+      const idx = refineByRect(root, found, target)
+      setActiveBlockIndex((prev) => (prev === idx ? prev : idx))
+      return idx
+    }
 
     const onScroll = () => {
       // 每次滚动都重置"已经滚完"的计时。程序化定位期间一直挡着监听, 直到滚动真正停下 ——
@@ -519,34 +585,43 @@ export function ResourceReader({
         if (Date.now() < suppressSpyUntil.current) return
         if (pendingLocateRef.current !== null) return
 
-        // 换窗口比例/拖面板会让正文重排, 每个块的偏移量随即作废, 但重排本身会带着 scrollTop
-        // 一起变(滚动锚定要保住同一段文字), 于是跟着来的这次 scroll 事件就是"新 scrollTop + 旧偏移量"。
-        // 用它算出来的块是错的 —— 表现就是一换比例, 高亮和 PDF 那一页跳到别的段上。
-        // 所以先用一次 scrollHeight 判断内容高度有没有变(单次读取, 很便宜), 变了就重量。
-        if (root.scrollHeight !== measuredHeightRef.current) measureOffsets()
+        let last = runSpy()
 
-        const list = offsetsRef.current
-        if (list.length === 0) return
-        // 取"盖住视口顶边的那一块", 而不是"顶部往下 90px 内最靠后的那一块":
-        // 后者在短段落上会选中定位目标的下一个块, 让定位结果看起来偏了一屏。
-        const target = root.scrollTop + 4
-        let lo = 0
-        let hi = list.length - 1
-        let found = list[0].idx
-        while (lo <= hi) {
-          const mid = (lo + hi) >> 1
-          if (list[mid].top <= target) { found = list[mid].idx; lo = mid + 1 } else hi = mid - 1
+        /*
+         * 大跳之后再校几帧, 直到选中的块不再变。
+         *
+         * 区块带 content-visibility, 刚滚进视口的那些块是**后面几帧**才真正渲染出来的, 尺寸一变,
+         * 它们前面的偏移量就跟着动 —— 实测一次上千段的跳跃之后, 选中块会比实际压住顶边的那一块
+         * 早 8-9 段, 而且因为上下两侧的伸缩互相抵消, scrollHeight 根本没变, 光看高度是发现不了的。
+         * 所以这里按"选出来的块是否变了"收敛: 正常滚动第一轮就收敛(多花一次二分 + 几十次 rect 读取,
+         * 约 0.1ms), 只有真在重排的那几帧才会多走两轮。
+         */
+        if (followUp) cancelAnimationFrame(followUp)
+        followUp = 0
+        const settleSpy = (left: number) => {
+          if (left <= 0) return
+          followUp = requestAnimationFrame(() => {
+            followUp = 0
+            if (!autoFollowRef.current) return
+            if (Date.now() < suppressSpyUntil.current) return
+            if (pendingLocateRef.current !== null) return
+            const next = runSpy()
+            if (next === last) return
+            last = next
+            settleSpy(left - 1)
+          })
         }
-        setActiveBlockIndex(found)
+        settleSpy(4)
       })
     }
     root.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       root.removeEventListener('scroll', onScroll)
       if (raf) cancelAnimationFrame(raf)
+      if (followUp) cancelAnimationFrame(followUp)
       if (settle !== null) window.clearTimeout(settle)
     }
-  }, [viewMode, measureOffsets])
+  }, [viewMode, measureOffsets, refineByRect])
 
   const submitPage = () => {
     const page = Number(pageInput.trim())
@@ -863,7 +938,7 @@ export function ResourceReader({
                         ? `把落点设在这一段 (第 ${block.pageNo} 页)`
                         : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
-                        'group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
+                        'lib-block group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
                         // 外挂标签的位置**常驻**: 只在选中那一块身上加减, 换一段就要跳 14px, 还会带着滚动锚定一起抖
                         'mt-3.5',
                         flashIndex === block.blockIndex && 'animate-flash',
