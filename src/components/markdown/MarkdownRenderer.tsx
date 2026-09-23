@@ -1,12 +1,32 @@
 import { useMemo, useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import type { PluggableList } from 'unified'
 import { X, ZoomIn } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import 'katex/contrib/mhchem'
+
+/**
+ * 允许清单: 在 GitHub 默认白名单上放开本平台真在用的几样 —— 笔记里会直接写 <video>;
+ * table 的对齐属性、img 的尺寸/懒加载。
+ * 明确**不**允许: script / iframe / srcdoc / 事件属性 / javascript: 链接。
+ * 其中 iframe 是实测能执行脚本的那一个(srcdoc 里的 <script> 会跑), 而笔记内容里没有
+ * 需要内嵌 iframe 的场景(视频走 <video>), 所以干脆整类禁掉。
+ */
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'video', 'source'],
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [...(defaultSchema.attributes?.['*'] ?? []), 'className', 'id'],
+    img: [...(defaultSchema.attributes?.img ?? []), 'width', 'height', 'loading', 'title'],
+    video: ['src', 'controls', 'width', 'height', 'poster', 'preload'],
+    source: ['src', 'type'],
+  },
+}
 
 // Video player chunk is only fetched when a <video> appears in the markdown
 const MarkdownVideo = lazy(() => import('./MarkdownVideo'))
@@ -164,10 +184,17 @@ export function MarkdownRenderer({ content, className, onImageAction }: Props) {
    * 原来是从 cdn.jsdelivr.net 拉 MathJax 脚本, 再异步 typesetPromise —— 首次要等网络, 拿不到就
    * 整篇一个公式都不显示; 而且那之前公式已经被插件换成裸 \(...\) 文本, 用户看到的是定界符本身。
    * KaTeX 是本地依赖, 渲染在构建好的 HTML 里, 既没有网络依赖也没有那次异步排版。
+   *
+   * rehype-sanitize 的位置很关键, 必须在 rehypeRaw **之后**、rehypeKatex **之前**:
+   *   · rehypeRaw 会把 markdown 里的原始 HTML 解析成节点 —— 而笔记/文献/题库内容有别人的手笔
+   *     (公开笔记是跨用户渲染的), 不过滤就等于让 `<iframe srcdoc="<script>…">` 这类东西
+   *     在别人浏览器里执行(实测可执行, 能读走 localStorage 里的会话);
+   *   · 放在 katex 之前, 是为了不把 KaTeX 自己生成的 span/style 也一起洗掉 —— 那些是本地库的
+   *     受控输出, 不是用户输入。
    */
   // PluggableList 是显式标注: 不标的话 [plugin, options] 这种元组会被推断成联合数组, 对不上类型
   const rehypePlugins = useMemo<PluggableList>(
-    () => [rehypeRaw, [rehypeKatex, { throwOnError: false, errorColor: '#dc2626', strict: false }]],
+    () => [rehypeRaw, [rehypeSanitize, sanitizeSchema], [rehypeKatex, { throwOnError: false, errorColor: '#dc2626', strict: false }]],
     [],
   )
 

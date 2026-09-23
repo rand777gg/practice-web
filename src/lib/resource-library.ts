@@ -488,7 +488,7 @@ async function parseWithMinerU(
   }
 
   const token = getMinerUToken()
-  if (!token) throw new Error('精准解析需要 MinerU Token, 请在 AI 设置里填写')
+  // 空 token 不是错误: 不带 X-MinerU-Token 时由 mineru-proxy 补上平台那把 secret
 
   const task = await mineru.createTask(pdfUrl, {
     token,
@@ -710,8 +710,8 @@ async function runPartsBatch(
   options: ParseOptions,
 ): Promise<{ outcome: VolumeOutcome; retry: VolumeJob[] } | null> {
   const producer = options.producer
+  // 空 token 是正常状态: 不带 X-MinerU-Token 时由 mineru-proxy 补上平台那把 secret
   const token = getMinerUToken()
-  if (!token) return null
 
   const mineru = new MinerUClient()
   const parseOptions: MinerUPrecisionOptions = {

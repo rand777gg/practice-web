@@ -12,6 +12,7 @@ import { embedQuery, toVectorLiteral } from '../_shared/embed.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,6 +69,15 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return json({ error: 'unauthorized' }, 401)
+
+    // 以前只检查"头存在", 于是任何访客(哪怕拿公开的前端 key 冒充)都能让平台掏钱算 embedding ——
+    // 而查询向量那一步在鉴权之前就发生了。现在先验人再算钱。
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+    const token = authHeader.replace(/^Bearer\s+/i, '')
+    const { data: { user } } = await admin.auth.getUser(token)
+    if (!user) return json({ error: 'unauthorized' }, 401)
 
     const body = await req.json().catch(() => ({})) as {
       query?: string

@@ -1,22 +1,19 @@
 import DeepSeek from '@lobehub/icons/es/DeepSeek'
 import OpenAI from '@lobehub/icons/es/OpenAI'
 import Qwen from '@lobehub/icons/es/Qwen'
-import OpenRouter from '@lobehub/icons/es/OpenRouter'
 import { useThemeStore } from '@/stores/theme-store'
 
-type ProviderIconComponent = typeof DeepSeek | typeof OpenAI | typeof Qwen | typeof OpenRouter
+type ProviderIconComponent = typeof DeepSeek | typeof OpenAI | typeof Qwen
 
 const iconMap: Record<string, ProviderIconComponent> = {
   deepseek: DeepSeek,
   openai: OpenAI,
   qwen: Qwen,
-  openrouter: OpenRouter,
 }
 
 const BRAND_COLORS: Record<string, string> = {
   deepseek: '#4D6BFE',
   qwen: '#615ced',
-  openrouter: '#6566F1',
 }
 
 interface ProviderIconProps {

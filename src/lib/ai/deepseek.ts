@@ -30,6 +30,7 @@ export class DeepSeekParser {
     this.client = createDeepSeek({
       apiKey: config.apiKey,
       baseURL: config.baseURL,
+      fetch: config.fetch,
     })
     this.model = this.client(config.model || 'deepseek-chat')
   }

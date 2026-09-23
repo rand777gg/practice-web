@@ -44,7 +44,7 @@ import { getDeviceInfoSync } from '@/lib/device-info'
 import { Icon } from '@/lib/icons'
 import { ArrowLeft, ExternalLink, Languages, LogOut, Sparkles, Dice6, Check, Trash2, Unlink, Pencil, X, ChevronDown, Code2, FileText, Columns2, LayoutGrid, ImagePlus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { hasAiConfig, hasMinerUToken, getMinerUModelVersion } from '@/lib/ai'
+import { hasAiConfig, getMinerUModelVersion, getAiConfig, canUseMinerU } from '@/lib/ai'
 import { isGitHubAvatarUrl, resolveAvatar, selfAvatarOwner } from '@/lib/avatar'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
@@ -215,12 +215,14 @@ export function Component() {
    try {
     const { createDeepSeek } = await import('@ai-sdk/deepseek')
     const { generateText } = await import('ai')
+    const aiConfig = getAiConfig()
     const model = createDeepSeek({
-     apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY,
-     baseURL: import.meta.env.VITE_DEEPSEEK_BASE_URL || undefined,
+     apiKey: aiConfig.apiKey,
+     baseURL: aiConfig.baseURL,
+     fetch: aiConfig.fetch,
     })
     const result = await generateText({
-     model: model(import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'),
+     model: model(aiConfig.model || 'deepseek-chat'),
      prompt: getPrompt('nickname'),
      temperature: 1.2,
     })
@@ -236,7 +238,7 @@ export function Component() {
  if (!user) return null
 
  const aiConfigured = hasAiConfig()
- const mineruConfigured = hasMinerUToken()
+ const mineruConfigured = canUseMinerU()
  const mineruModel = getMinerUModelVersion()
 
  const aiFeatures = [
@@ -580,9 +582,8 @@ export function Component() {
                onClick={async () => {
                 setUnlinkingGitHub(true)
                 setGithubLinkError('')
-                const { error } = await supabase.rpc('unlink_oauth_identity', {
-                 p_provider: 'github',
-                 p_user_id: user!.id,
+                const { error } = await supabase.functions.invoke('unlink-identity', {
+                 body: { provider: 'github' },
                 })
                 if (error) {
                  setGithubLinkError(error.message || '解绑失败')

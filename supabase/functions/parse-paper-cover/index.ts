@@ -11,10 +11,12 @@
  * 出参: { cover, sections: [], pageCount: 1, hasTextLayer: false, source: 'vision'|'none' }
  *
  * 配置 (supabase secrets):
- *   DEEPSEEK_API_KEY        —— 必配 (从 .env 的 VITE_DEEPSEEK_API_KEY 部署)
+ *   DEEPSEEK_API_KEY        —— 必配 (与 supabase/functions/ai 共用同一把)
  *   DEEPSEEK_BASE_URL       —— 可选, 默认 https://api.deepseek.com
  *   DEEPSEEK_VISION_MODEL   —— 可选, 默认 deepseek-v4-flash-vision-exp
  */
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 function getSecret(...names: string[]): string {
   for (const n of names) {
@@ -22,6 +24,18 @@ function getSecret(...names: string[]): string {
     if (v) return v
   }
   return ''
+}
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const adminClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+
+/** 只接受 data:image/... 的内联图片; 顺带卡住体积(视觉模型按图计费, 别让人拿它当图床) */
+const MAX_IMAGE_CHARS = 8 * 1024 * 1024
+function isInlineImage(value: string): boolean {
+  return value.startsWith('data:image/') && value.length <= MAX_IMAGE_CHARS
 }
 
 const corsHeaders: Record<string, string> = {
@@ -78,6 +92,12 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== 'POST') return jsonResponse({ error: 'method not allowed' }, 405)
 
+  // 身份: 必须登录。这个函数用平台的 DeepSeek key 做一次视觉解析(计费),
+  // 以前谁都能调(只带公开的前端 key), 等于把平台额度挂在公网上。
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const { data: { user } } = token ? await adminClient.auth.getUser(token) : { data: { user: null } }
+  if (!user) return jsonResponse({ error: 'unauthorized' }, 401)
+
   let body: ClientBody
   try {
     body = await req.json()
@@ -87,8 +107,12 @@ Deno.serve(async (req: Request) => {
   if (!body.page1PngDataUrl) {
     return jsonResponse({ error: 'page1PngDataUrl required' }, 400)
   }
+  if (!isInlineImage(body.page1PngDataUrl)) {
+    // 远程 URL 会被 DeepSeek 的服务器去拉(等于借它的手做 SSRF), 而且没有体积上限
+    return jsonResponse({ error: 'only inline data:image/* under 8MB is accepted' }, 400)
+  }
 
-  const apiKey = getSecret('DEEPSEEK_API_KEY', 'VITE_DEEPSEEK_API_KEY')
+  const apiKey = getSecret('DEEPSEEK_API_KEY')
   if (!apiKey) {
     return jsonResponse({ cover: null, sections: [], pageCount: 1, hasTextLayer: false, source: 'none' })
   }

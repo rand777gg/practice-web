@@ -156,7 +156,7 @@ export async function chatWithLittleQ(
     import('ai'),
   ])
 
-  const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+  const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
   const { object } = await generateObject({
     model: client(config.model || 'deepseek-chat'),
     schema: replySchema,

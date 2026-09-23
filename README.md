@@ -271,15 +271,44 @@ npm run preview   # Preview production build locally
 
 ## Deploy
 
-Build and deploy `dist/` to any static host (Vercel, Netlify, Cloudflare Pages):
+Build and deploy `dist/` to any static host (Vercel, Netlify, Cloudflare Pages, EdgeOne Pages):
 
 ```bash
 npm run build
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as environment variables on your hosting platform.
+### Build-time environment variables (hosting platform)
 
-Edge Functions (optional): `npx supabase functions deploy <name> --project-ref <ref>`. Database migrations live in the single-file `supabase/migrations/001_initial_schema.sql`; apply remotely with `npx supabase db query --linked "<sql>"`.
+`VITE_`-prefixed variables are **inlined into the bundle at build time** — the hosting platform's
+build environment must define them (`.env` is gitignored and never reaches a remote build):
+
+| Variable | Required | Notes |
+|---|---|---|
+| `VITE_SUPABASE_URL` | yes | e.g. `https://<ref>.supabase.co` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | yes | publishable / anon key, safe to expose (RLS applies) |
+| `VITE_CF_TURNSTILE_SITE_KEY` | — | currently unreferenced by the app; safe to drop |
+| `VITE_VAPID_PUBLIC_KEY` | for web push | public key, safe to expose |
+| `VITE_R2_PUBLIC_HOST` | for R2 images/PDF | host only, no protocol |
+| `VITE_TTS_BASE_URL` | optional | falls back to a default in code |
+| `VITE_DEEPSEEK_MODEL` | optional | model *name* only — never put an API key here |
+
+**No API key belongs in a frontend variable.** Model calls go through the `ai` Edge Function and
+MinerU/OCR calls go through `mineru-proxy`, both of which inject server-side keys — the browser holds
+none. Never add `VITE_DEEPSEEK_API_KEY` / `VITE_QWEN_API_KEY` / `VITE_MINERU_TOKEN` /
+`VITE_OPENROUTER_API_KEY` back: anything prefixed with `VITE_` ends up in plaintext in
+`dist/assets/*.js`, readable by anyone who opens the site. (Users may still paste *their own* keys in
+AI settings — those live in their own `localStorage` and are sent as `X-MinerU-Token` / provider keys.)
+
+Required Supabase secrets (Dashboard → Edge Functions → Secrets, or `npx supabase secrets set`):
+
+| Secret | Used by |
+|---|---|
+| `DEEPSEEK_API_KEY` | `ai` (小Q 对话 / 导题 / 出题 / 批改 / 图表解读), `parse-paper-cover` |
+| `QWEN_API_KEY` | `rag-search` (query embedding for RAG) |
+| `MINERU_TOKEN` | `mineru-proxy` (精确解析/OCR 的平台默认 token) |
+| `R2_*`, `VAPID_*`, `RESEND_*`, `CF_TURNSTILE_SECRET`, `SITE_URL` | `r2-*`, `notify-exam`, `study-room`, `cloudflare-turnstile`, `qr-login` |
+
+Edge Functions: `npx supabase functions deploy <name> --project-ref <ref>` (per-function `verify_jwt` lives in `supabase/config.toml`). Database migrations live in the single-file `supabase/migrations/001_initial_schema.sql`; apply remotely with `npx supabase db query --linked "<sql>"`.
 
 ## CI / CD
 

@@ -49,44 +49,6 @@ const OFFICIAL_PROVIDERS: AiProviderConfig[] = [
   },
 ]
 
-const OPENROUTER_FREE_MODELS = [
-  // Smart router
-  { id: 'openrouter/auto', name: 'Auto (自动选择最优)', enabled: true },
-  // Featured
-  { id: 'openrouter/owl-alpha', name: 'Owl Alpha (Agent · 1M ctx)', enabled: false },
-  { id: 'nvidia/nemotron-3-ultra', name: 'Nemotron 3 Ultra (550B MoE · 1M ctx)', enabled: false },
-  { id: 'nvidia/nemotron-3-super', name: 'Nemotron 3 Super (120B MoE · 1M ctx)', enabled: false },
-  { id: 'nex-agi/nex-n2-pro', name: 'Nex-N2-Pro (397B MoE · Coding)', enabled: false },
-  { id: 'poolside/laguna-m.1', name: 'Laguna M.1 (Coding Agent)', enabled: false },
-  { id: 'poolside/laguna-xs.2', name: 'Laguna XS.2 (Efficient Coding)', enabled: false },
-  { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (MoE · Reasoning)', enabled: false },
-  { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B (Apache 2.0)', enabled: false },
-  // Google
-  { id: 'google/gemma-4-31b', name: 'Gemma 4 31B (多模态 · 140+语言)', enabled: false },
-  { id: 'google/gemma-4-26b-a4b', name: 'Gemma 4 26B A4B (MoE · 多模态)', enabled: false },
-  { id: 'google/gemma-3-27b', name: 'Gemma 3 27B', enabled: false },
-  { id: 'google/gemma-3-12b', name: 'Gemma 3 12B', enabled: false },
-  // NVIDIA
-  { id: 'nvidia/nemotron-3-nano-30b-a3b', name: 'Nemotron 3 Nano 30B A3B', enabled: false },
-  { id: 'nvidia/nemotron-nano-9b-v2', name: 'Nemotron Nano 9B V2', enabled: false },
-  { id: 'nvidia/nemotron-3-nano-omni', name: 'Nemotron 3 Nano Omni (多模态)', enabled: false },
-  // Cohere
-  { id: 'cohere/north-mini-code', name: 'North Mini Code (30B MoE · Apache 2.0)', enabled: false },
-  // Meta
-  { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B Instruct', enabled: false },
-  { id: 'meta-llama/llama-3.2-3b-instruct', name: 'Llama 3.2 3B Instruct', enabled: false },
-  // Qwen
-  { id: 'qwen/qwen3-coder-480b', name: 'Qwen3 Coder 480B', enabled: false },
-  { id: 'qwen/qwen3-next-80b', name: 'Qwen3 Next 80B', enabled: false },
-  // DeepSeek
-  { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (推理)', enabled: false },
-  // Other
-  { id: 'moonshotai/kimi-k2', name: 'Kimi K2', enabled: false },
-  { id: 'z-ai/glm-4.5-air', name: 'GLM 4.5 Air', enabled: false },
-  { id: 'liquid/lfm-2.5', name: 'Liquid LFM 2.5', enabled: false },
-  { id: 'nousresearch/hermes-3-405b', name: 'Hermes 3 405B', enabled: false },
-]
-
 const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
   {
     id: 'qwen',
@@ -101,17 +63,6 @@ const COMMUNITY_PROVIDERS: AiProviderConfig[] = [
       { id: 'qwen-vl-plus', name: 'Qwen-VL-Plus（轻量多模态）', enabled: true },
       { id: 'qwen3.7-plus', name: 'Qwen3.7-Plus（多模态）', enabled: false },
     ],
-  },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    description: 'OpenRouter 免费模型聚合平台，一个 API 接入 25+ 免费模型。无需付费，速率限制 ~20 RPM / 50 次/天。',
-    type: 'community',
-    protocol: 'openai',
-    enabled: false,
-    apiKey: '',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    models: OPENROUTER_FREE_MODELS,
   },
 ]
 
@@ -142,14 +93,11 @@ function loadProviders(): AiProviderConfig[] {
           existing.protocol = def.protocol
         }
       }
-      // Auto-fill env keys and auto-enable providers that have env keys
-      for (const p of saved) {
-        const envKey = (import.meta.env as Record<string, string>)[`VITE_${p.id.toUpperCase()}_API_KEY`]
-        if (envKey) {
-          if (!p.apiKey) p.apiKey = envKey
-          p.enabled = true
-        }
-      }
+      // 这里以前会按 `VITE_<ID>_API_KEY` 动态拼键名去 import.meta.env 里取默认 Key。
+      // 已经去掉: 动态访问会让 Vite 把**整个 env 对象**打进产物, 于是所有 VITE_ 变量
+      // (Qwen / OpenRouter / MinerU token…) 都明文躺在线上 JS 里。
+      // 现在平台自己的模型走 Edge Function 代理(见 src/lib/ai/config.ts),
+      // 这里的 Key 一律由使用者在本机填写, 只存 localStorage。
       // Remove providers that no longer exist in defaults
       return saved.filter((s) => DEFAULT_PROVIDERS.find((d) => d.id === s.id))
     }

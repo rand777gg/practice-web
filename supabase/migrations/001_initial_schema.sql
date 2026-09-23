@@ -4763,3 +4763,315 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.save_kp_question_refs(TEXT, TEXT, JSONB) TO authenticated;
+
+-- ============================================================================
+-- Section 65: 删文献时清掉它的检索块 —— 给 rag_chunks 补上"级联删除"
+--   症状: 删掉一篇文献后, 小Q 照旧检索到它的正文, 照旧给出
+--   /resource-library/<id>?block=N 的出处, 点进去是「文献不存在或未发布」。
+--   实测: resource 来源 30868 个块里 27480 个是已删文献的(11 篇, 占 89%), 而题库/笔记/
+--   知识点/学科解读 0 孤儿 —— 只有文献这一路漏。
+--
+--   为什么只能在数据库这层做: rag_chunks.source_id 是多态 TEXT(source = resource /
+--   question / kp / subject / note 共用一张表), 建不了外键, 所以删源行本来什么都不会发生。
+--   而 Edge Function 也救不回来 —— rag-index 拿到一个不存在的文献 id 会直接 404(它要先查
+--   标题拿 label), 管理页的"整表重建"又是逐篇已发布文献各起一个 job、scope 带 source_id
+--   过滤, 已删文档的块连差集都进不去, 永远看不见。除了手工 SQL 没人清得掉。
+--
+--   为什么删除可以放触发器(而索引写入仍然留在 rag-index): 当初不放触发器的理由是
+--   "算向量要发外部请求, 放到写入路径上会让保存一道题变成等 1 秒"。删块是纯 SQL, 没有
+--   这个代价; 而且删除没有"稍后重试"的机会 —— 行都没了, 差分同步再也看不到它。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.purge_resource_rag_chunks() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+BEGIN
+  DELETE FROM public.rag_chunks WHERE source = 'resource' AND source_id = OLD.id::text;
+  RETURN OLD;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_purge_rag_chunks ON public.resource_documents;
+CREATE TRIGGER trg_purge_rag_chunks
+  AFTER DELETE ON public.resource_documents
+  FOR EACH ROW EXECUTE FUNCTION public.purge_resource_rag_chunks();
+
+-- 存量清理: 触发器只管以后。已经留在表里的那些已删文献的块要手工删一次,
+-- 之后重放这段就是幂等的空操作(NOT EXISTS 只认"文档确实不在了"的块)。
+DELETE FROM public.rag_chunks c
+WHERE c.source = 'resource'
+  AND NOT EXISTS (SELECT 1 FROM public.resource_documents d WHERE d.id::text = c.source_id);
+
+-- ============================================================================
+-- Section 66: 权限收紧 —— 普通用户不能给自己改角色, 也不能关掉自己的二次验证
+--   症状(线上实测): profiles_update_own 只校验 id = auth.uid(), 而 role 这一列对
+--   authenticated 可写, is_admin() 读的又正是 profiles.role。于是一个刚注册的账号
+--   一句 `PATCH /rest/v1/profiles?id=eq.<自己> {"role":"admin"}`(实测 200)就成了管理员,
+--   is_admin() 随即返回 true —— 题库、资料库、RAG 索引、知识点解读、全部用户数据一起打开。
+--
+--   为什么用触发器, 不用列级 REVOKE: 管理员的「用户管理」页就是以前端身份改 role 的
+--   (src/pages/admin/UsersManagePage.tsx:78), 列级 REVOKE 会把那个功能一并废掉。
+--   触发器可以精确表达"只放行管理员与服务端"。
+--
+--   同一条链上还有两处:
+--     · mfa_grace_until 只该由 edge function 用服务端身份写(前端写的是 user_trusted_devices,
+--       见 src/pages/SettingsPage.tsx:130-153)。若允许前端直写, 任何拿到会话的人都能把
+--       二次验证永久关掉 —— 这正是 MFA 存在的意义所在。
+--     · mfa_validity_days 是用户自己的设置(设置页只提供 0/7/14/30 天), 前端确实要能改,
+--       所以只加 CHECK 卡住上限; 否则填个 999999 等于永久免验证。
+-- ============================================================================
+--   注意这里**不能**写 SECURITY DEFINER: 那会让 current_user 变成函数属主(postgres),
+--   于是下面"服务端放行"那一支永远命中, 等于没有守卫(第一版就是这么写的, 实测放行了越权更新)。
+--   守卫只需要读 NEW/OLD, 用调用者身份执行即可。
+CREATE OR REPLACE FUNCTION public.guard_profile_privileged_columns() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path = '' AS $$
+BEGIN
+  -- 放行: 直连 SQL / dashboard(没有 JWT claims)、service_role、管理员
+  IF auth.role() IS NULL
+     OR auth.role() = 'service_role'
+     OR current_user IN ('postgres', 'supabase_admin', 'service_role')
+     OR public.is_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.role IS DISTINCT FROM OLD.role THEN
+    RAISE EXCEPTION '只有管理员能修改用户角色';
+  END IF;
+  IF NEW.totp_enabled IS DISTINCT FROM OLD.totp_enabled THEN
+    RAISE EXCEPTION 'totp_enabled 只能由服务端写入';
+  END IF;
+  IF NEW.mfa_grace_until IS DISTINCT FROM OLD.mfa_grace_until THEN
+    RAISE EXCEPTION 'mfa_grace_until 只能由服务端写入';
+  END IF;
+
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_guard_profile_privileged ON public.profiles;
+CREATE TRIGGER trg_guard_profile_privileged
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.guard_profile_privileged_columns();
+
+-- 自建 profile 只能是普通用户。真实注册走 handle_new_user(SECURITY DEFINER, 不受策略约束),
+-- 这条只是把"自己插一行 admin"的路堵掉。
+DROP POLICY IF EXISTS profiles_insert_own ON public.profiles;
+CREATE POLICY profiles_insert_own ON public.profiles FOR INSERT TO authenticated
+  WITH CHECK (id = auth.uid() AND role = 'user');
+
+-- MFA 宽限期上限(设置页提供的最大值就是 30 天)
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_mfa_validity_days_range;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_mfa_validity_days_range
+  CHECK (mfa_validity_days >= 0 AND mfa_validity_days <= 30);
+
+-- ============================================================================
+-- Section 67: 扫码登录 —— 修掉"匿名账号接管"链路
+--   症状(线上实测): 整条链是一个匿名可用的账号接管。桌面端把 token 和 auth_code 一起写进
+--   qr_login_tokens, 而这张表
+--     · SELECT 对 anon 完全开放(USING (true)) —— 任何访客都能把 confirmed 行的 token+auth_code 读走;
+--     · INSERT 也是 WITH CHECK (true) —— 任何访客都能直接插一行 {status:'confirmed', user_id:<别人>},
+--   qr-login 又只比对 token+code、既不校验 expires_at 也不核对调用者, 于是换一个 magic link 就登进去了。
+--   实测: 匿名 INSERT 201 → POST qr-login 200 拿到真实 magic link。库里还留着 18 行从未兑换的
+--   confirmed 行(2026-07-19), 按旧逻辑它们**永久可兑换**, 等于 18 个账号一直敞着。
+--
+--   修法 —— 把"取件凭证"拆成两半:
+--     token   公开, 只进二维码(手机用它确认);
+--     secret  桌面端本地随机生成, **只存 sha256**, 既不进二维码也不进表, 谁读到表都没用。
+--   再配三条:
+--     · anon 只能插"待确认且未绑定用户"的行, 不能读整表;
+--     · 手机确认走 RLS(status='pending' 且未过期 才能改, 且只能绑到自己名下);
+--     · 兑换用 qr_login_claim() 一条 UPDATE ... RETURNING 原子消费, 过期/重复/错 secret 都拿不到东西。
+--   顺带修掉: auth_code 不再出现在二维码 URL 里(原先会经历史记录/日志泄漏)。
+-- ============================================================================
+ALTER TABLE public.qr_login_tokens ADD COLUMN IF NOT EXISTS secret_hash TEXT;
+
+DROP POLICY IF EXISTS qr_insert ON public.qr_login_tokens;
+CREATE POLICY qr_insert ON public.qr_login_tokens FOR INSERT TO anon, authenticated
+  WITH CHECK (status = 'pending' AND user_id IS NULL AND secret_hash IS NOT NULL);
+
+-- 客户端对这张表: 只能插(匿名, 且只能是"待确认未绑定"的行), 不能读、不能改。
+-- 为什么一个 SELECT 策略都不留: UPDATE 定位行时 Postgres 会再套一层 SELECT 策略, 而"待确认"
+-- 的行本来就没有归属人(user_id 为空), 留不出既能找到它、又不让别人看见的策略 ——
+-- 所以确认这一步干脆走 SECURITY DEFINER 的 qr_login_confirm(), 表对客户端完全不开放。
+DROP POLICY IF EXISTS qr_select ON public.qr_login_tokens;
+DROP POLICY IF EXISTS qr_select_own ON public.qr_login_tokens;
+DROP POLICY IF EXISTS qr_select_auth ON public.qr_login_tokens;
+DROP POLICY IF EXISTS qr_update ON public.qr_login_tokens;
+DROP POLICY IF EXISTS qr_update_auth ON public.qr_login_tokens;
+
+-- 存量: 按新规矩一律作废(旧行既没有 secret_hash, 又可能永久可兑换)
+UPDATE public.qr_login_tokens SET status = 'expired' WHERE status <> 'expired';
+
+-- 手机端确认: 只能把"还在等确认且没过期"的行绑到**自己**名下(auth.uid() 由服务端取, 不接受传参)
+CREATE OR REPLACE FUNCTION public.qr_login_confirm(p_token TEXT, p_device_info TEXT DEFAULT NULL)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  WITH updated AS (
+    UPDATE public.qr_login_tokens t
+       SET status = 'confirmed',
+           user_id = auth.uid(),
+           device_info = left(coalesce(p_device_info, ''), 200)
+     WHERE t.token = p_token
+       AND t.status = 'pending'
+       AND t.expires_at > NOW()
+       AND auth.uid() IS NOT NULL
+    RETURNING t.id
+  )
+  SELECT count(*) > 0 FROM updated;
+$$;
+REVOKE EXECUTE ON FUNCTION public.qr_login_confirm(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.qr_login_confirm(TEXT, TEXT) TO authenticated;
+
+-- 桌面端轮询: 给对的 secret 才回答状态, 过期一律答 expired
+CREATE OR REPLACE FUNCTION public.qr_login_status(p_token TEXT, p_secret TEXT)
+RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  SELECT CASE WHEN t.expires_at <= NOW() THEN 'expired' ELSE t.status END
+  FROM public.qr_login_tokens t
+  WHERE t.token = p_token
+    AND t.secret_hash = encode(sha256(p_secret::bytea), 'hex');
+$$;
+REVOKE EXECUTE ON FUNCTION public.qr_login_status(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.qr_login_status(TEXT, TEXT) TO anon, authenticated;
+-- 兑换: 原子消费(改状态与取 user_id 同一条语句), 只给服务端调。
+-- 注意这里必须把 anon/authenticated 一起撤掉: Supabase 给 public schema 设了默认权限,
+-- 新建函数会自动被显式授予 anon/authenticated(实测 proacl 里能看到), 只 REVOKE PUBLIC 是撤不掉的。
+CREATE OR REPLACE FUNCTION public.qr_login_claim(p_token TEXT, p_secret TEXT)
+RETURNS UUID LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  UPDATE public.qr_login_tokens t
+     SET status = 'expired'
+   WHERE t.token = p_token
+     AND t.status = 'confirmed'
+     AND t.expires_at > NOW()
+     AND t.secret_hash = encode(sha256(p_secret::bytea), 'hex')
+  RETURNING t.user_id;
+$$;
+REVOKE EXECUTE ON FUNCTION public.qr_login_claim(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.qr_login_claim(TEXT, TEXT) TO service_role;
+
+-- ============================================================================
+-- Section 68: SECURITY DEFINER 那一批函数 —— 收紧到"自己或管理员"
+--   两个线上实测出来的问题:
+--     1) 这批函数是 SECURITY DEFINER 又对 anon 开放, 于是**任何访客**都能:
+--          select get_user_email('<uuid>')      → 拿到真实邮箱(实测 200 返回邮箱)
+--          select unlink_oauth_identity('github', '<uuid>') → 204 执行成功
+--        后者函数体只有一句 DELETE auth.identities, 没有任何 auth.uid() 校验 ——
+--        解绑任意用户的登录身份(连 email 身份也能删), 是账号接管/锁定的前置动作。
+--     2) 早期写的 `REVOKE EXECUTE ... FROM anon` 是**无效的**: Postgres 默认把 EXECUTE
+--        授给 PUBLIC(anon 属于 PUBLIC), 而 Supabase 又给 public schema 设了默认权限,
+--        新建函数会被显式授予 anon/authenticated。两处都得撤。
+--
+--   策略: PII 读取一律"只能读自己或管理员"; 解绑只能解绑自己(服务端路径仍可代操作);
+--   维护类函数(缓存刷新/回填)客户端一律不可调用。
+-- ============================================================================
+
+-- 只读自己或管理员(服务端一律放行: service_role 本来就是可信身份, 免得后端哪天要用却被挡)
+CREATE OR REPLACE FUNCTION public.get_user_email(user_id UUID)
+RETURNS TEXT LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT CASE WHEN public.is_admin() OR user_id = auth.uid() OR auth.role() = 'service_role'
+              THEN (SELECT email FROM auth.users WHERE id = user_id) END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_email_confirmed(user_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT CASE WHEN public.is_admin() OR user_id = auth.uid() OR auth.role() = 'service_role'
+              THEN (SELECT email_confirmed_at IS NOT NULL FROM auth.users WHERE id = user_id) END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_providers(user_id UUID)
+RETURNS TEXT[] LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT CASE WHEN public.is_admin() OR user_id = auth.uid() OR auth.role() = 'service_role'
+              THEN (SELECT COALESCE(array_agg(provider), ARRAY[]::TEXT[]) FROM auth.identities WHERE user_id = $1 AND provider <> 'email') END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_last_online(user_id UUID)
+RETURNS TIMESTAMPTZ LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT CASE WHEN public.is_admin() OR user_id = auth.uid() OR auth.role() = 'service_role'
+              THEN (SELECT last_sign_in_at FROM auth.users WHERE id = $1) END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_last_sign_in(user_id UUID)
+RETURNS TIMESTAMPTZ LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT CASE WHEN public.is_admin() OR user_id = auth.uid() OR auth.role() = 'service_role'
+              THEN (SELECT last_sign_in_at FROM auth.users WHERE id = $1) END;
+$$;
+
+-- 解绑登录身份: 前端以前把 p_user_id 当参数传, 于是谁都能解绑别人。
+-- 现在这个参数只对服务端(edge function 已经校验过调用者)有意义, 其他身份一律用 auth.uid()。
+CREATE OR REPLACE FUNCTION public.unlink_oauth_identity(p_provider TEXT, p_user_id TEXT DEFAULT NULL)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_target TEXT;
+BEGIN
+  IF auth.role() = 'service_role' THEN
+    v_target := p_user_id;
+  ELSE
+    -- 邮箱身份是密码登录的根, 不允许自行解绑(要换绑走邮箱变更流程)
+    IF p_provider = 'email' THEN RAISE EXCEPTION '邮箱身份不能自行解绑'; END IF;
+    v_target := auth.uid()::text;
+  END IF;
+  IF v_target IS NULL THEN RAISE EXCEPTION 'unauthenticated'; END IF;
+  DELETE FROM auth.identities WHERE provider = p_provider AND user_id::text = v_target;
+END $$;
+
+-- 撤销: PUBLIC(默认授权) + anon/authenticated(Supabase 默认权限) 都要撤
+REVOKE EXECUTE ON FUNCTION public.get_user_email(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_email_confirmed(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_providers(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_last_online(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_last_sign_in(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_email(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_email_confirmed(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_providers(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_last_online(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_last_sign_in(uuid) TO authenticated;
+
+-- 公开资料卡这几个是给"看别人的昵称/头像"用的, 保留 authenticated, 但别让 anon 也能刷
+REVOKE EXECUTE ON FUNCTION public.get_profile_cards(UUID[]) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.get_public_profiles(UUID[]) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.get_profile_nicknames(UUID[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_profile_cards(UUID[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_public_profiles(UUID[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_profile_nicknames(UUID[]) TO authenticated;
+
+-- 维护类: 只由触发器/服务端调用, 客户端没有理由能触发全表重建
+REVOKE EXECUTE ON FUNCTION public.backfill_daily_stats() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.refresh_question_meta_cache() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.refresh_kp_question_map() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.upsert_daily_stats() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.purge_resource_rag_chunks() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.sync_dup_cache_question(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.refresh_dup_cache(text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.is_admin() FROM PUBLIC, anon, authenticated;
+-- 但 anon 必须留着: 好几条 RLS 策略里调用了 is_admin()(例如 profiles_select_own),
+-- anon 请求时若没有执行权, 查询会直接报 "permission denied for function" 而不是干净地返回 0 行。
+-- 对 anon 来说它恒为 false, 给了也不泄露任何东西。
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, anon;
+
+-- 早期那几处 REVOKE FROM anon 撤不掉 PUBLIC 的授权, 这里补齐(这些函数内部有 is_admin() 校验,
+-- 所以没有实际漏洞, 但读代码的人不该被误导)
+REVOKE EXECUTE ON FUNCTION public.scan_question_duplicates(text, numeric, integer) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.save_dup_review(uuid, uuid, text, text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.merge_dup_questions(uuid, uuid, text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.keep_dup_group(uuid[], text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.save_kp_question_refs(text, text, jsonb) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.save_kp_resource_refs(text, text, jsonb) FROM PUBLIC, anon;
+
+-- ============================================================================
+-- Section 69: storage `files` 桶 —— 从"整个桶"收到"自己那层目录"
+--   原来的三条策略只判 bucket_id, 于是任何登录用户都能: 列举/下载别人的上传、
+--   **删掉别人的对象**(正在解析的临时文件也会被删), 以及往公共桶里传任意内容
+--   (桶是 public, 借平台域名托管什么都行)。
+--   现在: 对象路径按上传者分目录(mineru-temp/<uid>/…, 见 src/lib/ai/mineru.ts),
+--   策略只放行"自己那一层", 管理员不受限。
+--   历史对象在老路径上(mineru-temp/<ts>-<name>), 用户已无法删改, 只能由管理员/服务端清理。
+-- ============================================================================
+DROP POLICY IF EXISTS files_select_auth ON storage.objects;
+DROP POLICY IF EXISTS files_insert_auth ON storage.objects;
+DROP POLICY IF EXISTS files_delete_auth ON storage.objects;
+DROP POLICY IF EXISTS allow_upload ON storage.objects;
+DROP POLICY IF EXISTS files_select_authenticated ON storage.objects;
+DROP POLICY IF EXISTS files_rw_own ON storage.objects;
+CREATE POLICY files_rw_own ON storage.objects FOR ALL TO authenticated
+  USING (
+    bucket_id = 'files'
+    -- 路径形如 mineru-temp/<uid>/…, 所以判"路径里有没有自己这一层"而不是固定第几段
+    AND (public.is_admin() OR auth.uid()::text = ANY (storage.foldername(name)))
+  )
+  WITH CHECK (
+    bucket_id = 'files'
+    AND (public.is_admin() OR auth.uid()::text = ANY (storage.foldername(name)))
+  );

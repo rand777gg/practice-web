@@ -83,7 +83,7 @@ export async function parseCreateRequest(
       import('ai'),
     ])
     const config = getAiConfig()
-    const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+    const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
 
     const prompt = [
       '用户在刷题平台的小Q 对话框里输入了下面这句话，想生成练习题。把它解析成参数。',

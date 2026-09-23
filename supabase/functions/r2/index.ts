@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, ListPartsCommand } from "npm:@aws-sdk/client-s3@3"
 import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { corsHeaders, corsResponse, corsOk } from "../_shared/cors.ts"
 
 function requireEnv(name: string): string {
@@ -27,6 +28,45 @@ const MAX_SIZE = 200 * 1024 * 1024
 // 分片上传也复用这个上限, 所以不能低于客户端的最大分片数。
 const MAX_PRESIGN_BATCH = 1000
 
+// ── 鉴权 ──
+// 这个函数以前**没有任何身份校验**: 谁把前端产物里的公开 key 抠出来, 谁就能列举整桶、
+// 下载任意对象、往任意 key 上传, 还能用 action:'delete' + prefix 一次删掉最多 1000 个对象
+// (文献 PDF、页图都躺在桶里)。线上实测过匿名 list 能读到真实的 pdf/*.pdf。
+//
+// 现在的规矩:
+//   · 必须登录(函数内自己查 JWT, 网关那道 anon key 不算身份);
+//   · list / delete 只有管理员能做(delete 的 prefix 形式尤其);
+//   · 普通用户只能在自己内容那几类前缀里 上传 / 删除, 碰不到 pdf/ 这类资料库对象。
+const SUPABASE_URL = requireEnv("SUPABASE_URL")
+const SERVICE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY")
+const USER_KEY_PREFIXES = ["notes/", "videos/", "images/", "bank/", "avatars/"]
+
+const adminClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+
+async function currentUser(req: Request) {
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "")
+  if (!token) return null
+  const { data: { user } } = await adminClient.auth.getUser(token)
+  return user ?? null
+}
+
+async function isAdminUser(userId: string): Promise<boolean> {
+  const { data } = await adminClient.from("profiles").select("role").eq("id", userId).maybeSingle()
+  return data?.role === "admin"
+}
+
+/** 普通用户只允许碰自己内容的前缀; 顺带挡掉 ../ 这类越界写法 */
+function keyAllowedForUser(key: string): boolean {
+  if (!key || key.startsWith("/") || key.includes("..")) return false
+  return USER_KEY_PREFIXES.some((p) => key.startsWith(p))
+}
+
+function folderAllowedForUser(folder: string): boolean {
+  return USER_KEY_PREFIXES.some((p) => `${folder}/`.startsWith(p))
+}
+
 const s3 = new S3Client({
   region: "auto",
   endpoint: R2_ENDPOINT,
@@ -40,6 +80,15 @@ Deno.serve(async (req) => {
   const contentType = req.headers.get("content-type") || ""
 
   try {
+    const user = await currentUser(req)
+    if (!user) {
+      return corsResponse(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } })
+    }
+    // 管理员判定按需查库: 绝大多数请求是普通用户上传, 不该每次都多打一次 profiles
+    let adminFlag: boolean | null = null
+    const isAdmin = async () => (adminFlag ??= await isAdminUser(user.id))
+    const deny = (msg: string) => corsResponse(JSON.stringify({ error: msg }), { status: 403, headers: { "Content-Type": "application/json" } })
+
     // --- serve ---
     if (req.method === "GET") {
       const key = new URL(req.url).searchParams.get("key")
@@ -63,6 +112,8 @@ Deno.serve(async (req) => {
       const formData = await req.formData()
       const file = formData.get("file") as File | null
       const folder = (formData.get("folder") as string) || "images"
+
+      if (!(await isAdmin()) && !folderAllowedForUser(folder)) return deny("该目录不允许上传")
 
       if (!file) return corsResponse(JSON.stringify({ error: "No file" }), { status: 400, headers: { "Content-Type": "application/json" } })
       if (!ALLOWED_FILE_TYPES.includes(file.type)) return corsResponse(JSON.stringify({ error: `Unsupported type: ${file.type}` }), { status: 400, headers: { "Content-Type": "application/json" } })
@@ -88,6 +139,7 @@ Deno.serve(async (req) => {
       const key = body.key as string
       const ct = (body.contentType as string) || "application/octet-stream"
       if (!key) return corsResponse(JSON.stringify({ error: "Missing key" }), { status: 400, headers: { "Content-Type": "application/json" } })
+      if (!(await isAdmin()) && !keyAllowedForUser(key)) return deny("该路径不允许上传")
 
       const signedUrl = await getSignedUrl(s3, new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: ct }), { expiresIn: 300 })
       return corsResponse(JSON.stringify({ url: signedUrl, publicUrl: `https://${R2_PUBLIC_HOST}/${key}`, key }), { headers: { "Content-Type": "application/json" } })
@@ -101,6 +153,7 @@ Deno.serve(async (req) => {
       if (items.length > MAX_PRESIGN_BATCH) {
         return corsResponse(JSON.stringify({ error: `Too many items: ${items.length} > ${MAX_PRESIGN_BATCH}` }), { status: 400, headers: { "Content-Type": "application/json" } })
       }
+      if (!(await isAdmin()) && !items.every((it) => keyAllowedForUser(String(it.key ?? "")))) return deny("有路径不允许上传")
 
       // 有效期给到 1 小时而不是单签那样的 5 分钟: 这一批是在开始渲染之前一次性签好的, 之后每页
       // 渲染完才 PUT 上来。几百页渲染 + 上传要跑几分钟, 5 分钟会让排在后面的页全部 403。
@@ -128,6 +181,7 @@ Deno.serve(async (req) => {
       const key = body.key as string
       const ct = (body.contentType as string) || "application/octet-stream"
       if (!key) return corsResponse(JSON.stringify({ error: "Missing key" }), { status: 400, headers: { "Content-Type": "application/json" } })
+      if (!(await isAdmin()) && !keyAllowedForUser(key)) return deny("该路径不允许上传")
 
       const created = await s3.send(new CreateMultipartUploadCommand({ Bucket: R2_BUCKET, Key: key, ContentType: ct }))
       if (!created.UploadId) return corsResponse(JSON.stringify({ error: "R2 未返回 uploadId" }), { status: 500, headers: { "Content-Type": "application/json" } })
@@ -153,6 +207,7 @@ Deno.serve(async (req) => {
       const uploadId = body.uploadId as string
       const partCount = body.partCount as number
       if (!key || !uploadId || !partCount) return corsResponse(JSON.stringify({ error: "Missing key/uploadId/partCount" }), { status: 400, headers: { "Content-Type": "application/json" } })
+      if (!(await isAdmin()) && !keyAllowedForUser(key)) return deny("该路径不允许上传")
 
       const listed = await s3.send(new ListPartsCommand({ Bucket: R2_BUCKET, Key: key, UploadId: uploadId, MaxParts: MAX_PRESIGN_BATCH }))
       const uploaded = (listed.Parts || []).filter(p => p.PartNumber && p.ETag)
@@ -179,12 +234,18 @@ Deno.serve(async (req) => {
     }
 
     if (action === "delete") {
+      const admin = await isAdmin()
       let keys = (body.keys as string[]) || []
-      if (!keys.length && body.prefix) {
-        const listCmd = new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: body.prefix as string, MaxKeys: 1000 })
-        const result = await s3.send(listCmd)
-        keys = (result.Contents || []).map(o => o.Key!).filter(Boolean)
+      if (body.prefix) {
+        // 按前缀删是"一次最多 1000 个"的批量操作, 只给管理员
+        if (!admin) return deny("只有管理员能按前缀删除")
+        if (!keys.length) {
+          const listCmd = new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: body.prefix as string, MaxKeys: 1000 })
+          const result = await s3.send(listCmd)
+          keys = (result.Contents || []).map(o => o.Key!).filter(Boolean)
+        }
       }
+      if (!admin && !keys.every(keyAllowedForUser)) return deny("有路径不允许删除")
       if (!keys.length) return corsResponse(JSON.stringify({ deleted: 0 }), { headers: { "Content-Type": "application/json" } })
 
       await s3.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys.map(k => ({ Key: k })) } }))
@@ -192,6 +253,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "list") {
+      if (!(await isAdmin())) return deny("只有管理员能列举存储")
       const prefix = (body.prefix as string) || "pdf/"
       const maxKeys = (body.maxKeys as number) || 50
       const result = await s3.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, MaxKeys: maxKeys }))

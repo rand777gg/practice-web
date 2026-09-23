@@ -163,8 +163,8 @@ export async function parsePaperFromPdf(
       return data?.cover ?? null
     })(),
     (async () => {
+      // 空 token 也照样跑: 服务端会用平台的 MINERU_TOKEN 兜底
       const token = getMinerUToken()
-      if (!token) return null
       const mineru = new MinerUClient()
       onProgress?.({ stage: 'parsing', message: 'OCR' })
       const result = await mineru.uploadAndParsePrecision(file, {

@@ -10,22 +10,33 @@ interface Props {
   onOpenChange: (open: boolean) => void
 }
 
+/** 表里存的是这个哈希, 原始 secret 永远不离开本机 */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export function QrLoginDialog({ open, onOpenChange }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [status, setStatus] = useState<'generating' | 'waiting' | 'loggingIn' | 'expired' | 'error'>('generating')
-  const codeRef = useRef('')
+  const secretRef = useRef('')
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined)
 
   const generateToken = async () => {
     setStatus('generating')
     const token = crypto.randomUUID()
-    const code = crypto.randomUUID().slice(0, 12)
-    codeRef.current = code
+    // 这把 secret 只留在本机: 表里存的是它的 sha256, 二维码里只有 token。
+    // 于是"读到表"或"扫到码"都换不到登录态, 能换的只有这个窗口自己。
+    const secret = `${crypto.randomUUID()}${crypto.randomUUID()}`
+    secretRef.current = secret
 
-    const { error } = await supabase.from('qr_login_tokens').insert({ token, auth_code: code })
+    const { error } = await supabase.from('qr_login_tokens').insert({
+      token,
+      secret_hash: await sha256Hex(secret),
+    })
     if (error) { setStatus('error'); return }
 
-    const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}&code=${code}`
+    const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}`
     // 二维码必须深色码点 + 浅色底才扫得动（浅色写成透明在白底上会完全看不见）
     const dataUrl = await QRCode.toDataURL(confirmUrl, { width: 240, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
     setQrDataUrl(dataUrl)
@@ -37,18 +48,20 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
   const startPolling = (token: string) => {
     if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
-      const { data, error } = await supabase.from('qr_login_tokens').select('status').eq('token', token).single()
-      if (error || !data) { setStatus('expired'); clearInterval(pollRef.current); return }
-      if (data.status === 'confirmed') {
+      // 不再直读 qr_login_tokens(那张表对任何人都不再开放读): 走只认 token+secret 的窄接口
+      const { data, error } = await supabase.rpc('qr_login_status', { p_token: token, p_secret: secretRef.current })
+      const state = data as string | null
+      if (error || !state) { setStatus('expired'); clearInterval(pollRef.current); return }
+      if (state === 'confirmed') {
         clearInterval(pollRef.current)
         setStatus('loggingIn')
         const { data: sessionData, error: fnErr } = await supabase.functions.invoke('qr-login', {
-          body: { token, code: codeRef.current, anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+          body: { token, secret: secretRef.current },
         })
         if (fnErr || !sessionData?.magic_link) { console.error('qr-login error:', fnErr); try { const ctx = await (fnErr as any)?.context?.text?.(); console.error('qr-login body:', ctx) } catch {} setStatus('error'); return }
         // Redirect to magic link URL — auto-logs in and redirects back to app
         window.location.href = sessionData.magic_link
-      } else if (data.status === 'expired') {
+      } else if (state === 'expired') {
         setStatus('expired')
         clearInterval(pollRef.current)
       }

@@ -32,7 +32,7 @@ import { EditHistoryDialog, type HistoryEdits } from '@/components/ai-import/Edi
 import { R2PdfGallery } from '@/components/ai-import/R2PdfGallery'
 import {
   DeepSeekParser, MinerUClient, getAiConfig, hasAiConfig,
-  getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion,
+  getMinerUToken, setMinerUToken, getMinerUModelVersion, setMinerUModelVersion, canUseMinerU,
   generateQuestions, generateFromText,
 } from '@/lib/ai'
 import { extractFileText } from '@/lib/file-text'
@@ -422,7 +422,7 @@ export function Component() {
   }
 
   const aiConfigured = hasAiConfig()
-  const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && !!mineruToken)
+  const precisionReady = parseMode === 'lightweight' || (parseMode === 'precision' && canUseMinerU())
   const genReady = parseMode === 'generate' && !!genSubject && genTypes.size > 0 && aiConfigured
   const canStart = parseMode === 'generate'
     ? genReady
@@ -955,7 +955,7 @@ export function Component() {
         <Card className="border-orange-500/50 bg-orange-50/30 dark:bg-orange-950/10">
           <CardContent className="py-3 text-sm text-orange-600 dark:text-orange-400 flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            请在 EdgeOne 环境变量中配置 VITE_DEEPSEEK_API_KEY
+            服务端还没有配置模型 Key：在 Supabase 里设置 secret DEEPSEEK_API_KEY
           </CardContent>
         </Card>
       )}
@@ -1143,7 +1143,7 @@ export function Component() {
                     />
                     {!mineruToken && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        可在 MinerU API 管理页面创建 Token。也可通过 VITE_MINERU_TOKEN 环境变量配置。
+                        留空即用平台提供的 MinerU; 想走自己的额度可在 MinerU API 管理页面创建 Token 填在这里。
                       </p>
                     )}
                   </div>
@@ -1483,7 +1483,7 @@ export function Component() {
                   <AiImportUpload
                     onFile={handleFile}
                     onFiles={handleFiles}
-                    disabled={!aiConfigured || (parseMode === 'precision' && !mineruToken)}
+                    disabled={!aiConfigured || (parseMode === 'precision' && !canUseMinerU())}
                     multiple={parseMode === 'precision' && batchMode}
                   />
                 </>

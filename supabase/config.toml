@@ -36,3 +36,9 @@ entrypoint = "./functions/rag-index/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/rag-search/index.ts"
+
+[functions.ai]
+enabled = true
+# 同上: 入口不拦(浏览器直连带的头不标准), 函数内用 auth.getUser 自己校验用户 JWT
+verify_jwt = false
+entrypoint = "./functions/ai/index.ts"

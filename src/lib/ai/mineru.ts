@@ -5,7 +5,31 @@ import type { DocumentParseResult, MinerUPrecisionOptions, MinerUTaskResult, Min
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 const PROXY_BASE = `${SUPABASE_URL}/functions/v1/mineru-proxy`
-const AUTH_HEADER = { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+
+/**
+ * mineru-proxy 现在要求调用者**已登录**(平台那把 MinerU token 是计费的, 公开 key 谁都能刷)。
+ * apikey 只是过网关用, 身份在 Authorization 里; 会话 token 会过期, 所以每次现取。
+ */
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('未登录, 无法解析文献')
+  return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
+}
+
+/**
+ * Storage(files 桶)里的临时文件路径, 按用户分目录。
+ *
+ * 为什么必须分目录: RLS 只能按路径前缀判归属(对象没有"上传者"字段), 以前所有人都往
+ * mineru-temp/ 平铺, 策略就只能写成"整个桶都能读能删" —— 任何登录用户都能删掉别人正在
+ * 解析的临时文件。分目录之后策略收紧成"只碰自己那层"。
+ */
+async function tempFilePath(fileName: string): Promise<string> {
+  const { data } = await supabase.auth.getSession()
+  const uid = data.session?.user?.id
+  if (!uid) throw new Error('未登录, 无法上传临时文件')
+  return `mineru-temp/${uid}/${Date.now()}-${fileName}`
+}
 
 export interface ZipImage {
   /** 产物里的相对路径, 如 images/6f3a.jpg —— markdown 里引用的就是它 */
@@ -55,7 +79,7 @@ export async function fetchZipAndExtractFiles(zipUrl: string): Promise<ZipAssets
   let bytes: Uint8Array | null = null
   try {
     const res = await fetch(`${PROXY_BASE}/zip-proxy?url=${encodeURIComponent(zipUrl)}`, {
-      headers: { ...AUTH_HEADER },
+      headers: { ...(await authHeaders()) },
     })
     if (res.ok) bytes = new Uint8Array(await res.arrayBuffer())
   } catch {
@@ -71,7 +95,7 @@ export async function fetchZipAndExtractFiles(zipUrl: string): Promise<ZipAssets
   }
 
   const res = await fetch(`${PROXY_BASE}/download-zip?url=${encodeURIComponent(zipUrl)}`, {
-    headers: { ...AUTH_HEADER },
+    headers: { ...(await authHeaders()) },
   })
   if (!res.ok) throw new Error(`Failed to download zip: ${res.status}`)
   const { text, jsonData: serverJsonData } = await res.json() as { text: string; jsonData?: string }
@@ -130,8 +154,8 @@ async function extractZip(bytes: Uint8Array): Promise<ZipAssets> {
 }
 
 export class MinerUClient {
-  private getProxyHeaders(mineruToken?: string): Record<string, string> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...AUTH_HEADER }
+  private async getProxyHeaders(mineruToken?: string): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await authHeaders()) }
     if (mineruToken) {
       headers['X-MinerU-Token'] = mineruToken
     }
@@ -153,7 +177,7 @@ export class MinerUClient {
 
     const res = await fetch(`${PROXY_BASE}/parse/url`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...AUTH_HEADER },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify(v1Body),
     })
     const data = await res.json() as { code: number; msg: string; data: { task_id: string } }
@@ -164,14 +188,14 @@ export class MinerUClient {
     onProgress?.('文档解析中 (MinerU)...')
     for (let i = 0; i < 150; i++) {
       await new Promise(r => setTimeout(r, 2000))
-      const pollRes = await fetch(`${PROXY_BASE}/parse/${task_id}`, { headers: { ...AUTH_HEADER } })
+      const pollRes = await fetch(`${PROXY_BASE}/parse/${task_id}`, { headers: { ...(await authHeaders()) } })
       const pollData = await pollRes.json() as {
         code: number; msg?: string; data: { state: string; markdown_url?: string; err_msg?: string }
       }
       onStatus?.({ taskId: task_id, state: pollData.data.state, code: pollData.code, msg: pollData.msg, markdownUrl: pollData.data.markdown_url, errMsg: pollData.data.err_msg })
 
       if (pollData.data.state === 'done' && pollData.data.markdown_url) {
-        const mdRes = await fetch(`${PROXY_BASE}/download?url=${encodeURIComponent(pollData.data.markdown_url)}`, { headers: { ...AUTH_HEADER } })
+        const mdRes = await fetch(`${PROXY_BASE}/download?url=${encodeURIComponent(pollData.data.markdown_url)}`, { headers: { ...(await authHeaders()) } })
         const mdJson = await mdRes.json() as { text: string }
         return { markdown: mdJson.text, taskId: task_id }
       }
@@ -192,7 +216,7 @@ export class MinerUClient {
     onStatus?: (status: MinerULightweightStatus) => void,
   ): Promise<DocumentParseResult> {
     onProgress?.('正在上传文档...')
-    const filePath = `mineru-temp/${Date.now()}-${file.name}`
+    const filePath = await tempFilePath(file.name)
     const { error: uploadErr } = await supabase.storage
       .from('files')
       .upload(filePath, file, { upsert: true })
@@ -220,7 +244,7 @@ export class MinerUClient {
     onStatus?: (status: MinerUTaskResult) => void,
   ): Promise<DocumentParseResult> {
     onProgress?.('正在上传文档...')
-    const filePath = `mineru-temp/${Date.now()}-${file.name}`
+    const filePath = await tempFilePath(file.name)
     const { error: uploadErr } = await supabase.storage
       .from('files')
       .upload(filePath, file, { upsert: true })
@@ -278,7 +302,7 @@ export class MinerUClient {
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task`, {
       method: 'POST',
-      headers: this.getProxyHeaders(options.token),
+      headers: await this.getProxyHeaders(options.token),
       body: JSON.stringify(body),
     })
     const data = await res.json() as { code: number; msg: string; data: { task_id: string } }
@@ -290,7 +314,7 @@ export class MinerUClient {
   async pollTask(taskId: string, token: string): Promise<MinerUTaskResult> {
     const res = await fetch(`${PROXY_BASE}/v4/extract/task/${taskId}`, {
       method: 'GET',
-      headers: this.getProxyHeaders(token),
+      headers: await this.getProxyHeaders(token),
     })
     const data = await res.json() as {
       code: number; msg: string
@@ -340,7 +364,7 @@ export class MinerUClient {
 
     const res = await fetch(`${PROXY_BASE}/v4/extract/task/batch`, {
       method: 'POST',
-      headers: this.getProxyHeaders(options.token),
+      headers: await this.getProxyHeaders(options.token),
       body: JSON.stringify(body),
     })
     const data = await res.json() as { code: number; msg: string; data: { batch_id: string } }
@@ -352,7 +376,7 @@ export class MinerUClient {
   async pollBatch(batchId: string, token: string): Promise<MinerUBatchStatus> {
     const res = await fetch(`${PROXY_BASE}/v4/extract-results/batch/${batchId}`, {
       method: 'GET',
-      headers: this.getProxyHeaders(token),
+      headers: await this.getProxyHeaders(token),
     })
     const data = await res.json() as {
       code: number; msg: string
@@ -390,7 +414,7 @@ export class MinerUClient {
     // Upload all files to Supabase Storage first
     onProgress?.(`正在上传 ${files.length} 个文件...`)
     const uploads = await Promise.all(files.map(async (file) => {
-      const filePath = `mineru-temp/${Date.now()}-${file.name}`
+      const filePath = await tempFilePath(file.name)
       const { error: uploadErr } = await supabase.storage
         .from('files')
         .upload(filePath, file, { upsert: true })
@@ -500,7 +524,7 @@ export class MinerUClient {
     token: string,
     options?: { language?: string; isOcr?: boolean },
   ): Promise<string> {
-    const fileName = `note-images/${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+    const fileName = await tempFilePath(`note-images/${Date.now()}-${Math.random().toString(36).slice(2)}.png`)
     const mimeMatch = imageBase64.match(/^data:(image\/\w+);base64,/)
     const mime = mimeMatch?.[1] || 'image/png'
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64

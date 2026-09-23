@@ -60,7 +60,7 @@ export function AiImportPreview({
     try {
       const { generateText } = await import('ai')
       const { createDeepSeek } = await import('@ai-sdk/deepseek')
-      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
       // Batch all selected questions in one API call
       const idxs = questions.reduce<number[]>((acc, _, i) => selectedIds.has(i) ? [...acc, i] : acc, [])
       const items = idxs.map((i) => `[${i}] ${questions[i].question_text}`).join('\n\n---\n\n')

@@ -1,5 +1,47 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
 const MINERU_V1_BASE = 'https://mineru.net/api/v1/agent'
 const MINERU_V4_BASE = 'https://mineru.net/api/v4'
+
+// 平台自己那把 MinerU token 只存在 secret, 不再随前端产物下发(以前是 VITE_MINERU_TOKEN,
+// 构建期内联, 谁打开产物都能抠走)。
+// 调用方带 X-MinerU-Token = 用他自己的额度(AI 设置页里填的); 不带就用平台的。
+const PLATFORM_TOKEN = Deno.env.get('MINERU_TOKEN') ?? ''
+
+// ── 鉴权 ──
+// 这个函数以前没有任何身份校验, 而它手里有平台的 MinerU token(计费)和"服务端拉任意 URL"
+// 的能力。线上实测过: 只带公开的前端 key 就能建出真实的 MinerU 解析任务, 也能把
+// /pdf-proxy?url= 当任意地址的代理(SSRF: 内网服务、云元数据都能读)。
+// 现在所有路由都要求**已登录的用户**; url 类路由再加一层目标主机白名单。
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const adminClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+
+async function currentUser(req: Request) {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  if (!token) return null
+  const { data: { user } } = await adminClient.auth.getUser(token)
+  return user ?? null
+}
+
+/** 只允许拉"MinerU 自己"和"我们自己的存储"; 纯 IP 一律拒(挡掉 127.0.0.1 / 169.254.169.254) */
+const ALLOWED_FETCH_HOSTS = ['mineru.net', 'cdn-mineru.openxlab.org.cn', '.supabase.co', '.r2.cloudflarestorage.com']
+
+function isAllowedTarget(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:') return false
+    const host = u.hostname.toLowerCase()
+    if (/^\d+(\.\d+){3}$/.test(host) || host.includes(':') || host === 'localhost') return false
+    const r2Host = (Deno.env.get('R2_PUBLIC_HOST') ?? '').toLowerCase()
+    if (r2Host && host === r2Host) return true
+    return ALLOWED_FETCH_HOSTS.some((h) => (h.startsWith('.') ? host.endsWith(h) : host === h))
+  } catch {
+    return false
+  }
+}
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -55,12 +97,24 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
   const pathname = url.pathname
 
+  const user = await currentUser(req)
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
     // GET /pdf-proxy?url=<url> — proxy PDF binary with CORS (for pdfjsLib)
     if (req.method === 'GET' && pathname.endsWith('/pdf-proxy')) {
       const targetUrl = url.searchParams.get('url')
       if (!targetUrl) {
         return new Response(JSON.stringify({ error: 'missing url param' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      if (!isAllowedTarget(targetUrl)) {
+        return new Response(JSON.stringify({ error: 'target_not_allowed' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
@@ -89,6 +143,11 @@ Deno.serve(async (req: Request) => {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
+      if (!isAllowedTarget(targetUrl)) {
+        return new Response(JSON.stringify({ error: 'target_not_allowed' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
       const res = await fetch(targetUrl)
       const text = await res.text()
       return jsonResponse(JSON.stringify({ text }), req)
@@ -104,6 +163,11 @@ Deno.serve(async (req: Request) => {
       const targetUrl = url.searchParams.get('url')
       if (!targetUrl) {
         return new Response(JSON.stringify({ error: 'missing url param' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      if (!isAllowedTarget(targetUrl)) {
+        return new Response(JSON.stringify({ error: 'target_not_allowed' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
@@ -126,6 +190,11 @@ Deno.serve(async (req: Request) => {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
+      if (!isAllowedTarget(targetUrl)) {
+        return new Response(JSON.stringify({ error: 'target_not_allowed' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
       const res = await fetch(targetUrl)
       if (!res.ok) {
         return new Response(JSON.stringify({ error: `download failed: ${res.status}` }), {
@@ -137,18 +206,30 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(JSON.stringify({ text: markdown, jsonData }), req)
     }
 
+    // GET /config — 平台配没配 MinerU(前端据此决定默认解析模式/是否显示"请自填 token")。
+    // 只吐一个布尔值, 拿不到 token 本身。
+    if (req.method === 'GET' && pathname.endsWith('/config')) {
+      return jsonResponse(JSON.stringify({ platform_token: !!PLATFORM_TOKEN }), req)
+    }
+
     // Determine if this is a v4 precision request
-    const mineruToken = req.headers.get('X-MinerU-Token')
+    const mineruToken = req.headers.get('X-MinerU-Token') || PLATFORM_TOKEN
 
     if (pathname.includes('/v4/')) {
+      // 精确解析必须带 token: 调用方没给、平台也没配, 就明确说清楚,
+      // 别把一个 401 从 MinerU 那边原样抛给用户(那看不出是谁的问题)。
+      if (!mineruToken) {
+        return new Response(JSON.stringify({
+          error: 'mineru_token_missing',
+          message: '平台未配置 MinerU Token, 请在 AI 设置里填写自己的 token',
+        }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
       const afterFn = pathname.split('/v4')[1] || ''
       const targetUrl = `${MINERU_V4_BASE}${afterFn}`
 
       const fetchHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
-      }
-      if (mineruToken) {
-        fetchHeaders['Authorization'] = `Bearer ${mineruToken}`
+        Authorization: `Bearer ${mineruToken}`,
       }
 
       const fetchOpts: RequestInit = {

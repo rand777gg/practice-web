@@ -3,7 +3,7 @@
  *
  * 数据来源均为厂商官方文档（见每条 docsUrl），核对时间 2026-09。
  * 存在的意义：同一个 HTTP 状态码在不同厂商含义不同，最容易搞混的是 402 ——
- * DeepSeek 402 = 余额不足，Anthropic 402 = 账单/支付信息有问题，OpenRouter 402 = 余额不足。
+ * DeepSeek 402 = 余额不足，Anthropic 402 = 账单/支付信息有问题。
  * 因此报错提示必须按「当前用的是哪家」去查表，不能只看状态码。
  */
 
@@ -137,26 +137,6 @@ export const PROVIDER_ERROR_DOCS: ProviderErrorDoc[] = [
       { status: 429, code: 'Throttling / Throttling.RateQuota / Throttling.AllocationQuota', officialName: 'Throttling', meaning: '限流：短时间内请求过于密集或瞬时 Token 峰值过高', fix: '等待一分钟后重试；频繁触发就降低频率，并把大任务拆成小批分时段提交', kind: 'quota', retryable: true },
       { status: 500, code: 'InternalError / RequestTimeOut', officialName: 'InternalError', meaning: '内部错误或请求超时', fix: '记录 request_id 提工单，稍后重试', kind: 'server', retryable: true },
       { status: 503, code: 'ModelUnavailable', officialName: 'ModelUnavailable', meaning: '模型暂不可用', fix: '稍后重试或切换可用模型', kind: 'server', retryable: true },
-    ],
-  },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    protocol: 'openai',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    chatPath: '/chat/completions',
-    docsUrl: 'https://openrouter.ai/docs/api-reference/errors',
-    errorShape: '{ "error": { "code": 402, "message": "…", "metadata": { "error_type": "…", "provider_code": "…" } } }',
-    retryHeader: 'Retry-After（平台限流时另有 X-RateLimit-*）',
-    codes: [
-      { status: 400, officialName: 'Bad Request', meaning: '参数无效或缺失、CORS 问题', fix: '检查请求体与跨域配置', kind: 'request', retryable: false },
-      { status: 401, officialName: 'Invalid credentials', meaning: '凭据无效（Key 被禁用或过期）', fix: '重新生成 API Key', kind: 'auth', retryable: false },
-      { status: 402, officialName: 'Insufficient credits', meaning: '账户或该 Key 的余额不足（注意：余额为负时连免费模型也会 402）', fix: '充值使余额转正；或检查该 Key 的 limit_remaining 是否耗尽', kind: 'billing', retryable: false },
-      { status: 403, officialName: 'Moderation flagged', meaning: '所选模型要求审核，而输入被标记', fix: '查看 error.metadata 中的 reasons 与 flagged_input', kind: 'permission', retryable: false },
-      { status: 408, officialName: 'Request timeout', meaning: '请求超时', fix: '重试或改用流式', kind: 'server', retryable: true },
-      { status: 429, code: 'rate_limit_exceeded', officialName: 'Rate limited', meaning: '被限流：可能是平台免费模型的额度，也可能是上游供应商限流', fix: '指数退避重试；若 metadata.provider_code 有值说明是上游限流，可开启 fallback 路由', kind: 'quota', retryable: true },
-      { status: 502, officialName: 'Model down / invalid upstream response', meaning: '所选模型不可用，或上游返回了无效响应', fix: '重试或切换模型；可配置 fallback models', kind: 'server', retryable: true },
-      { status: 503, officialName: 'No available provider', meaning: '没有满足你路由要求的可用供应商', fix: '放宽 provider 路由偏好，或换模型', kind: 'server', retryable: true },
     ],
   },
 ]

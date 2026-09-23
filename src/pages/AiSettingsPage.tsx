@@ -68,7 +68,6 @@ async function testProvider(provider: AiProviderConfig, apiKey: string): Promise
         : {
             'content-type': 'application/json',
             authorization: `Bearer ${apiKey}`,
-            ...(provider.id === 'openrouter' ? { 'x-title': 'practice-web' } : {}),
           },
       body: JSON.stringify(
         isAnthropic
@@ -113,8 +112,10 @@ function ProviderCard({
   onApiKeyChange: (value: string) => void
   onBaseUrlChange: (value: string) => void
 }) {
-  const envKey = (import.meta.env as Record<string, string>)[`VITE_${provider.id.toUpperCase()}_API_KEY`]
-  const effectiveKey = provider.apiKey || envKey || ''
+  // 这里以前从 import.meta.env[`VITE_${id}_API_KEY`] 兜一把默认 Key。已经去掉两件事:
+  // 一是动态拼键名会把整个 env 对象打进产物(所有 VITE_ 变量明文上线), 二是平台的模型
+  // 现在走 Edge Function 代理, 前端不再需要任何内置 Key。这一页的 Key 只属于使用者自己。
+  const effectiveKey = provider.apiKey || ''
   const doc = providerErrorDoc(provider.id)
   const protocol = PROTOCOL_META[provider.protocol ?? 'openai']
 
@@ -181,7 +182,7 @@ function ProviderCard({
                 type="password"
                 value={provider.apiKey}
                 onChange={(event) => onApiKeyChange(event.target.value)}
-                placeholder={envKey ? '已从环境变量读取，可覆盖' : '粘贴你的 API Key'}
+                placeholder="粘贴你的 API Key"
                 className="h-9 font-mono text-xs"
               />
               <p className="text-[10px] text-muted-foreground">
@@ -523,7 +524,7 @@ function ErrorCodeReference() {
           <p className="text-muted-foreground">
             同一个 402，三家含义完全不同。平台提示必须绑定「当前用的是哪家」，否则会把「充值就能解决」误导成「检查支付方式」。
           </p>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div className="rounded-lg border border-amber-300/50 bg-amber-50 p-2.5 dark:border-amber-900/50 dark:bg-amber-950/30">
               <p className="text-xs font-medium">DeepSeek 402</p>
               <p className="mt-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">Insufficient Balance</p>
@@ -533,11 +534,6 @@ function ErrorCodeReference() {
               <p className="text-xs font-medium">Anthropic 402</p>
               <p className="mt-0.5 text-[11px] font-medium">billing_error</p>
               <p className="mt-1 text-[11px] text-muted-foreground">账单 / 支付信息有问题 → 检查支付方式，不是充值</p>
-            </div>
-            <div className="rounded-lg border p-2.5">
-              <p className="text-xs font-medium">OpenRouter 402</p>
-              <p className="mt-0.5 text-[11px] font-medium">Insufficient credits</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">余额为负，连免费模型也会 402 → 充值使余额转正</p>
             </div>
           </div>
         </CardContent>

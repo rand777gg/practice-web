@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAiStore } from '@/stores/ai-store'
 import { MinerUClient } from '@/lib/ai/mineru'
-import { getMinerUToken } from '@/lib/ai/config'
+import { getMinerUToken, canUseMinerU } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
 import { cn } from '@/lib/utils'
 import { compressImage } from '@/lib/image-compress'
@@ -95,7 +95,6 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
         else throw new Error('No content in response')
       } else {
         const token = getMinerUToken()
-        if (!token) throw new Error('请先在设置中配置 MinerU Token')
         const client = new MinerUClient()
         const markdown = await client.recognizeImage(imageBase64, token)
         setRecognitionResult(markdown.trim())
@@ -170,7 +169,7 @@ export function NoteEditor({ value, onChange, placeholder, hideImageTools }: Pro
 
   const canRecognize = noteRecognitionMode === 'ai'
     ? !!activeProvider?.apiKey
-    : !!getMinerUToken()
+    : canUseMinerU()
 
   return (
     <div className="space-y-2">

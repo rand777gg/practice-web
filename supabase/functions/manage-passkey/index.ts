@@ -12,6 +12,26 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
+/**
+ * 允许的站点来源(服务端白名单)。
+ * 取 SITE_URL / APP_URL 这两个 secret, 本地开发额外放行 localhost。
+ * 返回 null = 这个来源不在白名单里, 后面会直接 403。
+ */
+function allowedOrigins(): string[] {
+  const list = [Deno.env.get("SITE_URL"), Deno.env.get("APP_URL")]
+    .filter((v): v is string => !!v)
+    .map((v) => v.replace(/\/+$/, "").toLowerCase())
+  for (const local of ["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173"]) list.push(local)
+  return list
+}
+
+function resolveOrigin(req: Request): string | null {
+  const raw = req.headers.get("origin")
+  if (!raw) return null
+  const normalized = raw.replace(/\/+$/, "").toLowerCase()
+  return allowedOrigins().includes(normalized) ? raw.replace(/\/+$/, "") : null
+}
+
 /** Convert Uint8Array to base64url string */
 function b64url(buf: Uint8Array): string {
   let bin = ""
@@ -116,15 +136,20 @@ serve(async (req: Request) => {
       })
     }
 
-    const origin = req.headers.get("origin") || `https://${Deno.env.get("SUPABASE_URL")!.split("://")[1]}`
+    // WebAuthn 的 rpId / expectedOrigin 必须来自**服务端白名单**, 不能取请求里的 Origin:
+    // 取客户端的话, 只有密码的攻击者在自己的域名上跑一个页面, 就能拿自己的域当 rpId 注册
+    // 一把 passkey, 并把这条会话标成"已验证 MFA"(verify-totp 会认这个标记) —— 二次验证被绕过。
+    const origin = resolveOrigin(req)
+    if (!origin) {
+      return new Response(JSON.stringify({ error: "origin not allowed" }), { status: 403, headers: corsHeaders })
+    }
     const rpId = new URL(origin).hostname
     const rpName = "Practice Web"
 
     // ============================================================
     // REGISTER: generate options
     // ============================================================
-    if (action === "register-begin") {
-      // Fetch existing credentials to exclude from re-registration
+    if (action === "register-begin") {      // Fetch existing credentials to exclude from re-registration
       // credential_id is already stored as base64url — server expects base64url strings
       const { data: existing } = await supabaseAdmin
         .from("passkey_credentials")
@@ -329,10 +354,12 @@ serve(async (req: Request) => {
         .eq("type", "authentication")
 
       // credential.id from @simplewebauthn/browser is already base64url
+      // 必须按 user_id 限定: 否则拿别人的凭证 id 走这条路径, 等于让 A 的登录被 B 的凭证校验
       const { data: storedCreds } = await supabaseAdmin
         .from("passkey_credentials")
         .select("*")
         .eq("credential_id", credential.id)
+        .eq("user_id", userId)
         .limit(1)
 
       const storedCred = storedCreds?.[0]

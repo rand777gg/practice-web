@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { compressImage } from '@/lib/image-compress'
 import { cn, normalizeChineseText } from '@/lib/utils'
 import { ImagePlus, Loader2, Wand2, WrapText, Video, ScanEye, Sparkles, X } from 'lucide-react'
-import { hasAiConfig, getAiConfig, getMinerUToken } from '@/lib/ai/config'
+import { hasAiConfig, getAiConfig, getMinerUToken, canUseMinerU } from '@/lib/ai/config'
 import { MinerUClient } from '@/lib/ai/mineru'
 import { getPrompt } from '@/stores/prompt-store'
 import { R2_PUBLIC_ORIGIN } from '@/lib/r2'
@@ -196,12 +196,12 @@ export function MarkdownEditor({
     else { setStageBusy(false); setStageAction(null) }
   }
 
-  const canOcr = !!getMinerUToken()
+  const canOcr = canUseMinerU()
 
   const handleStageOcr = async () => {
     if (!staged || stageBusy) return
+    // 空 token 是正常的: 不带 X-MinerU-Token 时由 mineru-proxy 补上平台那把
     const token = getMinerUToken()
-    if (!token) { setOcrError('未配置 MinerU Token，请先到「设置 → AI」中配置'); return }
     setStageBusy(true)
     setStageAction('ocr')
     setOcrError('')
@@ -319,7 +319,7 @@ export function MarkdownEditor({
       if (!current.trim()) return
       const { generateText } = await import('ai')
       const { createDeepSeek } = await import('@ai-sdk/deepseek')
-      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+      const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
       const { text } = await generateText({
         model: client(config.model || 'deepseek-chat'),
         system: getPrompt('br_format'),

@@ -116,26 +116,6 @@ export const PROVIDER_ENDPOINTS: ProviderEndpoints[] = [
     authHeader: 'Authorization: Bearer <API_KEY>',
     docsUrl: 'https://help.aliyun.com/zh/model-studio/models',
   },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    protocol: 'openai',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    chat: {
-      method: 'POST',
-      path: '/chat/completions',
-      curl: 'curl https://openrouter.ai/api/v1/chat/completions \\\n  -H "Authorization: Bearer $OPENROUTER_API_KEY" \\\n  -d \'{"model":"openai/gpt-4o","messages":[{"role":"user","content":"hi"}]}\'',
-    },
-    models: {
-      method: 'GET',
-      path: '/models',
-      curl: 'curl https://openrouter.ai/api/v1/models \\\n  -H "Authorization: Bearer $OPENROUTER_API_KEY"',
-      shape: '{ "data": [{ "id": "openai/gpt-4o", "name": "OpenAI: GPT-4o", "context_length": 128000, "pricing": { "prompt": "…", "completion": "…" } }] }',
-      notes: '聚合了所有上游模型，列表较大；建议本地缓存。免费模型 id 以 :free 结尾。',
-    },
-    authHeader: 'Authorization: Bearer <API_KEY>',
-    docsUrl: 'https://openrouter.ai/docs/api-reference/list-available-models',
-  },
 ]
 
 /** 常见中转 / 聚合站预设；地址可能随服务商调整，导入后请自行核对 */
@@ -152,7 +132,6 @@ export const RELAY_PRESETS: RelayPreset[] = [
   { id: 'aihubmix', name: 'AiHubMix', baseUrl: 'https://aihubmix.com/v1', protocol: 'openai', note: 'cc-switch 内置预设之一，OpenAI 兼容' },
   { id: 'dmxapi', name: 'DMXAPI', baseUrl: 'https://www.dmxapi.com/v1', protocol: 'openai', note: 'cc-switch 内置预设之一，OpenAI 兼容' },
   { id: 'siliconflow', name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', protocol: 'openai', note: '国内节点，OpenAI 兼容，模型 id 形如 Qwen/Qwen2.5-72B-Instruct' },
-  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', protocol: 'openai', note: '聚合上百模型，支持 fallback 路由' },
   { id: 'cc-switch-proxy', name: 'cc-switch 本地代理', baseUrl: 'http://127.0.0.1:15721', protocol: 'anthropic', note: '本机代理，自动做 Anthropic ↔ OpenAI 格式转换，Key 填 PROXY_MANAGED' },
 ]
 

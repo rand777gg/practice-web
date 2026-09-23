@@ -27,7 +27,8 @@ function readEnv(name) {
 
 const SUPABASE_URL = readEnv('VITE_SUPABASE_URL')
 const ANON_KEY = readEnv('VITE_SUPABASE_PUBLISHABLE_KEY')
-const MINERU_TOKEN = readEnv('VITE_MINERU_TOKEN')
+// token 现在是服务端 secret(MINERU_TOKEN); 这个脚本仍支持显式传一把覆盖平台那把
+const MINERU_TOKEN = readEnv('MINERU_TOKEN')
 const PROXY = `${SUPABASE_URL}/functions/v1/mineru-proxy`
 
 const pdfUrl = process.argv[2] || DEMO_PDF

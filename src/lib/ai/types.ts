@@ -4,6 +4,11 @@ export interface AiConfig {
   apiKey: string
   baseURL?: string
   model?: string
+  /**
+   * 传给 @ai-sdk 的自定义 fetch。平台模型走 Edge Function 代理, 会话 JWT 就靠它逐次注入 ——
+   * 构造 client 的地方都要把它一起传下去, 漏传就会以匿名身份打到代理上(401)。
+   */
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
 export interface ParsedQuestion {

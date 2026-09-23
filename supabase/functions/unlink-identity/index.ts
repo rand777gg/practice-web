@@ -45,7 +45,8 @@ Deno.serve(async (req) => {
     }
 
     const { error: rpcError } = await supabaseAdmin.rpc('unlink_oauth_identity', {
-      p_identity_id: target.id,
+      // 参数名必须跟数据库函数一致(以前写成 p_identity_id, 那个参数不存在, 这条路径其实一直是坏的)
+      p_provider: target.provider,
       p_user_id: user.id,
     })
 

@@ -8,8 +8,32 @@
 //   JUDGE0_URL  平台自部署 Judge0 的地址,例如 http://<host>:2358
 //   npx supabase secrets set JUDGE0_URL=http://<your-judge0-host>:2358
 // 未配置时直接返回明确错误(不再回退到旧逻辑)。
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const JUDGE0_URL = Deno.env.get('JUDGE0_URL') || ''
+
+// 入口鉴权: 平台自部署的 Judge0 是有限资源, 而这个函数以前谁都能调(只带公开的前端 key
+// 就能往判题机塞任意代码)。要求已登录的用户, 并按用户粗粒度限流。
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const adminClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+
+/** 每用户每分钟的判题请求上限(一次请求里可能含多个测试点, 这里只数请求) */
+const RATE_LIMIT_PER_MIN = 30
+const rateMap = new Map<string, { count: number; resetAt: number }>()
+
+function rateLimited(userId: string): boolean {
+  const now = Date.now()
+  const hit = rateMap.get(userId)
+  if (!hit || hit.resetAt < now) {
+    rateMap.set(userId, { count: 1, resetAt: now + 60_000 })
+    return false
+  }
+  hit.count += 1
+  return hit.count > RATE_LIMIT_PER_MIN
+}
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -156,6 +180,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: '中心判题尚未配置:请先为 judge 函数设置环境变量 JUDGE0_URL(指向平台自部署的 Judge0 CE)' }, 503)
   }
   try {
+    // 身份: 必须登录。判题机是有限资源, 不能让任何拿到公开 key 的人白跑代码。
+    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const { data: { user } } = token ? await adminClient.auth.getUser(token) : { data: { user: null } }
+    if (!user) return json({ error: 'unauthorized' }, 401)
+    if (rateLimited(user.id)) return json({ error: 'rate_limited', message: '判题太频繁, 请稍后再试' }, 429)
+
     const body = (await req.json()) as JudgeRequest
     return await judgeViaJudge0(body)
   } catch (err) {

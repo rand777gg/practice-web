@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sparkles } from 'lucide-react'
-import { hasAiConfig } from '@/lib/ai'
+import { hasAiConfig, getAiConfig } from '@/lib/ai'
 import { getPrompt } from '@/stores/prompt-store'
 
 interface Props {
@@ -24,12 +24,14 @@ export function AiChartInsight({ title, dataDesc }: Props) {
     try {
       const { createDeepSeek } = await import('@ai-sdk/deepseek')
       const { generateText } = await import('ai')
+      const config = getAiConfig()
       const model = createDeepSeek({
-        apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY,
-        baseURL: import.meta.env.VITE_DEEPSEEK_BASE_URL || undefined,
+        apiKey: config.apiKey,
+        baseURL: config.baseURL,
+        fetch: config.fetch,
       })
       const result = await generateText({
-        model: model(import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'),
+        model: model(config.model || 'deepseek-chat'),
         system: getPrompt('chart_insight'),
         prompt: `图表：${title}\n数据：${dataDesc}`,
         temperature: 0.7,

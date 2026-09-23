@@ -31,6 +31,7 @@ export async function generateDailySummary(data: SummaryData): Promise<string> {
   const client = createDeepSeek({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
+    fetch: config.fetch,
   })
   const model = client(config.model || 'deepseek-chat')
 

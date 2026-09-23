@@ -145,7 +145,7 @@ export function Component() {
         import('@/lib/ai/config'),
       ])
       const cfg = getAiConfig()
-      const model = createDeepSeek({ apiKey: cfg.apiKey, baseURL: cfg.baseURL })
+      const model = createDeepSeek({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, fetch: cfg.fetch })
       const isUserRole = def?.role === 'user'
       const { text } = await generateText({
         model: model(cfg.model || 'deepseek-chat'),

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileUp, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { hasMinerUToken } from '@/lib/ai/config'
+import { canUseMinerU, hasMinerUToken, probeMinerU } from '@/lib/ai/config'
 import { countPdfPages } from '@/lib/pdf-page-renderer'
 import { MINERU_PAGE_LIMIT, selectedPageCount, slicePageRanges, sliceToRange } from '@/lib/page-slices'
 import { ingestResource, type ParseMode } from '@/lib/resource-library'
@@ -34,7 +34,7 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [meta, setMeta] = useState<MetaFormValue>(EMPTY_META)
   const [pageRanges, setPageRanges] = useState('')
-  const [mode, setMode] = useState<ParseMode>(hasMinerUToken() ? 'precision' : 'lightweight')
+  const [mode, setMode] = useState<ParseMode>(canUseMinerU() ? 'precision' : 'lightweight')
 
   const [phase, setPhase] = useState<'idle' | 'running' | 'error'>('idle')
   const [message, setMessage] = useState('')
@@ -42,7 +42,16 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
   const [totalPages, setTotalPages] = useState<number | null>(null)
 
   const running = phase === 'running'
-  const tokenMissing = !hasMinerUToken()
+  // 平台那把 token 在服务端, 前端默认按"有"渲染; 探测出平台没配、自己也没填, 才提示要自备
+  const [tokenMissing, setTokenMissing] = useState(!canUseMinerU())
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void probeMinerU().then((fromPlatform) => {
+      if (!cancelled) setTokenMissing(!fromPlatform && !hasMinerUToken())
+    })
+    return () => { cancelled = true }
+  }, [open])
 
   const explicitRanges = pageRanges.trim()
   // 留空 = 按 200 页上限自动切卷; 显式填了页码范围则整段作为一卷, 超上限要拦下来
@@ -80,7 +89,7 @@ export function ResourceIngestDialog({ open, onOpenChange, onDone }: Props) {
     if (!file) { setPhase('error'); setMessage('请先选择 PDF 文件'); return }
     if (!meta.title.trim()) { setPhase('error'); setMessage('标题不能为空'); return }
     if (mode === 'precision' && tokenMissing) {
-      setPhase('error'); setMessage('精准解析需要 MinerU Token, 请到 AI 设置里填写, 或改用轻量解析')
+      setPhase('error'); setMessage('精准解析需要 MinerU Token: 平台未配置, 请到 AI 设置里填自己的 token, 或改用轻量解析')
       return
     }
 

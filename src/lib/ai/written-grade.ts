@@ -2,7 +2,8 @@
  * 主观题「建议分」的实际调用层。
  *
  * 口径（分档表 / prompt / 解析）在 `@/lib/written-grading`，这里是把它接到现有 AI 基建上：
- * 跟 `deepseek.ts` 一样的 `createDeepSeek` + `ai` SDK，key 走 `VITE_DEEPSEEK_API_KEY`。
+ * 跟 `deepseek.ts` 一样的 `createDeepSeek` + `ai` SDK, 但 key 在服务端 —— 请求经 Edge Function
+ * 代理转发(见 src/lib/ai/config.ts), 前端不再持有任何 AI key。
  *
  * 手写识图用的是 DeepSeek 的多模态模型（V4-Flash-Vision-Exp，同一个 key、同一个 endpoint），
  * 所以**不需要额外的 edge function**：图片从浏览器直连过去，跟文本调用是同一条路。
@@ -31,7 +32,7 @@ export interface OcrResult {
 function client() {
   const config = getAiConfig()
   if (!config.apiKey) return null
-  return { model: createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL }), config }
+  return { model: createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch }), config }
 }
 
 /**
@@ -44,7 +45,7 @@ function client() {
 export async function ocrHandwriting(pngDataUrl: string, hint?: string, modelOverride?: string): Promise<OcrResult> {
   const c = client()
   const model = modelOverride ?? VISION_MODEL
-  if (!c) return { text: '', ok: false, error: '未配置 AI Key（VITE_DEEPSEEK_API_KEY）', model }
+  if (!c) return { text: '', ok: false, error: '平台模型未配置（服务端 secret DEEPSEEK_API_KEY）', model }
 
   // data URL 前缀要去掉，SDK 收的是裸 base64 + mediaType
   const base64 = pngDataUrl.replace(/^data:image\/\w+;base64,/, '')
@@ -118,12 +119,12 @@ export async function gradeWrittenAnswer(input: GradingInput, modelOverride?: st
   const config = getAiConfig()
   const model = modelOverride ?? config.model ?? 'deepseek-chat'
   if (!config.apiKey) {
-    return failed(input.kind, '未配置 AI Key（VITE_DEEPSEEK_API_KEY），无法给建议分', model)
+    return failed(input.kind, '平台模型未配置, 无法给建议分', model)
   }
 
   const { system, user } = buildGradingPrompt(input)
   try {
-    const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+    const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
     const { text } = await generateText({
       model: client(model),
       system,

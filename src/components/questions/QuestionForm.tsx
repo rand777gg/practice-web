@@ -310,7 +310,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
         await (async () => {
           const { generateText } = await import('ai')
           const { createDeepSeek } = await import('@ai-sdk/deepseek')
-          const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+          const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
           const model = client(config.model || 'deepseek-chat')
           const { text } = await generateText({
             model,
