@@ -31,6 +31,8 @@ export interface StartExamParams {
   /** 有模板时按模板分区组卷, 忽略 questionCount / questionTypes */
   template?: ExamTemplate | null
   sampleMode?: ExamSampleMode
+  /** 固定题单(试题库套卷): 传了就直接开考, 不再走组卷 RPC */
+  questionIds?: string[]
 }
 
 export interface StartExamResult {
@@ -67,20 +69,23 @@ export const useExamStore = create<ExamState>((set, get) => ({
   isSubmitting: false,
   error: null,
 
-  startExam: async ({ userId, questionCount, durationMs, subjects, categories, questionTypes, template, sampleMode }) => {
+  startExam: async ({ userId, questionCount, durationMs, subjects, categories, questionTypes, template, sampleMode, questionIds: fixedIds }) => {
     set({ isLoading: true, error: null })
 
-    const { questionIds, stats } = await composeExamIds({
-      template,
-      questionCount,
-      subjects,
-      categories,
-      questionTypes,
-      sampleMode,
-    }).catch((e: Error) => {
-      set({ isLoading: false, error: e.message })
-      return { questionIds: [] as string[], stats: [] as ExamComposeStat[] }
-    })
+    // 套卷的题单在生成时就冻住了, 这里直接取题, 不再组卷
+    const { questionIds, stats } = fixedIds?.length
+      ? { questionIds: fixedIds, stats: [] as ExamComposeStat[] }
+      : await composeExamIds({
+          template,
+          questionCount,
+          subjects,
+          categories,
+          questionTypes,
+          sampleMode,
+        }).catch((e: Error) => {
+          set({ isLoading: false, error: e.message })
+          return { questionIds: [] as string[], stats: [] as ExamComposeStat[] }
+        })
 
     if (questionIds.length === 0) {
       if (!get().error) {

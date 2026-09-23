@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import type { Question } from '@/types'
 
 export interface QuestionBank {
   id: string
@@ -11,6 +12,15 @@ export interface QuestionBank {
   created_by: string
   created_at: string
   question_count?: number
+}
+
+/** 试题库里的一条记录(含内联的题目) */
+export interface BankItem {
+  id: string
+  bank_id: string
+  question_id: string
+  added_at: string
+  questions: Question
 }
 
 export function useQuestionBanks() {
@@ -83,7 +93,7 @@ export function useQuestionBanks() {
       .select('*, questions(*)')
       .eq('bank_id', bankId)
       .order('added_at', { ascending: true })
-    return (data ?? []) as Array<{ id: string; bank_id: string; question_id: string; added_at: string; questions: Record<string, unknown> }>
+    return (data ?? []) as BankItem[]
   }, [])
 
   const addBankItems = useCallback(async (bankId: string, questionIds: string[]) => {
