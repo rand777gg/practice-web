@@ -264,6 +264,10 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/pages/admin/ResourceManagePage'),
                   },
                   {
+                    path: 'rag',
+                    lazy: () => import('@/pages/admin/RagManagePage'),
+                  },
+                  {
                     path: 'organize-exam',
                     lazy: () => import('@/pages/admin/OrganizeExamPage'),
                   },

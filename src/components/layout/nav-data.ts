@@ -1,6 +1,6 @@
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
-  Award, Blocks, BookOpen, Bot, CalendarClock, ChartPie, ClipboardList, Clock, Compass, Database,
+  Award, Blocks, BookOpen, Bot, Bug, CalendarClock, ChartPie, ClipboardList, Clock, Compass, Database, DatabaseZap,
   FileDown, FileQuestion, FileText, FileWarning, Bookmark, GitMerge, GraduationCap, HardDrive, History,
   LayoutGrid, LayoutTemplate, Library, LibraryBig, List, PenLine, Pencil, Plug, Plus,
   Puzzle, RotateCcw, Route, Settings2, Shuffle, Sparkles, Star, Swords, Terminal, Trophy, Users, UsersRound, Wand2,
@@ -153,6 +153,7 @@ export function useNavGroups(): Record<SidebarGroup, NavItem[]> {
     { id: 'arena', title: t('nav.arena'), url: '/arena', icon: Swords },
     { id: 'achievements', title: t('nav.achievements'), url: '/achievements', icon: Award },
     { id: 'mentors', title: t('nav.mentors'), url: '/mentors', icon: GraduationCap },
+    { id: 'feedback', title: t('nav.feedback'), url: '/feedback', icon: Bug },
   ]
 
   const admin: NavItem[] = [
@@ -167,6 +168,7 @@ export function useNavGroups(): Record<SidebarGroup, NavItem[]> {
         { title: t('nav.duplicates'), url: '/admin/duplicates', icon: GitMerge },
       ],
     },
+    { id: 'adminRag', title: t('nav.rag'), url: '/admin/rag', icon: DatabaseZap },
     { id: 'adminLearningRoutes', title: t('nav.learningRoutes'), url: '/admin/learning-routes', icon: Route, tone: 'beta', label: t('nav.beta') },
     { id: 'adminCrawler', title: t('nav.crawler'), url: '/admin/crawler', icon: Bot, tone: 'demo', label: t('nav.demo') },
     { id: 'adminOrganizeExam', title: t('nav.organizeExam'), url: '/admin/organize-exam', icon: CalendarClock, tone: 'demo', label: t('nav.demo') },

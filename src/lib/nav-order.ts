@@ -22,7 +22,7 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: 'studyRooms', group: 'learn', labelZh: '自习室', labelEn: 'Study Rooms' },
 
   { id: 'assistant', group: 'smart', labelZh: '小Q', labelEn: 'Xiao Q' },
-  { id: 'aiSettings', group: 'smart', labelZh: 'AI 设置', labelEn: 'AI Settings' },
+  { id: 'aiSettings', group: 'smart', labelZh: 'AI 接入管理', labelEn: 'AI Access' },
   { id: 'skills', group: 'smart', labelZh: 'SKILL 技能', labelEn: 'Skills' },
   { id: 'mcp', group: 'smart', labelZh: 'MCP 服务', labelEn: 'MCP Server' },
   { id: 'prompts', group: 'smart', labelZh: '提示词', labelEn: 'Prompts' },
@@ -34,6 +34,7 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: 'feedback', group: 'community', labelZh: '问题反馈', labelEn: 'Feedback' },
 
   { id: 'adminQuestions', group: 'admin', labelZh: '题目管理', labelEn: 'Questions' },
+  { id: 'adminRag', group: 'admin', labelZh: '检索索引', labelEn: 'RAG Index' },
   { id: 'adminLearningRoutes', group: 'admin', labelZh: '学习路线', labelEn: 'Learning Routes' },
   { id: 'adminCrawler', group: 'admin', labelZh: '分布式采集', labelEn: 'Crawler' },
   { id: 'adminOrganizeExam', group: 'admin', labelZh: '组织考试', labelEn: 'Organize Exam' },

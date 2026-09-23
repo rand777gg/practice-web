@@ -112,7 +112,7 @@ export async function chatWithLittleQ(
   mode: AssistantMode,
   options: LittleQOptions = {},
 ): Promise<{ reply: AssistantReply; emotion: LittleQEmotion }> {
-  const config = getAiConfig()
+  const config = getAiConfig('assistant')
   if (!config.apiKey) throw new Error('AI_NOT_CONFIGURED')
 
   // 检索失败不能让小Q 整个用不了: 拿不到资料就当普通对话回答

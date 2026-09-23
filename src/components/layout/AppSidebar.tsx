@@ -5,7 +5,6 @@ import { Home, Search } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -15,8 +14,6 @@ import {
 import { Kbd } from '@/components/ui/kbd'
 import { ExamGoalSwitcher } from './ExamGoalSwitcher'
 import { NavGroup } from './NavGroup'
-import { NavSecondary } from './NavSecondary'
-import { SidebarAccountMenu } from './SidebarAccountMenu'
 import { isPathActive, useNavGroups } from './nav-data'
 import { useQuickSearchStore } from '@/stores/quick-search-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -71,11 +68,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavGroup items={groups.smart} group="smart" label={t('nav.groupSmart')} />
         <NavGroup items={groups.community} group="community" label={t('nav.groupCommunity')} />
         <NavGroup items={groups.admin} group="admin" label={t('nav.admin')} />
-        <NavSecondary className="mt-auto" />
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarAccountMenu />
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

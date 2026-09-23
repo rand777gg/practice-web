@@ -30,7 +30,7 @@ export interface OcrResult {
 }
 
 function client() {
-  const config = getAiConfig()
+  const config = getAiConfig('grade')
   if (!config.apiKey) return null
   return { model: createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch }), config }
 }
@@ -116,7 +116,7 @@ function failed(kind: WrittenKind, reason: string, model?: string): GradingResul
 
 /** 单模型评分。未配置 key 或调用/解析失败都返回 ok:false */
 export async function gradeWrittenAnswer(input: GradingInput, modelOverride?: string): Promise<GradingResult> {
-  const config = getAiConfig()
+  const config = getAiConfig('grade')
   const model = modelOverride ?? config.model ?? 'deepseek-chat'
   if (!config.apiKey) {
     return failed(input.kind, '平台模型未配置, 无法给建议分', model)

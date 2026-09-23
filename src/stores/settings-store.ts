@@ -105,18 +105,17 @@ export const PINNED_NAV_ITEMS = [
 export type PinnedNavKey = (typeof PINNED_NAV_ITEMS)[number]['key']
 const DEFAULT_PINNED_NAV: PinnedNavKey[] = ['search']
 
-/** 顶栏可配置的快捷按钮; 顺序即显示顺序 */
+/** 顶栏可配置的快捷按钮; 顺序即显示顺序。
+ *  深浅色 / 语言 / 护眼配色不在这里 —— 它们在「更多」的账号区已经是常驻入口(二级菜单),
+ *  再留一份开关就成了同一个面板里两处改同一个东西。 */
 export const HEADER_ACTIONS = [
-  { key: 'theme' as const, labelZh: '深浅色切换', labelEn: 'Theme toggle' },
-  { key: 'lang' as const, labelZh: '语言切换', labelEn: 'Language' },
-  { key: 'eyeCare' as const, labelZh: '护眼模式', labelEn: 'Eye care' },
   { key: 'qr' as const, labelZh: '扫码登录', labelEn: 'QR sign-in' },
-  { key: 'settings' as const, labelZh: '设置', labelEn: 'Settings' },
   { key: 'aiSummary' as const, labelZh: 'AI 学习总结', labelEn: 'AI summary' },
+  { key: 'settings' as const, labelZh: '设置', labelEn: 'Settings' },
 ] as const
 
 export type HeaderActionKey = (typeof HEADER_ACTIONS)[number]['key']
-const DEFAULT_HEADER_ACTIONS: HeaderActionKey[] = ['theme', 'qr', 'settings']
+const DEFAULT_HEADER_ACTIONS: HeaderActionKey[] = ['qr', 'settings']
 
 function loadFlags(): AiFeatureFlags {
   try {

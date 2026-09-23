@@ -22,7 +22,7 @@ export interface SummaryData {
 }
 
 export async function generateDailySummary(data: SummaryData): Promise<string> {
-  const config = getConfig()
+  const config = getConfig('summary')
 
   if (!config.apiKey) {
     throw new Error('AI_NOT_CONFIGURED')

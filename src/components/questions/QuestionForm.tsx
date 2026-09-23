@@ -303,7 +303,7 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
     setStemExtracting(true)
     setStemGlow(true)
     try {
-      const config = getAiConfig()
+      const config = getAiConfig('question')
       if (!config.apiKey) return
       const parser = new DeepSeekParser(config as any)
       const result = await (parser as any).extractStem?.(questionText.trim()) ??

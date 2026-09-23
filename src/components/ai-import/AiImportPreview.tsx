@@ -54,7 +54,7 @@ export function AiImportPreview({
   const [batchLineBreakLoading, setBatchLineBreakLoading] = useState(false)
 
   const handleBatchLineBreak = async () => {
-    const config = getAiConfig()
+    const config = getAiConfig('import')
     if (!config?.apiKey || selectedIds.size === 0) return
     setBatchLineBreakLoading(true)
     try {

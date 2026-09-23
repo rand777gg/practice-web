@@ -144,7 +144,7 @@ export function Component() {
         import('ai'),
         import('@/lib/ai/config'),
       ])
-      const cfg = getAiConfig()
+      const cfg = getAiConfig('prompt')
       const model = createDeepSeek({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, fetch: cfg.fetch })
       const isUserRole = def?.role === 'user'
       const { text } = await generateText({

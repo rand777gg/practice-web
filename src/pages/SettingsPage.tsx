@@ -215,7 +215,7 @@ export function Component() {
    try {
     const { createDeepSeek } = await import('@ai-sdk/deepseek')
     const { generateText } = await import('ai')
-    const aiConfig = getAiConfig()
+    const aiConfig = getAiConfig('profile')
     const model = createDeepSeek({
      apiKey: aiConfig.apiKey,
      baseURL: aiConfig.baseURL,

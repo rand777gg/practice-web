@@ -5169,3 +5169,267 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- ============================================================================
+-- Section 71: RAG 管理页 —— 索引概览与清空
+--   原来只有资料库管理页那颗「重建检索索引」: 它能建, 却答不出管理一份索引真正要问的问题 ——
+--   现在索引了多少块、哪些块还没算上向量、占多大、最后同步在什么时候, 以及不想要了怎么删
+--   (以前只能手工 SQL)。
+--
+--   概览必须走函数: 前端的 count(*) 拿不到 pg_column_size 这种行级占用, 也分不出"总数"和
+--   "已算向量数" —— 而这两者的差正是 embedding 欠费/中断留下的半拉索引: 它不报错, 只是那部分
+--   内容永远搜不到, 是最需要被看见的一种坏法。
+--
+--   SECURITY DEFINER 里**不能**拿 current_user 判管理员: 属主(postgres)会让它恒真, 等于没有
+--   守卫(见 Section 66 的教训)。这里只认 is_admin() 和"确实没有 JWT"的两种身份。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.rag_admin_stats()
+RETURNS TABLE (
+  source         TEXT,
+  chunks         BIGINT,
+  embedded       BIGINT,
+  unembedded     BIGINT,
+  content_bytes  BIGINT,
+  last_embedded  TIMESTAMPTZ,
+  last_created   TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT c.source,
+         count(*),
+         count(c.embedding),
+         count(*) - count(c.embedding),
+         coalesce(sum(pg_column_size(c.content)), 0)::bigint,
+         max(c.embedded_at),
+         max(c.created_at)
+    FROM public.rag_chunks c
+   GROUP BY c.source
+   ORDER BY c.source;
+$$;
+
+-- 清空: p_source 为 null 就是整表。返回真正删掉的块数, 让前端能确认"确实删干净了"。
+CREATE OR REPLACE FUNCTION public.rag_clear_index(p_source TEXT DEFAULT NULL)
+RETURNS BIGINT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE v_deleted BIGINT;
+BEGIN
+  -- 放行: 管理员, 以及直连 SQL / 服务端(没有 JWT claims, 例如 supabase db query 与迁移)
+  IF NOT (public.is_admin() OR auth.role() IS NULL OR auth.role() = 'service_role') THEN
+    RAISE EXCEPTION 'forbidden';
+  END IF;
+  DELETE FROM public.rag_chunks WHERE p_source IS NULL OR source = p_source;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.rag_admin_stats() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.rag_admin_stats() TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.rag_clear_index(text) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.rag_clear_index(text) TO authenticated;
+
+-- ============================================================================
+-- Section 72: AI 用量埋点 —— 调用日志、趋势与成本
+--   「AI 接入管理」页要做看板, 而在此之前平台**一条调用记录都没有**: 既不知道谁在用、
+--   哪个功能在烧额度, 也说不清"这个月花了多少"。所以先落一张事实表。
+--
+--   为什么记在服务端(ai 代理函数)而不是前端: 平台模型全部经 /functions/v1/ai 转发(见该函数
+--   注释), 那里一次请求就能拿到 调用者 / 模型名 / 状态码 / 耗时 / 上游返回的 usage ——
+--   前端那十几处 generateText 调用点一行都不用改, 也改不出"漏记"。
+--
+--   成本为什么用一张单价表而不是写死: 单价会随厂商调价、也随你的结算方式变。留表 = 改一行
+--   SQL 就改口径, 而且页面上能把"按什么单价算出来的"摊开给人看。没有单价记录的模型成本记 0,
+--   页面会把这类模型标出来 —— 宁可显示"未定价", 也不要编一个数字。
+--
+--   权限: 普通用户只看自己的行(自己的用量本来就不该给别人看), 管理员看全部; 写入只有服务端
+--   (service_role 绕过 RLS), 客户端一条写策略都不留 —— 否则"用量"就成了客户端随便填的数字。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.ai_usage (
+  id                BIGSERIAL PRIMARY KEY,
+  user_id           UUID NOT NULL,
+  model             TEXT NOT NULL DEFAULT '',
+  -- 调用场景(小Q 对话 / AI 导题 / 简答批改 …), 由前端在 x-ai-source 头里带, 见 src/lib/ai/config.ts
+  source            TEXT,
+  ok                BOOLEAN NOT NULL DEFAULT TRUE,
+  status_code       INTEGER,
+  latency_ms        INTEGER,
+  prompt_tokens     INTEGER,
+  completion_tokens INTEGER,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user_time ON public.ai_usage(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_time      ON public.ai_usage(created_at DESC);
+
+ALTER TABLE public.ai_usage ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ai_usage_select_own ON public.ai_usage;
+CREATE POLICY ai_usage_select_own ON public.ai_usage FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin());
+
+-- 单价表: 每百万 tokens 的价(与厂商报价口径一致, 免得在 SQL 里反复折算)
+CREATE TABLE IF NOT EXISTS public.ai_model_prices (
+  model         TEXT PRIMARY KEY,
+  input_per_1m  NUMERIC(12,4) NOT NULL DEFAULT 0,
+  output_per_1m NUMERIC(12,4) NOT NULL DEFAULT 0,
+  currency      TEXT NOT NULL DEFAULT 'CNY',
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.ai_model_prices ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ai_prices_select ON public.ai_model_prices;
+CREATE POLICY ai_prices_select ON public.ai_model_prices FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS ai_prices_write_admin ON public.ai_model_prices;
+CREATE POLICY ai_prices_write_admin ON public.ai_model_prices FOR ALL
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- 初始单价: 只填平台实际在用的 DeepSeek(代理出口固定走它), 单位 元/百万 tokens。
+-- 这两个是**公开标价**的初值, 不是你的结算价 —— 改成自己的价格只需 UPDATE 这一张表。
+INSERT INTO public.ai_model_prices (model, input_per_1m, output_per_1m) VALUES
+  ('deepseek-chat',     2.0000,  8.0000),
+  ('deepseek-reasoner', 4.0000, 16.0000)
+ON CONFLICT (model) DO NOTHING;
+
+/**
+ * 看板要的全部聚合, 一次调用拿回。
+ *
+ * 为什么返回 JSONB 而不是几张表: 页面一次要四样东西(总计、按天趋势、按模型占比、最近日志),
+ * 分成四条 RPC 就是四次往返、而且四份数据之间还可能对不上(跨秒边界); 在这里一次算完天然一致。
+ *
+ * 权限靠 RLS 而不是函数里判管理员: 它是 SECURITY INVOKER, 读 ai_usage 时策略照常生效 ——
+ * 普通用户拿到的是自己的数, 管理员拿到全站, 同一段 SQL 不用分叉。
+ */
+CREATE OR REPLACE FUNCTION public.ai_usage_overview(p_days INTEGER DEFAULT 7)
+RETURNS JSONB
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+WITH span AS (
+  SELECT GREATEST(COALESCE(p_days, 7), 1)::INTEGER AS days
+),
+b AS (
+  SELECT days,
+         (CURRENT_DATE - (days - 1))::TIMESTAMPTZ AS cur_from,
+         (CURRENT_DATE + 1)::TIMESTAMPTZ          AS cur_to,
+         (CURRENT_DATE - (2 * days - 1))::TIMESTAMPTZ AS prv_from
+  FROM span
+),
+scoped AS (
+  SELECT u.id, u.model, u.source, u.ok, u.status_code, u.latency_ms, u.created_at,
+         COALESCE(u.prompt_tokens, 0)     AS prompt_tokens,
+         COALESCE(u.completion_tokens, 0) AS completion_tokens,
+         (u.created_at >= b.cur_from)     AS in_current,
+         ((COALESCE(u.prompt_tokens, 0) * COALESCE(pr.input_per_1m, 0)
+           + COALESCE(u.completion_tokens, 0) * COALESCE(pr.output_per_1m, 0)) / 1000000.0)::NUMERIC(14,4) AS cost,
+         (pr.model IS NOT NULL) AS priced
+    FROM public.ai_usage u
+    CROSS JOIN b
+    LEFT JOIN public.ai_model_prices pr ON pr.model = u.model
+   WHERE u.created_at >= b.prv_from AND u.created_at < b.cur_to
+),
+cur AS (SELECT * FROM scoped WHERE in_current),
+prv AS (SELECT * FROM scoped WHERE NOT in_current),
+totals AS (
+  SELECT jsonb_build_object(
+    'calls',          count(*),
+    'failed',         count(*) FILTER (WHERE NOT ok),
+    'prompt_tokens',  COALESCE(sum(prompt_tokens), 0),
+    'completion_tokens', COALESCE(sum(completion_tokens), 0),
+    'tokens',         COALESCE(sum(prompt_tokens + completion_tokens), 0),
+    'cost',           COALESCE(round(sum(cost), 4), 0),
+    'avg_latency_ms', COALESCE(round(avg(latency_ms) FILTER (WHERE ok AND latency_ms IS NOT NULL)), 0),
+    'unpriced_calls', count(*) FILTER (WHERE NOT priced)
+  ) AS v FROM cur
+),
+prev AS (
+  SELECT jsonb_build_object(
+    'calls',  count(*),
+    'tokens', COALESCE(sum(prompt_tokens + completion_tokens), 0),
+    'cost',   COALESCE(round(sum(cost), 4), 0)
+  ) AS v FROM prv
+),
+days_series AS (
+  SELECT generate_series((SELECT cur_from::DATE FROM b), CURRENT_DATE, INTERVAL '1 day')::DATE AS day
+),
+daily_totals AS (
+  SELECT created_at::DATE AS day,
+         count(*) AS calls,
+         count(*) FILTER (WHERE NOT ok) AS failed,
+         COALESCE(sum(prompt_tokens + completion_tokens), 0) AS tokens,
+         COALESCE(round(sum(cost), 4), 0) AS cost
+    FROM cur GROUP BY 1
+),
+daily_models AS (
+  SELECT day, jsonb_object_agg(model, calls) AS by_model
+    FROM (SELECT created_at::DATE AS day, model, count(*) AS calls FROM cur GROUP BY 1, 2) t
+   GROUP BY day
+),
+daily AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'day',      d.day,
+           'calls',    COALESCE(t.calls, 0),
+           'failed',   COALESCE(t.failed, 0),
+           'tokens',   COALESCE(t.tokens, 0),
+           'cost',     COALESCE(t.cost, 0),
+           'by_model', COALESCE(m.by_model, '{}'::JSONB)
+         ) ORDER BY d.day) AS v
+    FROM days_series d
+    LEFT JOIN daily_totals t ON t.day = d.day
+    LEFT JOIN daily_models m ON m.day = d.day
+),
+model_rows AS (
+  SELECT model,
+         count(*) AS calls,
+         COALESCE(sum(prompt_tokens + completion_tokens), 0) AS tokens,
+         COALESCE(round(sum(cost), 4), 0) AS cost,
+         COALESCE(round(avg(latency_ms) FILTER (WHERE ok AND latency_ms IS NOT NULL)), 0) AS avg_latency_ms,
+         bool_and(priced) AS priced
+    FROM cur GROUP BY model
+   ORDER BY calls DESC
+   LIMIT 8
+),
+models AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'model',         m.model,
+           'calls',         m.calls,
+           'tokens',        m.tokens,
+           'cost',          m.cost,
+           'avg_latency_ms', m.avg_latency_ms,
+           'priced',        m.priced,
+           'share',         CASE WHEN (SELECT sum(calls) FROM model_rows) > 0
+                                 THEN round(m.calls::NUMERIC / (SELECT sum(calls) FROM model_rows), 4)
+                                 ELSE 0 END
+         ) ORDER BY m.calls DESC) AS v
+    FROM model_rows m
+),
+recent AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'id',          r.id,
+           'model',       r.model,
+           'source',      r.source,
+           'ok',          r.ok,
+           'status_code', r.status_code,
+           'latency_ms',  r.latency_ms,
+           'tokens',      r.prompt_tokens + r.completion_tokens,
+           'created_at',  r.created_at
+         ) ORDER BY r.created_at DESC) AS v
+    FROM (SELECT * FROM cur ORDER BY created_at DESC LIMIT 12) r
+)
+SELECT jsonb_build_object(
+  'days',   (SELECT days FROM b),
+  'totals', (SELECT v FROM totals),
+  'prev',   (SELECT v FROM prev),
+  'daily',  COALESCE((SELECT v FROM daily), '[]'::JSONB),
+  'models', COALESCE((SELECT v FROM models), '[]'::JSONB),
+  'recent', COALESCE((SELECT v FROM recent), '[]'::JSONB)
+);
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.ai_usage_overview(integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.ai_usage_overview(integer) TO authenticated;

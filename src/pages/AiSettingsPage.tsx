@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   BookOpen, Bot, Box, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ExternalLink, Globe,
-  Key, Layers, Link as LinkIcon, Loader2, RotateCcw, Search, ShieldCheck, Sparkles,
+  Key, Layers, Link as LinkIcon, Loader2, RotateCcw, Search, ShieldCheck,
   TriangleAlert, Users, Wifi, XCircle, Zap,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DemoBadge } from '@/components/topics/TopicSidebar'
+import { AiUsageDashboard, type AiTabKey } from '@/components/ai/AiUsageDashboard'
 import {
   ERROR_KIND_META, PROVIDER_ERROR_DOCS, describeError, lookupErrorCode, providerErrorDoc,
 } from '@/lib/ai-error-codes'
@@ -951,10 +952,16 @@ export function Component() {
   const profile = useAuthStore((s) => s.profile)
   const isAdmin = profile?.role === 'admin'
   const { providers, toggleProvider, toggleModel, setApiKey, setBaseUrl } = useAiStore()
+  const [tab, setTab] = useState<AiTabKey>('providers')
 
   const official = providers.filter((item) => item.type === 'official')
   const community = providers.filter((item) => item.type === 'community')
-  const enabledCount = providers.filter((item) => item.enabled).length
+
+  /** 看板里的快捷操作与模型行都要能跳到下面某个页签, 所以 Tabs 是受控的 */
+  const openTab = (next: AiTabKey) => {
+    setTab(next)
+    document.getElementById('ai-settings-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   function renderGroup(title: string, GroupIcon: typeof Zap, list: AiProviderConfig[]) {
     return (
@@ -983,76 +990,65 @@ export function Component() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-7xl space-y-5">
       <div>
         <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
           <Bot className="h-5 w-5 text-primary" />
-          AI 设置
+          AI 接入管理
           <DemoBadge />
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          普通用户和管理员都能在这里配置 AI：填自己的 API Key 就能直接用，不需要等平台开通。
-          支持 OpenAI 与 Anthropic 两种主流协议，报错会按厂商官方文档给出解释。
+          统一管理大模型接入、API 密钥与调用监控。看板里的调用次数、耗时、tokens 与成本都是服务端
+          真实记录（每次走平台代理的调用都会落一行），不是估算。
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground">
-          <Sparkles className="h-3 w-3 text-primary" />
-          已启用 {enabledCount} / {providers.length} 个供应商
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground">
-          <Globe className="h-3 w-3 text-primary" />
-          OpenAI 格式 / Anthropic 格式
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground">
-          <Key className="h-3 w-3 text-primary" />
-          Key 只存本机
-        </span>
+      <AiUsageDashboard onOpenTab={openTab} />
+
+      <div id="ai-settings-tabs" className="scroll-mt-20">
+        <Tabs value={tab} onValueChange={(value) => setTab(value as AiTabKey)} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="providers">
+              <Zap className="mr-1.5 h-3.5 w-3.5" />
+              供应商
+            </TabsTrigger>
+            <TabsTrigger value="errors">
+              <BookOpen className="mr-1.5 h-3.5 w-3.5" />
+              错误码对照
+            </TabsTrigger>
+            <TabsTrigger value="relay">
+              <Globe className="mr-1.5 h-3.5 w-3.5" />
+              中转与接口
+            </TabsTrigger>
+            <TabsTrigger value="layers">
+              <Layers className="mr-1.5 h-3.5 w-3.5" />
+              配置层级{isAdmin ? '与权限' : ''}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="providers" className="space-y-5">
+            {renderGroup('官方供应商', Zap, official)}
+            {renderGroup('社区 / 聚合', Globe, community)}
+            <p className="flex items-start gap-1.5 px-1 text-[11px] leading-relaxed text-muted-foreground">
+              <XCircle className="mt-0.5 h-3 w-3 shrink-0" />
+              DEMO：测试连接会真实发起一次请求，可能因浏览器 CORS 或额度不足失败——这正好可以用来验证右侧的错误码解释是否准确。
+              其余配置只写入本机 localStorage。
+            </p>
+          </TabsContent>
+
+          <TabsContent value="errors">
+            <ErrorCodeReference />
+          </TabsContent>
+
+          <TabsContent value="relay">
+            <RelayTab />
+          </TabsContent>
+
+          <TabsContent value="layers">
+            <LayerTab isAdmin={isAdmin} />
+          </TabsContent>
+        </Tabs>
       </div>
-
-      <Tabs defaultValue="providers" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="providers">
-            <Zap className="mr-1.5 h-3.5 w-3.5" />
-            供应商
-          </TabsTrigger>
-          <TabsTrigger value="errors">
-            <BookOpen className="mr-1.5 h-3.5 w-3.5" />
-            错误码对照
-          </TabsTrigger>
-          <TabsTrigger value="relay">
-            <Globe className="mr-1.5 h-3.5 w-3.5" />
-            中转与接口
-          </TabsTrigger>
-          <TabsTrigger value="layers">
-            <Layers className="mr-1.5 h-3.5 w-3.5" />
-            配置层级{isAdmin ? '与权限' : ''}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="providers" className="space-y-5">
-          {renderGroup('官方供应商', Zap, official)}
-          {renderGroup('社区 / 聚合', Globe, community)}
-          <p className="flex items-start gap-1.5 px-1 text-[11px] leading-relaxed text-muted-foreground">
-            <XCircle className="mt-0.5 h-3 w-3 shrink-0" />
-            DEMO：测试连接会真实发起一次请求，可能因浏览器 CORS 或额度不足失败——这正好可以用来验证右侧的错误码解释是否准确。
-            其余配置只写入本机 localStorage。
-          </p>
-        </TabsContent>
-
-        <TabsContent value="errors">
-          <ErrorCodeReference />
-        </TabsContent>
-
-        <TabsContent value="relay">
-          <RelayTab />
-        </TabsContent>
-
-        <TabsContent value="layers">
-          <LayerTab isAdmin={isAdmin} />
-        </TabsContent>
-      </Tabs>
     </div>
   )
 }

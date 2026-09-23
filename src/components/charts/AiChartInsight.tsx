@@ -24,7 +24,7 @@ export function AiChartInsight({ title, dataDesc }: Props) {
     try {
       const { createDeepSeek } = await import('@ai-sdk/deepseek')
       const { generateText } = await import('ai')
-      const config = getAiConfig()
+      const config = getAiConfig('chart')
       const model = createDeepSeek({
         apiKey: config.apiKey,
         baseURL: config.baseURL,

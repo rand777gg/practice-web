@@ -16,6 +16,14 @@ const FUNCTIONS_BASE = `${import.meta.env.VITE_SUPABASE_URL as string}/functions
 const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 
 /**
+ * 调用场景。服务端按它分组统计用量(见 supabase/migrations Section 72), 页面上就是
+ * "这次调用是谁发起的"。新增一个场景时两边都不用改 SQL —— 加个值、页面自己会显示新分组。
+ */
+export type AiCallSource =
+  | 'assistant' | 'assistant-create' | 'grade' | 'summary' | 'chart'
+  | 'markdown' | 'question' | 'import' | 'prompt' | 'profile' | 'probe'
+
+/**
  * 给 @ai-sdk 用的 fetch: 每次请求现取会话 JWT 放进 Authorization。
  *
  * 为什么不靠 apiKey 传身份: SDK 是在**构造 client 时**把 apiKey 读成字符串的, 而会话 token
@@ -25,29 +33,38 @@ const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
  * 401 时刷新会话再重试一次。但只在 401 **不是上游给的**时候重试: 代理会用 x-ai-upstream
  * 标记"这是模型的答复", 否则"模型 key 失效"也会被当成"我的会话过期", 白发一次请求。
  */
-export async function aiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export async function aiFetch(input: RequestInfo | URL, init?: RequestInit, source?: AiCallSource): Promise<Response> {
   const token = await currentSessionToken()
   if (!token) throw new Error('未登录, 无法使用平台模型')
 
-  const res = await sendWith(input, init, token)
+  const res = await sendWith(input, init, token, source)
   if (res.status !== 401 || res.headers.get('x-ai-upstream')) return res
 
   await supabase.auth.refreshSession().catch(() => {})
   const refreshed = await currentSessionToken()
   if (!refreshed || refreshed === token) return res
-  return sendWith(input, init, refreshed)
+  return sendWith(input, init, refreshed, source)
 }
 
-function sendWith(input: RequestInfo | URL, init: RequestInit | undefined, token: string): Promise<Response> {
-  if (input instanceof Request) {
-    const headers = new Headers(input.headers)
+function sendWith(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  token: string,
+  source?: AiCallSource,
+): Promise<Response> {
+  const applyHeaders = (headers: Headers) => {
     headers.set('Authorization', `Bearer ${token}`)
     if (ANON_KEY) headers.set('apikey', ANON_KEY)
+    // 少了它也能跑, 只是日志里那条记录没有场景(代理函数会存 null)
+    if (source) headers.set('x-ai-source', source)
+  }
+  if (input instanceof Request) {
+    const headers = new Headers(input.headers)
+    applyHeaders(headers)
     return fetch(new Request(input, { headers }))
   }
   const headers = new Headers(init?.headers)
-  headers.set('Authorization', `Bearer ${token}`)
-  if (ANON_KEY) headers.set('apikey', ANON_KEY)
+  applyHeaders(headers)
   return fetch(input, { ...init, headers })
 }
 
@@ -56,14 +73,15 @@ async function currentSessionToken(): Promise<string> {
   return data.session?.access_token ?? ''
 }
 
-export function getAiConfig(): AiConfig {
+/** source 决定这次调用在用量页里记成哪个场景 */
+export function getAiConfig(source?: AiCallSource): AiConfig {
   return {
     // SDK 要求这个字段非空; 真正的凭据由 aiFetch 每次请求时放进 Authorization,
     // 这里放什么都到不了线上产物里。
     apiKey: 'server-side',
     baseURL: PROXY_BASE,
     model: import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat',
-    fetch: aiFetch,
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => aiFetch(input, init, source),
   }
 }
 

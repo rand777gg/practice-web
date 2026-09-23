@@ -82,7 +82,7 @@ export async function parseCreateRequest(
       import('@ai-sdk/deepseek'),
       import('ai'),
     ])
-    const config = getAiConfig()
+    const config = getAiConfig('assistant-create')
     const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
 
     const prompt = [

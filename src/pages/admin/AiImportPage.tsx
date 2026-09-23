@@ -685,7 +685,7 @@ export function Component() {
 
   const extractQuestions = async (markdown: string) => {
     setParseMsg('AI 正在提取题目...')
-    const parser = new DeepSeekParser(getAiConfig())
+    const parser = new DeepSeekParser(getAiConfig('import'))
     const result = await parser.parseDocument(markdown, extractPrompt)
 
     // Apply upload-step metadata defaults to extracted questions
@@ -698,7 +698,7 @@ export function Component() {
       try {
         const { generateText } = await import('ai')
         const { createDeepSeek } = await import('@ai-sdk/deepseek')
-        const client = createDeepSeek(getAiConfig())
+        const client = createDeepSeek(getAiConfig('import'))
         const items = merged.map((q, i) => `[${i}] ${q.question_text}`).join('\n\n---\n\n')
         const { text } = await generateText({
           model: client('deepseek-chat'),

@@ -311,7 +311,7 @@ export function MarkdownEditor({
   }, [uploadVideoFile, staged, hideImageTools])
 
   const handleAiLineBreak = async () => {
-    const config = getAiConfig()
+    const config = getAiConfig('markdown')
     if (!config?.apiKey) return
     setIsFormatting(true)
     try {
