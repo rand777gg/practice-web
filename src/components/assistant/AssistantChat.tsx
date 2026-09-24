@@ -4,9 +4,9 @@
  * 抽出来不是为了省行数, 是为了让两条入口的对话**就是同一份**: 之前对话状态住在
  * AssistantPage 里, 想在阅读文献时问一句就只能跳走, 回来还得重问。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, GraduationCap, HeartHandshake, Library, Send, Terminal } from 'lucide-react'
+import { ChevronRight, Coins, GraduationCap, HeartHandshake, Library, Send, Terminal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,6 +15,10 @@ import { ExportCard, HelpCard, SkillCard } from '@/components/assistant/CommandC
 import { CreateCard } from '@/components/assistant/CreateCard'
 import { useAssistantStore, type ChatMessage } from '@/stores/assistant-store'
 import { commandPrefix, matchCommands, parseCommand, type CommandSpec } from '@/lib/assistant-commands'
+import {
+  costOfRound, formatCost, formatTokens, loadAiPriceMap, sumRounds,
+  type AiPriceMap, type AiRoundUsage,
+} from '@/lib/ai-usage'
 import {
   MODE_LABEL, QUICK_PROMPTS, type AssistantMode, type AssistantReply, type LittleQEmotion,
 } from '@/lib/assistant-demo'
@@ -102,8 +106,35 @@ function MetaCard({ message, onPickCommand }: { message: ChatMessage; onPickComm
   }
 }
 
-function MessageBody({ message, onNavigate, onPickCommand }: {
+/**
+ * 这一轮花了多少。
+ *
+ * 只挂在模型真答过的消息上(内置剧本回答没有 usage), 也不显示"0 tokens":
+ * 一次调用没记到用量时宁可不显示, 也不要给一个看着像真的零。
+ */
+function RoundUsageLine({ usage, prices }: { usage: AiRoundUsage; prices: AiPriceMap }) {
+  if (usage.totalTokens <= 0) return null
+  const cost = costOfRound(usage, prices)
+  return (
+    <p
+      className="flex flex-wrap items-center gap-1 pt-0.5 text-[10px] tabular-nums text-muted-foreground"
+      title={[
+        `输入 ${formatTokens(usage.promptTokens)} · 输出 ${formatTokens(usage.completionTokens)}`,
+        usage.model && `模型 ${usage.model}`,
+        cost === null && '这个模型在 ai_model_prices 里没有单价, 不计成本',
+      ].filter(Boolean).join(' · ')}
+    >
+      <Coins className="h-2.5 w-2.5" />
+      本轮 {formatTokens(usage.totalTokens)} tokens
+      <span aria-hidden="true">·</span>
+      {cost === null ? <span className="text-amber-600 dark:text-amber-400">未定价</span> : formatCost(cost)}
+    </p>
+  )
+}
+
+function MessageBody({ message, prices, onNavigate, onPickCommand }: {
   message: ChatMessage
+  prices: AiPriceMap
   onNavigate?: () => void
   onPickCommand: (command: string) => void
 }) {
@@ -142,6 +173,8 @@ function MessageBody({ message, onNavigate, onPickCommand }: {
           ))}
         </div>
       )}
+
+      {message.usage && <RoundUsageLine usage={message.usage} prices={prices} />}
     </>
   )
 }
@@ -169,8 +202,31 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
   const [input, setInput] = useState('')
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [paletteHidden, setPaletteHidden] = useState(false)
+  const [prices, setPrices] = useState<AiPriceMap>(() => new Map())
   const scrollRef = useRef<HTMLDivElement>(null)
   const pendingInput = useAssistantStore((s) => s.pendingInput)
+
+  // 单价表只为把 tokens 折成钱, 拿不到就只显示 tokens —— 不能因为查不到单价就让对话报错
+  useEffect(() => {
+    let alive = true
+    void loadAiPriceMap().then((map) => { if (alive) setPrices(map) })
+    return () => { alive = false }
+  }, [])
+
+  /**
+   * 本会话累计。用消息里的 usage 加出来, 而不是回头查一次用量表:
+   * 这些数字用户刚刚一条条看过来, 现场加出来的和上面每一行天然一致; 而且刷新之后
+   * usage 跟着消息一起读回来, 不依赖"这次刷新是不是还在一周窗口内"。
+   */
+  const sessionUsage = useMemo(
+    () => sumRounds(messages.map((m) => m.usage), prices),
+    [messages, prices],
+  )
+  const sessionCostText = sessionUsage.rounds === 0
+    ? ''
+    : sessionUsage.cost === 0 && sessionUsage.unpriced > 0
+      ? '未定价'
+      : `${formatCost(sessionUsage.cost)}${sessionUsage.unpriced > 0 ? '+' : ''}`
 
   // 快速搜索里「询问小Q」带过来的问题: 直接填进输入框, 让用户看一眼再发
   useEffect(() => {
@@ -277,8 +333,19 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             <button type="button" onClick={() => submit('/skill off')} className="hover:underline">关掉</button>
           </span>
         )}
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-          {sending ? '正在组织语言…' : STATUS_TEXT[emotion]}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {sessionUsage.rounds > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground"
+              title={`本会话有 ${sessionUsage.rounds} 轮是模型答的, 合计 ${formatTokens(sessionUsage.tokens)} tokens; 每条回答下面的数字加起来就是这个数`}
+            >
+              <Coins className="h-3 w-3" />
+              本会话 {formatTokens(sessionUsage.tokens)} tokens · {sessionCostText}
+            </span>
+          )}
+          <span className="text-[10px] text-muted-foreground">
+            {sending ? '正在组织语言…' : STATUS_TEXT[emotion]}
+          </span>
         </span>
         <button
           type="button"
@@ -319,7 +386,12 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             <div key={message.id} className="animate-in fade-in-0 slide-in-from-bottom-2 flex items-start gap-2.5 duration-300">
               <img src="/littleq.webp" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full object-cover" />
               <div className="max-w-[88%] space-y-2 rounded-2xl rounded-tl-sm border bg-muted/50 px-4 py-3">
-                <MessageBody message={message} onNavigate={beforeNavigate} onPickCommand={(cmd) => { setInput(cmd) }} />
+                <MessageBody
+                  message={message}
+                  prices={prices}
+                  onNavigate={beforeNavigate}
+                  onPickCommand={(cmd) => { setInput(cmd) }}
+                />
               </div>
             </div>
           ),

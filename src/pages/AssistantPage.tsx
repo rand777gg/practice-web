@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   BookOpen, GraduationCap, HeartHandshake, History, MessageSquarePlus, ShieldCheck,
   Sparkles, TriangleAlert,
@@ -22,20 +22,35 @@ export function Component() {
   const conversationsLoaded = useAssistantStore((s) => s.conversationsLoaded)
   const activeId = useAssistantStore((s) => s.activeId)
   const conversations = useAssistantStore((s) => s.conversations)
+  const openConversation = useAssistantStore((s) => s.openConversation)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLink = searchParams.get('conversation')
 
   // 这一页本身就装着对话, 再挂一个悬浮面板会出现两份一样的对话
   useEffect(() => { setOpen(false) }, [setOpen])
+
+  /**
+   * ?conversation=<id> 深链 —— 「AI 接入管理」页的会话用量里点一下能落到那条会话上。
+   * 打开之后就把参数从地址里抹掉: 它是一次性意图, 留着的话用户随后手点别的会话会被它拽回来。
+   */
+  useEffect(() => {
+    if (!deepLink) return
+    void openConversation(deepLink)
+    setSearchParams({}, { replace: true })
+  }, [deepLink, openConversation, setSearchParams])
 
   useEffect(() => {
     if (!conversationsLoaded) {
       void loadConversations()
       return
     }
+    // 深链那条由上面那个 effect 负责, 这里不要接着把"上次聊的那条"再打开一遍
+    if (deepLink) return
     // 列表拿到之后再判断"上次那条还在不在", 顺序反了会把已被删掉的会话又接回来
-    const { activeId: id, messages, openConversation } = useAssistantStore.getState()
-    if (id && messages.length === 0) void openConversation(id)
-  }, [conversationsLoaded, loadConversations])
+    const { activeId: id, messages, loadingMessages } = useAssistantStore.getState()
+    if (id && messages.length === 0 && !loadingMessages) void openConversation(id)
+  }, [conversationsLoaded, loadConversations, deepLink, openConversation])
 
   const title = conversations.find((c) => c.id === activeId)?.title ?? '新会话'
 

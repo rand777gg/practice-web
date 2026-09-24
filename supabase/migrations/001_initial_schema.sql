@@ -5751,3 +5751,190 @@ WHERE c.source = 'subject'
     SELECT 1 FROM public.subject_explanations s WHERE s.subject = c.source_id);
 
 REVOKE EXECUTE ON FUNCTION public.purge_rag_chunks_on_delete() FROM PUBLIC, anon, authenticated;
+
+-- ============================================================================
+-- Section 76: 小Q 本轮用量 —— 每条回答记 tokens, 会话维度接进「AI 接入管理」
+--   需求: 对话里要看得见"这一轮花了多少", 管理页要能按会话看用量。
+--
+--   为什么 tokens 跟着消息再存一份(chat_messages.usage), 而不是显示时回查 ai_usage:
+--   ai_usage 记的是调用者/模型/耗时, 没有"这次调用属于哪条消息"的关联, 要按时间戳去猜;
+--   而用户往上翻历史问的是"当时那一轮花了多少", 每翻一次猜一次既慢又可能猜错。
+--   这里**只存 tokens 和模型名, 不存金额** —— 金额由 ai_model_prices 现算,
+--   否则以后改一次单价, 历史消息里的钱就和看板上的钱对不上了。
+--
+--   为什么 ai_usage 加一列 conversation_id 而不是建关联表: 埋点路径上只多一个可空列。
+--   故意不加外键 —— 用量是账单数据, 会话被删之后这些行还得留在账上; 标题那侧按缺失显示。
+-- ============================================================================
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS usage JSONB;
+
+ALTER TABLE public.ai_usage ADD COLUMN IF NOT EXISTS conversation_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_conversation
+  ON public.ai_usage(conversation_id) WHERE conversation_id IS NOT NULL;
+
+/**
+ * 看板重写: 在原来的 总计/趋势/模型/最近日志 之外加一段「按会话」。
+ *
+ * 为什么重写整个函数而不是再写一个 RPC: 这个函数的全部意义就是"一次调用拿回全部聚合",
+ * 分成两次就可能落在不同的秒边界上, 于是卡片里的总数和下面的明细对不上。
+ *
+ * 会话标题 LEFT JOIN 取。取不到只有两种可能: 会话被删了, 或者管理员在看别人的会话
+ * (chat_conversations 的策略只放行本人的行)。所以这里除了标题还回一个 owned ——
+ * 页面据此决定要不要给"跳到会话"的链接, 以及怎么称呼这一行, 而不是让 SQL 编一句中文出来。
+ */
+CREATE OR REPLACE FUNCTION public.ai_usage_overview(p_days INTEGER DEFAULT 7)
+RETURNS JSONB
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+WITH span AS (
+  SELECT GREATEST(COALESCE(p_days, 7), 1)::INTEGER AS days
+),
+b AS (
+  SELECT days,
+         (CURRENT_DATE - (days - 1))::TIMESTAMPTZ AS cur_from,
+         (CURRENT_DATE + 1)::TIMESTAMPTZ          AS cur_to,
+         (CURRENT_DATE - (2 * days - 1))::TIMESTAMPTZ AS prv_from
+   FROM span
+),
+scoped AS (
+  SELECT u.id, u.model, u.source, u.ok, u.status_code, u.latency_ms, u.created_at, u.conversation_id,
+         COALESCE(u.prompt_tokens, 0)     AS prompt_tokens,
+         COALESCE(u.completion_tokens, 0) AS completion_tokens,
+         (u.created_at >= b.cur_from)     AS in_current,
+         ((COALESCE(u.prompt_tokens, 0) * COALESCE(pr.input_per_1m, 0)
+           + COALESCE(u.completion_tokens, 0) * COALESCE(pr.output_per_1m, 0)) / 1000000.0)::NUMERIC(14,4) AS cost,
+         (pr.model IS NOT NULL) AS priced
+    FROM public.ai_usage u
+    CROSS JOIN b
+    LEFT JOIN public.ai_model_prices pr ON pr.model = u.model
+   WHERE u.created_at >= b.prv_from AND u.created_at < b.cur_to
+),
+cur AS (SELECT * FROM scoped WHERE in_current),
+prv AS (SELECT * FROM scoped WHERE NOT in_current),
+totals AS (
+  SELECT jsonb_build_object(
+    'calls',          count(*),
+    'failed',         count(*) FILTER (WHERE NOT ok),
+    'prompt_tokens',  COALESCE(sum(prompt_tokens), 0),
+    'completion_tokens', COALESCE(sum(completion_tokens), 0),
+    'tokens',         COALESCE(sum(prompt_tokens + completion_tokens), 0),
+    'cost',           COALESCE(round(sum(cost), 4), 0),
+    'avg_latency_ms', COALESCE(round(avg(latency_ms) FILTER (WHERE ok AND latency_ms IS NOT NULL)), 0),
+    'unpriced_calls', count(*) FILTER (WHERE NOT priced)
+  ) AS v FROM cur
+),
+prev AS (
+  SELECT jsonb_build_object(
+    'calls',  count(*),
+    'tokens', COALESCE(sum(prompt_tokens + completion_tokens), 0),
+    'cost',   COALESCE(round(sum(cost), 4), 0)
+  ) AS v FROM prv
+),
+days_series AS (
+  SELECT generate_series((SELECT cur_from::DATE FROM b), CURRENT_DATE, INTERVAL '1 day')::DATE AS day
+),
+daily_totals AS (
+  SELECT created_at::DATE AS day,
+         count(*) AS calls,
+         count(*) FILTER (WHERE NOT ok) AS failed,
+         COALESCE(sum(prompt_tokens + completion_tokens), 0) AS tokens,
+         COALESCE(round(sum(cost), 4), 0) AS cost
+    FROM cur GROUP BY 1
+),
+daily_models AS (
+  SELECT day, jsonb_object_agg(model, calls) AS by_model
+    FROM (SELECT created_at::DATE AS day, model, count(*) AS calls FROM cur GROUP BY 1, 2) t
+   GROUP BY day
+),
+daily AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'day',      d.day,
+           'calls',    COALESCE(t.calls, 0),
+           'failed',   COALESCE(t.failed, 0),
+           'tokens',   COALESCE(t.tokens, 0),
+           'cost',     COALESCE(t.cost, 0),
+           'by_model', COALESCE(m.by_model, '{}'::JSONB)
+         ) ORDER BY d.day) AS v
+    FROM days_series d
+    LEFT JOIN daily_totals t ON t.day = d.day
+    LEFT JOIN daily_models m ON m.day = d.day
+),
+model_rows AS (
+  SELECT model,
+         count(*) AS calls,
+         COALESCE(sum(prompt_tokens + completion_tokens), 0) AS tokens,
+         COALESCE(round(sum(cost), 4), 0) AS cost,
+         COALESCE(round(avg(latency_ms) FILTER (WHERE ok AND latency_ms IS NOT NULL)), 0) AS avg_latency_ms,
+         bool_and(priced) AS priced
+    FROM cur GROUP BY model
+   ORDER BY calls DESC
+   LIMIT 8
+),
+models AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'model',         m.model,
+           'calls',         m.calls,
+           'tokens',        m.tokens,
+           'cost',          m.cost,
+           'avg_latency_ms', m.avg_latency_ms,
+           'priced',        m.priced,
+           'share',         CASE WHEN (SELECT sum(calls) FROM model_rows) > 0
+                                 THEN round(m.calls::NUMERIC / (SELECT sum(calls) FROM model_rows), 4)
+                                 ELSE 0 END
+         ) ORDER BY m.calls DESC) AS v
+    FROM model_rows m
+),
+recent AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'id',          r.id,
+           'model',       r.model,
+           'source',      r.source,
+           'ok',          r.ok,
+           'status_code', r.status_code,
+           'latency_ms',  r.latency_ms,
+           'tokens',      r.prompt_tokens + r.completion_tokens,
+           'created_at',  r.created_at
+         ) ORDER BY r.created_at DESC) AS v
+    FROM (SELECT * FROM cur ORDER BY created_at DESC LIMIT 12) r
+),
+-- 只按 tokens 排, 不按金额: 没单价的模型金额是 0, 拿金额排会把烧得最多的会话排到看不见的地方
+conv_rows AS (
+  SELECT conversation_id,
+         count(*) AS calls,
+         COALESCE(sum(prompt_tokens + completion_tokens), 0) AS tokens,
+         COALESCE(round(sum(cost), 4), 0) AS cost,
+         max(created_at) AS last_at
+    FROM cur
+   WHERE conversation_id IS NOT NULL
+   GROUP BY conversation_id
+   ORDER BY tokens DESC
+   LIMIT 8
+),
+conversations AS (
+  SELECT jsonb_agg(jsonb_build_object(
+           'conversation_id', r.conversation_id,
+           'title',           NULLIF(c.title, ''),
+           'owned',           (c.id IS NOT NULL),
+           'calls',           r.calls,
+           'tokens',          r.tokens,
+           'cost',            r.cost,
+           'last_at',         r.last_at
+         ) ORDER BY r.tokens DESC) AS v
+    FROM conv_rows r
+    LEFT JOIN public.chat_conversations c ON c.id = r.conversation_id
+)
+SELECT jsonb_build_object(
+  'days',   (SELECT days FROM b),
+  'totals', (SELECT v FROM totals),
+  'prev',   (SELECT v FROM prev),
+  'daily',  COALESCE((SELECT v FROM daily), '[]'::JSONB),
+  'models', COALESCE((SELECT v FROM models), '[]'::JSONB),
+  'recent', COALESCE((SELECT v FROM recent), '[]'::JSONB),
+  'conversations', COALESCE((SELECT v FROM conversations), '[]'::JSONB)
+);
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.ai_usage_overview(integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.ai_usage_overview(integer) TO authenticated;

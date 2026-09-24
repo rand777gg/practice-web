@@ -33,17 +33,22 @@ export type AiCallSource =
  * 401 时刷新会话再重试一次。但只在 401 **不是上游给的**时候重试: 代理会用 x-ai-upstream
  * 标记"这是模型的答复", 否则"模型 key 失效"也会被当成"我的会话过期", 白发一次请求。
  */
-export async function aiFetch(input: RequestInfo | URL, init?: RequestInit, source?: AiCallSource): Promise<Response> {
+export async function aiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  source?: AiCallSource,
+  conversationId?: string,
+): Promise<Response> {
   const token = await currentSessionToken()
   if (!token) throw new Error('未登录, 无法使用平台模型')
 
-  const res = await sendWith(input, init, token, source)
+  const res = await sendWith(input, init, token, source, conversationId)
   if (res.status !== 401 || res.headers.get('x-ai-upstream')) return res
 
   await supabase.auth.refreshSession().catch(() => {})
   const refreshed = await currentSessionToken()
   if (!refreshed || refreshed === token) return res
-  return sendWith(input, init, refreshed, source)
+  return sendWith(input, init, refreshed, source, conversationId)
 }
 
 function sendWith(
@@ -51,12 +56,15 @@ function sendWith(
   init: RequestInit | undefined,
   token: string,
   source?: AiCallSource,
+  conversationId?: string,
 ): Promise<Response> {
   const applyHeaders = (headers: Headers) => {
     headers.set('Authorization', `Bearer ${token}`)
     if (ANON_KEY) headers.set('apikey', ANON_KEY)
     // 少了它也能跑, 只是日志里那条记录没有场景(代理函数会存 null)
     if (source) headers.set('x-ai-source', source)
+    // 同理: 少了它这条用量就没法归到某个会话上, 管理页的「按会话」里看不到这一次
+    if (conversationId) headers.set('x-ai-conversation', conversationId)
   }
   if (input instanceof Request) {
     const headers = new Headers(input.headers)
@@ -73,15 +81,15 @@ async function currentSessionToken(): Promise<string> {
   return data.session?.access_token ?? ''
 }
 
-/** source 决定这次调用在用量页里记成哪个场景 */
-export function getAiConfig(source?: AiCallSource): AiConfig {
+/** source 决定这次调用在用量页里记成哪个场景; conversationId 把小Q 的调用归到具体会话上 */
+export function getAiConfig(source?: AiCallSource, conversationId?: string): AiConfig {
   return {
     // SDK 要求这个字段非空; 真正的凭据由 aiFetch 每次请求时放进 Authorization,
     // 这里放什么都到不了线上产物里。
     apiKey: 'server-side',
     baseURL: PROXY_BASE,
     model: import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat',
-    fetch: (input: RequestInfo | URL, init?: RequestInit) => aiFetch(input, init, source),
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => aiFetch(input, init, source, conversationId),
   }
 }
 

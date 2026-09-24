@@ -50,6 +50,17 @@ export interface AiUsageLog {
   createdAt: string
 }
 
+export interface AiUsageConversation {
+  conversationId: string
+  /** 只有本人的会话才有标题; 会话已删、或管理员在看别人的会话时是 null */
+  title: string | null
+  owned: boolean
+  calls: number
+  tokens: number
+  cost: number
+  lastAt: string
+}
+
 export interface AiUsageOverview {
   days: number
   totals: AiUsageTotals
@@ -58,6 +69,8 @@ export interface AiUsageOverview {
   daily: AiUsageDay[]
   models: AiUsageModelRow[]
   recent: AiUsageLog[]
+  /** 按会话聚合(小Q 对话), 只含前端带了会话 id 的调用 */
+  conversations: AiUsageConversation[]
 }
 
 export interface AiModelPrice {
@@ -79,6 +92,10 @@ interface RawOverview {
   recent?: {
     id: number; model: string; source: string | null; ok: boolean
     status_code: number | null; latency_ms: number | null; tokens: number; created_at: string
+  }[]
+  conversations?: {
+    conversation_id: string; title: string | null; owned: boolean; calls: number
+    tokens: number; cost: number; last_at: string
   }[]
 }
 
@@ -123,6 +140,15 @@ export async function loadAiUsage(days = 7): Promise<AiUsageOverview> {
       share: m.share,
     })),
     recent: (raw.recent ?? []).map(toLog),
+    conversations: (raw.conversations ?? []).map((c) => ({
+      conversationId: c.conversation_id,
+      title: c.title,
+      owned: c.owned,
+      calls: c.calls,
+      tokens: c.tokens,
+      cost: c.cost,
+      lastAt: c.last_at,
+    })),
   }
 }
 
@@ -171,6 +197,87 @@ export async function loadAiPrices(): Promise<AiModelPrice[]> {
     outputPer1m: Number(r.output_per_1m),
     currency: r.currency,
   }))
+}
+
+/**
+ * 一轮对话的用量 —— 跟着回答一起存进 chat_messages.usage(见 Section 76)。
+ * 只有 tokens 和模型名: 金额不存, 由单价表现算, 否则改了单价历史账就对不上。
+ */
+export interface AiRoundUsage {
+  model: string
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export type AiPriceMap = Map<string, AiModelPrice>
+
+/**
+ * 单价表在本机缓存一份。
+ *
+ * 对话区每条回答都要折算金额, 而单价表一个会话里不会变 —— 每渲染一次就问一次库,
+ * 是把静态数据当实时数据使。管理页自己那处仍然直读(见 AiUsageDashboard), 那边要的是最新值。
+ */
+let priceCache: Promise<AiPriceMap> | null = null
+
+export function loadAiPriceMap(): Promise<AiPriceMap> {
+  priceCache ??= loadAiPrices()
+    .then((list) => new Map(list.map((p) => [p.model, p])))
+    .catch(() => {
+      // 拿不到单价不该让对话少显示半行: 返回空表, 页面上只显示 tokens
+      priceCache = null
+      return new Map()
+    })
+  return priceCache
+}
+
+/** 这一轮的金额(元)。没有该模型的单价就返回 null —— 宁可显示"未定价", 也不要编一个数字 */
+export function costOfRound(usage: AiRoundUsage, prices: AiPriceMap): number | null {
+  const price = prices.get(usage.model)
+  if (!price) return null
+  return (usage.promptTokens * price.inputPer1m + usage.completionTokens * price.outputPer1m) / 1_000_000
+}
+
+/**
+ * 把库里/模型返回的 usage 收成已知形状。
+ * 旧消息没有这一列(undefined), 模型偶尔回一个错位对象 —— 都当"这一轮没记到用量"处理,
+ * 让消息照常显示, 而不是让整个会话读不出来。
+ */
+export function normalizeRoundUsage(raw: unknown): AiRoundUsage | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : null)
+  const promptTokens = num(r.promptTokens)
+  const completionTokens = num(r.completionTokens)
+  if (promptTokens === null || completionTokens === null) return null
+  return {
+    model: typeof r.model === 'string' ? r.model : '',
+    promptTokens,
+    completionTokens,
+    totalTokens: num(r.totalTokens) ?? promptTokens + completionTokens,
+  }
+}
+
+/** 一个会话的累计: 把每条回答的用量加起来, 金额按同一张单价表现算 */
+export function sumRounds(usages: (AiRoundUsage | null)[], prices: AiPriceMap): {
+  rounds: number
+  tokens: number
+  cost: number
+  unpriced: number
+} {
+  let rounds = 0
+  let tokens = 0
+  let cost = 0
+  let unpriced = 0
+  for (const usage of usages) {
+    if (!usage) continue
+    rounds++
+    tokens += usage.totalTokens
+    const amount = costOfRound(usage, prices)
+    if (amount === null) unpriced++
+    else cost += amount
+  }
+  return { rounds, tokens, cost, unpriced }
 }
 
 /**

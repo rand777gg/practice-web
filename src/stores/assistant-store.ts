@@ -18,6 +18,7 @@ import { useLangStore } from '@/stores/lang-store'
 import { produceReply } from '@/lib/assistant-runtime'
 import { exportConversation } from '@/lib/assistant-export'
 import { hasAiConfig } from '@/lib/ai/config'
+import { normalizeRoundUsage, type AiRoundUsage } from '@/lib/ai-usage'
 import {
   generateFromSpec, insertCreatedQuestions, normalizeSpec, parseCreateRequest,
   type CreateSpec,
@@ -41,6 +42,8 @@ export interface ChatMessage {
   followups: string[] | null
   /** 指令卡片的结构化数据; 普通对话是 null */
   meta: MessageMeta | null
+  /** 这一轮花掉的 tokens(用户消息是 null; 内置剧本答的也是 null —— 它没调模型) */
+  usage: AiRoundUsage | null
   createdAt: string | null
 }
 
@@ -50,7 +53,7 @@ export interface ConversationSummary {
   updated_at: string
 }
 
-const MESSAGE_COLUMNS = 'id, role, content, sub, tags, sources, followups, meta, created_at'
+const MESSAGE_COLUMNS = 'id, role, content, sub, tags, sources, followups, meta, usage, created_at'
 const ACTIVE_KEY = 'littleq_active_conversation'
 
 /**
@@ -82,6 +85,8 @@ interface Row {
   followups: string[] | null
   /** 库里躺着的可能是旧版本写下的卡片形状, 所以这里收 unknown, 由 normalizeMeta 收口 */
   meta: unknown
+  /** 同上: 这一列是后加的, 旧消息是 null; 形状由 normalizeRoundUsage 收口 */
+  usage: unknown
   created_at: string | null
 }
 
@@ -95,12 +100,13 @@ function toMessage(row: Row): ChatMessage {
     sources: row.sources,
     followups: row.followups,
     meta: normalizeMeta(row.meta),
+    usage: normalizeRoundUsage(row.usage),
     createdAt: row.created_at ?? null,
   }
 }
 
 function emptyMessage(id: number, role: ChatMessage['role'], content: string, meta: MessageMeta | null = null): ChatMessage {
-  return { id, role, content, sub: null, tags: null, sources: null, followups: null, meta, createdAt: null }
+  return { id, role, content, sub: null, tags: null, sources: null, followups: null, meta, usage: null, createdAt: null }
 }
 
 /** 第一句话落库时才建会话行: 用户点开又关掉不该在列表里留下一堆空会话 */
@@ -554,8 +560,10 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         ? await loadSkillDoc(activeSkillId, 'zh').catch(() => null) ?? undefined
         : undefined
 
-      const outcome = await produceReply(value, history, mode, skill)
-      const { reply, emotion, scripted } = outcome
+      // 会话 id 一起带下去: 服务端拿它把这次调用的 tokens/成本归到这个会话上(见 Section 76),
+      // 于是管理页「按会话」那一栏里的数, 和这里每条回答下面显示的是同一笔账。
+      const outcome = await produceReply(value, history, mode, { skill, conversationId })
+      const { reply, emotion, scripted, usage } = outcome
       const { error } = await insertMessage({
         conversation_id: conversationId,
         role: 'assistant',
@@ -565,6 +573,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         sources: reply.sources ?? null,
         followups: reply.followups ?? null,
         emotion,
+        usage,
       })
 
       const bumped = get().conversations.map((c) =>
@@ -584,6 +593,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
           tags: scripted ? [...(reply.tags ?? []), '内置回答'] : reply.tags ?? null,
           sources: reply.sources ?? null,
           followups: reply.followups ?? null,
+          usage,
         }],
         conversations: bumped,
       })

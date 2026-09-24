@@ -22,6 +22,7 @@
 //   "AI 接入管理"页要看调用次数/耗时/成本, 而记在服务端是唯一不依赖前端自觉的位置 ——
 //   这里已经握着 调用者(来自 JWT)、模型名(body)、状态码、耗时、以及上游返回的 usage。
 //   前端那十几处调用一行都不用改。写失败只打日志, 绝不影响回答。
+//   会话归属(x-ai-conversation)也在这里落, 于是管理页能按会话把用量归拢起来(见 Section 76)。
 //
 // 配置 (supabase secrets):
 //   DEEPSEEK_API_KEY   —— 必配, 前端那把 VITE_DEEPSEEK_API_KEY 已经不需要了
@@ -38,7 +39,7 @@ const BASE_URL = (Deno.env.get('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ai-source',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ai-source, x-ai-conversation',
   // 前端要能读到下面这个标记(跨域下自定义响应头默认读不到), 见 src/lib/ai/config.ts 的重试判断
   'Access-Control-Expose-Headers': 'x-ai-upstream',
   'Access-Control-Max-Age': '86400',
@@ -105,6 +106,20 @@ function readSource(header: string | null): string | null {
   return clean || null
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 小Q 会话 id —— 让「AI 接入管理」能把用量按会话归拢起来。
+ *
+ * 只校验格式, **不校验归属**: 这是客户端自带的值, 乱填的后果仅仅是"他自己那一行挂到了别人的会话上",
+ * 而 ai_usage 的策略是本人+管理员可见, 他看不到也因此改不了别人的账。
+ * 为此每次调用多查一次会话表(对话高峰就是每次都要多打一次库)不值得。
+ */
+function readConversationId(header: string | null): string | null {
+  const value = header?.trim() ?? ''
+  return UUID_RE.test(value) ? value.toLowerCase() : null
+}
+
 /**
  * 流式请求要拿 token 用量: OpenAI 兼容接口只在带 stream_options.include_usage 时,
  * 才会在最后一个 chunk 里给出 usage。
@@ -163,6 +178,7 @@ interface UsageRow {
   user_id: string
   model: string
   source: string | null
+  conversation_id: string | null
   ok: boolean
   status_code: number
   latency_ms: number
@@ -203,6 +219,7 @@ Deno.serve(async (req) => {
     // 只有"花钱的调用"才记: /models 是模型清单, 记进去会把调用次数灌水
     const tracked = req.method === 'POST' && path === '/chat/completions'
     const source = readSource(req.headers.get('x-ai-source'))
+    const conversationId = readConversationId(req.headers.get('x-ai-conversation'))
 
     let body: string | undefined
     let model = ''
@@ -232,7 +249,7 @@ Deno.serve(async (req) => {
       // 连不上上游: 这也是一次"调用失败", 页面上要能看见
       if (tracked) {
         logUsage(admin, {
-          user_id: user.id, model, source, ok: false, status_code: 0,
+          user_id: user.id, model, source, conversation_id: conversationId, ok: false, status_code: 0,
           latency_ms: Date.now() - started, prompt_tokens: null, completion_tokens: null,
         })
       }
@@ -259,7 +276,7 @@ Deno.serve(async (req) => {
       const [toClient, toLog] = upstream.body.tee()
       void consumeStreamUsage(toLog, (usage) => {
         logUsage(admin, {
-          user_id: user.id, model, source, ok: upstream.ok, status_code: upstream.status,
+          user_id: user.id, model, source, conversation_id: conversationId, ok: upstream.ok, status_code: upstream.status,
           latency_ms: Date.now() - started, prompt_tokens: usage.prompt, completion_tokens: usage.completion,
         })
       })
@@ -270,7 +287,7 @@ Deno.serve(async (req) => {
     const text = await upstream.text()
     const usage = readUsage(safeJson(text))
     logUsage(admin, {
-      user_id: user.id, model, source, ok: upstream.ok, status_code: upstream.status,
+      user_id: user.id, model, source, conversation_id: conversationId, ok: upstream.ok, status_code: upstream.status,
       latency_ms: Date.now() - started, prompt_tokens: usage.prompt, completion_tokens: usage.completion,
     })
     return new Response(text, { status: upstream.status, headers: passHeaders })

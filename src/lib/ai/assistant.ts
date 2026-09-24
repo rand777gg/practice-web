@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { getPrompt } from '@/stores/prompt-store'
 import { getAiConfig } from './config'
 import { searchKnowledge, RAG_SOURCE_LABEL, type RagHit } from '@/lib/rag'
+import type { AiRoundUsage } from '@/lib/ai-usage'
 import type { AssistantMode, AssistantReply, LittleQEmotion, AssistantSource } from '@/lib/assistant-demo'
 
 export interface AssistantTurn {
@@ -12,6 +13,8 @@ export interface AssistantTurn {
 export interface LittleQOptions {
   /** 当前会话挂着的平台技能: SKILL.md 作为固定上下文注入 */
   skill?: { title: string; markdown: string }
+  /** 落库用的会话 id —— 服务端据此把这次调用的用量归到该会话上(见 Section 76) */
+  conversationId?: string
 }
 
 /**
@@ -111,8 +114,8 @@ export async function chatWithLittleQ(
   history: AssistantTurn[],
   mode: AssistantMode,
   options: LittleQOptions = {},
-): Promise<{ reply: AssistantReply; emotion: LittleQEmotion }> {
-  const config = getAiConfig('assistant')
+): Promise<{ reply: AssistantReply; emotion: LittleQEmotion; usage: AiRoundUsage | null }> {
+  const config = getAiConfig('assistant', options.conversationId)
   if (!config.apiKey) throw new Error('AI_NOT_CONFIGURED')
 
   // 检索失败不能让小Q 整个用不了: 拿不到资料就当普通对话回答
@@ -157,14 +160,21 @@ export async function chatWithLittleQ(
   ])
 
   const client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: config.fetch })
-  const { object } = await generateObject({
-    model: client(config.model || 'deepseek-chat'),
+  const modelId = config.model || 'deepseek-chat'
+  const { object, usage } = await generateObject({
+    model: client(modelId),
     schema: replySchema,
     system: getPrompt('assistant_persona'),
     prompt,
     temperature: 0.8,
     maxOutputTokens: 900,
   })
+
+  // 模型名取**配置里那个**而不是 response 里回的: 服务端埋点记的也是请求体里的 model,
+  // 两边用同一个名字, 单价表和用量页才对得上(见 src/lib/ai-usage 的 costOfRound)。
+  const promptTokens = usage?.inputTokens ?? 0
+  const completionTokens = usage?.outputTokens ?? 0
+  const totalTokens = usage?.totalTokens ?? promptTokens + completionTokens
 
   // 模型有时正文里老老实实标了 [2], 却漏填 used 字段(实测同一问题两次调用一次填一次不填)。
   // 正文里的编号是它自己写的, 拿它兜底比丢掉引用可靠 —— 有引用可核对比没有强得多。
@@ -180,5 +190,8 @@ export async function chatWithLittleQ(
       followups: object.followups?.length ? object.followups : undefined,
     },
     emotion: object.emotion,
+    // 上游没回 usage 就是"这一轮没记到用量", 不是"只花了 0 个 tokens" ——
+    // 宁可不显示这一行(以及不计入会话累计), 也不要给一个看着像真的零。
+    usage: totalTokens > 0 ? { model: modelId, promptTokens, completionTokens, totalTokens } : null,
   }
 }

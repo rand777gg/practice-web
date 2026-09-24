@@ -9,13 +9,22 @@ import {
   FALLBACK_EMOTION, FALLBACK_REPLY, matchScript,
   type AssistantMode, type AssistantReply, type LittleQEmotion,
 } from '@/lib/assistant-demo'
+import type { AiRoundUsage } from '@/lib/ai-usage'
 import type { AssistantTurn } from '@/lib/ai/assistant'
+
+export interface ReplyOptions {
+  skill?: { title: string; markdown: string }
+  /** 会话 id: 服务端据此把这一轮的用量归到该会话(见 Section 76) */
+  conversationId?: string
+}
 
 export interface ReplyOutcome {
   reply: AssistantReply
   emotion: LittleQEmotion
   /** true = 这次是内置剧本答的(没配模型, 或模型调用失败) */
   scripted: boolean
+  /** 这一轮真实花掉的 tokens; 剧本回答没有(没调模型, 也就没花钱) */
+  usage: AiRoundUsage | null
 }
 
 /** 剧本回复给一点打字延迟: 秒回的长回答看起来像"根本没读我说的话" */
@@ -31,13 +40,13 @@ export async function produceReply(
   input: string,
   history: AssistantTurn[],
   mode: AssistantMode,
-  skill?: { title: string; markdown: string },
+  options: ReplyOptions = {},
 ): Promise<ReplyOutcome> {
   if (hasAiConfig()) {
     try {
       const { chatWithLittleQ } = await import('@/lib/ai/assistant')
-      const { reply, emotion } = await chatWithLittleQ(input, history, mode, { skill })
-      return { reply, emotion, scripted: false }
+      const { reply, emotion, usage } = await chatWithLittleQ(input, history, mode, options)
+      return { reply, emotion, scripted: false, usage }
     } catch (err) {
       // 模型挂了不该让整个对话不可用 —— 退回剧本, 并让调用方标出来是降级回答
       console.warn('[assistant] 模型回复失败, 退回内置剧本:', err)
@@ -47,5 +56,5 @@ export async function produceReply(
   const script = matchScript(input, mode)
   const reply = script?.reply ?? FALLBACK_REPLY
   await sleep(scriptDelay(reply.text))
-  return { reply, emotion: script?.emotion ?? FALLBACK_EMOTION, scripted: true }
+  return { reply, emotion: script?.emotion ?? FALLBACK_EMOTION, scripted: true, usage: null }
 }

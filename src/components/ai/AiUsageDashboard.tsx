@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Activity, ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, CircleAlert, Clock3,
-  Database, Gauge, Key, Loader2, RefreshCw, Server, TrendingUp, Wallet, Wifi, Zap,
+  Database, Gauge, Key, Loader2, MessagesSquare, RefreshCw, Server, TrendingUp, Wallet, Wifi, Zap,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -481,6 +482,57 @@ export function AiUsageDashboard({ onOpenTab }: Props) {
                   {logsExpanded ? '收起' : '查看更多'}
                   <ChevronRight className={cn('h-3 w-3 transition-transform', logsExpanded && 'rotate-90')} />
                 </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <MessagesSquare className="h-4 w-4 text-primary" />小Q 会话用量
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-1">
+              {(overview?.conversations.length ?? 0) === 0 ? (
+                <p className="py-6 text-center text-[11px] leading-relaxed text-muted-foreground">
+                  近 {days} 天还没有带会话的调用。
+                  <br />
+                  小Q 对话会带上会话 id，出题、批改这些没有会话归属。
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {overview?.conversations.map((c) => {
+                    const body = (
+                      <>
+                        <p className="truncate text-[11px] font-medium">
+                          {c.title ?? <span className="text-muted-foreground">其他用户的会话 / 已删除</span>}
+                        </p>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] tabular-nums text-muted-foreground">
+                          <span>{c.calls} 轮</span>
+                          <span>{formatTokens(c.tokens)} tokens</span>
+                          <span>{formatCost(c.cost)}</span>
+                          <span className="ml-auto shrink-0">{formatLogTime(c.lastAt)}</span>
+                        </p>
+                      </>
+                    )
+                    // 只有本人的会话才给跳转: 别人的会话没有标题, 点过去也只会落到自己的对话上
+                    return c.owned ? (
+                      <Link
+                        key={c.conversationId}
+                        to={`/assistant?conversation=${c.conversationId}`}
+                        className="block rounded-md border p-2 transition-colors hover:border-primary/50 hover:bg-accent/40"
+                      >
+                        {body}
+                      </Link>
+                    ) : (
+                      <div key={c.conversationId} className="rounded-md border p-2">{body}</div>
+                    )
+                  })}
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    只统计小Q 对话（出题、批改这些没有会话归属）。每行点进去就是那条会话，
+                    每条回答下面写着的 tokens 与金额加起来就是这个数。
+                  </p>
+                </div>
               )}
             </CardContent>
           </Card>
