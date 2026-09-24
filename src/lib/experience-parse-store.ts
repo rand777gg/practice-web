@@ -13,10 +13,11 @@ import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
 import { realYearCategory } from '@/lib/bank-papers'
 import {
-  mergeKeyPoints, needsTriage, sectionNodes, triageFromRow, withChapterTag,
+  mergeKeyPoints, needsTriage, usableToc, sectionNodes, triageFromRow, withChapterTag,
   type SectionNode, type TriageCriterion, type TriageQuestion, type TriageRow,
 } from '@/lib/experience-parse'
-import { getResourceDocument, loadAutoToc, loadDocumentToc } from '@/lib/resource-library'
+import { getResourceDocument, loadDocumentToc } from '@/lib/resource-library'
+import type { TocEntry } from '@/lib/resource-blocks'
 
 const QUESTION_COLUMNS = [
   'id', 'subject', 'question_type', 'question_text', 'options', 'correct_answer',
@@ -24,6 +25,7 @@ const QUESTION_COLUMNS = [
 ].join(', ')
 
 const PAGE_SIZE = 1000
+const HEADING_PAGE_SIZE = 1000
 
 // ── 材料 ──
 
@@ -42,12 +44,53 @@ export async function documentIndexStatus(documentId: string): Promise<{ chunks:
   return { chunks: all.count ?? 0, embedded: embedded.count ?? 0 }
 }
 
-/** 材料的章节目录 → 带祖先链的节点。人工改过的目录优先(和阅读页同一口径) */
-export async function loadSectionNodes(documentId: string): Promise<SectionNode[]> {
+/**
+ * 材料的标题行 —— 必须分页取全。
+ *
+ * 不能直接用 loadAutoToc: 它 `.limit(1000)`, 而 PostgREST 的 db-max-rows 也是 1000,
+ * 一本 544 页的书有 1194 个标题, 于是**书后半段的节全部缺失**。缺了会怎样: sectionsFromToc
+ * 把最后一个节点的页区间一路延到全书末尾, 后半本书的命中就都被算到"最后一个节点"头上 ——
+ * 抽查实测 p521 的概念技能被归到了 17.2 早期的领导理论, 一个完全不沾边的节。
+ */
+async function loadHeadings(documentId: string): Promise<TocEntry[]> {
+  const out: TocEntry[] = []
+  for (let from = 0; ; from += HEADING_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('resource_blocks')
+      .select('block_index, page_no, heading_level, text')
+      .eq('document_id', documentId)
+      .gt('heading_level', 0)
+      .order('block_index', { ascending: true })
+      .range(from, from + HEADING_PAGE_SIZE - 1)
+    if (error) throw new Error(`加载目录失败: ${error.message}`)
+    const rows = (data ?? []) as unknown as { block_index: number; page_no: number; heading_level: number; text: string }[]
+    for (const r of rows) {
+      if ((r.text ?? '').trim().length === 0) continue
+      out.push({ key: r.block_index, blockIndex: r.block_index, level: r.heading_level, title: r.text, pageNo: r.page_no })
+    }
+    if (rows.length < HEADING_PAGE_SIZE) break
+  }
+  return out
+}
+
+export interface MaterialSections {
+  /** 归属候选(带祖先链) */
+  nodes: SectionNode[]
+  /** 材料识别出的标题总数。候选只是其中带编号的那部分, 两个数要一起给人看 */
+  headingCount: number
+  /** 用的是管理员改过的人工目录(那种目录逐条挑过, 不再按编号筛) */
+  manual: boolean
+}
+
+/** 材料的章节目录 → 归属候选。人工改过的目录优先(和阅读页同一口径) */
+export async function loadMaterialSections(documentId: string): Promise<MaterialSections> {
   const doc = await getResourceDocument(documentId)
-  const manual = await loadDocumentToc(documentId).catch(() => null)
-  const toc = manual ?? await loadAutoToc(documentId)
-  return sectionNodes(toc, doc?.pdf_total_pages ?? 0)
+  const pages = doc?.pdf_total_pages ?? 0
+  const manualToc = await loadDocumentToc(documentId).catch(() => null)
+  if (manualToc) return { nodes: sectionNodes(manualToc, pages), headingCount: manualToc.length, manual: true }
+
+  const toc = await loadHeadings(documentId)
+  return { nodes: sectionNodes(usableToc(toc), pages), headingCount: toc.length, manual: false }
 }
 
 // ── 题目 ──

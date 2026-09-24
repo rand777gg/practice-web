@@ -72,6 +72,43 @@ export function defaultLevel(nodes: SectionNode[]): number {
 }
 
 /**
+ * 归属候选的清洗 —— 从自动目录里去掉**不可能是一个部分名**的条目。
+ *
+ * 为什么要洗: MinerU 会把术语表按字母切成标题("A" "B" "9"), 各章末尾的「复习和讨论问题」
+ * 「本章小结」也被当成标题 —— 实测一本 544 页的教材识别出 1194 个"标题"。它们的页区间还很宽
+ * (术语表在全书最后, 一路盖到末尾), 命中落进去就把真正那一节挤掉: 抽查实测 p521 讲的
+ * "概念技能"被归到了术语表里的 "B"。
+ *
+ * 两条判据都是"这个字符串不可能是部分名"，不碰标题的**写法**:
+ *   · 没有中文 —— 纯外文/纯符号(页眉 "Management Practice"、列表符号 "◆")不是部分名;
+ *   · 全书重复 ≥ 5 次 —— 「复习和讨论问题」这种每章都来一条的是版面结构, 不是章节名,
+ *     留着它只会让"这一题属于哪一章"退化成"这一题属于某某栏";
+ * 故意**不**要求带编号: 一本教材里「附加模块 管理史」「早期的管理」这类不带编号的标题往往是
+ * 真章节, 按编号筛会把它们筛掉, 反而让旁边的「1.6 描述…」学习目标条目接管整个页区间 ——
+ * 实测那么筛会给出一个 84% 的错答案。宁可留着噪声(它最多让置信度降到低), 也不要筛掉真章节。
+ *
+ * 洗得太狠(剩下不到 min 条)说明这份材料的标题本来就不长这样, 那就原样用 ——
+ * 宁可噪一点, 也不要把"没有可归的部分"变成常态。
+ */
+/** 版面结构而不是内容: 术语表 / 索引 / 参考文献 —— 落在这里等于没归到任何一节 */
+const APPARATUS_TITLE_RE = /术语表|索引|参考文献/
+
+export function usableToc(toc: TocEntry[], min = 8, maxRepeat = 5): TocEntry[] {
+  const counts = new Map<string, number>()
+  for (const e of toc) {
+    const t = e.title.trim()
+    counts.set(t, (counts.get(t) ?? 0) + 1)
+  }
+  const kept = toc.filter((e) => {
+    const t = e.title.trim()
+    if ((t.match(/[\u4e00-\u9fa5]/g) ?? []).length < 2) return false
+    if (APPARATUS_TITLE_RE.test(t)) return false
+    return (counts.get(t) ?? 0) < maxRepeat
+  })
+  return kept.length >= min ? kept : toc
+}
+
+/**
  * 页码落在哪一节里。
  * 同一页挂着多节时(几个标题挤在一页, 区间被夹成单页)取**最深**那一节, 深浅相同取靠后那条 ——
  * 目录是按阅读顺序排的, 靠后的那条离正文更近。

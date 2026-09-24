@@ -16,7 +16,7 @@
 import {
   EMPTY_ATTRIBUTION, attributeHits, confidenceTier, defaultLevel, evidenceSnippet, levelsOf,
   matchKeyPoints, mergeKeyPoints, needsTriage, retrievalQuery, sectionNodes, triageFromRow,
-  withChapterTag,
+  usableToc, withChapterTag,
 } from '../src/lib/experience-parse.ts'
 
 let pass = 0
@@ -53,6 +53,36 @@ check('层级清单', levelsOf(nodes), [1, 2, 3])
 check('默认粒度取第 2 级', defaultLevel(nodes), 2)
 check('只有一级标题时退化成第 1 级', defaultLevel([toc(1, 1, '上篇', 1)]), 1)
 check('没有标题时也不报错', defaultLevel([]), 1)
+
+// ── 归属候选的清洗 ──
+// 实测教训: 一本教材被 MinerU 切出 1194 个"标题", 术语表按字母切出的 "A"/"B" 也在里面,
+// 而它们的页区间一路盖到全书末尾 —— 命中落进去就把真正那一节挤掉了。
+
+const NOISY = [
+  toc(1, 1, '第一章 管理与管理者', 1),
+  toc(2, 2, '1.1 谁是管理者', 3),
+  toc(3, 1, 'B', 500),
+  toc(4, 1, '◆', 501),
+  toc(5, 1, 'Management Practice', 502),
+  toc(6, 1, '附加模块 管理史', 40),
+  toc(7, 2, '2.1 决策', 50),
+  ...Array.from({ length: 5 }, (_, i) => toc(10 + i, 1, '复习和讨论问题', 60 + i * 5)),
+  toc(20, 2, '3.1 计划', 90),
+  toc(21, 2, '3.2 组织', 91),
+  toc(22, 2, '3.3 领导', 92),
+  toc(23, 2, '3.4 控制', 93),
+]
+const cleaned = usableToc(NOISY)
+const titles = cleaned.map((e) => e.title)
+check('单字母标题被洗掉', titles.includes('B'), false)
+check('纯符号标题被洗掉', titles.includes('◆'), false)
+check('纯外文页眉被洗掉', titles.includes('Management Practice'), false)
+check('每章重复的栏目被洗掉', titles.includes('复习和讨论问题'), false)
+check('术语表/索引不当候选', usableToc([...NOISY, toc(30, 1, '术语表*', 519), toc(31, 1, '参考文献', 540)]).map((e) => e.title).includes('术语表*'), false)
+check('不带编号的真章节留着', titles.includes('附加模块 管理史'), true)
+check('带编号的节都留着', titles.filter((t) => t.startsWith('3.')).length, 4)
+check('洗得太狠就不过滤', usableToc([toc(1, 1, '上篇', 1), toc(2, 1, '下篇', 20)]).length, 2)
+check('清洗后页区间重新收拢', sectionNodes(cleaned, 100)[0].pageTo, 2)
 
 /** 一条命中: 归属只看 sourceId/pageNo/score, content 只用于展示 */
 const hit = (pageNo, score, sourceId = 'main') => ({ sourceId, pageNo, score, content: `第${pageNo}页的正文` })

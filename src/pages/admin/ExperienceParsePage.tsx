@@ -26,14 +26,18 @@ import {
   type Attribution, type ConfidenceTier, type SectionNode, type TriageCriterion, type TriageQuestion,
 } from '@/lib/experience-parse'
 import {
-  documentIndexStatus, loadQuestionMeta, loadSectionNodes, loadTriageQuestions, saveAttribution,
+  documentIndexStatus, loadMaterialSections, loadQuestionMeta, loadTriageQuestions, saveAttribution,
   type QuestionMetaOptions,
 } from '@/lib/experience-parse-store'
 
 /** 一个批次内同时在检索的题目数。每条检索都要服务端算一次查询向量, 并发再高只是挤同一把额度 */
 const CONCURRENCY = 3
-/** 每道题带回来的命中条数 —— 投票要有几条才看得出"集中在哪一节" */
-const HITS_PER_QUESTION = 12
+/**
+ * 每道题带回来的命中条数。
+ * 给 20 而不是 12: 一本教材的检索结果本来就散, 命中少了"集中在哪一节"这个信号会被噪声盖过去,
+ * 而多要几条不额外花钱(查询向量每题只算一次, 贵的是它)。
+ */
+const HITS_PER_QUESTION = 20
 const ALL = 'all'
 
 type RowState = 'pending' | 'running' | 'done' | 'error' | 'applied' | 'skipped'
@@ -70,6 +74,9 @@ export function Component() {
   const [refDocId, setRefDocId] = useState(ALL)
   const [indexStatus, setIndexStatus] = useState<{ chunks: number; embedded: number } | null>(null)
   const [nodes, setNodes] = useState<SectionNode[]>([])
+  /** 材料识别出的标题总数 —— 候选只取其中带编号的, 两个数一起显示 */
+  const [headingCount, setHeadingCount] = useState(0)
+  const [manualToc, setManualToc] = useState(false)
   const [level, setLevel] = useState(1)
   const [ingestOpen, setIngestOpen] = useState(false)
   const [indexing, setIndexing] = useState(false)
@@ -107,12 +114,14 @@ export function Component() {
     // 清空留给选择器那一步做: 在 effect 体里同步 setState 会触发级联渲染
     if (mainDocId === ALL) return
     let alive = true
-    Promise.all([loadSectionNodes(mainDocId), documentIndexStatus(mainDocId)])
-      .then(([list, status]) => {
+    Promise.all([loadMaterialSections(mainDocId), documentIndexStatus(mainDocId)])
+      .then(([material, status]) => {
         if (!alive) return
-        setNodes(list)
+        setNodes(material.nodes)
+        setHeadingCount(material.headingCount)
+        setManualToc(material.manual)
         setIndexStatus(status)
-        setLevel(defaultLevel(list))
+        setLevel(defaultLevel(material.nodes))
       })
       .catch((err: unknown) => { if (alive) setError(err instanceof Error ? err.message : String(err)) })
     return () => { alive = false }
@@ -343,6 +352,8 @@ export function Component() {
               onValueChange={(v) => {
                 setMainDocId(v)
                 setNodes([])
+                setHeadingCount(0)
+                setManualToc(false)
                 setIndexStatus(null)
                 setLevel(1)
               }}
@@ -376,7 +387,9 @@ export function Component() {
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2.5 text-[11px]">
             <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span>
-              目录 {nodes.length} 节
+              {manualToc
+                ? <>人工目录 {nodes.length} 节</>
+                : <>标题 {headingCount} 条，其中带编号的 {nodes.length} 节作归属候选</>}
               {levelOptions.length > 0 && <>，层级 {levelOptions.join(' / ')}</>}
             </span>
             <span className="text-muted-foreground">·</span>
@@ -695,6 +708,8 @@ export function Component() {
         onDone={(id) => {
           setNotice('材料已录入。解析产物会切块建索引, 完成后就能选它做归类依据。')
           setNodes([])
+          setHeadingCount(0)
+          setManualToc(false)
           setIndexStatus(null)
           setMainDocId(id)
           listResourceDocuments().then(setDocs).catch(() => {})
