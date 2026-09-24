@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { TopicSidebar } from '@/components/topics/TopicSidebar'
 import { sectionKeyOf } from '@/components/topics/topic-sections'
+import { KpScopeLinks } from '@/components/resource/KpScopeLinks'
 import {
   DEMO_TOPICS, getDemoTopic, type DemoLiterature, type DemoTopic,
 } from '@/lib/topics-demo'
@@ -317,6 +318,41 @@ function TopicFootprints({ topic }: { topic: DemoTopic }) {
   )
 }
 
+/**
+ * 材料范围 —— 这一专题的知识点在资料库里圈出来的正文段落。
+ *
+ * 与上面几个板块不同, 这一块读的是**真实数据**(resource_kp_scopes), 不是 demo:
+ * 管理员在资料库阅读页圈了哪几段, 这里就能跳到哪几段。专题与知识点的绑定目前用 DemoTopic.subject
+ * 代替(专题本身还是 demo), 等专题落库之后换成真的外键即可。
+ */
+function TopicMaterials({ topic }: { topic: DemoTopic }) {
+  return (
+    <div className="space-y-4">
+      <SectionHead
+        icon={Layers}
+        title="材料范围"
+        desc="考纲知识点在资料库里对应的正文段落：圈定之后，读文献时知道这一段属于哪个知识点，从知识点也能直接跳回来。"
+      />
+      {topic.subject ? (
+        <KpScopeLinks
+          subject={topic.subject}
+          title={`${topic.subject} · 材料范围`}
+          emptyHint={`资料库里还没有圈出「${topic.subject}」的材料范围。去资料库打开一本教材，在右侧「知识点」面板里把某一章圈到知识点上，这里就会出现可跳转的条目。`}
+        />
+      ) : (
+        <Card>
+          <CardContent className="p-4 text-xs text-muted-foreground">
+            这个专题还没有绑定学科，暂时无法列出材料范围。
+          </CardContent>
+        </Card>
+      )}
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        注：专题内容本身仍是 demo 数据，只有「材料范围」这一块读的是真实的知识点范围表。
+      </p>
+    </div>
+  )
+}
+
 export function Component() {
   const { topicId } = useParams()
   const { pathname } = useLocation()
@@ -340,7 +376,7 @@ export function Component() {
         <main className="min-w-0 space-y-4">
           <div className="flex items-center gap-2 rounded-lg border border-violet-200/60 bg-violet-50/60 px-3 py-2 text-[11px] text-violet-700 dark:border-violet-900/40 dark:bg-violet-950/30 dark:text-violet-300">
             <Info className="h-3.5 w-3.5 shrink-0" />
-            当前为 DEMO 演示版：全部内容为内置示例数据，未关联实际数据库。
+            当前为 DEMO 演示版：除「材料范围」外，内容均为内置示例数据，未关联实际数据库。
           </div>
 
           <div className="rounded-xl border bg-gradient-to-br from-primary/5 to-transparent p-4">
@@ -359,6 +395,8 @@ export function Component() {
 
           {section === 'question-bank' ? (
             <TopicQuestionBanks topic={topic} />
+          ) : section === 'materials' ? (
+            <TopicMaterials topic={topic} />
           ) : section === 'literature' ? (
             <TopicLiterature topic={topic} />
           ) : section === 'legacy' ? (

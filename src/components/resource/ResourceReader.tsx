@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, BookOpen, Check, ChevronRight, Columns2, Crosshair, FileText, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, Tags, X } from 'lucide-react'
+import { AlertCircle, BookOpen, Check, ChevronRight, Columns2, Crosshair, FileText, Layers, Link2, ListTree, Loader2, MoveHorizontal, MoveVertical, Pencil, Search, Tags, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,9 @@ import { refAnchor, refsByBlock, type KpResourceRef } from '@/lib/kp-resource-re
 import { listDocumentRefs } from '@/lib/kp-resource-refs-store'
 import { KpExplanationSheet } from '@/components/practice/KpExplanationSheet'
 import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
+import { KpScopePanel } from './KpScopePanel'
+import { scopesByBlock, scopeRangeFromBlocks, scopeWhere, kpCode, type ResourceKpScope, type ScopeRange } from '@/lib/resource-kp-scopes'
+import { listDocumentScopes } from '@/lib/resource-kp-scopes-store'
 import { draftFromToc, blockIndexSet, staleEntryIds, tocFromDraft, updateEntry, type TocDraftEntry } from '@/lib/resource-toc'
 import { resetManualToc, saveManualToc } from '@/lib/resource-toc-store'
 import { HighlightText } from './HighlightText'
@@ -247,6 +250,77 @@ export function ResourceReader({
   }, [documentId])
 
   const refMap = useMemo(() => refsByBlock(kpRefs, blocks), [kpRefs, blocks])
+
+  // ── 知识点范围 ──
+  // 这一段正文讲的是哪个知识点(见 Section 80)。与"依据"是两件事: 依据是解读引了这一段,
+  // 范围是这一段归属某个知识点 —— 大纲里绝大多数知识点不会写解读, 却都需要材料落点。
+  const [scopes, setScopes] = useState<ResourceKpScope[]>([])
+  /** 读完了没(而不是"正在读"): 后者要在 effect 里同步 setState, 会多渲一轮 */
+  const [scopesLoaded, setScopesLoaded] = useState(false)
+  const [scopesError, setScopesError] = useState<string | null>(null)
+  const [scopeVersion, setScopeVersion] = useState(0)
+  const [scopeOpen, setScopeOpen] = useState(false)
+  /** 哪一段的"知识点"气泡开着 */
+  const [scopePopover, setScopePopover] = useState<number | null>(null)
+  /** 正文里正在拖选一段(拖选模式下) */
+  const [pickMode, setPickMode] = useState(false)
+  const [pickAnchor, setPickAnchor] = useState<number | null>(null)
+  const [pickTo, setPickTo] = useState<number | null>(null)
+  const [pickedRange, setPickedRange] = useState<ScopeRange | null>(null)
+
+  useEffect(() => {
+    if (!documentId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await listDocumentScopes(documentId)
+        if (!cancelled) { setScopes(list); setScopesError(null) }
+      } catch (err) {
+        if (!cancelled) setScopesError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (!cancelled) setScopesLoaded(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [documentId, scopeVersion])
+
+  const scopeMap = useMemo(() => scopesByBlock(scopes, blocks), [scopes, blocks])
+
+  /** 拖选中被盖住的那些段(块号可能在正文里不连续, 所以按数组位置算) */
+  const pickIndexes = useMemo(() => {
+    if (pickAnchor === null || pickTo === null) return null
+    const a = blocks.findIndex((b) => b.blockIndex === pickAnchor)
+    const b = blocks.findIndex((x) => x.blockIndex === pickTo)
+    if (a < 0 || b < 0) return null
+    const [lo, hi] = a <= b ? [a, b] : [b, a]
+    return new Set(blocks.slice(lo, hi + 1).map((x) => x.blockIndex))
+  }, [pickAnchor, pickTo, blocks])
+
+  /**
+   * 拖选收尾。
+   * 不用 pointer capture: 捕获之后所有事件都送到第一块上, 中间那些块的 pointerenter 就不再触发,
+   * 拖过去只会选中两头。松手用 window 上的监听兜底(拖出面板/窗口失焦也要收)。
+   */
+  useEffect(() => {
+    if (pickAnchor === null) return
+    const finish = () => {
+      const to = pickTo
+      setPickAnchor(null)
+      setPickTo(null)
+      if (to === null) return
+      const range = scopeRangeFromBlocks(blocks, pickAnchor, to)
+      if (!range) return
+      setPickedRange(range)
+      // 选完就退出拖选: 不退的话手一动区间又变了, 而且对话框背后的十字光标还在
+      setPickMode(false)
+    }
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    return () => {
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+    }
+  }, [pickAnchor, pickTo, blocks])
 
   const staleIds = useMemo(
     () => (draft ? staleEntryIds(draft, blockIndexSet(blocks)) : new Set<number>()),
@@ -758,6 +832,18 @@ export function ResourceReader({
 
           <span className="flex-1" />
 
+          {/* 知识点范围: 这一段归属哪个知识点(所有用户都能看, 管理员能圈) */}
+          <Button
+            variant={scopeOpen ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-6 gap-1 px-1.5 text-[11px]"
+            onClick={() => setScopeOpen((v) => !v)}
+            title="这一段正文属于哪个知识点"
+          >
+            <Layers className="h-3 w-3" />
+            知识点{scopes.length > 0 && <span className="tabular-nums text-muted-foreground">{scopes.length}</span>}
+          </Button>
+
           <div className="flex items-center gap-1">
             <Input
               value={pageInput}
@@ -983,12 +1069,14 @@ export function ResourceReader({
                 <MarkdownRenderer content={markdown} className="text-xs" />
               </div>
             ) : (
-              <div ref={mdScrollRef} className="h-full overflow-y-auto px-3 py-2">
+              <div ref={mdScrollRef} className={cn('h-full overflow-y-auto px-3 py-2', pickMode && 'select-none')}>
                 {shownBlocks.map((block) => {
                   const active = block.blockIndex === activeBlockIndex
                   const hit = hitIndexes.has(block.blockIndex)
                   const tone = typeTone(block.blockType)
                   const citedBy = refMap.get(block.blockIndex)
+                  const scopeHere = scopeMap.get(block.blockIndex)
+                  const inPick = pickIndexes?.has(block.blockIndex) ?? false
                   return (
                     <div
                       key={block.blockIndex}
@@ -1000,6 +1088,17 @@ export function ResourceReader({
                       onAnimationEnd={(e) => {
                         if (e.animationName === 'flash') setFlashIndex(null)
                       }}
+                      // 拖选模式: 按在段落上起手, 拖过哪些段就把哪些段圈进来。
+                      // 用 pointerenter 而不是指针捕获 —— 捕获之后中间那些块根本收不到事件, 只能选中两头
+                      onPointerDown={(e) => {
+                        if (!pickMode) return
+                        e.preventDefault()
+                        setPickAnchor(block.blockIndex)
+                        setPickTo(block.blockIndex)
+                      }}
+                      onPointerEnter={() => {
+                        if (pickMode && pickAnchor !== null) setPickTo(block.blockIndex)
+                      }}
                       onClick={() => {
                         // 选落点期间整篇正文就是一块"取点面板", 点到哪段就锚到哪段
                         if (mappingId !== null) assignMapping(block.blockIndex, block.pageNo)
@@ -1007,7 +1106,9 @@ export function ResourceReader({
                       }}
                       title={mappingId !== null
                         ? `把落点设在这一段 (第 ${block.pageNo} 页)`
-                        : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
+                        : pickMode
+                          ? `从这一段起圈 (第 ${block.pageNo} 页)`
+                          : `${typeLabel(block.blockType)} · 第 ${block.pageNo} 页 · 段 ${block.blockIndex}`}
                       className={cn(
                         'lib-block group relative cursor-pointer border-l-2 px-1.5 py-0.5 transition-colors',
                         // 外挂标签的位置**常驻**: 只在选中那一块身上加减, 换一段就要跳 14px, 还会带着滚动锚定一起抖
@@ -1015,6 +1116,8 @@ export function ResourceReader({
                         flashIndex === block.blockIndex && 'animate-flash',
                         block.bbox ? TONE_BORDER[tone] : 'border-l-transparent',
                         mappingId !== null && 'ring-1 ring-primary/30 hover:bg-primary/10 hover:ring-primary',
+                        inPick && 'bg-primary/15 ring-1 ring-primary/50',
+                        pickMode && 'cursor-crosshair',
                         active
                           ? 'border-l-primary bg-primary/10 ring-1 ring-primary/40'
                           : hit
@@ -1054,7 +1157,11 @@ export function ResourceReader({
                               type="button"
                               onClick={(e) => e.stopPropagation()}
                               title={`这一段被 ${citedBy.length} 个知识点引为依据`}
-                              className="absolute -top-[13px] right-0 flex items-center gap-0.5 border border-primary/30 bg-primary/10 px-1 text-[9px] leading-[11px] text-primary hover:bg-primary/20"
+                              className={cn(
+                                'absolute -top-[13px] flex items-center gap-0.5 border border-primary/30 bg-primary/10 px-1 text-[9px] leading-[11px] text-primary hover:bg-primary/20',
+                                // 归属标记也在右上角: 两个都在时依据让出位置, 不要叠在一起
+                                scopeHere ? 'right-10' : 'right-0',
+                              )}
                             >
                               <BookOpen className="h-2.5 w-2.5" />
                               {citedBy.length > 1 ? citedBy.length : '知识点'}
@@ -1089,8 +1196,57 @@ export function ResourceReader({
                           </PopoverContent>
                         </Popover>
                       )}
-                      {/* 表格块: 以前只把单元格拼成的一行文字显示出来, 现在直接渲染 MinerU 给的 <table>。整篇视图一直是这么做的(rehype-raw), 逐段这里补上 */}
-                      {block.tableHtml ? (
+                      {/*
+                        这一段的归属: 讲的是哪个知识点(见 Section 80)。和左边那个"依据"标记的区别是
+                        依据=解读引了这一段(要先有解读), 归属=这一段就是这个知识点的材料(不需要解读)。
+                        常驻显示: 扫读时能看出"这几段是这一章的正文"。拖选期间不渲染 —— 那会儿要抢点击。
+                      */}
+                      {scopeHere && scopeHere.length > 0 && !pickMode && mappingId === null && (
+                        <Popover
+                          open={scopePopover === block.blockIndex}
+                          onOpenChange={(next) => setScopePopover(next ? block.blockIndex : null)}
+                        >
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`这一段属于 ${scopeHere.map((s) => s.kp).join('、')}`}
+                              className="absolute -top-[13px] right-0 flex items-center gap-0.5 border border-emerald-500/40 bg-emerald-50 px-1 text-[9px] leading-[11px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300"
+                            >
+                              <Layers className="h-2.5 w-2.5" />
+                              {scopeHere.length > 1
+                                ? `${kpCode(scopeHere[0].kp)}+${scopeHere.length - 1}`
+                                : kpCode(scopeHere[0].kp)}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-80 p-1.5" onClick={(e) => e.stopPropagation()}>
+                            <p className="px-1 pb-1 text-[10px] text-muted-foreground">
+                              第 {block.pageNo} 页这一段的归属 · 点开看知识点解读
+                            </p>
+                            <div className="space-y-0.5">
+                              {scopeHere.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setScopePopover(null)
+                                    setKpView({ subject: item.subject, kp: item.kp })
+                                  }}
+                                  className="block w-full rounded px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
+                                >
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 text-[9px] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{item.subject}</span>
+                                    <span className="min-w-0 flex-1 truncate text-[11px]">{item.kp}</span>
+                                    <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                  </span>
+                                  <span className="mt-0.5 block text-[10px] text-muted-foreground">{scopeWhere(item)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                      {/* 表格块: 以前只把单元格拼成的一行文字显示出来, 现在直接渲染 MinerU 给的 <table>。整篇视图一直是这么做的(rehype-raw), 逐段这里补上 */}                      {block.tableHtml ? (
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_table]:text-[11px]"
                           dangerouslySetInnerHTML={{ __html: block.tableHtml }}
@@ -1128,6 +1284,13 @@ export function ResourceReader({
                     </div>
                   )
                 })}
+                {pickMode && (
+                  <div className="pointer-events-none sticky bottom-2 z-20 mx-auto w-fit rounded-full border bg-background/95 px-3 py-1 text-[11px] shadow-lg">
+                    {pickAnchor === null
+                      ? '在正文里按住左键，从第一段拖到最后一段'
+                      : `已选 ${pickIndexes?.size ?? 0} 段 · 松开鼠标就选好了`}
+                  </div>
+                )}
                 <div className="h-8" />
               </div>
             )}
@@ -1146,6 +1309,33 @@ export function ResourceReader({
             activeBlockIndex={activeBlockIndex}
             onSelect={(hit) => locate(hit.blockIndex)}
             onClose={() => setSearchOpen(false)}
+          />
+        </div>
+      )}
+
+      {/* 知识点范围面板: 与搜索面板同一个位置轮着用(两栏同时开会把正文挤没) */}
+      {scopeOpen && (
+        <div className="fixed inset-y-0 right-0 z-30 w-80 border-l bg-background shadow-lg md:static md:z-auto md:shadow-none">
+          <KpScopePanel
+            documentId={documentId}
+            blocks={blocks}
+            toc={tocEntries}
+            canEdit={canEdit}
+            scopes={scopes}
+            loading={!scopesLoaded}
+            error={scopesError}
+            onLocate={locate}
+            onChanged={() => setScopeVersion((v) => v + 1)}
+            pickMode={pickMode}
+            onPickModeChange={(on) => {
+              setPickMode(on)
+              if (on) { setScopePopover(null); setSearchOpen(false) }
+              // 退出拖选时把没落地的半截选区一起清掉(放在这里而不是 effect 里: 那是渲染期之外的动作)
+              else { setPickAnchor(null); setPickTo(null) }
+            }}
+            pickedRange={pickedRange}
+            onPickedRangeDone={() => setPickedRange(null)}
+            onClose={() => setScopeOpen(false)}
           />
         </div>
       )}

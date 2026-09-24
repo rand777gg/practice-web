@@ -6061,3 +6061,68 @@ ALTER TABLE public.question_source_links ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS qsl_own ON public.question_source_links;
 CREATE POLICY qsl_own ON public.question_source_links FOR ALL
   USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- ============================================================================
+-- Section 80: 知识点范围 —— 把文献里的「一节/一段区间」指定给它所属的知识点
+--   管理员在资料库阅读页圈范围: 「A14-医学教育教学概论与现代医学教育思想 = 《医学导论》第六章
+--   (第 74-90 页)」。有了这条边, 知识点才知道自己的材料长在哪 —— 阅读时知道这一段属于哪个
+--   知识点, 从知识点能反查到材料在哪几篇哪几段, 题目、专题、路线图都能一跳直达那一段。
+--
+--   为什么不复用 kp_resource_refs(知识点解读的「依据原文」): 那张表的复合外键指向
+--   kp_explanations, **必须先有一条解读正文**才挂得上; 而"这一段讲的是 A14"与"解读引用了
+--   这一段"是两件事 —— 大纲里有几百个知识点, 绝大多数不会写解读, 却都需要材料落点。
+--   语义也不同: 依据是"论证支持", 范围是"归属/边界", 前者可以只引一段话。
+--
+--   为什么写成段落闭区间 [block_from, block_to] 而不是目录项外键: 目录可以被改成人工版、
+--   重新解析后 block_index 会整体重排, 而范围必须能在那一刻自己活下来 —— 出题/练习范围切错
+--   一段是"静默错"。所以区间是权威值, toc_title 只是圈的时候顺手记下的来路(展示与找回用)。
+--
+--   可见性: 写只有管理员(与人工目录同一口径), **读对所有登录用户开放** —— 范围的意义就在于
+--   别人能顺着它跳过来(己发布文献才看得到, 未发布草稿的范围跟着 doc 的可见性走)。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.resource_kp_scopes (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID NOT NULL REFERENCES public.resource_documents(id) ON DELETE CASCADE,
+  subject     TEXT NOT NULL,
+  kp          TEXT NOT NULL,
+  -- 正文里的段落闭区间(含两端); 一键圈一节时就是"该目录项 → 下一个同级目录项之前"
+  block_from  INTEGER NOT NULL,
+  block_to    INTEGER NOT NULL,
+  -- 页码冗余一份: 重新解析后段落映射失效时, 至少还能翻到那一页(与 kp_resource_refs 同一个理由)
+  page_from   INTEGER NOT NULL DEFAULT 1,
+  page_to     INTEGER NOT NULL DEFAULT 1,
+  -- 圈的时候用的是哪条目录项(纯分组项也可以圈, 那是按页码区间记的)
+  toc_title   TEXT NOT NULL DEFAULT '',
+  toc_level   SMALLINT NOT NULL DEFAULT 1,
+  note        TEXT NOT NULL DEFAULT '',
+  created_by  UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (block_to >= block_from),
+  CHECK (page_to >= page_from)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rks_doc ON public.resource_kp_scopes(document_id, block_from);
+-- 知识点那一侧的反查: "A14 的材料在哪几篇哪几段"
+CREATE INDEX IF NOT EXISTS idx_rks_kp  ON public.resource_kp_scopes(subject, kp, document_id);
+-- 同一篇的同一段不重复挂同一个知识点(重复圈不会报错, 但也别堆垃圾)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rks_uniq
+  ON public.resource_kp_scopes(document_id, subject, kp, block_from, block_to);
+
+ALTER TABLE public.resource_kp_scopes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rks_select ON public.resource_kp_scopes;
+CREATE POLICY rks_select ON public.resource_kp_scopes FOR SELECT
+  USING (
+    auth.role() = 'authenticated'
+    AND EXISTS (SELECT 1 FROM public.resource_documents d
+                 WHERE d.id = document_id AND (d.is_published OR public.is_admin()))
+  );
+
+DROP POLICY IF EXISTS rks_write_admin ON public.resource_kp_scopes;
+CREATE POLICY rks_write_admin ON public.resource_kp_scopes FOR ALL
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP TRIGGER IF EXISTS trg_resource_kp_scopes_updated_at ON public.resource_kp_scopes;
+CREATE TRIGGER trg_resource_kp_scopes_updated_at BEFORE UPDATE ON public.resource_kp_scopes
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

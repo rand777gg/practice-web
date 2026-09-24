@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { TocEntry } from '@/lib/resource-blocks'
 import {
-  addChild, addRoot, addSibling, hasChildren, moveSubtreeTo, removeEntry, shiftSubtreeLevel,
-  subtreeRange, tocFromDraft, updateEntry, type TocDraftEntry,
+  addChild, addRoot, addSibling, hasChildren, moveBlockTo, removeEntry, selectionBlock,
+  shiftRangeLevel, shiftSubtreeLevel, subtreeRange, tocFromDraft, updateEntry, type TocDraftEntry,
 } from '@/lib/resource-toc'
 
 interface TocNode {
@@ -101,7 +101,11 @@ interface MenuState {
 
 interface DragState {
   id: number
+  /** 起拖那一行的下标(仅用于显示"正在拖的是哪一行") */
   from: number
+  /** 一起搬走的行区间 [start, end) —— 单行拖动时就是它自己的子树 */
+  start: number
+  end: number
   pointerId: number
   startX: number
   startY: number
@@ -241,11 +245,19 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
     clearSelection()
   }, [draft, selectedIndexes, applyEdit, clearSelection])
 
-  /** 批量升降级。平移不改顺序, 所以按下标升序做就行 */
+  /**
+   * 批量升降级。平移不改顺序, 所以按下标升序做就行 —— 但**选中的后代要跳过**:
+   * 选了「第二章」又选了它里面的 2.1, 两棵子树各升一级等于 2.1 被升了两级, 相对深度就散了。
+   */
   const shiftSelected = useCallback((delta: number) => {
     if (!draft || selectedIndexes.length === 0) return
     let next = draft
-    for (const i of selectedIndexes) next = shiftSubtreeLevel(next, i, delta)
+    let coveredUntil = -1
+    for (const i of selectedIndexes) {
+      if (i < coveredUntil) continue
+      next = shiftSubtreeLevel(next, i, delta)
+      coveredUntil = subtreeRange(next, i).end
+    }
     applyEdit(next)
   }, [draft, selectedIndexes, applyEdit])
 
@@ -266,13 +278,19 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
 
   const beginDrag = (index: number, id: number) => (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
-    if (dragRef.current) return
-    const session: DragState = { id, from: index, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY }
+    if (dragRef.current || !draft) return
+    // 多选之后拖其中任意一行 = 把选中的那几棵子树当一整块搬(同级多选的主要用法);
+    // 选区里夹着没选中的行时 selectionBlock 会拒绝, 那时退回单行(自己那棵子树)
+    const block = selectionBlock(draft, selected, index) ?? subtreeRange(draft, index)
+    const session: DragState = {
+      id, from: index, start: block.start, end: block.end,
+      pointerId: e.pointerId, startX: e.clientX, startY: e.clientY,
+    }
     dragRef.current = session
-    overRef.current = index
+    overRef.current = block.start
     deltaRef.current = 0
     setDrag(session)
-    setOverIndex(index)
+    setOverIndex(block.start)
     setLevelDelta(0)
     setMenu(null)
     e.preventDefault()
@@ -284,11 +302,10 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
     const s = dragRef.current
     if (!s || !draft || e.pointerId !== s.pointerId) return
     const step = measureStep()
-    const { start, end } = subtreeRange(draft, s.from)
-    // 落点按根条目算; 拖在自己这棵子树的高度以内都还不算移动(否则会在自己身上反复跳)
-    let t = start + Math.round((e.clientY - s.startY) / step)
+    // 落点按块首算; 拖在自己这一块的高度以内都还不算移动(否则会在自己身上反复跳)
+    let t = s.start + Math.round((e.clientY - s.startY) / step)
     t = Math.max(0, Math.min(draft.length, t))
-    if (t > start && t < end) t = start
+    if (t > s.start && t < s.end) t = s.start
     if (t !== overRef.current) {
       overRef.current = t
       setOverIndex(t)
@@ -324,12 +341,13 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
     deltaRef.current = 0
     if (!s || t === null || !draft) return
 
+    const len = s.end - s.start
     let next = draft
-    if (t !== s.from) next = moveSubtreeTo(next, s.from, t)
+    if (t !== s.start) next = moveBlockTo(next, s.start, s.end, t)
     if (d !== 0) {
-      // 搬完之后按下标找已经不准了, 按 id 找回来 —— 临时 id 也不会重
-      const at = next.findIndex((x) => x.id === s.id)
-      if (at >= 0) next = shiftSubtreeLevel(next, at, d)
+      // 搬完之后按下标找已经不准了: 块搬到了哪由 moveBlockTo 的同一条换算决定(与它内部的 at 一致)
+      const at = t <= s.start ? t : t - len
+      next = shiftRangeLevel(next, at, at + len, d)
     }
     if (next !== draft) applyEdit(next)
   }
@@ -349,9 +367,9 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
   // ── 行位移: 源子树跟着落点走, 被让开的行整块反向平移 ──
 
   const dragRange = useMemo(() => {
-    if (!drag || !draft) return null
-    return subtreeRange(draft, drag.from)
-  }, [drag, draft])
+    if (!drag) return null
+    return { start: drag.start, end: drag.end }
+  }, [drag])
 
   const transformOf = (i: number): string | undefined => {
     if (!dragRange || overIndex === null) return undefined
@@ -478,7 +496,8 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
         </div>
       ) : editing ? (
         <p className="shrink-0 px-2.5 py-1 text-[10px] leading-relaxed text-muted-foreground">
-          拖拖动柄排序, 左右拉调层级; 右键出行内菜单。勾选左侧方框可多选, 再批量升降级或删除。改动不会动正文。
+          拖拖动柄排序, 左右拉调层级; 右键出行内菜单。勾选左侧方框可多选(Shift 点标题连选一段),
+          选好之后拖其中任意一行 = 整块一起搬、层级一起调。改动不会动正文。
         </p>
       ) : null}
 
@@ -500,7 +519,7 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
             const active = entry.blockIndex !== null && entry.blockIndex === activeBlockIndex
             const isStale = editor?.staleIds.has(entry.key) ?? false
             const isMapping = editor?.mappingId === entry.key
-            const isDragging = drag?.from === i
+            const isDragging = drag !== null && i >= drag.start && i < drag.end
             const isRenaming = renamingId === entry.key
             const isSelected = selected.has(entry.key)
             const childCount = editing && draft ? subtreeRange(draft, i).end - i - 1 : 0
@@ -676,6 +695,7 @@ export function ResourceToc({ entries, activeBlockIndex, onSelect, className, ed
 
       {drag && (
         <div className="shrink-0 border-t px-2.5 py-1 text-[10px] text-muted-foreground">
+          {drag.end - drag.start > 1 && <>搬 {drag.end - drag.start} 行 · </>}
           落点 {overIndex === null ? '—' : overIndex >= list.length ? '末尾' : `第 ${overIndex + 1} 条`}
           {levelDelta !== 0 && ` · ${levelDelta > 0 ? '降' : '升'} ${Math.abs(levelDelta)} 级`}
         </div>

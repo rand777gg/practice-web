@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { ReadAloudButton } from '@/components/tts/ReadAloudButton'
 import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
+import { KpScopeLinks } from '@/components/resource/KpScopeLinks'
 import { markdownToSpeech, splitForSpeech } from '@/lib/tts/speech'
 import { supabase } from '@/lib/supabase'
 import { OPTION_LABELS } from '@/lib/constants'
@@ -264,6 +265,19 @@ export function KpExplanationContent({ subject, kp, onOpenRef }: Props) {
         <div className="mt-2">
           <LinkedQuestions source="kp" sourceId={kpSourceId(subject, kp)} title="关联题目" />
         </div>
+
+        {/*
+          这条知识点的材料长在哪几篇文献的哪几段(见 Section 80)。与「依据原文」的区别:
+          依据要先有解读、是"论证支持"; 材料范围是管理员在资料库里圈的归属, 不需要解读 ——
+          所以这里常常是这个弹窗里唯一有内容的一块。
+        */}
+        <KpScopeLinks
+          subject={subject}
+          kps={[kp]}
+          title="材料范围"
+          className="mt-2"
+          emptyHint="资料库里还没有圈出这个知识点的材料范围（在文献阅读页右侧「知识点」里圈）。"
+        />
       </div>
     </div>
   )

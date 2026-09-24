@@ -9,9 +9,9 @@
  * Usage: node scripts/resource-toc-smoke.mjs
  */
 import {
-  addChild, addRoot, addSibling, canSaveToc, draftFromToc, hasChildren, indentEntry, moveEntry,
-  moveSubtreeTo, nextTempId, normalizeLevels, outdentEntry, removeEntry, shiftSubtreeLevel,
-  staleEntryIds, subtreeRange, tocFromDraft, updateEntry, TOC_LEVEL_MAX,
+  addChild, addRoot, addSibling, canSaveToc, draftFromToc, hasChildren, indentEntry, moveBlockTo,
+  moveEntry, moveSubtreeTo, nextTempId, normalizeLevels, outdentEntry, removeEntry, selectionBlock,
+  shiftRangeLevel, shiftSubtreeLevel, staleEntryIds, subtreeRange, tocFromDraft, updateEntry, TOC_LEVEL_MAX,
 } from '../src/lib/resource-toc.ts'
 import { sectionsFromToc } from '../src/lib/resource-blocks.ts'
 
@@ -194,6 +194,54 @@ check('delta 0 不动', shiftSubtreeLevel(tree, 1, 0), tree)
 check('降级封顶 6', lv(shiftSubtreeLevel(draft([[1, 1, 'a'], [2, 2, 'b'], [3, 3, 'c'], [4, 4, 'd'], [5, 5, 'e'], [6, 6, 'f']]), 5, 9)), [1, 2, 3, 4, 5, 6])
 check('升到顶之后的层级仍是 1',
   lv(shiftSubtreeLevel(draft([[1, 1, 'a'], [2, 2, 'b'], [3, 3, 'c']]), 2, -9)), [1, 2, 1])
+
+// ── 多选联合拖动: 一整块搬运 + 整块调层级 ──
+// 选中"第二章 + 2.1/2.1.1/2.2"(一个根 + 它的后代)时, 块就是这一整棵子树
+check('选中一个根时块=整棵子树', selectionBlock(tree, new Set([2]), 1), { start: 1, end: 5 })
+// 选 2.1 和 2.2 两个同级兄弟(2.1 带一个孙辈) → 块要一直连到 2.2 的末尾
+check('同级两兄弟连成一块', selectionBlock(tree, new Set([3, 5]), 2), { start: 2, end: 5 })
+check('从块内任意一行起拖都认同一块', selectionBlock(tree, new Set([3, 5]), 4), { start: 2, end: 5 })
+// 选中的后代不算一个根: 选中第二章和它的孙子, 块还是整棵第二章
+check('选中的后代不额外扩块', selectionBlock(tree, new Set([2, 4]), 1), { start: 1, end: 5 })
+// 跨度里夹着没选中的行 → 不成块(一起搬会把人家也带走), 由调用方退回单行拖动
+const gap = draft([[1, 1, '第一章'], [2, 1, '第二章'], [3, 2, '2.1'], [4, 1, '第三章']])
+check('跨度里夹着未选中行时不成块', selectionBlock(gap, new Set([1, 4]), 0), null)
+check('相邻两条选中时成块', selectionBlock(gap, new Set([1, 2]), 0), { start: 0, end: 3 })
+check('没选中的行起拖不成块', selectionBlock(tree, new Set([2]), 5), null)
+check('空选区不成块', selectionBlock(tree, new Set(), 1), null)
+
+check('整块搬到末尾', ids(moveBlockTo(tree, 1, 5, 6)), [1, 6, 2, 3, 4, 5])
+check('整块搬到最后面前面', ids(moveBlockTo(tree, 1, 5, 0)), [2, 3, 4, 5, 1, 6])
+check('搬到自己范围内不动', moveBlockTo(tree, 1, 5, 3), tree)
+check('搬到自己紧后面不动', moveBlockTo(tree, 1, 5, 5), tree)
+check('整块搬运不改层级', lv(moveBlockTo(tree, 1, 5, 6)), [1, 1, 1, 2, 3, 2])
+check('块下标越界会夹到边界', ids(moveBlockTo(tree, -5, 99, 99)), [1, 2, 3, 4, 5, 6])
+check('空块不动', moveBlockTo(tree, 2, 2, 5), tree)
+// moveSubtreeTo 就是"块=自己的子树"那一种, 两者必须永远一致
+check('moveSubtreeTo 与 moveBlockTo 同源',
+  ids(moveSubtreeTo(tree, 1, 6)), ids(moveBlockTo(tree, ...Object.values(subtreeRange(tree, 1)), 6)))
+
+// 整块调层级: 与整棵子树升降级不同, 它不看父子关系, 块里每一行平移同样的量
+const flat = draft([[1, 1, '甲'], [2, 1, '乙'], [3, 2, '乙-1'], [4, 1, '丙']])
+check('整块降级(含未选中的后代一起走)', lv(shiftRangeLevel(flat, 1, 3, 1)), [1, 2, 3, 1])
+check('整块升级', lv(shiftRangeLevel(flat, 1, 3, -1)), [1, 1, 1, 1])
+// 相对深度原样保留: 用一段本来就够深的行来量, 否则首行"已经在 1 级"会被夹住, 量出来是 0
+const nestedRange = draft([[1, 1, '甲'], [2, 2, '乙'], [3, 3, '丙'], [4, 1, '丁']])
+check('整块升级后相对深度不变',
+  (() => { const a = lv(nestedRange).slice(1, 3); const b = lv(shiftRangeLevel(nestedRange, 1, 3, -1)).slice(1, 3); return b.map((v, i) => v - a[i]) })(),
+  [-1, -1])
+check('整块降级后相对深度不变',
+  (() => {
+    const base = draft([[1, 1, '甲'], [2, 1, '乙'], [3, 2, '丙'], [4, 1, '丁']])
+    const a = lv(base).slice(1, 3)
+    const b = lv(shiftRangeLevel(base, 1, 3, 1)).slice(1, 3)
+    return b.map((v, i) => v - a[i])
+  })(),
+  [1, 1])
+check('块外的行一动不动', lv(shiftRangeLevel(flat, 1, 3, 1)).at(-1), 1)
+check('delta 0 不动', shiftRangeLevel(flat, 1, 3, 0), flat)
+check('越界区间夹到边界', lv(shiftRangeLevel(flat, -3, 99, -1)), [1, 1, 1, 1])
+check('空区间不动', shiftRangeLevel(flat, 2, 2, 1), flat)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)

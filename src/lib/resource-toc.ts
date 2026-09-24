@@ -110,23 +110,87 @@ function previousSiblingStart(entries: TocDraftEntry[], index: number): number {
 }
 
 /**
- * 把整棵子树搬到"原序列里第 to 条现在所在的位置", to 可以是 entries.length(搬到末尾)。
+ * 把 entries[start, end) 这一整块搬到"原序列里第 to 条现在所在的位置", to 可以是 entries.length。
  *
- * 拖动落点、上移下移都走它一个入口 —— 两套换位逻辑迟早会在边界上不一致。
- * 落在自己子树范围内(含紧贴前后的两个位置)就是没动, 直接原样返回,
- * 否则一次拖拽会先把子树挪走再把它的副本插回来。
+ * 拖动落点、上移下移、多选联合拖动都走它一个入口 —— 几套换位逻辑迟早会在边界上不一致。
+ * 落在块内(含紧贴前后的两个位置)就是没动, 直接原样返回, 否则一次拖拽会先把块挪走再把它插回来。
  */
+export function moveBlockTo(
+  entries: TocDraftEntry[],
+  start: number,
+  end: number,
+  to: number,
+): TocDraftEntry[] {
+  const lo = Math.max(0, Math.min(entries.length, start))
+  const hi = Math.max(lo, Math.min(entries.length, end))
+  const target = Math.max(0, Math.min(entries.length, to))
+  if (target >= lo && target <= hi) return entries
+
+  const block = entries.slice(lo, hi)
+  const rest = [...entries.slice(0, lo), ...entries.slice(hi)]
+  // 目标在块之前时下标不变; 在块之后时要减掉被抽走的这一段长度
+  const at = target <= lo ? target : target - block.length
+  return normalizeLevels([...rest.slice(0, at), ...block, ...rest.slice(at)])
+}
+
 export function moveSubtreeTo(entries: TocDraftEntry[], index: number, to: number): TocDraftEntry[] {
   if (index < 0 || index >= entries.length) return entries
   const { start, end } = subtreeRange(entries, index)
-  const target = Math.max(0, Math.min(entries.length, to))
-  if (target >= start && target <= end) return entries
+  return moveBlockTo(entries, start, end, to)
+}
 
-  const block = entries.slice(start, end)
-  const rest = [...entries.slice(0, start), ...entries.slice(end)]
-  // 目标在块之前时下标不变; 在块之后时要减掉被抽走的这一段长度
-  const at = target <= start ? target : target - block.length
-  return normalizeLevels([...rest.slice(0, at), ...block, ...rest.slice(at)])
+/**
+ * 一段连续行整体升降级 —— 多选之后(不管是点按钮还是联合拖动)都用它。
+ *
+ * 与 shiftSubtreeLevel 的差别: 这里不看父子关系, [start, end) 里每一行平移同样的量,
+ * 于是多选出来的那几棵子树的**相对深度原样保留**; 边界由 normalizeLevels 收口。
+ */
+export function shiftRangeLevel(
+  entries: TocDraftEntry[],
+  start: number,
+  end: number,
+  delta: number,
+): TocDraftEntry[] {
+  if (delta === 0) return entries
+  const lo = Math.max(0, Math.min(entries.length, start))
+  const hi = Math.max(lo, Math.min(entries.length, end))
+  if (lo === hi) return entries
+  return normalizeLevels(entries.map((e, i) => (
+    i < lo || i >= hi ? e : { ...e, level: Math.max(1, Math.min(e.level + delta, TOC_LEVEL_MAX)) }
+  )))
+}
+
+/**
+ * 多选联合拖动时"要一起搬走的那几行"。
+ *
+ * 选中项里**排除了别人的后代**(搬它爹的时候它跟着走), 于是块就是"第一个选中根 → 最后一个
+ * 选中根的子树末尾"。跨度里只要夹着一行既没选中、又不属于任何选中子树的, 就返回 null ——
+ * 一起搬会把那一行也带走, 那是用户没要求的事, 这时宁可退回单行拖动。
+ */
+export function selectionBlock(
+  entries: TocDraftEntry[],
+  selected: ReadonlySet<number>,
+  index: number,
+): { start: number; end: number } | null {
+  const hit = entries[index]
+  if (!hit || !selected.has(hit.id)) return null
+
+  const roots: number[] = []
+  const covered = new Set<number>()
+  entries.forEach((e, i) => {
+    if (!selected.has(e.id)) return
+    // 已经在前面某个选中根的子村里 → 它是后代, 不算一个根(搬它爹时跟着走)
+    if (covered.has(i)) return
+    roots.push(i)
+    const sub = subtreeRange(entries, i)
+    for (let k = sub.start; k < sub.end; k++) covered.add(k)
+  })
+  if (roots.length === 0) return null
+
+  const start = roots[0]
+  const end = subtreeRange(entries, roots[roots.length - 1]).end
+  for (let i = start; i < end; i++) if (!covered.has(i)) return null
+  return { start, end }
 }
 
 /**

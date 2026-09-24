@@ -12,6 +12,7 @@ import { RouteDiagramTabs } from '@/components/learning-route/RouteDiagramTabs'
 import type { RouteMapStageNode } from '@/components/learning-route/RouteMapFigure'
 import type { RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
 import { useLearningRouteDetail } from '@/hooks/use-learning-routes'
+import { KpScopeLinks } from '@/components/resource/KpScopeLinks'
 import { useAuthStore } from '@/stores/auth-store'
 import { QUESTION_TYPE_LABELS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
@@ -20,6 +21,38 @@ import type { Question } from '@/types'
 function questionPreview(q: Question) {
   const text = q.question_text.replace(/[#*`_>\[\]!\-~]/g, '').replace(/\s+/g, ' ').trim()
   return text.length > 90 ? text.slice(0, 90) + '…' : text
+}
+
+/**
+ * 这一阶段的题目涉及哪几个知识点, 它们的材料在资料库的哪几段。
+ *
+ * 知识点是从题目的 key_points 推出来的(和练习页、组卷同一个口径); 一个阶段可能横跨多个学科,
+ * 而材料范围是按 (学科, 知识点) 收口的, 所以按学科各渲染一块。
+ */
+function StageMaterialScopes({ questions }: { questions: Question[] }) {
+  const bySubject = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const q of questions) {
+      const subject = q.subject
+      if (!subject) continue
+      for (const kp of (q.key_points ?? '').split(/[,，;；]/).map((s) => s.trim()).filter(Boolean)) {
+        const set = map.get(subject)
+        if (set) set.add(kp)
+        else map.set(subject, new Set([kp]))
+      }
+    }
+    return [...map.entries()].map(([subject, kps]) => ({ subject, kps: [...kps] }))
+  }, [questions])
+
+  if (bySubject.length === 0) return null
+
+  return (
+    <div className="space-y-1.5 pb-1.5">
+      {bySubject.map(({ subject, kps }) => (
+        <KpScopeLinks key={subject} subject={subject} kps={kps} title={`${subject} · 本阶段材料`} />
+      ))}
+    </div>
+  )
 }
 
 export function Component() {
@@ -174,6 +207,8 @@ export function Component() {
               <CardContent className="pt-0 text-xs text-muted-foreground">该阶段暂无题目。</CardContent>
             ) : (
               <CardContent className="pt-0 space-y-1">
+                {/* 这一阶段的题涉及哪几个知识点, 材料就在资料库的哪几段 —— 先读原文再刷题 */}
+                <StageMaterialScopes questions={stage.questions} />
                 {stage.questions.map((q, qi) => {
                   const passed = !!detail.passByQuestion[q.id]
                   return (

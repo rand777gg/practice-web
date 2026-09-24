@@ -1,14 +1,15 @@
 import type { ComponentType } from 'react'
-import { BookOpen, FileText, Footprints, ListChecks } from 'lucide-react'
+import { BookOpen, FileText, Footprints, Layers, ListChecks } from 'lucide-react'
 
-export type TopicSectionKey = 'intro' | 'question-bank' | 'literature' | 'legacy'
+export type TopicSectionKey = 'intro' | 'question-bank' | 'materials' | 'literature' | 'legacy'
 
 type IconComponent = ComponentType<{ className?: string }>
 
-/** 专题详情页内的四个板块，URL 由 topicSectionUrl 按当前专题拼接 */
+/** 专题详情页内的板块，URL 由 topicSectionUrl 按当前专题拼接 */
 export const TOPIC_SECTIONS: { key: TopicSectionKey; title: string; icon: IconComponent }[] = [
   { key: 'intro', title: '专业课介绍', icon: BookOpen },
   { key: 'question-bank', title: '关联题库', icon: ListChecks },
+  { key: 'materials', title: '材料范围', icon: Layers },
   { key: 'literature', title: '原始文献', icon: FileText },
   { key: 'legacy', title: '前辈足迹', icon: Footprints },
 ]
@@ -27,13 +28,13 @@ export function sectionKeyOf(pathname: string): TopicSectionKey | null {
   const [, topicId, segment] = matched
   if (RESERVED_SEGMENTS.has(topicId)) return null
   if (!segment) return 'intro'
-  if (segment === 'question-bank' || segment === 'literature' || segment === 'legacy') return segment
+  if (segment === 'question-bank' || segment === 'materials' || segment === 'literature' || segment === 'legacy') return segment
   return null
 }
 
 /** 当前路径对应的专题 id；不是专题详情页时返回 null */
 export function topicIdOf(pathname: string): string | null {
-  const matched = /^\/topics\/([^/]+)(?:\/(?:question-bank|literature|legacy))?$/.exec(pathname)
+  const matched = /^\/topics\/([^/]+)(?:\/(?:question-bank|materials|literature|legacy))?$/.exec(pathname)
   if (!matched) return null
   return RESERVED_SEGMENTS.has(matched[1]) ? null : matched[1]
 }

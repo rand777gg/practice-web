@@ -51,6 +51,14 @@ export interface DemoTopic {
   code: string
   short: string
   description: string
+  /**
+   * 对应题库里的学科名。
+   *
+   * 只有「材料范围」那一块要用它 —— 那一块读的是真实的知识点范围表(resource_kp_scopes),
+   * 按学科查"这个专题的知识点材料长在哪几篇文献的哪几段"。专题本身还是 demo 数据,
+   * 等落库之后再换成真外键。
+   */
+  subject?: string
   credit: string
   /** 在本门课考试中的分值占比（%） */
   weight: number
@@ -722,12 +730,106 @@ export const DEMO_TOPICS: DemoTopic[] = [
       },
     ],
   },
+  {
+    /**
+     * 唯一一个"半真实"的专题: 内容照旧是 demo, 但 subject 指向题库里真实存在的学科(医学史),
+     * 于是「材料范围」那一块能列出真实的知识点范围(比如 A14 = 《医学导论》第六章 p74-90)并跳过去。
+     */
+    id: 'med-intro',
+    name: '医学导论',
+    code: '306-01',
+    short: 'MED',
+    subject: '医学史',
+    description:
+      '医学史与医学教育的基础课：从医学的演变、实验医学的兴起，到现代医学体系、临床与预防医学的分支，最后落到医学生该有的知识结构与教育教学思想。考点密集在"概念界定 + 学科分类 + 关键人物与事件"。',
+    credit: '2 学分',
+    weight: 15,
+    difficulty: 2,
+    updatedAt: '2026-08-18',
+    popularity: 5120,
+    rating: 4.6,
+    ratingCount: 412,
+    students: 12800,
+    trend: 2,
+    chapters: [
+      { name: '医学的演变、传播与交融', score: 6, density: 74 },
+      { name: '医学革命与实验医学', score: 7, density: 81 },
+      { name: '生物医学体系的确立', score: 5, density: 63 },
+      { name: '中医学的形成与发展', score: 6, density: 70 },
+      { name: '医学生的知识、能力和素质', score: 4, density: 52 },
+      { name: '医学教育教学概论与现代医学教育思想', score: 5, density: 66 },
+    ],
+    examTypes: ['单项选择题', '多项选择题', '名词解释', '简答题'],
+    banks: [
+      {
+        id: 'med-b1',
+        name: '医学导论章节精练',
+        source: '按考纲知识点编排',
+        count: 186,
+        yearRange: '2015 - 2025',
+        difficulty: { easy: 78, medium: 84, hard: 24 },
+        tags: ['章节同步', '概念辨析'],
+      },
+      {
+        id: 'med-b2',
+        name: 'A01-A14 大纲知识点专项',
+        source: '按大纲编码逐条组题',
+        count: 43,
+        yearRange: '2016 - 2025',
+        difficulty: { easy: 12, medium: 22, hard: 9 },
+        tags: ['大纲编码', '逐条突破'],
+      },
+    ],
+    literatures: [
+      {
+        id: 'med-l1',
+        type: '教材',
+        title: '医学导论',
+        authors: '人卫版教材编写组',
+        year: 2021,
+        source: '人民卫生出版社',
+        summary: '本专题的主教材：十五章覆盖医学史、医学模式、基础与临床医学分支、预防医学与医学教育。平台已入库全文，可按章圈定知识点范围。',
+        cited: 1240,
+      },
+      {
+        id: 'med-l2',
+        type: '论文',
+        title: '现代医学教育思想的演进与启示',
+        authors: '（示例）',
+        year: 2019,
+        source: '医学教育管理',
+        summary: '梳理以问题为中心、以胜任力为导向两条教育思想脉络，常作为 A14 的延伸阅读。',
+        cited: 86,
+      },
+    ],
+    footprints: [
+      {
+        id: 'med-f1',
+        author: '匿名学姐 Y',
+        school: '医学院校上岸',
+        year: '2025',
+        score: '专业课 128',
+        content: '大纲编码(A01-A14)就是章节顺序，别当成两套东西背。我把编码抄在教材目录旁边，一章对一条，复习时一眼就知道这章对应哪条考点。',
+        likes: 96,
+        tags: ['大纲编码', '目录对齐'],
+      },
+      {
+        id: 'med-f2',
+        author: '匿名学长 Z',
+        school: '医学人文方向',
+        year: '2024',
+        score: '专业课 121',
+        content: '医学教育思想那几条最容易被忽略，其实每年都有送分题。背之前先在教材上把那一章圈出来，读一遍原文再记，比干背结论稳。',
+        likes: 74,
+        tags: ['医学教育', '读原文'],
+      },
+    ],
+  },
 ]
 
 export function getDemoTopic(id: string | null | undefined): DemoTopic {
   return DEMO_TOPICS.find((topic) => topic.id === id) ?? DEMO_TOPICS[0]
 }
-
 /** 按热度分降序，作为热门专业课排行榜的默认序列 */
 export function getHotRanking(): DemoTopic[] {
   return [...DEMO_TOPICS].sort((a, b) => b.popularity - a.popularity)
