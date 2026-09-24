@@ -6665,3 +6665,124 @@ $function$;
 DROP TRIGGER IF EXISTS trg_up_updated_at ON public.user_preferences;
 
 CREATE TRIGGER trg_up_updated_at BEFORE UPDATE ON public.user_preferences FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- ============================================================================
+-- Section 85: 清掉 13 个用不上的索引 —— 库 269MB → 241MB, public 索引 127MB → 99MB
+--
+--   依据 pg_stat_user_indexes 全量统计(这台库的统计从未 reset, 窗口覆盖全部历史,
+--   同期 uq_user_answers_session 已经攒到 1851 万次扫描, 所以 0 次是可信的):
+--
+--   1) idx_rag_search (19MB) —— Section 59 自己就写了: LIMIT 40 能在扫到第 40 个命中
+--      时早停, planner 永远选顺序扫, 这个 GIN 只是"保险"。它还在每次 RAG 灌库时白付
+--      GIN 写入与 pending list 刷盘的开销, 而灌库正是这库里最重的写操作。真到几万块
+--      以上要回头用时再建 —— 2.2 万行重建是秒级。
+--   2) idx_qdc_trgm (8.5MB) —— 建在 stem 上, 但查重只用 a.stem % b.stem 这种列对列
+--      相似度, 两列来自同一张表, GIN 对这种形式根本用不上(操作数必须是常量)。join
+--      前面已经有 a.stem_fp = b.stem_fp AND a.subject = b.subject 做粗筛。
+--   3) idx_qdc_subject —— (subject) 是 idx_qdc_fp(subject, stem_fp) 的前缀。
+--   4~13) user_answers / questions 上的一批老索引, 每一个都有一个定义完全相同、正在
+--      被使用的"新名字"双胞胎, 例如 idx_user_answers_user_question ≡ idx_ua_user_question
+--      (652317 次)。这一批从没进过迁移文件 —— 全新库从来就没有它们, 只有这台生产库有,
+--      这正是"改名后忘了删旧的"的痕迹。逐对核对过列与谓词完全一致:
+--        (user_id, question_id) / (user_id, answered_at DESC) / (question_id, is_correct)
+--        / (question_id) / (user_id) / (exam_session_id)
+--        / (user_id, is_correct) WHERE is_correct = false
+--        / (user_id, answered_at DESC) WHERE is_public = true
+--        / (subject, category) / (question_type)
+--
+--   user_answers 上另外 3 个同样 0 scan 的索引(idx_ua_question_correct / idx_ua_wrong /
+--   idx_ua_public)故意留着: 它们对应"错题回顾""公开笔记"这类已经写完的功能, 现在只是
+--   数据量小走不上索引, 三个加起来 192kB, 不值得为省这点空间赌一次计划回退。
+--
+--   回滚: docs/idx-grant-cleanup-rollback.sql
+-- ============================================================================
+DROP INDEX IF EXISTS public.idx_rag_search;
+DROP INDEX IF EXISTS public.idx_qdc_trgm;
+DROP INDEX IF EXISTS public.idx_qdc_subject;
+DROP INDEX IF EXISTS public.idx_user_answers_user_question;
+DROP INDEX IF EXISTS public.idx_user_answers_user_answered;
+DROP INDEX IF EXISTS public.idx_user_answers_question_correct;
+DROP INDEX IF EXISTS public.idx_user_answers_question_id;
+DROP INDEX IF EXISTS public.idx_user_answers_user_id;
+DROP INDEX IF EXISTS public.idx_user_answers_exam_session;
+DROP INDEX IF EXISTS public.idx_user_answers_wrong;
+DROP INDEX IF EXISTS public.idx_user_answers_public;
+DROP INDEX IF EXISTS public.idx_questions_subject_category;
+DROP INDEX IF EXISTS public.idx_questions_type;
+
+
+-- ============================================================================
+-- Section 86: 补上迁移漏建的 3 个索引(让全新库与生产一致)
+--
+--   逐名比对生产 public 下 187 个索引与迁移里的 CREATE INDEX 声明:
+--   迁移声明过的 97 个在生产全部存在(没有"建了但没用"的), 反向缺 3 个
+--   —— 其余差异都是 PRIMARY KEY / UNIQUE 约束隐式生成的索引名, 不是真差异。
+--   缺的这 3 个都在被使用(favorites.created_at 127 次扫描 / questions.key_points
+--   三字组 8 次 / questions(subject) INCLUDE(id) 142 次), 所以是迁移漏了而不是索引该删。
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_favorites_created_at
+  ON public.favorites (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_questions_key_points_trgm
+  ON public.questions USING gin (key_points gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_questions_subject_id
+  ON public.questions (subject) INCLUDE (id);
+
+
+-- ============================================================================
+-- Section 87: 收紧函数 EXECUTE —— anon 可直接调用的 SECURITY DEFINER 函数从 15 个降到 4 个
+--
+--   背景: public 下函数出厂带 PUBLIC EXECUTE, 而本库还给每个业务函数显式再 GRANT 了
+--   一次 anon/authenticated, 于是只拿 anon key 就能直接 RPC 一批 SECURITY DEFINER 函数。
+--   前端所有功能路由都在 OtpGuard 后面(router/index.tsx 里 /terms /privacy /qr-confirm
+--   /welcome /guide /mfa /farewell 之外全部要求登录), 所以除扫码登录外 anon 没有合法调用点。
+--
+--   1) 触发器 / 事件触发器函数 —— 触发器派发根本不检查 EXECUTE。实测: 以 service_role
+--      执行 UPDATE questions / UPDATE profiles / INSERT chat_messages / CREATE TABLE,
+--      此时它已经没有这些函数的 EXECUTE, 全部正常触发(short_id 写入成功、RLS 被自动打开)。
+--      所以 PUBLIC, anon, authenticated 一起收回。
+--   2) cleanup_expired_challenges / _devices / cleanup_mfa_expired —— SECURITY DEFINER
+--      且会删数据。顺手记录一个发现: cron.job 是空的, 迁移里也从没 schedule 过它们 ——
+--      这三个目前是死代码。只留 service_role/postgres。
+--   3) unlink_oauth_identity —— SECURITY DEFINER 且直接删 auth.identities。函数内部有防线
+--      (非 service_role 时只认 auth.uid(), 并且拒绝解绑 email 身份), 唯一调用点是
+--      unlink-identity Edge Function 里的 service_role 客户端, 所以 anon/authenticated 都收掉。
+--   4) merge_dup_group / create_study_room / join_study_room —— SECURITY DEFINER 应用 RPC,
+--      只需要 authenticated(merge_dup_group 内部另有 public.is_admin() 断言)。
+--   5) search_rag / search_resource_blocks / search_resource_documents —— 收掉 anon
+--      (search_resource_blocks 内部本来就有 auth.role() 断言, 匿名只拿到空结果)。
+--      以后若要把资料库做成公开页面, 记得单独 GRANT 回 anon。
+--
+--   故意保留 anon EXECUTE 的 4 个 SECURITY DEFINER 函数, 都是有意为之:
+--     is_admin / is_study_room_member / is_study_room_owner —— RLS 策略里直接调用,
+--       策略表达式以查询角色求值, 收回会让匿名读表直接 permission denied。
+--     qr_login_status —— 扫码登录必须未登录可调, 且内部要求 secret_hash 匹配。
+--
+--   回滚: docs/idx-grant-cleanup-rollback.sql
+-- ============================================================================
+REVOKE ALL ON FUNCTION public.assign_session_short_id() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.bump_chat_conversation() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_profile_privileged_columns() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.kp_set_sort_key() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.resource_documents_sync_search_text() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.sync_category_from_categories() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.trg_dup_cache_sync() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.trg_refresh_question_meta() FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.cleanup_expired_challenges() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.cleanup_expired_devices() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.cleanup_mfa_expired() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.unlink_oauth_identity(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.merge_dup_group(UUID, UUID[], TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.create_study_room(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.join_study_room(TEXT) FROM PUBLIC, anon;
+
+REVOKE ALL ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.search_resource_documents(TEXT, TEXT, TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC, anon;
