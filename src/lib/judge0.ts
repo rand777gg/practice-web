@@ -12,14 +12,14 @@
  * 因此我们为每个测试用例(输入/期望输出)单独创建一个 submission,再批量轮询比对。
  */
 
+import { supabase } from '@/lib/supabase'
+
 export const JUDGE0_DEFAULT_URL = 'http://localhost:2358'
 
 /**
- * 平台中心判题节点。当前经 Cloudflare 隧道指向自部署 Judge0。
- * TODO(集群化):改为可配置的节点列表(多区域 AZ),由后端按用户 IP 就近/负载选点;
- * 这里保留默认值以便前端探活显示"浏览器→平台"延迟。
+ * 平台中心判题节点已开启 Judge0 自带鉴权(AUTHN=Authorization),浏览器不再直连它:
+ * 令牌只在服务端,前端一律经 Supabase Edge Function 转发。因此这里不再暴露平台 URL。
  */
-export const JUDGE0_PLATFORM_URL = 'https://oj.pguide.dev'
 
 /** 前端可选语言 -> Judge0 CE v1.13 默认语言 id(社区实例的内置 languages 表,已稳定多年) */
 export const JUDGE0_LANGUAGE_IDS: Record<string, number> = {
@@ -31,15 +31,15 @@ export const JUDGE0_LANGUAGE_IDS: Record<string, number> = {
   python: 71,       // Python (3.8.1)
 }
 
-/** 测量浏览器→某 Judge0 端点的往返延迟(ms)。失败返回 null。 */
-export async function measureJudge0Latency(baseUrl: string, timeoutMs = 4000): Promise<number | null> {
+/**
+ * 探测平台中心判题是否可用,返回本次调用的往返耗时(ms);未登录/节点不可用返回 null。
+ * 走 Edge Function(judge-health)而不是直连 Judge0:节点要令牌,而令牌不下发浏览器。
+ */
+export async function probePlatformJudge(): Promise<number | null> {
   const t0 = performance.now()
   try {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/config_info`, { signal: ctrl.signal, method: 'GET' })
-    clearTimeout(timer)
-    if (!res.ok) return null
+    const { data, error } = await supabase.functions.invoke<{ ok?: boolean }>('judge-health')
+    if (error || !data?.ok) return null
     return Math.round(performance.now() - t0)
   } catch {
     return null
