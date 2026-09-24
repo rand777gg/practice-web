@@ -6786,3 +6786,313 @@ REVOKE ALL ON FUNCTION public.join_study_room(TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.search_rag(TEXT, TEXT, TEXT[], INTEGER, TEXT[], TEXT[]) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.search_resource_blocks(TEXT, UUID, TEXT, TEXT, TEXT, INTEGER) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.search_resource_documents(TEXT, TEXT, TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC, anon;
+
+-- ============================================================================
+-- Section 88: get_subject_progress 重写 —— 去掉 questions × user_answers 的行乘开
+--
+--   症状: 这个 RPC 在 pg_stat_statements 里 mean 373.9ms / 1959 次调用, 看着是
+--   仅次于 get_plan_stats 的第二大 DB 时间消耗。但那个 mean 是被历史拖累的:
+--   最小执行时间只有 24.78ms, 是均值被长尾拉高了 15 倍。实测当前真实延迟:
+--     计划级 reset 在   → 17.1ms      没有计划级 reset → 37.0ms
+--   同一个函数因为一个参数从 17ms 跳到 37ms, 说明问题在计划形状, 不在数据量
+--   (questions 2022 行 / user_answers 3548 行, 全部只有 2 个用户有作答记录)。
+--
+--   原因: 原写法是
+--       FROM questions q
+--       LEFT JOIN user_answers ua_all   ON ... AND <一串时间条件>
+--       LEFT JOIN user_answers ua_today ON ... AND <一串时间条件>
+--       GROUP BY subject   -- 三个 COUNT(DISTINCT ...)
+--   p_plan_reset_at 为 NULL 时那串时间条件整条恒真, planner 无法用参数剪枝, 于是
+--   先把 questions × user_answers 乘开(3671 行), 再做三个 COUNT(DISTINCT) —— 每个
+--   COUNT(DISTINCT) 都要建一个哈希集合。"有没有答过"本质上是每道题一个布尔值, 用不着
+--   把作答行乘开。
+--
+--   改法: 先把作答按题压成一行(MAX(answered_at) 就是"最后一次作答"),
+--   "存在一条作答晚于阈值 T" 等价于 "最后作答 >= T", 于是三个计数都变成
+--   对同一份"每题一行"的数据做 COUNT(*) FILTER。顺带把原来独立的 missing CTE
+--   (第二遍扫 questions 数 key_points 为空的题) 合成同一个 CTE 里的一列,
+--   questions 从扫两遍变扫一遍。
+--
+--   实测(生产, 以 authenticated 身份并带 RLS, 同参数各 6 次取均值):
+--     5 参数版, 无 reset: 37.0ms → 7.9ms (4.7x)
+--     5 参数版, 有计划 reset: 17.1ms → 7.6ms (2.2x)
+--     4 参数版: 17.8ms → 7.3ms (2.4x)
+--   更重要的是新写法对这些参数**不敏感**(7.3~9.0ms), 不会因为某个用户没设计划
+--   起点就慢一倍。
+--
+--   等价性: 用 2 个真实用户 × 8/5 组参数(全 NULL / 只给 today / 给计划 reset /
+--   给两个科目 / 给学科级 reset / 给两个学科 reset / 不给 today / 400 天前的 reset)
+--   跑 EXCEPT 双向对比, 48 行输出 0 差异; 4 参数版同样 48 行 0 差异。
+--
+--   注意 HAVING COUNT(*) FILTER (WHERE NOT no_kp) > 0: 原写法 base 只统计
+--   key_points 非空的题, 所以"只有空 key_points 题目的科目"根本不会出现在结果里;
+--   合并成一遍扫描后必须显式保持这个行为。
+--
+--   回滚: docs/gsp-rewrite-rollback.sql
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_subject_progress(
+  p_user_id uuid,
+  p_plan_reset_at timestamptz DEFAULT NULL,
+  p_today_since timestamptz DEFAULT NULL,
+  p_subjects text[] DEFAULT NULL,
+  p_subject_resets jsonb DEFAULT NULL
+) RETURNS TABLE(subject text, total bigint, done_all bigint, done_today bigint, missing_kp bigint)
+LANGUAGE sql
+STABLE
+SET search_path TO ''
+AS $function$
+  WITH ans AS (
+    SELECT ua.question_id, MAX(ua.answered_at) AS last_at
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id
+    GROUP BY ua.question_id
+  ),
+  qs AS (
+    SELECT COALESCE(q.subject, 'Other') AS subj,
+           (q.key_points IS NULL OR q.key_points = '') AS no_kp,
+           CASE WHEN p_subject_resets ? q.subject
+                THEN (p_subject_resets ->> q.subject)::TIMESTAMPTZ
+                ELSE p_plan_reset_at
+           END AS thr,
+           a.last_at
+    FROM public.questions q
+    LEFT JOIN ans a ON a.question_id = q.id
+    WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ueq
+        WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+      )
+  )
+  SELECT qs.subj,
+         COUNT(*) FILTER (WHERE NOT qs.no_kp)::BIGINT,
+         COUNT(*) FILTER (WHERE NOT qs.no_kp AND qs.last_at IS NOT NULL
+                            AND (qs.thr IS NULL OR qs.last_at >= qs.thr))::BIGINT,
+         COUNT(*) FILTER (WHERE NOT qs.no_kp AND p_today_since IS NOT NULL
+                            AND qs.last_at >= p_today_since
+                            AND (qs.thr IS NULL OR qs.last_at >= qs.thr))::BIGINT,
+         COUNT(*) FILTER (WHERE qs.no_kp)::BIGINT
+  FROM qs
+  GROUP BY qs.subj
+  HAVING COUNT(*) FILTER (WHERE NOT qs.no_kp) > 0
+  ORDER BY 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.get_subject_progress(
+  p_user_id uuid,
+  p_plan_reset_at timestamptz DEFAULT NULL,
+  p_today_since timestamptz DEFAULT NULL,
+  p_subjects text[] DEFAULT NULL
+) RETURNS TABLE(subject text, total bigint, done_all bigint, done_today bigint)
+LANGUAGE sql
+STABLE
+SET search_path TO ''
+AS $function$
+  WITH ans AS (
+    SELECT ua.question_id, MAX(ua.answered_at) AS last_at
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id
+    GROUP BY ua.question_id
+  )
+  SELECT COALESCE(q.subject, 'Other'),
+         COUNT(*)::BIGINT,
+         COUNT(*) FILTER (WHERE a.last_at IS NOT NULL
+                            AND (p_plan_reset_at IS NULL OR a.last_at >= p_plan_reset_at))::BIGINT,
+         COUNT(*) FILTER (WHERE p_today_since IS NOT NULL
+                            AND a.last_at >= p_today_since
+                            AND (p_plan_reset_at IS NULL OR a.last_at >= p_plan_reset_at))::BIGINT
+  FROM public.questions q
+  LEFT JOIN ans a ON a.question_id = q.id
+  WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_excluded_questions ueq
+      WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+    )
+  GROUP BY COALESCE(q.subject, 'Other')
+  ORDER BY 1;
+$function$;
+
+
+-- ============================================================================
+-- Section 89: get_plan_stats 重写 —— 把 1356 个元素的 uuid[] 从逐行 ANY 换成哈希半连接
+--
+--   这个 RPC 在 pg_stat_statements 里 mean 282.7ms / 3520 次, 是单项第一。同样地,
+--   那个均值是被历史拉高的: min 只有 24.78ms, 实测当前 ~21ms(目标型计划) / ~33ms
+--   (数量型计划)。真正卡住的是这一句:
+--       WHERE jsonb_array_length(b.steps) > 0
+--          OR (SELECT question_ids FROM sess) IS NULL
+--          OR q.id = ANY(COALESCE((SELECT question_ids FROM sess), '{}'::UUID[]))
+--   practice_sequential_state.question_ids 是"这次顺序练习铺开的全部题", 生产上最大
+--   一条有 1356 个 uuid(21716 字节)。`= ANY(数组)` 是逐行的线性扫描, 而且数组来自
+--   InitPlan 所以 planner 没法把它变成哈希 —— 1370 行 questions 各扫 1356 个元素,
+--   约 186 万次 uuid 比较。EXPLAIN 里这一段(Hash Join 节点自身耗时, 不含子节点)
+--   是 14.6ms。
+--
+--   改法: 把那个析取拆成三段 UNION ALL, 让"会话题集"变成一个可以哈希的连接。
+--     1) 目标型(steps 非空): 该科全部题;
+--     2) 数量型(steps 为空, 且有会话): questions JOIN (SELECT DISTINCT unnest(question_ids));
+--     3) 数量型(steps 为空, 且没有会话行): 全部题。
+--   三段互斥(按 steps 是否为空 / 会话是否存在), 所以不会重复计数。
+--   必须 DISTINCT: 原写法 `= ANY` 天然去重, 而连接不会 —— 会话数组里若有重复 id,
+--   tot.total 会被撑大。已用伪造的重复数组实测过。
+--
+--   同时清掉两处重复计算: (a) evt 与 q_once 原来对**所有**科目都各算一遍窗口函数,
+--   实际只有"目标型"用 evt、"数量型"用 q_once, 现在按 by_goal 分开; (b) 结尾三个
+--   相关子查询(每科一次 COUNT(evt)/COUNT(q_once)/jsonb_agg(dated))改成三个 GROUP BY CTE。
+--
+--   实测(生产, authenticated + RLS, 同参数各 6 次取均值):
+--     目标型计划: 22.3ms → 15.8ms
+--     数量型计划: 33.4ms → 15.1ms (2.2x)
+--   数量型是新旧差距最大的地方, 也正是"会话数组很长"的那条路径。
+--
+--   等价性: 2 个真实用户 × 11 组计划(空 / 单科目标 / 全科目标 / 全科数量 /
+--   目标数量混合 / 只给日期 / 不给 since / 超长 steps / 不存在的科目 / since 为空串 /
+--   阈值超过总题数)共 50 行 0 差异; 另外在一个会回滚的事务里伪造 practice_sequential_state
+--   覆盖了 4 个边界: 正常会话 / question_ids 为空数组 / 完全没有会话行 / 数组内有重复 id,
+--   全部 0 差异。
+--
+--   回滚: docs/gps-rewrite-rollback.sql
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_plan_stats(p_user_id uuid, p_plan jsonb)
+RETURNS TABLE(subject text, total bigint, attempts bigint, done_dates jsonb)
+LANGUAGE sql
+STABLE
+SET search_path TO ''
+AS $function$
+  WITH base AS (
+    SELECT e.key AS subject,
+           CASE
+             WHEN COALESCE(e.value->>'since', '') = '' THEN NULL
+             WHEN (e.value->>'since') ~ '^\d{4}-\d{2}-\d{2}$'
+               THEN ((e.value->>'since') || ' 00:00:00+08')::TIMESTAMPTZ
+             ELSE (e.value->>'since')::TIMESTAMPTZ
+           END                                     AS since,
+           NULLIF(e.value->>'size', '')::BIGINT    AS size,
+           COALESCE(e.value->'steps', '[]'::jsonb) AS steps
+    FROM jsonb_each(COALESCE(p_plan, '{}'::jsonb)) AS e
+  ),
+  sess AS (
+    SELECT s.question_ids
+    FROM public.practice_sequential_state s
+    WHERE s.user_id = p_user_id
+    ORDER BY s.updated_at DESC
+    LIMIT 1
+  ),
+  sess_ids AS (
+    SELECT DISTINCT unnest(s.question_ids) AS qid
+    FROM sess s
+    WHERE s.question_ids IS NOT NULL
+  ),
+  scope AS (
+    SELECT q.id, b.subject, b.since, b.size, b.steps, true AS by_goal
+    FROM base b
+    JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) > 0
+    UNION ALL
+    SELECT q.id, b.subject, b.since, b.size, b.steps, false
+    FROM base b
+    JOIN sess_ids si ON true
+    JOIN public.questions q
+      ON q.id = si.qid AND q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) = 0
+    UNION ALL
+    SELECT q.id, b.subject, b.since, b.size, b.steps, false
+    FROM base b
+    JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) = 0
+      AND (SELECT question_ids FROM sess) IS NULL
+  ),
+  tot AS (
+    SELECT sc.subject, sc.since, sc.size, sc.steps, sc.by_goal, COUNT(sc.id)::BIGINT AS total
+    FROM scope sc
+    GROUP BY sc.subject, sc.since, sc.size, sc.steps, sc.by_goal
+  ),
+  ua_u AS MATERIALIZED (
+    SELECT ua.id AS answer_id, ua.question_id, ua.answered_at, ua.mode, ua.source
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id
+  ),
+  answered AS (
+    SELECT sc.subject, sc.by_goal, ua.question_id, ua.answer_id, ua.answered_at, ua.mode, ua.source
+    FROM scope sc
+    JOIN ua_u ua ON ua.question_id = sc.id
+    WHERE sc.since IS NULL OR ua.answered_at >= sc.since
+  ),
+  q_once AS (
+    SELECT a.subject, a.question_id, MIN(a.answered_at) AS answered_at
+    FROM answered a
+    WHERE NOT a.by_goal
+    GROUP BY a.subject, a.question_id
+  ),
+  q_rank AS (
+    SELECT q.subject, q.question_id, q.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY q.subject ORDER BY q.answered_at, q.question_id) AS rn
+    FROM q_once q
+  ),
+  evt AS (
+    SELECT a.subject, a.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY a.subject ORDER BY a.answered_at, a.answer_id) AS rn
+    FROM answered a
+    WHERE a.by_goal AND a.mode = 'practice' AND a.source IS DISTINCT FROM 'random'
+  ),
+  mark_goal AS (
+    SELECT b.subject, SUM(x.v) OVER (PARTITION BY b.subject ORDER BY x.ord) AS rn
+    FROM tot b
+    CROSS JOIN LATERAL (
+      SELECT (v.value)::BIGINT AS v, v.ord
+      FROM jsonb_array_elements_text(b.steps) WITH ORDINALITY AS v(value, ord)
+    ) x
+  ),
+  mark_round AS (
+    SELECT d.subject, d.rn, d.answered_at
+    FROM q_rank d
+    JOIN tot b ON b.subject = d.subject
+    WHERE jsonb_array_length(b.steps) = 0
+      AND COALESCE(b.size, b.total) > 0
+      AND d.rn = COALESCE(b.size, b.total)
+  ),
+  dated AS (
+    SELECT g.subject, e.answered_at
+    FROM mark_goal g
+    JOIN evt e ON e.subject = g.subject AND e.rn = g.rn
+    UNION ALL
+    SELECT r.subject, r.answered_at FROM mark_round r
+  ),
+  evt_cnt AS (SELECT subject, COUNT(*) AS n FROM evt GROUP BY subject),
+  q_once_cnt AS (SELECT subject, COUNT(*) AS n FROM q_once GROUP BY subject),
+  dated_agg AS (
+    SELECT subject,
+           jsonb_agg(to_char((answered_at AT TIME ZONE 'Asia/Shanghai')::DATE, 'YYYY-MM-DD')
+                     ORDER BY answered_at) AS arr
+    FROM dated
+    GROUP BY subject
+  )
+  SELECT tot.subject,
+         tot.total,
+         CASE WHEN jsonb_array_length(tot.steps) > 0
+              THEN COALESCE(ec.n, 0)
+              ELSE LEAST(COALESCE(qc.n, 0), tot.total)
+         END AS attempts,
+         COALESCE(da.arr, '[]'::jsonb) AS done_dates
+  FROM tot
+  LEFT JOIN evt_cnt ec ON ec.subject = tot.subject
+  LEFT JOIN q_once_cnt qc ON qc.subject = tot.subject
+  LEFT JOIN dated_agg da ON da.subject = tot.subject
+  ORDER BY tot.subject;
+$function$;
