@@ -5976,3 +5976,21 @@ CREATE POLICY question_drafts_delete_admin ON public.question_drafts FOR DELETE
 DROP TRIGGER IF EXISTS trg_question_drafts_updated_at ON public.question_drafts;
 CREATE TRIGGER trg_question_drafts_updated_at BEFORE UPDATE ON public.question_drafts
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ============================================================================
+-- Section 78: correct_answer 放开 NULL —— 分析题本来就没有标准答案
+--   症状: 出题页选「分析题」保存 → PostgREST 400, 浏览器只留下
+--   "Failed to load resource: the server responded with a status of 400" 和
+--   "Save question failed: Object"(错误体被 console.error 成对象, 看不到真正的原因)。
+--   根因: 这一列是 NOT NULL, 而题库模型里**分析题是人工批改、没有答案**:
+--     types.ts 的 CorrectAnswer 里 null 的注释就是 "analysis: manual grading";
+--     answer-utils 的 getDefaultAnswer('analysis') 返回 null;
+--     isAnswerCorrect 的 'analysis' 分支直接 return false, 压根不读答案。
+--   于是保存必然带上 correct_answer: null → 23502 → 400。
+--   受影响的写入点不止出题页: 草稿箱发布是把整份 payload 原样 insert(见 lib/question-drafts),
+--   编辑老题时把类型改成分析题走的是 update, 两条路撞的是同一个约束。
+--   放开约束不改变任何判分/展示行为: 读回来的 SQL NULL 与库里已有的 jsonb 'null'
+--   (cloze / reading_set / sentence_order 那几条) 在 JS 里都是 null。
+--   自查方法(不要只看前端提示): 对每个题型各 insert 一条并回滚, 只有 analysis 会 23502。
+-- ============================================================================
+ALTER TABLE public.questions ALTER COLUMN correct_answer DROP NOT NULL;
