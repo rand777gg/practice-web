@@ -67,7 +67,8 @@ export function SubjectTypeRadar({ planSubjects }: Props) {
             {Object.keys(chartConfig).map((s, i) => (
               <Radar key={s} dataKey={s} stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.15} strokeWidth={2} />
             ))}
-            <ChartLegend className="mt-6" content={<ChartLegendContent />} />
+            {/* recharts 3.10 起 Legend 不再接受 className (mt-6 = 24px, 走它支持的 wrapperStyle) */}
+            <ChartLegend wrapperStyle={{ marginTop: 24 }} content={<ChartLegendContent />} />
           </RadarChart>
         </ChartContainer>
       </CardContent>
