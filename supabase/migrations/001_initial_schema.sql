@@ -6608,6 +6608,7 @@ CREATE OR REPLACE FUNCTION public.kp_build_sort_key(p_code text)
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO ''
 AS $function$
 DECLARE
   v_big   TEXT := '';
@@ -6653,6 +6654,7 @@ $function$;
 CREATE OR REPLACE FUNCTION public.kp_set_sort_key()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO ''
 AS $function$
 BEGIN
   NEW.sort_key := public.kp_build_sort_key(NEW.code);
