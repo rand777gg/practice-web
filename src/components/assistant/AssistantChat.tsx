@@ -53,19 +53,30 @@ const GREETING = {
  * 引用条目: 点一下展开检索到的原文片段, 有 anchor 的还能直接跳到出处。
  * 展开原文是刻意的 —— 让用户能当场核对答案有没有依据, 而不是只能相信标注。
  *
+ * 展开与否由外面管(受控): 正文里点 [n] 要能就地把它展开, 状态只能有一份。
  * 左边那个 [n] 是**正文里那个编号**: 少了它, 正文写着「……[7]」而下面这张清单一个号都没有,
  * 用户没法知道说的是哪一条 —— 清单的顺序是检索序号, 不等于它在列表里的位置。
  */
-function SourceChip({ source, onNavigate }: {
+function SourceChip({ source, open, onToggle, onNavigate }: {
   source: NonNullable<AssistantReply['sources']>[number]
+  open: boolean
+  onToggle: () => void
   onNavigate?: () => void
 }) {
-  const [open, setOpen] = useState(false)
   return (
-    <div className="rounded-md border border-primary/15 bg-background/60">
+    <div
+      // 正文点 [n] 时靠它找过来 —— 用一个属性而不是 ref 表: 一张清单里的 ref 回调
+      // 是在渲染期建的, 在里面读写 ref 正是 React Compiler 不让做的事
+      data-cite={source.index}
+      className={cn(
+        'rounded-md border bg-background/60 transition-colors',
+        // 从正文点进来的那条会一直亮着, 直到点别处 —— 否则滚过去也不知道是哪一条
+        open ? 'border-primary/40 ring-1 ring-primary/25' : 'border-primary/15',
+      )}
+    >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         className="flex w-full items-center gap-1.5 px-1.5 py-1 text-left"
       >
         {source.index !== undefined && (
@@ -95,6 +106,41 @@ function SourceChip({ source, onNavigate }: {
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * 回答的一段文字, 其中 [n] 是可点的。
+ *
+ * 点了就地展开下面那条依据并滚过去 —— 编号和条目隔着几行, 让用户自己上下找,
+ * 标了号也等于没标。对不上任何一条的编号(检索越界被丢掉的)原样显示, 不做成按不动的假按钮。
+ */
+function CitedText({ text, sources, onJump, className }: {
+  text: string
+  sources: NonNullable<AssistantReply['sources']> | null | undefined
+  onJump: (index: number) => void
+  className?: string
+}) {
+  const has = (index: number) => !!sources?.some((source) => source.index === index)
+  return (
+    <p className={className}>
+      {text.split(/(\[\d{1,2}\])/g).map((part, i) => {
+        const match = /^\[(\d{1,2})\]$/.exec(part)
+        const index = match ? Number(match[1]) : null
+        if (index === null || !has(index)) return part
+        return (
+          <button
+            key={`${index}-${i}`}
+            type="button"
+            onClick={() => onJump(index)}
+            title={`展开依据 [${index}]`}
+            className="mx-0.5 rounded bg-primary/10 px-1 text-[10px] font-medium tabular-nums text-primary transition-colors hover:bg-primary/20"
+          >
+            [{index}]
+          </button>
+        )
+      })}
+    </p>
   )
 }
 
@@ -146,29 +192,65 @@ function MessageBody({ message, prices, onNavigate, onPickCommand }: {
   onNavigate?: () => void
   onPickCommand: (command: string) => void
 }) {
+  /** 展开的是哪一条依据(按编号); null = 都收着 */
+  const [openSource, setOpenSource] = useState<number | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const sources = message.sources
+
+  /**
+   * 正文里点了 [n]: 展开那条依据并滚过去。
+   *
+   * 滚动放在下一帧: 展开会改变高度, 这一帧里那个盒子还在原位, 立刻滚会滚偏。
+   * 不用 effect 收尾是为了不引入"渲染完再改状态"那一轮。
+   */
+  function jumpToSource(index: number) {
+    setOpenSource(index)
+    requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector<HTMLElement>(`[data-cite="${index}"]`)
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+  }
+
   return (
     <>
-      <p className="text-sm">{message.content}</p>
+      <CitedText text={message.content} sources={sources} onJump={jumpToSource} className="text-sm" />
       <MetaCard message={message} onPickCommand={onPickCommand} />
-      {message.sub && <p className="text-xs leading-relaxed text-muted-foreground">{message.sub}</p>}
+      {message.sub && (
+        <CitedText
+          text={message.sub}
+          sources={sources}
+          onJump={jumpToSource}
+          className="text-xs leading-relaxed text-muted-foreground"
+        />
+      )}
 
-      {message.sources && message.sources.length > 0 && (() => {
-        const numbered = message.sources.some((source) => source.index !== undefined)
+      {sources && sources.length > 0 && (() => {
+        const numbered = sources.some((source) => source.index !== undefined)
         // 正文与补充说明里一个 [n] 都没有 = 模型这次没标; 那清单上的号就没处可对, 得说一声
         const marked = /\[\d{1,2}\]/.test(`${message.content}\n${message.sub ?? ''}`)
         return (
-          <div className="space-y-1 rounded-lg border border-primary/20 bg-background/70 p-2">
+          <div ref={listRef} className="space-y-1 rounded-lg border border-primary/20 bg-background/70 p-2">
             <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
               <Library className="h-2.5 w-2.5" />
-              {numbered ? '依据平台资料（[n] 就是正文里标的号，点开可核对原文）' : '依据平台资料（点开可核对原文）'}
+              {numbered ? '依据平台资料（点正文里的 [n] 或点这里都能展开原文）' : '依据平台资料（点开可核对原文）'}
             </p>
             {numbered && !marked && (
               <p className="text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
                 这条正文没标编号，下面是它实际用到的资料。
               </p>
             )}
-            {message.sources.map((source, i) => (
-              <SourceChip key={`${source.label}-${i}`} source={source} onNavigate={onNavigate} />
+            {sources.map((source, i) => (
+              <SourceChip
+                key={`${source.label}-${i}`}
+                source={source}
+                open={source.index !== undefined && openSource === source.index}
+                onToggle={() => setOpenSource((current) => (
+                  source.index !== undefined && current === source.index ? null : source.index ?? null
+                ))}
+                onNavigate={onNavigate}
+              />
             ))}
           </div>
         )
