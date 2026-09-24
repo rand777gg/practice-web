@@ -13,9 +13,14 @@ interface Props {
   /** 点击时才拼朗读稿 —— 列表里每张卡都预先算一遍太浪费 */
   build: () => { prompt: string[]; answer: string[] }
   className?: string
+  /**
+   * 紧凑模式：只留图标。对话里每条回答下面都挂一个，带上文字和设置齿轮会盖过正文；
+   * 齿轮因此在对话表头上挂一次（见 AssistantChat），不是每条消息各挂一遍。
+   */
+  compact?: boolean
 }
 
-export function ReadAloudButton({ id, build, className }: Props) {
+export function ReadAloudButton({ id, build, className, compact = false }: Props) {
   const { t } = useT()
   const tts = useTts()
 
@@ -31,44 +36,47 @@ export function ReadAloudButton({ id, build, className }: Props) {
     tts.speak(id, prompt, answer)
   }
 
+  const size = compact ? 'h-6 w-6 p-0' : 'h-7'
+
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
       {cueReady ? (
-        <Button size="sm" className="h-7 gap-1 text-xs" onClick={tts.resume} title={t('tts.cueHint')}>
+        <Button size="sm" className={cn('gap-1 text-xs', compact ? 'h-6 px-2' : 'h-7')} onClick={tts.resume} title={t('tts.cueHint')}>
           <AudioLines className="h-3.5 w-3.5" />
-          {t('tts.answer')}
+          {!compact && t('tts.answer')}
         </Button>
       ) : active ? (
         <>
           {(playing || paused) && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={tts.togglePause} title={paused ? t('tts.resume') : t('tts.pause')}>
+            <Button variant="ghost" size="sm" className={cn('gap-1 text-xs', compact ? 'h-6 w-6 p-0' : 'h-7 px-2')} onClick={tts.togglePause} title={paused ? t('tts.resume') : t('tts.pause')}>
               {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-primary" onClick={tts.stop} title={t('tts.stop')}>
+          <Button variant="ghost" size="sm" className={cn('gap-1 text-xs text-primary', compact ? 'h-6 w-6 p-0' : 'h-7 px-2')} onClick={tts.stop} title={busy ? t('tts.loading') : t('tts.stop')}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-            {busy ? t('tts.loading') : t('tts.stop')}
+            {!compact && (busy ? t('tts.loading') : t('tts.stop'))}
           </Button>
         </>
       ) : (
         <Button
           variant="ghost"
           size="sm"
-          className={cn('h-7 gap-1 text-xs', failed && 'text-destructive')}
+          className={cn('gap-1 text-xs', size, failed && 'text-destructive')}
           onClick={start}
           title={failed ? `${t('tts.failed')}：${tts.error}` : t('tts.read')}
         >
           <Volume2 className="h-3.5 w-3.5" />
-          {failed ? t('tts.failed') : t('tts.read')}
+          {!compact && (failed ? t('tts.failed') : t('tts.read'))}
         </Button>
       )}
 
-      <SpeechSettings />
+      {!compact && <SpeechSettings />}
     </div>
   )
 }
 
-function SpeechSettings() {
+/** 音色与语速 —— 题库朗读和对话朗读共用这一份偏好, 所以齿轮也只该有一个入口在场景里 */
+export function SpeechSettings({ showAskFirst = true }: { showAskFirst?: boolean }) {
   const { t } = useT()
   const { prefs, setPrefs } = useTts()
 
@@ -119,13 +127,15 @@ function SpeechSettings() {
           </div>
         </div>
 
-        <div className="flex items-start justify-between gap-2 border-t pt-2.5">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium">{t('tts.askFirst')}</p>
-            <p className="text-[10px] leading-relaxed text-muted-foreground">{t('tts.askFirstDesc')}</p>
+        {showAskFirst && (
+          <div className="flex items-start justify-between gap-2 border-t pt-2.5">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium">{t('tts.askFirst')}</p>
+              <p className="text-[10px] leading-relaxed text-muted-foreground">{t('tts.askFirstDesc')}</p>
+            </div>
+            <Switch checked={prefs.askFirst} onCheckedChange={(v) => setPrefs({ askFirst: v })} />
           </div>
-          <Switch checked={prefs.askFirst} onCheckedChange={(v) => setPrefs({ askFirst: v })} />
-        </div>
+        )}
       </PopoverContent>
     </Popover>
   )
