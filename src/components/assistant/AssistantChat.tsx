@@ -13,6 +13,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { CommandPalette } from '@/components/assistant/CommandPalette'
 import { ExportCard, HelpCard, SkillCard } from '@/components/assistant/CommandCards'
 import { CreateCard } from '@/components/assistant/CreateCard'
+import { ReadAloudButton, SpeechSettings } from '@/components/tts/ReadAloudButton'
+import { assistantSpeech } from '@/lib/tts/assistant'
 import { useAssistantStore, type ChatMessage } from '@/stores/assistant-store'
 import { commandPrefix, matchCommands, parseCommand, type CommandSpec } from '@/lib/assistant-commands'
 import {
@@ -117,7 +119,7 @@ function RoundUsageLine({ usage, prices }: { usage: AiRoundUsage; prices: AiPric
   const cost = costOfRound(usage, prices)
   return (
     <p
-      className="flex flex-wrap items-center gap-1 pt-0.5 text-[10px] tabular-nums text-muted-foreground"
+      className="flex flex-wrap items-center gap-1 text-[10px] tabular-nums text-muted-foreground"
       title={[
         `输入 ${formatTokens(usage.promptTokens)} · 输出 ${formatTokens(usage.completionTokens)}`,
         usage.model && `模型 ${usage.model}`,
@@ -174,7 +176,16 @@ function MessageBody({ message, prices, onNavigate, onPickCommand }: {
         </div>
       )}
 
-      {message.usage && <RoundUsageLine usage={message.usage} prices={prices} />}
+      {/* 一条回答一行脚注: 左边是"读给我听", 右边是这一轮花了多少 —— 都是关于这条回答本身的 */}
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <ReadAloudButton
+          compact
+          id={`littleq:${message.id}`}
+          // 点的时候才算朗读稿: 一条会话几十条回答, 预先算一遍纯属浪费
+          build={() => ({ prompt: [], answer: assistantSpeech(message.content, message.sub) })}
+        />
+        {message.usage && <RoundUsageLine usage={message.usage} prices={prices} />}
+      </div>
     </>
   )
 }
@@ -347,6 +358,8 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             {sending ? '正在组织语言…' : STATUS_TEXT[emotion]}
           </span>
         </span>
+        {/* 「先问后答」是题目的规则, 小Q 这里没有题干可停, 所以那个开关不显示 */}
+        <SpeechSettings showAskFirst={false} />
         <button
           type="button"
           onClick={() => submit('/help')}
