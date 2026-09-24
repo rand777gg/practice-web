@@ -482,6 +482,21 @@ export interface Question {
   flagged_at?: string | null
 }
 
+/** 题目表单产出的一整份内容 —— 新建、编辑、存草稿用的是同一份结构 */
+export type QuestionInput = Omit<Question, 'id' | 'created_at' | 'created_by'>
+
+/** 草稿箱里的一条: payload 就是 QuestionInput, 发布时才落进 questions */
+export interface QuestionDraft {
+  id: string
+  /** 编辑已有题目时存着原题 id, 发布走 update 而不是再插一条 */
+  question_id: string | null
+  question_type: QuestionType
+  question_text: string
+  payload: QuestionInput
+  created_at: string
+  updated_at: string
+}
+
 export interface ExamSession {
   id: string
   user_id: string

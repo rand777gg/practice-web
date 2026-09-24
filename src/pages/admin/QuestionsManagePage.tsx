@@ -31,10 +31,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QuestionImportDialog } from '@/components/questions/QuestionImportDialog'
+import { QuestionDraftsDialog } from '@/components/questions/QuestionDraftsDialog'
 import { SubjectExplanationManagerDialog } from '@/components/practice/SubjectExplanationManagerDialog'
 import { KpExplanationManagerDialog } from '@/components/practice/KpExplanationManagerDialog'
 import { QuestionList } from '@/components/questions/QuestionList'
-import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen, GitMerge, GraduationCap, Bot } from 'lucide-react'
+import { Upload, Plus, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Trash2, FlaskConical, BookOpen, GitMerge, GraduationCap, Bot, FileText } from 'lucide-react'
+import { countDrafts } from '@/lib/question-drafts'
 import { useT } from '@/i18n/use-t'
 import { Separator } from '@/components/ui/separator'
 
@@ -47,6 +49,8 @@ export function Component() {
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [search, setSearch] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [draftsOpen, setDraftsOpen] = useState(false)
+  const [draftCount, setDraftCount] = useState(0)
   const [explainOpen, setExplainOpen] = useState(false)
   const [kpExplainOpen, setKpExplainOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -130,6 +134,9 @@ export function Component() {
   }, [])
 
   useEffect(() => { loadMetaData() }, [loadMetaData])
+
+  const refreshDraftCount = useCallback(() => { void countDrafts().then(setDraftCount) }, [])
+  useEffect(() => { refreshDraftCount() }, [refreshDraftCount])
 
   // Trigger fetch when filters or search change
   useEffect(() => {
@@ -310,6 +317,7 @@ export function Component() {
             { icon: GitMerge, label: '题目查重', to: '/admin/duplicates', variant: 'outline' as const },
             { icon: Sparkles, label: 'AI 智能解析', to: '/admin/ai-import', variant: 'outline' as const, className: 'ai-nav-item' },
             { icon: FlaskConical, label: '测试题目', to: '/admin/questions/test', variant: 'outline' as const },
+            { icon: FileText, label: draftCount > 0 ? `草稿箱 (${draftCount})` : '草稿箱', action: () => setDraftsOpen(true), variant: 'outline' as const },
             { icon: BookOpen, label: '编排说明', action: () => setExplainOpen(true), variant: 'outline' as const },
             { icon: GraduationCap, label: '知识点解读', action: () => setKpExplainOpen(true), variant: 'outline' as const },
             { icon: Bot, label: '分布式采集', to: '/admin/crawler', variant: 'outline' as const },
@@ -802,6 +810,13 @@ export function Component() {
         open={showImport}
         onClose={() => setShowImport(false)}
         onImported={refetch}
+      />
+
+      <QuestionDraftsDialog
+        open={draftsOpen}
+        onClose={() => setDraftsOpen(false)}
+        onPublished={() => { refetch(); loadMetaData() }}
+        onChanged={refreshDraftCount}
       />
 
       <SubjectExplanationManagerDialog open={explainOpen} onOpenChange={setExplainOpen} />

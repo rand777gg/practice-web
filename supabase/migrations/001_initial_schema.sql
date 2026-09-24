@@ -5938,3 +5938,41 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.ai_usage_overview(integer) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.ai_usage_overview(integer) TO authenticated;
+
+-- ============================================================================
+-- Section 77: 题目草稿箱 —— 写到一半的题先存着，不进正式题库
+--   草稿单独一张表而不是 questions 加 status: 练习/考试/组卷/图谱十几处查询
+--   都得记得排掉草稿, 漏一处草稿就漏进练习。分表则一处都不用改。
+--   payload 存整个表单 (与 QuestionForm 提交的结构同形), 发布时才落进 questions。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.question_drafts (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- 编辑已有题目时草稿记着原题 id, 发布时走 update 而不是再插一条
+  question_id   UUID REFERENCES public.questions(id) ON DELETE SET NULL,
+  question_type TEXT NOT NULL DEFAULT 'single_choice',
+  question_text TEXT NOT NULL DEFAULT '',
+  payload       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_question_drafts_updated ON public.question_drafts(updated_at DESC);
+
+ALTER TABLE public.question_drafts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS question_drafts_select_admin ON public.question_drafts;
+CREATE POLICY question_drafts_select_admin ON public.question_drafts FOR SELECT
+  USING (public.is_admin());
+DROP POLICY IF EXISTS question_drafts_insert_admin ON public.question_drafts;
+CREATE POLICY question_drafts_insert_admin ON public.question_drafts FOR INSERT
+  WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS question_drafts_update_admin ON public.question_drafts;
+CREATE POLICY question_drafts_update_admin ON public.question_drafts FOR UPDATE
+  USING (public.is_admin()) WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS question_drafts_delete_admin ON public.question_drafts;
+CREATE POLICY question_drafts_delete_admin ON public.question_drafts FOR DELETE
+  USING (public.is_admin());
+
+DROP TRIGGER IF EXISTS trg_question_drafts_updated_at ON public.question_drafts;
+CREATE TRIGGER trg_question_drafts_updated_at BEFORE UPDATE ON public.question_drafts
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

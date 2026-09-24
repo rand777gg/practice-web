@@ -15,11 +15,11 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getPrompt } from '@/stores/prompt-store'
 import {
-  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X, Wand2,
+  Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X, Wand2, FileText, Loader2,
 } from 'lucide-react'
 import { OPTION_LABELS, QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, CASE_SUB_TYPE_OPTIONS } from '@/lib/constants'
 import { getDefaultAnswer } from '@/lib/answer-utils'
-import type { Question, QuestionType, CorrectAnswer, CaseQuestion, TestCase, RuntimeConfig, ExampleCase } from '@/types'
+import type { QuestionInput, QuestionType, CorrectAnswer, CaseQuestion, TestCase, RuntimeConfig, ExampleCase } from '@/types'
 import { generateKeyPoints, hasAiConfig, DeepSeekParser } from '@/lib/ai'
 import { getAiConfig } from '@/lib/ai/config'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -28,12 +28,16 @@ import { useT } from '@/i18n/use-t'
 import { cn, normalizeChineseText } from '@/lib/utils'
 
 interface Props {
-  initialData?: Question
-  onSubmit: (data: Omit<Question, 'id' | 'created_at' | 'created_by'>) => Promise<void>
+  initialData?: QuestionInput
+  onSubmit: (data: QuestionInput) => Promise<void>
   onCancel: () => void
+  /** 存草稿: 不做校验, 表单里是什么就存什么; 不传就不显示存草稿按钮 */
+  onSaveDraft?: (data: QuestionInput) => Promise<void>
+  /** 正在编辑的草稿 id, 只用来提示「已存草稿」 */
+  draftId?: string | null
 }
 
-export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
+export function QuestionForm({ initialData, onSubmit, onCancel, onSaveDraft, draftId }: Props) {
   const { t } = useT()
   const { isEnabled } = useSettingsStore()
   const [questionType, setQuestionType] = useState<QuestionType>(initialData?.question_type ?? 'single_choice')
@@ -66,6 +70,8 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
   const [stemFade, setStemFade] = useState(false)
   const typewriterRef = useRef<{ text: string; timer: ReturnType<typeof setInterval> | null }>({ text: '', timer: null })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [draftSaving, setDraftSaving] = useState(false)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [error, setError] = useState('')
 
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
@@ -369,44 +375,62 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
 
     setIsSubmitting(true)
     try {
-      await onSubmit({
-        question_type: questionType,
-        question_text: questionText.trim(),
-        options: options.map((o) => o.trim()),
-        correct_answer: correctAnswer,
-        answer_explanation: null,
-        category: categories[0] ?? null,
-        categories,
-        subject: subject.trim() || null,
-        analysis: analysis.trim() || null,
-        key_points: keyPoints.trim() || null,
-        seq_number: seqNumber ? Number(seqNumber) : null,
-        verified,
-        issue_flag: issueFlag,
-        issue_note: issueFlag === 'none' ? null : (issueNote.trim() || null),
-        flagged_at: issueFlag === 'none' ? null : (initialData?.flagged_at ?? new Date().toISOString()),
-        allow_unordered: allowUnordered,
-        unordered_blanks: unorderedBlanks.length > 0 && unorderedBlanks[0] !== -1 ? unorderedBlanks : null,
-        import_mode: initialData?.import_mode ?? 'manual',
-        source_page: initialData?.source_page ?? null,
-        test_cases: isCoding ? testCases : undefined,
-        runtime_config: isCoding ? runtimeConfig : undefined,
-        execution_mode: isCoding ? executionMode : undefined,
-        examples: isCoding ? examples : undefined,
-        case_questions: isCaseAnalysis
-          ? caseQuestions.map((sub) => ({
-              ...sub,
-              text: sub.text.trim(),
-              options: (sub.options ?? []).map((o) => o.trim()),
-            }))
-          : undefined,
-      })
+      await onSubmit(buildPayload())
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('Save question failed:', err)
       setError(`${t('questions.saveFailed')}: ${msg}`)
       setIsSubmitting(false)
     }
+  }
+
+  /** 校验前的那份表单内容 —— 提交和存草稿走同一条路, 免得两边字段慢慢长歪 */
+  const buildPayload = (): QuestionInput => ({
+    question_type: questionType,
+    question_text: questionText.trim(),
+    options: options.map((o) => o.trim()),
+    correct_answer: correctAnswer,
+    answer_explanation: null,
+    category: categories[0] ?? null,
+    categories,
+    subject: subject.trim() || null,
+    analysis: analysis.trim() || null,
+    key_points: keyPoints.trim() || null,
+    seq_number: seqNumber ? Number(seqNumber) : null,
+    verified,
+    issue_flag: issueFlag,
+    issue_note: issueFlag === 'none' ? null : (issueNote.trim() || null),
+    flagged_at: issueFlag === 'none' ? null : (initialData?.flagged_at ?? new Date().toISOString()),
+    allow_unordered: allowUnordered,
+    unordered_blanks: unorderedBlanks.length > 0 && unorderedBlanks[0] !== -1 ? unorderedBlanks : null,
+    import_mode: initialData?.import_mode ?? 'manual',
+    source_page: initialData?.source_page ?? null,
+    test_cases: isCoding ? testCases : undefined,
+    runtime_config: isCoding ? runtimeConfig : undefined,
+    execution_mode: isCoding ? executionMode : undefined,
+    examples: isCoding ? examples : undefined,
+    case_questions: isCaseAnalysis
+      ? caseQuestions.map((sub) => ({
+          ...sub,
+          text: sub.text.trim(),
+          options: (sub.options ?? []).map((o) => o.trim()),
+        }))
+      : undefined,
+  })
+
+  const handleSaveDraft = async () => {
+    if (!onSaveDraft || draftSaving) return
+    setError('')
+    setDraftSaving(true)
+    try {
+      await onSaveDraft(buildPayload())
+      setDraftSavedAt(Date.now())
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Save draft failed:', err)
+      setError(`${t('questions.draftSaveFailed')}: ${msg}`)
+    }
+    setDraftSaving(false)
   }
 
   return (
@@ -1318,11 +1342,26 @@ export function QuestionForm({ initialData, onSubmit, onCancel }: Props) {
           </Card>
 
           {/* Actions */}
-          <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={onCancel}>{t('questions.cancel')}</Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? <><span className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />{t('questions.saving')}</> : <><Save className="h-4 w-4 mr-1.5" />{initialData ? t('questions.update') : t('questions.create')}</>}
-            </Button>
+          <div className="space-y-2">
+            {onSaveDraft && (draftId || draftSavedAt) && (
+              <p className="text-right text-[11px] text-muted-foreground">
+                {draftSaving ? t('questions.draftSaving') : t('questions.draftSavedHint')}
+              </p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button type="button" variant="outline" onClick={onCancel}>{t('questions.cancel')}</Button>
+              {onSaveDraft && (
+                <Button type="button" variant="secondary" onClick={handleSaveDraft}
+                  disabled={draftSaving || isSubmitting} title={t('questions.draftHint')}>
+                  {draftSaving
+                    ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />{t('questions.draftSaving')}</>
+                    : <><FileText className="h-4 w-4 mr-1.5" />{t('questions.saveDraft')}</>}
+                </Button>
+              )}
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? <><span className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />{t('questions.saving')}</> : <><Save className="h-4 w-4 mr-1.5" />{initialData ? t('questions.update') : t('questions.create')}</>}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
