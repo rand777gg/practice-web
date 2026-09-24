@@ -81,24 +81,27 @@ function buildContext(hits: RagHit[]): string {
 
 function toSources(hits: RagHit[], used: number[] | null | undefined): AssistantSource[] | undefined {
   if (!used?.length) return undefined
-  const out: AssistantSource[] = []
-  const seen = new Set<number>()
-  for (const n of used) {
-    const idx = Math.round(n) - 1
+  // 去重 + 按编号升序: 正文里标的是 [1]、[7], 下面这张清单也得按 1、7 排。
+  // 按模型报的顺序排会变成"第一条其实是 [7]", 用户拿正文的编号来对就对不上了。
+  const picked = [...new Set(used.map((n) => Math.round(Number(n))))]
     // 越界的序号直接丢: 模型偶尔会编号错位, 宁可少给一条引用也不要给错的
-    if (!Number.isFinite(idx) || idx < 0 || idx >= hits.length || seen.has(idx)) continue
-    seen.add(idx)
-    const h = hits[idx]
-    out.push({
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= hits.length)
+    .sort((a, b) => a - b)
+    .slice(0, 5)
+  if (picked.length === 0) return undefined
+
+  return picked.map((n) => {
+    const h = hits[n - 1]
+    return {
+      // 正文里那个 [n] —— 清单要靠它才能和正文互相指认
+      index: n,
       label: h.pageNo ? `${h.label} · 第 ${h.pageNo} 页` : h.label,
       type: RAG_TYPE[h.source] ?? '专题',
       anchor: h.anchor ?? undefined,
       snippet: h.content.replace(/\s+/g, ' ').trim().slice(0, 400),
       pageNo: h.pageNo ?? undefined,
-    })
-    if (out.length >= 5) break
-  }
-  return out.length > 0 ? out : undefined
+    }
+  })
 }
 
 /**
@@ -141,10 +144,11 @@ export async function chatWithLittleQ(
         buildContext(hits),
         '',
         '引用规则：',
-        '1. 用资料里的内容回答时，在句末标注编号，例如「……[2]」；',
-        '2. 把实际用到的编号填进 used 字段（只填编号数字，不要编造资料里没有的条目）；',
-        '3. 资料里没有的内容就不要写成有依据的结论，可以说资料没覆盖、并给出你自己的判断；',
-        '4. 不要凭空写出文献名或页码 —— 这些由前端根据编号补全。',
+        '1. 用到资料里的内容时，**每一处**都要在句末跟上编号，例如「……[2]」；连续两处就写「[2][5]」；text 与 sub 里都算，哪一段用了资料就在那一段末尾标；',
+        '2. used 只填正文里标过的编号，且要和正文完全一致（正文写「[3][7]」就只填 3、7，不要多报）；',
+        '3. 正文里一个编号都没标，就等于没有引用 —— 那种情况下 used 必须留空，不要只在 used 里报编号；',
+        '4. 资料里没有的内容就不要写成有依据的结论，可以说资料没覆盖、并给出你自己的判断；',
+        '5. 不要凭空写出文献名或页码 —— 这些由前端根据编号补全。',
       ].join('\n')
       : '【可引用资料】本次没有检索到相关资料。如果用户问的是专业课问题，请在回答里说明平台资料暂未覆盖，不要编造出处。',
     transcript && `【最近对话】\n${transcript}`,
@@ -176,10 +180,19 @@ export async function chatWithLittleQ(
   const completionTokens = usage?.outputTokens ?? 0
   const totalTokens = usage?.totalTokens ?? promptTokens + completionTokens
 
-  // 模型有时正文里老老实实标了 [2], 却漏填 used 字段(实测同一问题两次调用一次填一次不填)。
-  // 正文里的编号是它自己写的, 拿它兜底比丢掉引用可靠 —— 有引用可核对比没有强得多。
-  const fromText = [...object.text.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1]))
-  const used = object.used?.length ? object.used : fromText
+  // 正文里的编号是**唯一可信的引用声明**。
+  //
+  // 为什么不再优先信 used: 实测同一轮里正文标了 [3][7][2][5], 而 used 填了五个(多一个 4) ——
+  // 照着 used 出清单就会出现一条正文里根本不存在的号, 用户拿着去正文里找必然找不到,
+  // 那正是"引用没有标号"要修的东西。正文没标任何编号时才退回 used(那种情况页面上会写明),
+  // 宁可这样, 也不要把"模型说它用过"当作"正文里引用了"。
+  //
+  // sub 也要一起扫: 模型常把编号标在"具体做法"那几行里(实测 text 一句没标、sub 标了两个),
+  // 而读者看到的是两段, 只扫 text 会把真正的引用当成没标。
+  const fromText = [...new Set(
+    [...`${object.text}\n${object.sub ?? ''}`.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1])),
+  )]
+  const used = fromText.length > 0 ? fromText : object.used ?? []
 
   return {
     reply: {

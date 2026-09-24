@@ -52,6 +52,9 @@ const GREETING = {
 /**
  * 引用条目: 点一下展开检索到的原文片段, 有 anchor 的还能直接跳到出处。
  * 展开原文是刻意的 —— 让用户能当场核对答案有没有依据, 而不是只能相信标注。
+ *
+ * 左边那个 [n] 是**正文里那个编号**: 少了它, 正文写着「……[7]」而下面这张清单一个号都没有,
+ * 用户没法知道说的是哪一条 —— 清单的顺序是检索序号, 不等于它在列表里的位置。
  */
 function SourceChip({ source, onNavigate }: {
   source: NonNullable<AssistantReply['sources']>[number]
@@ -65,6 +68,9 @@ function SourceChip({ source, onNavigate }: {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-1.5 px-1.5 py-1 text-left"
       >
+        {source.index !== undefined && (
+          <span className="shrink-0 text-[10px] font-medium tabular-nums text-primary">[{source.index}]</span>
+        )}
         <Badge
           variant="secondary"
           className={cn('shrink-0 border-transparent text-[9px] font-normal', SOURCE_TONE[source.type])}
@@ -146,17 +152,27 @@ function MessageBody({ message, prices, onNavigate, onPickCommand }: {
       <MetaCard message={message} onPickCommand={onPickCommand} />
       {message.sub && <p className="text-xs leading-relaxed text-muted-foreground">{message.sub}</p>}
 
-      {message.sources && message.sources.length > 0 && (
-        <div className="space-y-1 rounded-lg border border-primary/20 bg-background/70 p-2">
-          <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-            <Library className="h-2.5 w-2.5" />
-            依据平台资料（点开可核对原文）
-          </p>
-          {message.sources.map((source, i) => (
-            <SourceChip key={`${source.label}-${i}`} source={source} onNavigate={onNavigate} />
-          ))}
-        </div>
-      )}
+      {message.sources && message.sources.length > 0 && (() => {
+        const numbered = message.sources.some((source) => source.index !== undefined)
+        // 正文与补充说明里一个 [n] 都没有 = 模型这次没标; 那清单上的号就没处可对, 得说一声
+        const marked = /\[\d{1,2}\]/.test(`${message.content}\n${message.sub ?? ''}`)
+        return (
+          <div className="space-y-1 rounded-lg border border-primary/20 bg-background/70 p-2">
+            <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+              <Library className="h-2.5 w-2.5" />
+              {numbered ? '依据平台资料（[n] 就是正文里标的号，点开可核对原文）' : '依据平台资料（点开可核对原文）'}
+            </p>
+            {numbered && !marked && (
+              <p className="text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
+                这条正文没标编号，下面是它实际用到的资料。
+              </p>
+            )}
+            {message.sources.map((source, i) => (
+              <SourceChip key={`${source.label}-${i}`} source={source} onNavigate={onNavigate} />
+            ))}
+          </div>
+        )
+      })()}
 
       {message.tags && message.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-0.5">

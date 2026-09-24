@@ -12,6 +12,12 @@ export type LittleQEmotion = 'neutral' | 'happy' | 'concerned' | 'thinking'
 export interface AssistantSource {
   label: string
   type: '题库' | '专题' | '文献' | '真题' | '笔记'
+  /**
+   * 正文里那个 `[n]` —— 检索结果按编号喂给模型, 它引用时写的就是这个号。
+   * 少了它, 正文里的 [7] 和下面这张清单里的条目就对不上(清单是按模型报的顺序排的, 位置不等于编号)。
+   * 老消息没有这个字段(那一列当时还没存), 只能不显示编号。
+   */
+  index?: number
   /** 站内跳转地址(检索到的文献可以精确落到某一页某一段), 没有就只展示内容 */
   anchor?: string
   /** 引用到的原文片段, 便于用户当场核对答案有没有出处 */
