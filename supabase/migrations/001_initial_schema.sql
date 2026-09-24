@@ -6536,3 +6536,96 @@ ALTER TABLE public.user_settings ADD CONSTRAINT user_settings_pkey PRIMARY KEY (
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS uset_own ON public.user_settings;
 CREATE POLICY uset_own ON public.user_settings AS PERMISSIVE FOR ALL TO public USING (((user_id = ( SELECT auth.uid() AS uid)) OR ( SELECT is_admin() AS is_admin)));
+
+-- ============================================================================
+-- Section 84: 补上漂移残留的 3 个函数与 1 个触发器
+-- ============================================================================
+-- 背景: 与 Section 83 同源 —— 这些对象存在于线上, 但 001_initial_schema.sql 从未创建。
+--       实测对比(排除扩展自带成员后): 线上 82 个函数 / 文件 75 个;
+--       线上 24 个触发器 / 文件 23 个。缺的就是下面这些。
+--   函数: get_random_question_id_mixed, kp_build_sort_key, kp_set_sort_key
+--   触发器: user_preferences.trg_up_updated_at
+--
+-- 未包含 rls_auto_enable(): 它是 Supabase 平台自带的 RLS 辅助函数, 不属于本项目代码。
+-- 用 CREATE OR REPLACE(不 DROP 函数), 因为 kp_set_sort_key 可能是触发器函数, DROP 会因依赖失败。
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_random_question_id_mixed(p_user_id uuid, p_subjects text[] DEFAULT NULL::text[], p_categories text[] DEFAULT NULL::text[], p_question_type text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_id UUID;
+BEGIN
+  SELECT q.id INTO v_id
+  FROM public.questions q
+  WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+    AND (p_categories IS NULL OR q.categories ?| p_categories)
+    AND (p_question_type IS NULL OR q.question_type = p_question_type)
+  ORDER BY random()
+  LIMIT 1;
+
+  RETURN v_id;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.kp_build_sort_key(p_code text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE
+  v_big   TEXT := '';
+  v_small TEXT := '';
+  v_ch    TEXT := '';
+  v_sec   TEXT := '';
+  v_dot   INT;
+  v_rest  TEXT;
+BEGIN
+  IF p_code IS NULL OR p_code = '' THEN
+    RETURN '';
+  END IF;
+
+  -- level 1: A
+  v_big := substring(p_code FROM 1 FOR 1);
+  IF length(p_code) = 1 THEN
+    RETURN v_big;
+  END IF;
+
+  -- level 2: Aa
+  v_small := substring(p_code FROM 2 FOR 1);
+  IF length(p_code) = 2 THEN
+    RETURN v_big || '|' || v_small;
+  END IF;
+
+  -- level 3+: Aa1 或 Aa1.1
+  v_rest := substring(p_code FROM 3);
+  v_dot := position('.' IN v_rest);
+
+  IF v_dot = 0 THEN
+    -- level 3: 只有章
+    v_ch := lpad(v_rest, 2, '0');
+    RETURN v_big || '|' || v_small || '|' || v_ch;
+  ELSE
+    -- level 4: 章.节
+    v_ch  := lpad(substring(v_rest FROM 1 FOR v_dot - 1), 2, '0');
+    v_sec := lpad(substring(v_rest FROM v_dot + 1), 2, '0');
+    RETURN v_big || '|' || v_small || '|' || v_ch || '|' || v_sec;
+  END IF;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.kp_set_sort_key()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  NEW.sort_key := public.kp_build_sort_key(NEW.code);
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_up_updated_at ON public.user_preferences;
+
+CREATE TRIGGER trg_up_updated_at BEFORE UPDATE ON public.user_preferences FOR EACH ROW EXECUTE FUNCTION set_updated_at();
