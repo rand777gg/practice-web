@@ -187,7 +187,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="sidebar-glass w-(--sidebar-width) bg-sidebar/70 p-0 text-sidebar-foreground backdrop-blur-xl [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -244,7 +244,9 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
+          // 玻璃这一层: 半透明 + 模糊 + 一道上沿高光(见 index.css 的 .sidebar-glass)。
+          // 桌面端它背后是页面底色, 主张的是"材质"而不是"透过"; 移动端抽屉盖在正文上, 那里才真透。
+          className="sidebar-glass flex h-full w-full flex-col bg-sidebar/65 backdrop-blur-xl group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
         >
           {children}
         </div>

@@ -311,6 +311,14 @@
   }
 }
 
+/* 侧边栏这一层自己的玻璃材质: 一层极淡的斜向主题色 + 上沿一道高光边。
+   刻意不加页面级底色 —— 桌面端侧边栏背后本来就没东西经过, 这个方案给的是"材质感",
+   真正能透出内容的场合是移动端的抽屉(它盖在正文上)。 */
+.sidebar-glass {
+  background-image: linear-gradient(158deg, hsl(var(--primary) / 0.08), transparent 58%);
+  box-shadow: inset 0 1px 0 hsl(var(--sidebar-border) / 0.65);
+}
+
 /* AI Generated Badge Animations */
 @keyframes colorWheel {
   0% {
