@@ -13,7 +13,7 @@ import { Icon } from '@/lib/icons'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
+import { isJudge0Reachable, JUDGE0_DEFAULT_URL, probePlatformJudge } from '@/lib/judge0'
 import { Play, Loader2, TriangleAlert, Terminal, BookOpen, History, RotateCcw, Plus } from 'lucide-react'
 import type { Question, TestCase, ExampleCase, CodingAnswer, SubmissionResult } from '@/types'
 
@@ -104,12 +104,12 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
     } catch { /* noop */ }
   }, [user, question.id])
 
-  // 判题通道切换:选中平台通道时顺带探测浏览器→平台延迟
+  // 判题通道切换:选中平台通道时探一次平台判题链路(经服务端代理,浏览器不直连 Judge0)
   const selectChannel = useCallback((c: 'local' | 'central') => {
     setChannel(c); setNotice(null)
     if (c === 'central') {
       setPlatformChecking(true); setPlatformLatency(null)
-      measureJudge0Latency(JUDGE0_PLATFORM_URL).then((ms) => { setPlatformLatency(ms); setPlatformChecking(false) })
+      probePlatformJudge().then((ms) => { setPlatformLatency(ms); setPlatformChecking(false) })
     }
   }, [])
 

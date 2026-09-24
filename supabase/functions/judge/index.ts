@@ -5,12 +5,21 @@
 //  - 中心判题(平台自部署 Judge0)计入公共成绩;用户本地自测见 src/lib/judge0.ts(浏览器直连)。
 //
 // 必配环境变量:
-//   JUDGE0_URL  平台自部署 Judge0 的地址,例如 http://<host>:2358
-//   npx supabase secrets set JUDGE0_URL=http://<your-judge0-host>:2358
+//   JUDGE0_URL    平台自部署 Judge0 的地址,例如 https://oj.pguide.dev
+//   JUDGE0_TOKEN  Judge0 自带鉴权的令牌(judge0.conf 里的 AUTHN_TOKEN)
+//   npx supabase secrets set JUDGE0_URL=https://oj.pguide.dev JUDGE0_TOKEN=<token>
 // 未配置时直接返回明确错误(不再回退到旧逻辑)。
+//
+// 令牌只存在于服务端:浏览器拿的是自己的 Supabase JWT,到这里才换成 Judge0 令牌。
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const JUDGE0_URL = Deno.env.get('JUDGE0_URL') || ''
+const JUDGE0_URL = (Deno.env.get('JUDGE0_URL') || '').replace(/\/$/, '')
+const JUDGE0_TOKEN = Deno.env.get('JUDGE0_TOKEN') || ''
+
+/** Judge0 开了 AUTHN 后每个请求都要带令牌;留空则兼容未开鉴权的实例。 */
+function judge0Headers(extra: Record<string, string> = {}): Record<string, string> {
+  return JUDGE0_TOKEN ? { Authorization: JUDGE0_TOKEN, ...extra } : extra
+}
 
 // 入口鉴权: 平台自部署的 Judge0 是有限资源, 而这个函数以前谁都能调(只带公开的前端 key
 // 就能往判题机塞任意代码)。要求已登录的用户, 并按用户粗粒度限流。
@@ -109,12 +118,13 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
 
   // 1) 批量创建
   const createRes = await fetch(`${JUDGE0_URL}/submissions/batch`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: judge0Headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ submissions }),
   })
   if (!createRes.ok) {
     const text = await createRes.text().catch(() => '')
-    return json({ error: `Judge0 创建提交失败:HTTP ${createRes.status} ${text.slice(0, 200)}` }, createRes.status)
+    const hint = createRes.status === 401 ? '(Judge0 令牌不匹配:检查 JUDGE0_TOKEN 与节点 judge0.conf 的 AUTHN_TOKEN) ' : ''
+    return json({ error: `Judge0 创建提交失败:HTTP ${createRes.status} ${hint}${text.slice(0, 200)}` }, createRes.status)
   }
   const created = (await createRes.json()) as { token?: string }[]
   const tokens = created.map((c) => c.token).filter((t): t is string => !!t)
@@ -128,7 +138,9 @@ async function judgeViaJudge0(body: JudgeRequest): Promise<Response> {
   while (all.some((r) => r === null)) {
     if (Date.now() > deadline) return json({ error: '判题超时' }, 504)
     const pending = tokens.map((tk, i) => ({ tk, i })).filter(({ i }) => all[i] === null)
-    const poll = await fetch(`${JUDGE0_URL}/submissions/batch?tokens=${pending.map((p) => p.tk).join(',')}&fields=${fields}`)
+    const poll = await fetch(`${JUDGE0_URL}/submissions/batch?tokens=${pending.map((p) => p.tk).join(',')}&fields=${fields}`, {
+      headers: judge0Headers(),
+    })
     if (!poll.ok) return json({ error: `Judge0 查询失败:HTTP ${poll.status}` }, 502)
     // Judge0 batch 返回外壳 { submissions:[...] }
     const raw = (await poll.json()) as { submissions?: Run[] } | Run[]

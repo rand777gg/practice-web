@@ -17,7 +17,7 @@ import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
 import { CodingIdeView } from '@/components/practice/CodingIdeView'
 import { QuestionTags } from '@/components/questions/QuestionTags'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
-import { isJudge0Reachable, JUDGE0_DEFAULT_URL, JUDGE0_PLATFORM_URL, measureJudge0Latency } from '@/lib/judge0'
+import { isJudge0Reachable, JUDGE0_DEFAULT_URL, probePlatformJudge } from '@/lib/judge0'
 import { Separator } from '@/components/ui/separator'
 
 const BLANK_RE = new RegExp('_{2,}', 'g')
@@ -282,14 +282,14 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
     return () => { cancelled = true }
   }, [judgePanelOn, isLocalJudgeable])
 
-  // 切换到平台判题时探测一次"浏览器→平台"延迟(事件驱动;集群化后可遍历多节点取最近)
+  // 切换到平台判题时探一次判题链路耗时(事件驱动;走服务端代理,浏览器不直连 Judge0)
   const selectChannel = (c: 'local' | 'central') => {
     setJudgeChannel(c)
     setJudgeNotice(null)
     if (c === 'central') {
       setPlatformChecking(true)
       setPlatformLatency(null)
-      measureJudge0Latency(JUDGE0_PLATFORM_URL).then((ms) => {
+      probePlatformJudge().then((ms) => {
         setPlatformLatency(ms)
         setPlatformChecking(false)
       })
