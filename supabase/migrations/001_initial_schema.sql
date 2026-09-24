@@ -798,57 +798,91 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_question_meta(TEXT) TO authenticated;
 
 -- 计划进度聚合 — 一次查询替代客户端分页+Set计数
-CREATE OR REPLACE FUNCTION public.get_subject_progress(
-  p_user_id          UUID,
-  p_plan_reset_at    TIMESTAMPTZ DEFAULT NULL,
-  p_today_since      TIMESTAMPTZ DEFAULT NULL,
-  p_subjects         TEXT[]      DEFAULT NULL,
-  p_subject_resets   JSONB       DEFAULT NULL
-)
-RETURNS TABLE(subject TEXT, total BIGINT, done_all BIGINT, done_today BIGINT, missing_kp BIGINT)
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path = ''
-AS $$
+-- 注: 本函数此前在文件里是坏的 —— missing_kp 写成了 GROUP BY 查询 SELECT 列表里的相关子查询
+--     (WHERE q2.subject = COALESCE(q.subject,'Other')),Postgres 报 "subquery uses ungrouped column",
+--     整条 CREATE 失败,导致全新库根本没有这个函数(而前端 3 处在用 5 参数版)。
+--     下面两段取自线上可用定义:5 参数版把 missing_kp 拆成独立 CTE 再 LEFT JOIN,规避了该限制。
+CREATE OR REPLACE FUNCTION public.get_subject_progress(p_user_id uuid, p_plan_reset_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_today_since timestamp with time zone DEFAULT NULL::timestamp with time zone, p_subjects text[] DEFAULT NULL::text[])
+ RETURNS TABLE(subject text, total bigint, done_all bigint, done_today bigint)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
   SELECT
     COALESCE(q.subject, 'Other')          AS subject,
     COUNT(DISTINCT q.id)                  AS total,
     COUNT(DISTINCT ua_all.question_id)    AS done_all,
-    COUNT(DISTINCT ua_today.question_id)  AS done_today,
-    (SELECT COUNT(*) FROM public.questions q2
-     WHERE q2.subject = COALESCE(q.subject, 'Other')
-       AND (p_subjects IS NULL OR q2.subject = ANY(p_subjects))
-       AND (q2.key_points IS NULL OR q2.key_points = '')
-       AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq2 WHERE ueq2.question_id = q2.id AND ueq2.user_id = p_user_id)
-    )                                   AS missing_kp
+    COUNT(DISTINCT ua_today.question_id)  AS done_today
   FROM public.questions q
   LEFT JOIN public.user_answers ua_all
     ON ua_all.question_id = q.id
     AND ua_all.user_id = p_user_id
-    AND (
-      (p_subject_resets IS NOT NULL AND p_subject_resets ? q.subject AND ua_all.answered_at >= (p_subject_resets->>q.subject)::TIMESTAMPTZ)
-      OR
-      (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at)
-    )
+    AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at)
   LEFT JOIN public.user_answers ua_today
     ON ua_today.question_id = q.id
     AND ua_today.user_id = p_user_id
     AND ua_today.answered_at >= p_today_since
-    AND (
-      (p_subject_resets IS NOT NULL AND p_subject_resets ? q.subject AND ua_today.answered_at >= (p_subject_resets->>q.subject)::TIMESTAMPTZ)
-      OR
-      (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_today.answered_at >= p_plan_reset_at)
-    )
   WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
-    AND q.key_points IS NOT NULL AND q.key_points != ''
     AND NOT EXISTS (
       SELECT 1 FROM public.user_excluded_questions ueq
       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
     )
   GROUP BY COALESCE(q.subject, 'Other')
   ORDER BY subject;
-$$;
+$function$;
+GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[]) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_subject_progress(p_user_id uuid, p_plan_reset_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_today_since timestamp with time zone DEFAULT NULL::timestamp with time zone, p_subjects text[] DEFAULT NULL::text[], p_subject_resets jsonb DEFAULT NULL::jsonb)
+ RETURNS TABLE(subject text, total bigint, done_all bigint, done_today bigint, missing_kp bigint)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+  WITH base AS (
+    SELECT
+      COALESCE(q.subject, 'Other')          AS subj,
+      COUNT(DISTINCT q.id)                  AS total,
+      COUNT(DISTINCT ua_all.question_id)    AS done_all,
+      COUNT(DISTINCT ua_today.question_id)  AS done_today
+    FROM public.questions q
+    LEFT JOIN public.user_answers ua_all
+      ON ua_all.question_id = q.id
+      AND ua_all.user_id = p_user_id
+      AND (
+        (p_subject_resets IS NOT NULL AND p_subject_resets ? q.subject AND ua_all.answered_at >= (p_subject_resets->>q.subject)::TIMESTAMPTZ)
+        OR
+        (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_all.answered_at >= p_plan_reset_at)
+      )
+    LEFT JOIN public.user_answers ua_today
+      ON ua_today.question_id = q.id
+      AND ua_today.user_id = p_user_id
+      AND ua_today.answered_at >= p_today_since
+      AND (
+        (p_subject_resets IS NOT NULL AND p_subject_resets ? q.subject AND ua_today.answered_at >= (p_subject_resets->>q.subject)::TIMESTAMPTZ)
+        OR
+        (p_subject_resets IS NULL OR NOT (p_subject_resets ? q.subject)) AND (p_plan_reset_at IS NULL OR ua_today.answered_at >= p_plan_reset_at)
+      )
+    WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+      AND q.key_points IS NOT NULL AND q.key_points != ''
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_excluded_questions ueq
+        WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+      )
+    GROUP BY COALESCE(q.subject, 'Other')
+  ),
+  missing AS (
+    SELECT COALESCE(q.subject, 'Other') AS subj, COUNT(*) AS cnt
+    FROM public.questions q
+    WHERE (p_subjects IS NULL OR q.subject = ANY(p_subjects))
+      AND (q.key_points IS NULL OR q.key_points = '')
+      AND NOT EXISTS (SELECT 1 FROM public.user_excluded_questions ueq WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id)
+    GROUP BY COALESCE(q.subject, 'Other')
+  )
+  SELECT b.subj, b.total, b.done_all, b.done_today, COALESCE(m.cnt, 0) AS missing_kp
+  FROM base b
+  LEFT JOIN missing m ON m.subj = b.subj
+  ORDER BY b.subj;
+$function$;
 GRANT EXECUTE ON FUNCTION public.get_subject_progress(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TEXT[], JSONB) TO authenticated;
 
 -- 计划知识点范围(plan_scope)进度 — 按“选中知识点集合”统计,解决学习计划按学科统计总量、
