@@ -7,6 +7,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { QuestionCard } from '@/components/questions/QuestionCard'
+import { QuestionSources } from '@/components/practice/QuestionSources'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { SequentialKpNav, type GroupDist, type SessionDistEntry } from '@/components/practice/SequentialKpNav'
 import {
@@ -224,6 +225,9 @@ export function SequentialPracticeNewUi(props: Props) {
           ))}
         </div>
       )}
+
+      {/* 问小Q / 关联信源: 与经典版同一份组件, 免得两个练习界面各自长一套 */}
+      <QuestionSources question={question} selectedAnswer={selectedAnswer} />
 
       {/* 已作答提示 */}
       {answeredThisSession.has(question.id) && justAnsweredId !== question.id && (

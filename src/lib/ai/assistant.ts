@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { getPrompt } from '@/stores/prompt-store'
 import { getAiConfig } from './config'
 import { searchKnowledge, RAG_SOURCE_LABEL, type RagHit } from '@/lib/rag'
+import { questionContextSection, type QuestionContext } from './question-context'
 import type { AiRoundUsage } from '@/lib/ai-usage'
 import type { AssistantMode, AssistantReply, LittleQEmotion, AssistantSource } from '@/lib/assistant-demo'
 
@@ -15,6 +16,8 @@ export interface LittleQOptions {
   skill?: { title: string; markdown: string }
   /** 落库用的会话 id —— 服务端据此把这次调用的用量归到该会话上(见 Section 76) */
   conversationId?: string
+  /** 练习模式里"解释当前题目"带进来的题干上下文(见 lib/ai/question-context) */
+  question?: QuestionContext
 }
 
 /**
@@ -100,6 +103,10 @@ function toSources(hits: RagHit[], used: number[] | null | undefined): Assistant
       anchor: h.anchor ?? undefined,
       snippet: h.content.replace(/\s+/g, ' ').trim().slice(0, 400),
       pageNo: h.pageNo ?? undefined,
+      // 挂到本题要用它拼 source_id, 而 label 是给人看的、推不出编码(见 lib/question-links)
+      source: h.source,
+      sourceId: h.sourceId,
+      blockIndex: h.blockIndex,
     }
   })
 }
@@ -124,7 +131,11 @@ export async function chatWithLittleQ(
   // 检索失败不能让小Q 整个用不了: 拿不到资料就当普通对话回答
   let hits: RagHit[] = []
   try {
-    const result = await searchKnowledge(input, { limit: 8 })
+    // 解释一道题时, 用户那句话("解释一下")本身检索不出任何东西 —— 拿题干去搜才有资料可引
+    const query = options.question
+      ? `${options.question.stem} ${input}`.slice(0, 300)
+      : input
+    const result = await searchKnowledge(query, { limit: 8 })
     hits = result.hits
   } catch (err) {
     console.warn('[assistant] 检索失败, 以无资料模式回答:', err)
@@ -138,6 +149,7 @@ export async function chatWithLittleQ(
   const prompt = [
     `【当前模式】${MODE_HINT[mode]}`,
     skillSection(options.skill),
+    options.question ? questionContextSection(options.question) : null,
     hits.length > 0
       ? [
         '【可引用资料】以下是从平台资料库检索到的内容，按编号引用：',

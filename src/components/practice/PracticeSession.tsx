@@ -18,6 +18,7 @@ import { QuestionCard } from '@/components/questions/QuestionCard'
 import { FlagIssueDialog } from '@/components/questions/FlagIssueDialog'
 import { KpSelectDialog } from '@/components/practice/KpSelectDialog'
 import { KpExplanationDialog } from '@/components/practice/KpExplanationDialog'
+import { QuestionSources } from '@/components/practice/QuestionSources'
 import { PlanDialog } from '@/components/layout/PlanDialog'
 
 
@@ -662,7 +663,60 @@ export function PracticeSession() {
   const fetchGenRef = useRef(0)
   const kpRetryRef = useRef(0)
 
+  /**
+   * 深链钉住的那道题(URL 上的 ?q=)。
+   *
+   * 信源侧「关联题目」跳过来的就是这条: 落到的必须是**那一题**, 不能是随机的另一题。
+   * 一旦用户自己往下刷(下一题/顺序跳转), 这枚钉子就拔掉连地址一起清 —— 否则切个模式
+   * 又会被拽回同一道题, 像卡住了。
+   */
+  const pinnedRef = useRef<string | null>(null)
+  const releasePinned = useCallback(() => {
+    if (!pinnedRef.current) return
+    pinnedRef.current = null
+    if (!searchParamsRef.current.get('q')) return
+    setSearchParams(prev => { prev.delete('q'); return prev }, { replace: true })
+  }, [setSearchParams])
+
+  /** 直接读一道题(不挑、不过滤): 深链专用 */
+  const loadPinnedQuestion = useCallback(async (id: string) => {
+    fetchGenRef.current++
+    const myGen = fetchGenRef.current
+    setIsLoading(true)
+    setQuestionReady(false)
+    setSelectedAnswer(null)
+    setIsSubmitted(false)
+    setAnswerId(null)
+    setNoQuestions(false)
+
+    const currentUser = useAuthStore.getState().user
+    const [qRes, statsRes] = await Promise.all([
+      supabase.from('questions').select('*').eq('id', id).single(),
+      currentUser
+        ? supabase.from('user_answers')
+            .select('is_correct, note, is_public')
+            .eq('user_id', currentUser.id)
+            .eq('question_id', id)
+            .order('answered_at', { ascending: false })
+        : Promise.resolve(null),
+    ])
+    if (fetchGenRef.current !== myGen) return
+    if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
+    if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
+    if (fetchGenRef.current !== myGen) return
+
+    setQuestion(qRes.data as unknown as Question)
+    const statsData = statsRes?.data
+    setAttemptCount(statsData?.length ?? 0)
+    setWrongCount(statsData?.filter((a) => !a.is_correct).length ?? 0)
+    setNote(statsData?.find((a) => a.note)?.note ?? '')
+    setIsPublic(statsData?.find((a) => a.note)?.is_public ?? false)
+    setIsLoading(false)
+    setQuestionReady(true)
+  }, [])
+
   const fetchRandomQuestion = useCallback(async () => {
+    releasePinned()
     const snap = snapRef.current
     if (snap.question && questionMode !== 'sequential') {
       historyRef.current.push({ question: snap.question, answer: snap.answer, submitted: snap.submitted, note: snap.note, isPublic: snap.isPublic, answerId: snap.answerId, attempts: snap.attempts, wrongs: snap.wrongs })
@@ -855,7 +909,7 @@ export function PracticeSession() {
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (fetchGenRef.current !== myGen) return
     setQuestionReady(true)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, releasePinned])
 
   const seqFetchGenRef = useRef(0)
   const preloadRef = useRef<{ index: number; question: Question; attempts: number; wrongs: number; note: string; isPublic: boolean } | null>(null)
@@ -881,6 +935,7 @@ export function PracticeSession() {
   }, [])
 
   const loadSequentialQuestion = useCallback(async (index: number) => {
+    releasePinned()
     const s = useSequentialStore.getState()
     // Save current question state to session cache before navigating away
     if (s.currentIndex !== index) {
@@ -985,7 +1040,7 @@ export function PracticeSession() {
 
     // Preload next question in background
     preloadNext(index + 1, ids, myGen)
-  }, [preloadNext])
+  }, [preloadNext, releasePinned])
 
   const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
     if (currentSubject) { subjectPosRef.current[currentSubject] = seqIndex; saveSubjectPos() }
@@ -1071,6 +1126,24 @@ export function PracticeSession() {
   const modeInitRef = useRef(false)
   useEffect(() => {
     setShowSkeleton(true)
+    // 深链 ?q=<id>(信源侧「关联题目」跳过来的): 落到那一题。
+    // 顺序刷题与复习池都会拿别的题顶掉它, 所以先把模式拨回随机、并把 mode 写进地址 ——
+    // 不写的话「模式同步」那个 effect 会按顺序模式把我们拨回去, 两边来回打架。
+    const pinned = searchParamsRef.current.get('q')
+    if (pinned) {
+      if (questionMode === 'sequential' || questionScope !== 'all') {
+        setQuestionMode('new')
+        setQuestionScope('all')
+        setSearchParams(prev => { prev.set('mode', 'random'); return prev }, { replace: true })
+        return
+      }
+      // 同一个 id 只读一次: 这个 effect 在切模式/改计划范围时也会跑
+      if (pinnedRef.current !== pinned) {
+        pinnedRef.current = pinned
+        loadPinnedQuestion(pinned)
+      }
+      return
+    }
     if (questionMode === 'sequential') {
       const user = useAuthStore.getState().user
       if (!user) { setIsLoading(false); setSequentialDialogOpen(true); return }
@@ -1113,11 +1186,13 @@ export function PracticeSession() {
       seqReset(); fetchRandomQuestion()
     }
     modeInitRef.current = true
-  }, [questionMode, planSessionScope])
+  }, [questionMode, planSessionScope, loadPinnedQuestion, setSearchParams])
 
   const subFetchRef = useRef(false)
   useEffect(() => {
     if (!subFetchRef.current) { subFetchRef.current = true; return }
+    // 地址上还钉着某道题时不自动抽题: 筛选条件加载完会改一次依赖, 那一下会把深链的题顶掉
+    if (searchParamsRef.current.get('q')) return
     if (questionMode !== 'sequential') fetchRandomQuestion()
   }, [fetchRandomQuestion, questionMode])
 
@@ -2088,6 +2163,7 @@ export function PracticeSession() {
                       ))}
                     </div>
                   )}
+                  <QuestionSources question={question} selectedAnswer={selectedAnswer} />
                   {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && justAnsweredId !== question.id && (
                     <div className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2">
                       <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">本题此次会话已作答过</span>

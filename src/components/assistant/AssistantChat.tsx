@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, Coins, GraduationCap, HeartHandshake, Library, Send, Terminal } from 'lucide-react'
+import { ChevronRight, Coins, GraduationCap, HeartHandshake, Library, Link2, Send, Terminal, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,6 +16,8 @@ import { CreateCard } from '@/components/assistant/CreateCard'
 import { ReadAloudButton, SpeechSettings } from '@/components/tts/ReadAloudButton'
 import { assistantSpeech } from '@/lib/tts/assistant'
 import { useAssistantStore, type ChatMessage } from '@/stores/assistant-store'
+import { draftFromAssistantSource } from '@/lib/question-links'
+import { addQuestionLinks } from '@/lib/question-links-store'
 import { commandPrefix, matchCommands, parseCommand, type CommandSpec } from '@/lib/assistant-commands'
 import {
   costOfRound, formatCost, formatTokens, loadAiPriceMap, sumRounds,
@@ -57,12 +59,30 @@ const GREETING = {
  * 左边那个 [n] 是**正文里那个编号**: 少了它, 正文写着「……[7]」而下面这张清单一个号都没有,
  * 用户没法知道说的是哪一条 —— 清单的顺序是检索序号, 不等于它在列表里的位置。
  */
-function SourceChip({ source, open, onToggle, onNavigate }: {
+function SourceChip({ source, open, onToggle, onNavigate, questionId }: {
   source: NonNullable<AssistantReply['sources']>[number]
   open: boolean
   onToggle: () => void
   onNavigate?: () => void
+  /** 非空 = 正在解释某道题, 这条依据可以挂到那道题上 */
+  questionId?: string | null
 }) {
+  const [linked, setLinked] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle')
+  // 老消息的引用没有 source/sourceId(那一列当时还没写), 推不出该挂到哪 —— 不给按钮
+  const draft = useMemo(() => draftFromAssistantSource(source), [source])
+  const canLink = !!questionId && !!draft
+
+  async function link() {
+    if (!questionId || !draft) return
+    setLinked('busy')
+    try {
+      await addQuestionLinks(questionId, [draft])
+      setLinked('done')
+    } catch {
+      setLinked('failed')
+    }
+  }
+
   return (
     <div
       // 正文点 [n] 时靠它找过来 —— 用一个属性而不是 ref 表: 一张清单里的 ref 回调
@@ -100,6 +120,23 @@ function SourceChip({ source, open, onToggle, onNavigate }: {
         )}
         <ChevronRight className={cn('h-3 w-3 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
       </button>
+      {canLink && (
+        <div className="flex items-center gap-1.5 border-t border-primary/10 px-1.5 py-1">
+          {linked === 'done' ? (
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">已挂到本题 · 题面下方能看到了</span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void link()}
+              disabled={linked === 'busy'}
+              className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline disabled:opacity-60"
+            >
+              <Link2 className="h-2.5 w-2.5" />
+              {linked === 'busy' ? '正在挂…' : linked === 'failed' ? '挂失败，再试一次' : '挂到本题'}
+            </button>
+          )}
+        </div>
+      )}
       {open && source.snippet && (
         <p className="border-t border-primary/10 px-1.5 py-1 text-[10px] leading-relaxed text-muted-foreground">
           {source.snippet}
@@ -195,6 +232,8 @@ function MessageBody({ message, prices, onNavigate, onPickCommand }: {
   /** 展开的是哪一条依据(按编号); null = 都收着 */
   const [openSource, setOpenSource] = useState<number | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // 正在解释某道题时, 每条依据都能一键挂到那道题上(见 QuestionSources)
+  const questionId = useAssistantStore((s) => s.questionScope?.id ?? null)
 
   const sources = message.sources
 
@@ -245,6 +284,7 @@ function MessageBody({ message, prices, onNavigate, onPickCommand }: {
               <SourceChip
                 key={`${source.label}-${i}`}
                 source={source}
+                questionId={questionId}
                 open={source.index !== undefined && openSource === source.index}
                 onToggle={() => setOpenSource((current) => (
                   source.index !== undefined && current === source.index ? null : source.index ?? null
@@ -308,6 +348,8 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
   const setMode = useAssistantStore((s) => s.setMode)
   const emotion = useAssistantStore((s) => s.emotion)
   const send = useAssistantStore((s) => s.send)
+  const questionScope = useAssistantStore((s) => s.questionScope)
+  const exitQuestionScope = useAssistantStore((s) => s.exitQuestionScope)
   const [input, setInput] = useState('')
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [paletteHidden, setPaletteHidden] = useState(false)
@@ -442,6 +484,16 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             <button type="button" onClick={() => submit('/skill off')} className="hover:underline">关掉</button>
           </span>
         )}
+        {/* 本题专属会话: 说清楚现在答的是哪道题, 以及怎么回到原来的对话 */}
+        {questionScope && (
+          <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-1 text-[10px] text-primary">
+            <Link2 className="h-3 w-3 shrink-0" />
+            <span className="max-w-[16rem] truncate" title={questionScope.stem}>本题会话：{questionScope.stem}</span>
+            <button type="button" onClick={() => void exitQuestionScope()} className="inline-flex items-center gap-0.5 hover:underline">
+              <X className="h-2.5 w-2.5" />返回主会话
+            </button>
+          </span>
+        )}
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {sessionUsage.rounds > 0 && (
             <span
@@ -549,7 +601,9 @@ export function AssistantChat({ variant }: { variant: 'page' | 'panel' }) {
             onChange={(event) => { setInput(event.target.value); setPaletteIndex(0); setPaletteHidden(false) }}
             onKeyDown={handleKeyDown}
             rows={2}
-            placeholder="说说你现在的情况，或者直接问「操作系统 内存管理」这样的知识点…打 / 看指令"
+            placeholder={questionScope
+              ? '接着问这道题…（比如「B 为什么不对」）'
+              : '说说你现在的情况，或者直接问「操作系统 内存管理」这样的知识点…打 / 看指令'}
             className="min-h-[44px] flex-1 resize-none text-sm"
           />
           <Button

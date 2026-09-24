@@ -14,6 +14,7 @@ import { searchBlocks, type BlockHit } from '@/lib/resource-search'
 import { refAnchor, refsByBlock, type KpResourceRef } from '@/lib/kp-resource-refs'
 import { listDocumentRefs } from '@/lib/kp-resource-refs-store'
 import { KpExplanationSheet } from '@/components/practice/KpExplanationSheet'
+import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
 import { draftFromToc, blockIndexSet, staleEntryIds, tocFromDraft, updateEntry, type TocDraftEntry } from '@/lib/resource-toc'
 import { resetManualToc, saveManualToc } from '@/lib/resource-toc-store'
 import { HighlightText } from './HighlightText'
@@ -701,7 +702,7 @@ export function ResourceReader({
       {tocOpen && (
         <div
           className={cn(
-            'shrink-0 border-r',
+            'shrink-0 flex-col border-r',
             // 编辑态不跟 lg 断点走: 窄窗口下整个目录栏会被 hidden 掉, 管理员从「编辑目录」跳进来
             // 却看不到任何可改的东西, 而且没有任何提示。编辑是显式进入的, 宁可挤一点。
             editMode ? 'flex w-72' : 'hidden w-56 lg:block xl:w-64',
@@ -714,6 +715,8 @@ export function ResourceReader({
             editor={tocEditor}
             className="w-full"
           />
+          {/* 学员在这篇文献上挂过的题(题面下方的「关联信源」是这条边的另一头) */}
+          <LinkedQuestions source="resource" sourceId={documentId} title="本篇关联题目" className="m-2" />
         </div>
       )}
 

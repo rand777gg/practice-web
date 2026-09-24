@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { NoteEditor } from '@/components/notes/NoteEditor'
+import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import {
  AlertDialog,
@@ -182,6 +183,8 @@ function NoteCard({
          {t('notes.noNote')}
         </div>
        )}
+       {/* 反向那条边: 谁把这条笔记挂到了某道题上(见 components/questions/LinkedQuestions) */}
+       <LinkedQuestions source="note" sourceId={note.id} title="关联题目" className="mt-3" />
       </div>
      )}
     </div>

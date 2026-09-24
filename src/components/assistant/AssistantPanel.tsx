@@ -20,6 +20,7 @@ export function AssistantPanel() {
   const startNewConversation = useAssistantStore((s) => s.startNewConversation)
   const activeId = useAssistantStore((s) => s.activeId)
   const conversations = useAssistantStore((s) => s.conversations)
+  const questionScope = useAssistantStore((s) => s.questionScope)
   const error = useAssistantStore((s) => s.error)
   const clearError = useAssistantStore((s) => s.clearError)
 
@@ -34,7 +35,9 @@ export function AssistantPanel() {
 
   if (!open) return null
 
-  const title = conversations.find((c) => c.id === activeId)?.title ?? '新会话'
+  // 题目会话不在 conversations 里(它属于某道题), 找不到时按"本题解释"显示, 而不是"新会话"
+  const title = conversations.find((c) => c.id === activeId)?.title
+    ?? (questionScope ? '本题解释' : '新会话')
 
   return (
     <>

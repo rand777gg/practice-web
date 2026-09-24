@@ -5994,3 +5994,70 @@ CREATE TRIGGER trg_question_drafts_updated_at BEFORE UPDATE ON public.question_d
 --   自查方法(不要只看前端提示): 对每个题型各 insert 一条并回滚, 只有 analysis 会 23502。
 -- ============================================================================
 ALTER TABLE public.questions ALTER COLUMN correct_answer DROP NOT NULL;
+
+-- ============================================================================
+-- Section 79: 题目 ↔ 信源的软链接 + 每题一个专属小Q 会话
+--   练习模式里问小Q 解释当前题目, 这轮回答用到的「信源」(文献/题库/知识点解读/学科解读/
+--   公开笔记 —— 与 rag_chunks 的 source 同一套口径) 可以挂到这道题上。题目 → 信源(题面下方
+--   列出来) 和 信源 → 题目(阅读页/解读/笔记里的「关联题目」) 是**同一条边的两个方向**,
+--   所以只存一张表, 反查走 (source, source_id) 那条索引。
+--
+--   为什么不复用 kp_question_refs(解读挂真题): 那张表左端固定是一条解读、右端固定是一道题,
+--   两个字段都 NOT NULL, 挂不下"题 → 文献里那一段"这种边; 而这条边还要带定位(页码/段落/锚点)
+--   与摘录快照, 形状与它完全对不上。硬塞进去会让两边都多出一堆恒为 NULL 的列。
+--
+--   为什么按用户分而不是全平台共用一份: 挂链是**用户自己的**学习痕迹(和笔记、收藏同一层)。
+--   共用一份意味着任何人都能往所有人都看得见的题面下加内容, 就得再养一套审核; 反查也因此
+--   只看得到自己挂过的题 —— 「我在这一段上挂过哪几道题」。
+--
+--   快照(label / sub_label / snippet / anchor)是落库那一刻的: 原文献下线、解读被改、笔记转
+--   私密之后, "当初引的是这段"仍然成立, 摘录照旧可读。所以 source_id 是 TEXT 且**不加外键**
+--   (多态, 和 rag_chunks 同一个理由), 行不会跟着源一起消失。
+--
+--   block_index 用 -1 表示"整篇/整条"(不是某一段): 唯一键里的 NULL 互不相等, 会放进重复行。
+--
+--   每题一个专属会话: chat_conversations.question_id 非空即"这是一道题的会话", 它不进 /assistant
+--   的会话列表(那边只列 question_id IS NULL 的), 而练习页每点一次「问小Q」都回到同一个会话 ——
+--   同一道题问两遍不该在侧栏留下一串一次性的会话。
+-- ============================================================================
+ALTER TABLE public.chat_conversations
+  ADD COLUMN IF NOT EXISTS question_id UUID REFERENCES public.questions(id) ON DELETE CASCADE;
+
+-- 一题一会话: 找会话靠这条唯一索引, 不会有第二条
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conv_question
+  ON public.chat_conversations(user_id, question_id)
+  WHERE question_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.question_source_links (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.questions(id) ON DELETE CASCADE,
+  -- 与 rag_chunks 的 source 同一套取值, 前端 types/rag 的 RagSource 就是这五个
+  source      TEXT NOT NULL CHECK (source IN ('resource', 'question', 'kp', 'subject', 'note')),
+  source_id   TEXT NOT NULL,
+  block_index INTEGER NOT NULL DEFAULT -1,
+  page_no     INTEGER,
+  label       TEXT NOT NULL DEFAULT '',
+  sub_label   TEXT,
+  anchor      TEXT,
+  snippet     TEXT NOT NULL DEFAULT '',
+  note        TEXT NOT NULL DEFAULT '',
+  -- 谁挂的: 小Q 回答里一键挂的, 还是用户自己搜出来挑的
+  origin      TEXT NOT NULL DEFAULT 'manual' CHECK (origin IN ('manual', 'littleq')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 题面下方那张清单
+CREATE INDEX IF NOT EXISTS idx_qsl_question ON public.question_source_links(user_id, question_id);
+-- 信源侧反查"这一段/这条解读上挂了哪些题"
+CREATE INDEX IF NOT EXISTS idx_qsl_source ON public.question_source_links(source, source_id);
+-- 同一道题的同一个信源(同一段)只挂一次
+CREATE UNIQUE INDEX IF NOT EXISTS idx_qsl_uniq
+  ON public.question_source_links(user_id, question_id, source, source_id, block_index);
+
+ALTER TABLE public.question_source_links ENABLE ROW LEVEL SECURITY;
+
+-- 归属靠 user_id 直接判, 不需要反查会话那种 EXISTS
+DROP POLICY IF EXISTS qsl_own ON public.question_source_links;
+CREATE POLICY qsl_own ON public.question_source_links FOR ALL
+  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());

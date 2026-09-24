@@ -24,6 +24,14 @@ export interface AssistantSource {
   snippet?: string
   /** 文献引用才有 */
   pageNo?: number
+  /**
+   * 检索来源与它在索引里的 id —— 只用于「挂到本题」(见 lib/question-links)。
+   * type 是给人看的中文名(题库/专题/…), 而挂链存的是机器认的那套编码(kp 的 source_id 是
+   * `学科::知识点`), 两者不能互相推导, 所以这里连编码一起带上。老消息没有 → 不给挂。
+   */
+  source?: 'resource' | 'question' | 'kp' | 'subject' | 'note'
+  sourceId?: string
+  blockIndex?: number | null
 }
 
 export interface AssistantReply {

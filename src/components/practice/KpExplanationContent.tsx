@@ -11,10 +11,12 @@ import { ChevronRight, Library } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { ReadAloudButton } from '@/components/tts/ReadAloudButton'
+import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
 import { markdownToSpeech, splitForSpeech } from '@/lib/tts/speech'
 import { supabase } from '@/lib/supabase'
 import { OPTION_LABELS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import { kpSourceId } from '@/lib/question-links'
 import { refAnchor, refWhere, type KpResourceRef } from '@/lib/kp-resource-refs'
 import { listKpRefs } from '@/lib/kp-resource-refs-store'
 import {
@@ -257,6 +259,11 @@ export function KpExplanationContent({ subject, kp, onOpenRef }: Props) {
             {view.questions.map((item) => <QuestionRow key={item.id} link={item} />)}
           </div>
         )}
+
+        {/* 反向那条边: 学员自己在这条解读上挂过的题(见 components/questions/LinkedQuestions) */}
+        <div className="mt-2">
+          <LinkedQuestions source="kp" sourceId={kpSourceId(subject, kp)} title="关联题目" />
+        </div>
       </div>
     </div>
   )

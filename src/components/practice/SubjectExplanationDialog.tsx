@@ -1,5 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
+import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
 import { Separator } from '@/components/ui/separator'
 
 interface Props {
@@ -18,6 +19,8 @@ export function SubjectExplanationDialog({ subject, content, open, onOpenChange 
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
           <MarkdownRenderer content={content} />
+          {/* 反向那条边: 学员从这道学科解读上挂过的题(学科解读的 source_id 就是学科名) */}
+          <LinkedQuestions source="subject" sourceId={subject} title="关联题目" className="mt-3" />
         </div>
       </DialogContent>
     </Dialog>

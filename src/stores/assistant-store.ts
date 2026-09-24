@@ -29,6 +29,7 @@ import {
 } from '@/lib/assistant-commands'
 import type { AssistantMode, AssistantReply, LittleQEmotion } from '@/lib/assistant-demo'
 import type { AssistantTurn } from '@/lib/ai/assistant'
+import type { QuestionContext } from '@/lib/ai/question-context'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { SkillId } from '@/lib/skills-catalog'
 
@@ -51,6 +52,19 @@ export interface ConversationSummary {
   id: string
   title: string
   updated_at: string
+}
+
+/**
+ * 练习模式里"正在解释的那道题"。
+ *
+ * context 是练习页当场拼好带过来的(见 lib/ai/question-context): 题干/选项/答案/用户选了什么,
+ * 后面每一轮都注入 prompt —— 会话是关于这道题的, 用户接着问"那 B 为什么不对"时不该再解释一遍题干。
+ */
+export interface QuestionScope {
+  id: string
+  /** 面板头部那行小字与生成会话标题用 */
+  stem: string
+  context: QuestionContext
 }
 
 const MESSAGE_COLUMNS = 'id, role, content, sub, tags, sources, followups, meta, usage, created_at'
@@ -113,6 +127,7 @@ function emptyMessage(id: number, role: ChatMessage['role'], content: string, me
 async function ensureConversationId(
   activeId: string | null,
   title: string,
+  questionId: string | null = null,
 ): Promise<{ id: string; created: ConversationSummary | null }> {
   if (activeId) return { id: activeId, created: null }
   const { data: userData } = await supabase.auth.getUser()
@@ -120,11 +135,39 @@ async function ensureConversationId(
   if (!userId) throw new Error('未登录')
   const { data, error } = await supabase
     .from('chat_conversations')
-    .insert({ user_id: userId, title })
+    .insert({ user_id: userId, title, question_id: questionId })
     .select('id, title, updated_at')
     .single()
   if (error) throw error
   return { id: (data as ConversationSummary).id, created: data as ConversationSummary }
+}
+
+/**
+ * 找到(或建好)这道题的专属会话。
+ *
+ * 一题一会话(库里有唯一索引兜着): 同一道题点两次「问小Q」应该接着上次说, 而不是新开一条 ——
+ * 否则侧栏里会积一串"同一道题"的一次性会话。它不进 conversations 列表(列表只列主会话),
+ * 所以新建之后不往列表里塞。
+ */
+async function ensureQuestionConversation(questionId: string, title: string): Promise<string> {
+  const { data: existing, error: findErr } = await supabase
+    .from('chat_conversations')
+    .select('id')
+    .eq('question_id', questionId)
+    .maybeSingle()
+  if (findErr) throw findErr
+  if (existing) return (existing as { id: string }).id
+
+  const { data: userData } = await supabase.auth.getUser()
+  const userId = userData.user?.id
+  if (!userId) throw new Error('未登录')
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .insert({ user_id: userId, title, question_id: questionId })
+    .select('id')
+    .single()
+  if (error) throw error
+  return (data as { id: string }).id
 }
 
 async function insertMessage(row: Record<string, unknown>): Promise<{ id: number; error: string | null }> {
@@ -170,6 +213,10 @@ interface AssistantState {
   activeSkillId: SkillId | null
   /** 快速搜索里「询问小Q」带过来的预填文本, 输入框取走后清空 */
   pendingInput: string
+  /** 非空 = 面板正在解释这道题, 消息走它的专属会话 */
+  questionScope: QuestionScope | null
+  /** 进题目会话之前停在哪个主会话 —— 退出时要回到它, 而不是回到"新会话" */
+  mainActiveId: string | null
 
   setOpen: (open: boolean) => void
   setPendingInput: (text: string) => void
@@ -184,6 +231,11 @@ interface AssistantState {
   renameConversation: (id: string, title: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   send: (text: string) => Promise<void>
+
+  /** 练习页「问小Q解释本题」: 切到这道题的专属会话并把面板打开 */
+  openForQuestion: (scope: QuestionScope, ask?: string) => Promise<void>
+  /** 回到主会话 */
+  exitQuestionScope: () => Promise<void>
 
   /** 用户改完参数点「开始出题」 */
   startCreateGeneration: (messageId: number, spec: CreateSpec) => Promise<void>
@@ -417,6 +469,8 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     emotion: 'happy',
     error: null,
     activeSkillId: null,
+    questionScope: null,
+    mainActiveId: null,
 
     setOpen: (open) => {
       set({ open })
@@ -439,6 +493,8 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       const { data, error } = await supabase
         .from('chat_conversations')
         .select('id, title, updated_at')
+        // 题目专属会话不进这张列表: 它属于某一道题, 在侧栏里只会变成一串认不出来的标题
+        .is('question_id', null)
         .order('updated_at', { ascending: false })
         .limit(100)
       if (error) {
@@ -446,9 +502,10 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         return
       }
       const list = (data ?? []) as ConversationSummary[]
-      // 上次记住的那条已经被删了(或换账号了) → 清掉, 否则会停在一个不存在的会话上
+      // 上次记住的那条已经被删了(或换账号了) → 清掉, 否则会停在一个不存在的会话上。
+      // 正在解释某道题时不清: 那个会话本来就不在这张列表里, 清了等于把用户踢出这道题。
       const activeId = get().activeId
-      if (activeId && !list.some((c) => c.id === activeId)) {
+      if (!get().questionScope && activeId && !list.some((c) => c.id === activeId)) {
         writeActiveId(null)
         set({
           conversations: list, conversationsLoaded: true, loadedForUserId: uid,
@@ -486,7 +543,57 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       set({
         activeId: null, messages: [], view: 'chat', sending: false,
         error: null, emotion: 'happy', activeSkillId: null,
+        // 点「新会话」就是要一条干净的: 正在解释某道题的会话不该接着算新会话
+        questionScope: null, mainActiveId: null,
       })
+    },
+
+    openForQuestion: async (scope, ask) => {
+      sendSerial++
+      const prev = get()
+      // 进题目会话之前停在哪儿: 只在"从主会话进来"那一次记下来, 一题接一题问时不覆盖
+      const mainActiveId = prev.questionScope ? prev.mainActiveId : prev.activeId
+      set({
+        open: true, view: 'chat', questionScope: scope, mainActiveId,
+        sending: false, error: null, emotion: 'thinking',
+      })
+      try {
+        const id = await ensureQuestionConversation(scope.id, `题目解释 · ${scope.stem.slice(0, 24)}`)
+        // 换题换得太快: 这一份结果已经过期, 后面那次调用会自己收拾
+        if (get().questionScope?.id !== scope.id) return
+        // 不写 ACTIVE_KEY: 题目会话不该在刷新之后被当成"上次聊到一半的主会话"接回来 ——
+        // 那时 questionScope 已经丢了, 接回来的会是一条没有题干上下文的普通对话。
+        // 想再看它就再点一次「问小Q解释本题」, 会话还在库里等着。
+        set({ activeId: id, messages: [], loadingMessages: true })
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select(MESSAGE_COLUMNS)
+          .eq('conversation_id', id)
+          .order('id', { ascending: true })
+          .limit(500)
+        if (get().questionScope?.id !== scope.id) return
+        if (error) {
+          set({ error: `这道题的会话读取失败: ${error.message}`, loadingMessages: false })
+          return
+        }
+        const messages = ((data ?? []) as Row[]).map(toMessage)
+        set({ messages, loadingMessages: false, activeSkillId: activeSkillFrom(messages) })
+        // 第一次打开这道题: 直接把这句问出去(用户点的是"解释本题", 不是"打开一个空对话框")。
+        // 已经聊过就只把上次的内容接回来, 不再自动发一次 —— 那会变成每点一次花一次钱。
+        if (ask && messages.length === 0) await get().send(ask)
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : String(err), loadingMessages: false })
+      }
+    },
+
+    exitQuestionScope: async () => {
+      const back = get().mainActiveId
+      set({
+        questionScope: null, mainActiveId: null, view: 'chat',
+        activeId: back, messages: [], loadingMessages: false, error: null,
+      })
+      writeActiveId(back)
+      if (back) await get().openConversation(back)
     },
 
     renameConversation: async (id, title) => {
@@ -536,15 +643,16 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       }
 
       const serial = ++sendSerial
-      const { mode, activeSkillId } = get()
+      const { mode, activeSkillId, questionScope } = get()
       const history: AssistantTurn[] = get().messages.map((m) => ({ role: m.role, text: m.content }))
       set({ sending: true, emotion: 'thinking', error: null })
 
       let conversationId: string
       try {
-        const { id, created } = await ensureConversationId(get().activeId, titleFrom(value))
+        const { id, created } = await ensureConversationId(get().activeId, titleFrom(value), questionScope?.id ?? null)
         conversationId = id
-        if (created) {
+        // 题目会话不进列表(它属于某道题), 只有主会话才往列表前面塞
+        if (created && !questionScope) {
           writeActiveId(id)
           set({ activeId: id, conversations: [created, ...get().conversations] })
         }
@@ -562,7 +670,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
 
       // 会话 id 一起带下去: 服务端拿它把这次调用的 tokens/成本归到这个会话上(见 Section 76),
       // 于是管理页「按会话」那一栏里的数, 和这里每条回答下面显示的是同一笔账。
-      const outcome = await produceReply(value, history, mode, { skill, conversationId })
+      const outcome = await produceReply(value, history, mode, {
+        skill, conversationId, question: questionScope?.context,
+      })
       const { reply, emotion, scripted, usage } = outcome
       const { error } = await insertMessage({
         conversation_id: conversationId,
