@@ -6126,3 +6126,413 @@ CREATE POLICY rks_write_admin ON public.resource_kp_scopes FOR ALL
 DROP TRIGGER IF EXISTS trg_resource_kp_scopes_updated_at ON public.resource_kp_scopes;
 CREATE TRIGGER trg_resource_kp_scopes_updated_at BEFORE UPDATE ON public.resource_kp_scopes
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ============================================================================
+-- Section 81: RLS 性能修复 —— 策略里的 helper 函数包成 (select ...)
+-- ============================================================================
+-- 背景(2026-09 实测,自建 Supabase CE 2C4G,与线上同 schema 同规模数据):
+--   策略里裸写 auth.uid() / auth.role() / is_admin() 会被 Postgres 逐行求值, 而
+--   is_admin() 内部是 EXISTS(SELECT 1 FROM profiles WHERE id=auth.uid() AND role='admin'),
+--   于是退化成"每行查一次 profiles"。包成 (select ...) 后变成 InitPlan, 整个查询只求值一次。
+--
+--   本地实测:
+--     user_answers LIMIT 50     396 ms  ->  1 ms          (~100x)
+--     search_rag                581-1021 ms -> 94-148 ms   (~7x)
+--     search_resource_blocks    2040 ms -> ~200 ms          (~10x)
+--   端到端(2 核, 100 虚拟用户真实配比):
+--     200 用户 14.80% 错误 -> 300 用户 0.00% / 400 用户 0.88%
+--
+--   线上托管版实测(同一用户, 中位耗时, 三次一致):
+--     user_answers     294 ms -> 92-107 ms   (DB 侧 ~200ms -> ~0, 余下是到 ap-southeast-1 的网络地板)
+--     rpc search_rag   1444 ms -> 170-172 ms  (8.4x)
+--     fn rag-search    2994 ms -> 1492-1872 ms (2x, 余下主要是外部 embedding API)
+--
+-- 语义: 只改表达式, 不动 roles/cmd, 所以"谁能访问"完全不变。
+-- 已回归验证: 读 5 张表正常; 合法写入 201 -> 读回 200 -> 删除 204;
+--            伪造成他人 user_id 写入被 403 RLS 拒绝; 中心判题 accepted。
+--
+-- 注意: 跨表引用型策略(如 resource_blocks.rb_select 的 EXISTS 子查询)即使包了
+--   (select ...) 仍会让规划器放弃 trigram 索引并执行 32 万次关联子计划。
+--   该表的进一步优化(改成 document_id = ANY (ARRAY(...)) 或反范式化)未包含在本节。
+-- ============================================================================
+
+DROP POLICY IF EXISTS "ai_prices_select" ON public."ai_model_prices";
+CREATE POLICY "ai_prices_select" ON public."ai_model_prices" AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "ai_prices_write_admin" ON public."ai_model_prices";
+CREATE POLICY "ai_prices_write_admin" ON public."ai_model_prices" AS PERMISSIVE FOR ALL TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "ai_usage_select_own" ON public."ai_usage";
+CREATE POLICY "ai_usage_select_own" ON public."ai_usage" AS PERMISSIVE FOR SELECT TO authenticated USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "chat_conv_own" ON public."chat_conversations";
+CREATE POLICY "chat_conv_own" ON public."chat_conversations" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid()))) WITH CHECK ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "chat_msg_own" ON public."chat_messages";
+CREATE POLICY "chat_msg_own" ON public."chat_messages" AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
+   FROM chat_conversations c
+  WHERE ((c.id = chat_messages.conversation_id) AND (c.user_id = (select auth.uid())))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM chat_conversations c
+  WHERE ((c.id = chat_messages.conversation_id) AND (c.user_id = (select auth.uid()))))));
+DROP POLICY IF EXISTS "exam_schedules_own_rw" ON public."exam_schedules";
+CREATE POLICY "exam_schedules_own_rw" ON public."exam_schedules" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid()))) WITH CHECK ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "exam_sessions_own" ON public."exam_sessions";
+CREATE POLICY "exam_sessions_own" ON public."exam_sessions" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "exam_templates_own_rw" ON public."exam_templates";
+CREATE POLICY "exam_templates_own_rw" ON public."exam_templates" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid()))) WITH CHECK ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "favorites_own" ON public."favorites";
+CREATE POLICY "favorites_own" ON public."favorites" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "fs_delete" ON public."focus_sessions";
+CREATE POLICY "fs_delete" ON public."focus_sessions" AS PERMISSIVE FOR DELETE TO public USING (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "fs_insert" ON public."focus_sessions";
+CREATE POLICY "fs_insert" ON public."focus_sessions" AS PERMISSIVE FOR INSERT TO public WITH CHECK (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "fs_select" ON public."focus_sessions";
+CREATE POLICY "fs_select" ON public."focus_sessions" AS PERMISSIVE FOR SELECT TO public USING (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "fs_update" ON public."focus_sessions";
+CREATE POLICY "fs_update" ON public."focus_sessions" AS PERMISSIVE FOR UPDATE TO public USING (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "kp_explanations_select_all" ON public."kp_explanations";
+CREATE POLICY "kp_explanations_select_all" ON public."kp_explanations" AS PERMISSIVE FOR SELECT TO public USING (((select auth.role()) = 'authenticated'::text));
+DROP POLICY IF EXISTS "kp_explanations_write_admin" ON public."kp_explanations";
+CREATE POLICY "kp_explanations_write_admin" ON public."kp_explanations" AS PERMISSIVE FOR ALL TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "kqm_select" ON public."kp_question_map";
+CREATE POLICY "kqm_select" ON public."kp_question_map" AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "kqr_select" ON public."kp_question_refs";
+CREATE POLICY "kqr_select" ON public."kp_question_refs" AS PERMISSIVE FOR SELECT TO public USING (((select auth.role()) = 'authenticated'::text));
+DROP POLICY IF EXISTS "kqr_write_admin" ON public."kp_question_refs";
+CREATE POLICY "kqr_write_admin" ON public."kp_question_refs" AS PERMISSIVE FOR ALL TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "krr_select" ON public."kp_resource_refs";
+CREATE POLICY "krr_select" ON public."kp_resource_refs" AS PERMISSIVE FOR SELECT TO public USING ((((select auth.role()) = 'authenticated'::text) AND ((select is_admin()) OR (document_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM resource_documents d
+  WHERE ((d.id = kp_resource_refs.document_id) AND d.is_published))))));
+DROP POLICY IF EXISTS "krr_write_admin" ON public."kp_resource_refs";
+CREATE POLICY "krr_write_admin" ON public."kp_resource_refs" AS PERMISSIVE FOR ALL TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "lrq_delete" ON public."learning_route_questions";
+CREATE POLICY "lrq_delete" ON public."learning_route_questions" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "lrq_insert" ON public."learning_route_questions";
+CREATE POLICY "lrq_insert" ON public."learning_route_questions" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "lrq_select" ON public."learning_route_questions";
+CREATE POLICY "lrq_select" ON public."learning_route_questions" AS PERMISSIVE FOR SELECT TO public USING ((((select auth.role()) = 'authenticated'::text) AND ((select is_admin()) OR (EXISTS ( SELECT 1
+   FROM (learning_route_stages s
+     JOIN learning_routes r ON ((r.id = s.route_id)))
+  WHERE ((s.id = learning_route_questions.stage_id) AND r.is_published))))));
+DROP POLICY IF EXISTS "lrq_update" ON public."learning_route_questions";
+CREATE POLICY "lrq_update" ON public."learning_route_questions" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "lrs_delete" ON public."learning_route_stages";
+CREATE POLICY "lrs_delete" ON public."learning_route_stages" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "lrs_insert" ON public."learning_route_stages";
+CREATE POLICY "lrs_insert" ON public."learning_route_stages" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "lrs_select" ON public."learning_route_stages";
+CREATE POLICY "lrs_select" ON public."learning_route_stages" AS PERMISSIVE FOR SELECT TO public USING ((((select auth.role()) = 'authenticated'::text) AND ((select is_admin()) OR (EXISTS ( SELECT 1
+   FROM learning_routes r
+  WHERE ((r.id = learning_route_stages.route_id) AND r.is_published))))));
+DROP POLICY IF EXISTS "lrs_update" ON public."learning_route_stages";
+CREATE POLICY "lrs_update" ON public."learning_route_stages" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "lr_delete" ON public."learning_routes";
+CREATE POLICY "lr_delete" ON public."learning_routes" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "lr_insert" ON public."learning_routes";
+CREATE POLICY "lr_insert" ON public."learning_routes" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "lr_select" ON public."learning_routes";
+CREATE POLICY "lr_select" ON public."learning_routes" AS PERMISSIVE FOR SELECT TO public USING ((((select auth.role()) = 'authenticated'::text) AND (is_published OR (select is_admin()))));
+DROP POLICY IF EXISTS "lr_update" ON public."learning_routes";
+CREATE POLICY "lr_update" ON public."learning_routes" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "Users can delete own history" ON public."parse_history";
+CREATE POLICY "Users can delete own history" ON public."parse_history" AS PERMISSIVE FOR DELETE TO public USING (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "Users can insert own history" ON public."parse_history";
+CREATE POLICY "Users can insert own history" ON public."parse_history" AS PERMISSIVE FOR INSERT TO public WITH CHECK (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "Users can read own history" ON public."parse_history";
+CREATE POLICY "Users can read own history" ON public."parse_history" AS PERMISSIVE FOR SELECT TO public USING (((select auth.uid()) = user_id));
+DROP POLICY IF EXISTS "parse_history_own" ON public."parse_history";
+CREATE POLICY "parse_history_own" ON public."parse_history" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "pkc_own" ON public."passkey_credentials";
+CREATE POLICY "pkc_own" ON public."passkey_credentials" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "pda_own" ON public."practice_daily_assignments";
+CREATE POLICY "pda_own" ON public."practice_daily_assignments" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "pss_own" ON public."practice_sequential_state";
+CREATE POLICY "pss_own" ON public."practice_sequential_state" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "profiles_insert_own" ON public."profiles";
+CREATE POLICY "profiles_insert_own" ON public."profiles" AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (((id = (select auth.uid())) AND (role = 'user'::text)));
+DROP POLICY IF EXISTS "profiles_select_own" ON public."profiles";
+CREATE POLICY "profiles_select_own" ON public."profiles" AS PERMISSIVE FOR SELECT TO public USING (((id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "profiles_update_admin" ON public."profiles";
+CREATE POLICY "profiles_update_admin" ON public."profiles" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "profiles_update_own" ON public."profiles";
+CREATE POLICY "profiles_update_own" ON public."profiles" AS PERMISSIVE FOR UPDATE TO public USING ((id = (select auth.uid()))) WITH CHECK ((id = (select auth.uid())));
+DROP POLICY IF EXISTS "push_subscriptions_own_rw" ON public."push_subscriptions";
+CREATE POLICY "push_subscriptions_own_rw" ON public."push_subscriptions" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid()))) WITH CHECK ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "qr_insert" ON public."qr_login_tokens";
+CREATE POLICY "qr_insert" ON public."qr_login_tokens" AS PERMISSIVE FOR INSERT TO anon, authenticated WITH CHECK (((status = 'pending'::text) AND (user_id IS NULL) AND (secret_hash IS NOT NULL)));
+DROP POLICY IF EXISTS "qbi_delete" ON public."question_bank_items";
+CREATE POLICY "qbi_delete" ON public."question_bank_items" AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
+   FROM question_banks
+  WHERE ((question_banks.id = question_bank_items.bank_id) AND ((question_banks.created_by = (select auth.uid())) OR (select is_admin()))))));
+DROP POLICY IF EXISTS "qbi_insert" ON public."question_bank_items";
+CREATE POLICY "qbi_insert" ON public."question_bank_items" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
+   FROM question_banks
+  WHERE ((question_banks.id = question_bank_items.bank_id) AND ((question_banks.created_by = (select auth.uid())) OR (select is_admin()))))));
+DROP POLICY IF EXISTS "qbi_select" ON public."question_bank_items";
+CREATE POLICY "qbi_select" ON public."question_bank_items" AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM question_banks
+  WHERE ((question_banks.id = question_bank_items.bank_id) AND ((question_banks.is_public = true) OR (question_banks.created_by = (select auth.uid())) OR (select is_admin()))))));
+DROP POLICY IF EXISTS "qbp_delete" ON public."question_bank_papers";
+CREATE POLICY "qbp_delete" ON public."question_bank_papers" AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
+   FROM question_banks b
+  WHERE ((b.id = question_bank_papers.bank_id) AND ((b.created_by = (select auth.uid())) OR (select is_admin()))))));
+DROP POLICY IF EXISTS "qbp_insert" ON public."question_bank_papers";
+CREATE POLICY "qbp_insert" ON public."question_bank_papers" AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (((created_by = (select auth.uid())) AND (EXISTS ( SELECT 1
+   FROM question_banks b
+  WHERE ((b.id = question_bank_papers.bank_id) AND ((b.created_by = (select auth.uid())) OR (select is_admin())))))));
+DROP POLICY IF EXISTS "qbp_select" ON public."question_bank_papers";
+CREATE POLICY "qbp_select" ON public."question_bank_papers" AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM question_banks b
+  WHERE ((b.id = question_bank_papers.bank_id) AND ((b.is_public = true) OR (b.created_by = (select auth.uid())) OR (select is_admin()))))));
+DROP POLICY IF EXISTS "qbp_update" ON public."question_bank_papers";
+CREATE POLICY "qbp_update" ON public."question_bank_papers" AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
+   FROM question_banks b
+  WHERE ((b.id = question_bank_papers.bank_id) AND ((b.created_by = (select auth.uid())) OR (select is_admin()))))));
+DROP POLICY IF EXISTS "qb_delete" ON public."question_banks";
+CREATE POLICY "qb_delete" ON public."question_banks" AS PERMISSIVE FOR DELETE TO public USING (((created_by = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "qb_insert" ON public."question_banks";
+CREATE POLICY "qb_insert" ON public."question_banks" AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK ((created_by = (select auth.uid())));
+DROP POLICY IF EXISTS "qb_select" ON public."question_banks";
+CREATE POLICY "qb_select" ON public."question_banks" AS PERMISSIVE FOR SELECT TO public USING (((is_public = true) OR (created_by = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "qb_update" ON public."question_banks";
+CREATE POLICY "qb_update" ON public."question_banks" AS PERMISSIVE FOR UPDATE TO public USING (((created_by = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "question_drafts_delete_admin" ON public."question_drafts";
+CREATE POLICY "question_drafts_delete_admin" ON public."question_drafts" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "question_drafts_insert_admin" ON public."question_drafts";
+CREATE POLICY "question_drafts_insert_admin" ON public."question_drafts" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "question_drafts_select_admin" ON public."question_drafts";
+CREATE POLICY "question_drafts_select_admin" ON public."question_drafts" AS PERMISSIVE FOR SELECT TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "question_drafts_update_admin" ON public."question_drafts";
+CREATE POLICY "question_drafts_update_admin" ON public."question_drafts" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "qmc_select" ON public."question_meta_cache";
+CREATE POLICY "qmc_select" ON public."question_meta_cache" AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "qsl_own" ON public."question_source_links";
+CREATE POLICY "qsl_own" ON public."question_source_links" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid()))) WITH CHECK ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "questions_delete_admin" ON public."questions";
+CREATE POLICY "questions_delete_admin" ON public."questions" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "questions_insert_admin" ON public."questions";
+CREATE POLICY "questions_insert_admin" ON public."questions" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "questions_select_all" ON public."questions";
+CREATE POLICY "questions_select_all" ON public."questions" AS PERMISSIVE FOR SELECT TO public USING (((select auth.role()) = 'authenticated'::text));
+DROP POLICY IF EXISTS "questions_update_admin" ON public."questions";
+CREATE POLICY "questions_update_admin" ON public."questions" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rag_select" ON public."rag_chunks";
+CREATE POLICY "rag_select" ON public."rag_chunks" AS PERMISSIVE FOR SELECT TO public USING (((select auth.role()) = 'authenticated'::text));
+DROP POLICY IF EXISTS "rag_write_admin" ON public."rag_chunks";
+CREATE POLICY "rag_write_admin" ON public."rag_chunks" AS PERMISSIVE FOR ALL TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "rb_delete" ON public."resource_blocks";
+CREATE POLICY "rb_delete" ON public."resource_blocks" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rb_insert" ON public."resource_blocks";
+CREATE POLICY "rb_insert" ON public."resource_blocks" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "rb_select" ON public."resource_blocks";
+CREATE POLICY "rb_select" ON public."resource_blocks" AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM resource_documents d
+  WHERE ((d.id = resource_blocks.document_id) AND (d.is_published OR (select is_admin()))))));
+DROP POLICY IF EXISTS "rb_update" ON public."resource_blocks";
+CREATE POLICY "rb_update" ON public."resource_blocks" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rd_delete" ON public."resource_documents";
+CREATE POLICY "rd_delete" ON public."resource_documents" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rd_insert" ON public."resource_documents";
+CREATE POLICY "rd_insert" ON public."resource_documents" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "rd_select" ON public."resource_documents";
+CREATE POLICY "rd_select" ON public."resource_documents" AS PERMISSIVE FOR SELECT TO public USING ((((select auth.role()) = 'authenticated'::text) AND (is_published OR (select is_admin()))));
+DROP POLICY IF EXISTS "rd_update" ON public."resource_documents";
+CREATE POLICY "rd_update" ON public."resource_documents" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rks_select" ON public."resource_kp_scopes";
+CREATE POLICY "rks_select" ON public."resource_kp_scopes" AS PERMISSIVE FOR SELECT TO public USING ((((select auth.role()) = 'authenticated'::text) AND (EXISTS ( SELECT 1
+   FROM resource_documents d
+  WHERE ((d.id = resource_kp_scopes.document_id) AND (d.is_published OR (select is_admin())))))));
+DROP POLICY IF EXISTS "rks_write_admin" ON public."resource_kp_scopes";
+CREATE POLICY "rks_write_admin" ON public."resource_kp_scopes" AS PERMISSIVE FOR ALL TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "rp_delete" ON public."resource_parts";
+CREATE POLICY "rp_delete" ON public."resource_parts" AS PERMISSIVE FOR DELETE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rp_insert" ON public."resource_parts";
+CREATE POLICY "rp_insert" ON public."resource_parts" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "rp_select" ON public."resource_parts";
+CREATE POLICY "rp_select" ON public."resource_parts" AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM resource_documents d
+  WHERE ((d.id = resource_parts.document_id) AND (d.is_published OR (select is_admin()))))));
+DROP POLICY IF EXISTS "rp_update" ON public."resource_parts";
+CREATE POLICY "rp_update" ON public."resource_parts" AS PERMISSIVE FOR UPDATE TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "rte_select" ON public."resource_toc_entries";
+CREATE POLICY "rte_select" ON public."resource_toc_entries" AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM resource_documents d
+  WHERE ((d.id = resource_toc_entries.document_id) AND (d.is_published OR (select is_admin()))))));
+DROP POLICY IF EXISTS "rte_write_admin" ON public."resource_toc_entries";
+CREATE POLICY "rte_write_admin" ON public."resource_toc_entries" AS PERMISSIVE FOR ALL TO public USING ((select is_admin())) WITH CHECK ((select is_admin()));
+DROP POLICY IF EXISTS "srm_delete" ON public."study_room_members";
+CREATE POLICY "srm_delete" ON public."study_room_members" AS PERMISSIVE FOR DELETE TO public USING (((user_id = (select auth.uid())) OR is_study_room_owner(room_id, (select auth.uid()))));
+DROP POLICY IF EXISTS "srm_select" ON public."study_room_members";
+CREATE POLICY "srm_select" ON public."study_room_members" AS PERMISSIVE FOR SELECT TO public USING (((user_id = (select auth.uid())) OR is_study_room_member(room_id, (select auth.uid()))));
+DROP POLICY IF EXISTS "study_rooms_delete" ON public."study_rooms";
+CREATE POLICY "study_rooms_delete" ON public."study_rooms" AS PERMISSIVE FOR DELETE TO public USING ((owner_id = (select auth.uid())));
+DROP POLICY IF EXISTS "study_rooms_select" ON public."study_rooms";
+CREATE POLICY "study_rooms_select" ON public."study_rooms" AS PERMISSIVE FOR SELECT TO public USING (((owner_id = (select auth.uid())) OR is_study_room_member(id, (select auth.uid()))));
+DROP POLICY IF EXISTS "study_rooms_update" ON public."study_rooms";
+CREATE POLICY "study_rooms_update" ON public."study_rooms" AS PERMISSIVE FOR UPDATE TO public USING ((owner_id = (select auth.uid()))) WITH CHECK ((owner_id = (select auth.uid())));
+DROP POLICY IF EXISTS "subject_explanations_select_all" ON public."subject_explanations";
+CREATE POLICY "subject_explanations_select_all" ON public."subject_explanations" AS PERMISSIVE FOR SELECT TO public USING (((select auth.role()) = 'authenticated'::text));
+DROP POLICY IF EXISTS "subject_explanations_write_admin" ON public."subject_explanations";
+CREATE POLICY "subject_explanations_write_admin" ON public."subject_explanations" AS PERMISSIVE FOR ALL TO public USING ((select is_admin()));
+DROP POLICY IF EXISTS "submissions_own" ON public."submissions";
+CREATE POLICY "submissions_own" ON public."submissions" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "user_answers_own" ON public."user_answers";
+CREATE POLICY "user_answers_own" ON public."user_answers" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "user_answers_public_select" ON public."user_answers";
+CREATE POLICY "user_answers_public_select" ON public."user_answers" AS PERMISSIVE FOR SELECT TO public USING (((is_public = true) OR (user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "uds_own" ON public."user_daily_stats";
+CREATE POLICY "uds_own" ON public."user_daily_stats" AS PERMISSIVE FOR SELECT TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "ueq_own" ON public."user_excluded_questions";
+CREATE POLICY "ueq_own" ON public."user_excluded_questions" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "ums_own_delete" ON public."user_mfa_sessions";
+CREATE POLICY "ums_own_delete" ON public."user_mfa_sessions" AS PERMISSIVE FOR DELETE TO authenticated USING ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "ums_own_select" ON public."user_mfa_sessions";
+CREATE POLICY "ums_own_select" ON public."user_mfa_sessions" AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "user_plugins_own" ON public."user_plugins";
+CREATE POLICY "user_plugins_own" ON public."user_plugins" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin()))) WITH CHECK (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "up_own" ON public."user_preferences";
+CREATE POLICY "up_own" ON public."user_preferences" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid()))) WITH CHECK ((user_id = (select auth.uid())));
+DROP POLICY IF EXISTS "upref_own" ON public."user_preferences";
+CREATE POLICY "upref_own" ON public."user_preferences" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "user_prompts_own" ON public."user_prompts";
+CREATE POLICY "user_prompts_own" ON public."user_prompts" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin()))) WITH CHECK (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "uset_own" ON public."user_settings";
+CREATE POLICY "uset_own" ON public."user_settings" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+DROP POLICY IF EXISTS "utd_own" ON public."user_trusted_devices";
+CREATE POLICY "utd_own" ON public."user_trusted_devices" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid())));
+
+-- ============================================================================
+-- Section 82: search_resource_blocks 提速 —— SECURITY DEFINER + 自校验
+-- ============================================================================
+-- 问题(实测): 该函数最慢 3.3 秒, 线上 0 命中也要 327ms。根因两条:
+--   (1) RLS 屏障挡住了 trigram 索引。ILIKE(texticlike) 与 is_admin() 都不是 leakproof,
+--       Postgres 不允许把 ILIKE 下推成索引条件(会泄露哪些行匹配给无权限者),
+--       于是退化成 32634 行全表扫。对照实验: 策略为 true 时 Bitmap Index Scan 0.12ms,
+--       有真实策略时 Seq Scan 89ms —— 相差 740 倍。
+--   (2) count(*) OVER () 强制为全部匹配行计算 snippet, 而 snippet 里对全文做了
+--       lower() + strpos(); LIMIT 只在最后生效。
+--
+-- 修法:
+--   (1) SECURITY DEFINER —— 表 owner(postgres, relforcerowsecurity=false) 绕过 RLS,
+--       索引恢复可用。必须自己补上原来由 RLS 提供的两道门:
+--         auth.role() = authenticated     <- 原 rd_select
+--         d.is_published OR is_admin()    <- 原 rb_select 的 EXISTS 子查询
+--   (2) total 独立算, snippet 只给最终返回的 <=200 行算。
+--
+-- 本地实测(3 万行匹配): 0 命中 66-75ms -> 0-1ms (~70x); 3 万命中 3104-3245ms -> 1225-1324ms (2.5x)
+-- 线上实测: 管理 483->188ms / 组织 385->163ms / 理学 388->180ms / 绩效 343->133ms /
+--           斯蒂芬(8 命中) 333->100ms / 0 命中 327->132ms
+-- 等价性: 5 组输入(limit 20/50/200, 含 0 命中) 集合差异 0、有序差异 0;
+--         未发布文档不泄露; 线上 total_hits 与直接 SQL 统计逐词一致(3221/2977/567/8)。
+--
+-- 注意: 线上当前 10 份文档全部 is_published=true, 所以新增的可见性过滤在今天
+--       是 no-op、输出必然不变; 它从出现未发布文档起才实际生效。
+-- 回滚: docs/srb-fn-rollback.sql
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.search_resource_blocks(
+  p_query text, p_document_id uuid DEFAULT NULL::uuid, p_subject text DEFAULT NULL::text,
+  p_doc_type text DEFAULT NULL::text, p_tag text DEFAULT NULL::text, p_limit integer DEFAULT 50)
+ RETURNS TABLE(document_id uuid, doc_title text, page_no integer, block_index integer, bbox real[],
+               block_type text, heading_level smallint, snippet text, score real, total_hits bigint)
+ LANGUAGE plpgsql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  q      TEXT := btrim(coalesce(p_query, ''));
+  padded TEXT;
+BEGIN
+  IF q = '' THEN RETURN; END IF;
+  IF (SELECT auth.role()) IS DISTINCT FROM 'authenticated' THEN RETURN; END IF;
+  padded := regexp_replace(q, '(.)', '\1 ', 'g');
+
+  RETURN QUERY
+  WITH hit AS (
+    SELECT b.document_id AS doc_id,
+           d.title       AS d_title,
+           b.page_no     AS p_no,
+           b.block_index AS b_idx,
+           b.bbox        AS b_box,
+           b.block_type  AS b_type,
+           b.heading_level AS b_level,
+           b.text        AS b_text,
+           (CASE WHEN b.heading_level > 0 THEN 2.0 ELSE 0.0 END
+            + CASE WHEN d.title ILIKE '%' || q || '%' THEN 1.5 ELSE 0.0 END
+            + CASE WHEN b.text ILIKE q || '%' THEN 0.5 ELSE 0.0 END)::REAL AS sc
+    FROM public.resource_blocks b
+    JOIN public.resource_documents d ON d.id = b.document_id
+    WHERE b.search_text ILIKE '%' || padded || '%'
+      AND b.block_type <> ALL (ARRAY[
+        'header', 'footer', 'page_number', 'aside_text', 'page_footnote', 'phonetic', 'discarded',
+        'page_header', 'page_footer', 'page_aside_text', 'abandon', 'low_score_text'
+      ])
+      AND (d.is_published OR (SELECT public.is_admin()))
+      AND (p_document_id IS NULL OR b.document_id = p_document_id)
+      AND (p_subject     IS NULL OR d.subject  = p_subject)
+      AND (p_doc_type    IS NULL OR d.doc_type = p_doc_type)
+      AND (p_tag         IS NULL OR p_tag = ANY(d.tags))
+  ),
+  top AS (
+    SELECT h.* FROM hit h
+    ORDER BY h.sc DESC, h.d_title, h.p_no, h.b_idx
+    LIMIT greatest(1, least(coalesce(p_limit, 50), 200))
+  ),
+  tot AS (SELECT count(*) AS n FROM hit)
+  SELECT t.doc_id, t.d_title, t.p_no, t.b_idx, t.b_box, t.b_type, t.b_level,
+         substring(t.b_text FROM greatest(1, strpos(lower(t.b_text), lower(q)) - 40) FOR 160),
+         t.sc,
+         (SELECT n FROM tot)
+  FROM top t
+  ORDER BY t.sc DESC, t.d_title, t.p_no, t.b_idx;
+END;
+$function$;
+
+-- ============================================================================
+-- Section 83: 补上漂移缺失的 2 张表 —— practice_daily_assignments / user_settings
+-- ============================================================================
+-- 背景: 001_initial_schema.sql 只 CREATE 了 56 张表, 而线上有 58 张。
+--       这两张表在线上存在、文件里从未创建, 导致这份迁移文件无法重建出可用的库
+--       (在全新数据库上执行后, 每日任务与用户设置相关功能会直接报 relation does not exist)。
+--       注意它们还带有 RLS 策略, 所以之前 Section 81 对线上那 104 条策略的改写里,
+--       也包含这两张表的策略。
+--
+-- 来源: 由线上 catalog 反向导出(pg_attribute / pg_constraint / pg_indexes /
+--       pg_policies / pg_trigger), 因此与线上当前定义一致, 策略也已是 Section 81 的写法。
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.practice_daily_assignments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  assign_date date NOT NULL,
+  subject text NOT NULL,
+  kp_plan jsonb NOT NULL DEFAULT '[]'::jsonb,
+  qids uuid[] NOT NULL DEFAULT '{}'::uuid[],
+  goal_count integer NOT NULL DEFAULT 0,
+  carry_count integer NOT NULL DEFAULT 0,
+  review_count integer NOT NULL DEFAULT 0,
+  completed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_carry_count_check CHECK ((carry_count >= 0));
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_goal_count_check CHECK ((goal_count >= 0));
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_qids_goal CHECK ((cardinality(qids) = goal_count));
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_review_count_check CHECK ((review_count >= 0));
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_pkey PRIMARY KEY (id);
+ALTER TABLE public.practice_daily_assignments ADD CONSTRAINT practice_daily_assignments_uniq UNIQUE (user_id, assign_date, subject);
+CREATE INDEX IF NOT EXISTS idx_pda_user_assign_date ON public.practice_daily_assignments USING btree (user_id, assign_date);
+CREATE TRIGGER trg_set_updated_at BEFORE UPDATE ON public.practice_daily_assignments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+ALTER TABLE public.practice_daily_assignments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS pda_own ON public.practice_daily_assignments;
+CREATE POLICY pda_own ON public.practice_daily_assignments AS PERMISSIVE FOR ALL TO public USING (((user_id = ( SELECT auth.uid() AS uid)) OR ( SELECT is_admin() AS is_admin)));
+
+CREATE TABLE IF NOT EXISTS public.user_settings (
+  user_id uuid NOT NULL,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+ALTER TABLE public.user_settings ADD CONSTRAINT user_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.user_settings ADD CONSTRAINT user_settings_pkey PRIMARY KEY (user_id);
+ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS uset_own ON public.user_settings;
+CREATE POLICY uset_own ON public.user_settings AS PERMISSIVE FOR ALL TO public USING (((user_id = ( SELECT auth.uid() AS uid)) OR ( SELECT is_admin() AS is_admin)));
