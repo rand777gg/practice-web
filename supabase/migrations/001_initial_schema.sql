@@ -291,11 +291,11 @@ CREATE TABLE IF NOT EXISTS public.question_meta_cache (
 
 INSERT INTO public.question_meta_cache (subjects, categories, key_points_by_subject)
 SELECT
-  (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
-  (SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
+  COALESCE((SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL), '[]'::jsonb),
+  COALESCE((SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
     SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
     UNION SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
-  ) t),
+  ) t), '[]'::jsonb),
   (WITH expanded AS (
     SELECT DISTINCT q.subject, trim(kp) AS kp
     FROM public.questions q,
@@ -317,11 +317,11 @@ RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = ''
 AS $$
   INSERT INTO public.question_meta_cache (subjects, categories, key_points_by_subject, updated_at)
   SELECT
-    (SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL),
-    (SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
+    COALESCE((SELECT jsonb_agg(DISTINCT subject ORDER BY subject) FROM public.questions WHERE subject IS NOT NULL), '[]'::jsonb),
+    COALESCE((SELECT jsonb_agg(DISTINCT cat ORDER BY cat) FROM (
       SELECT DISTINCT category AS cat FROM public.questions WHERE category IS NOT NULL
       UNION SELECT DISTINCT cat FROM public.questions, LATERAL jsonb_array_elements_text(categories) AS cat WHERE categories IS NOT NULL
-    ) t),
+    ) t), '[]'::jsonb),
     (WITH with_kp AS (
       SELECT subject, jsonb_agg(kp ORDER BY kp) AS key_points
       FROM (
@@ -6275,8 +6275,10 @@ DROP POLICY IF EXISTS "parse_history_own" ON public."parse_history";
 CREATE POLICY "parse_history_own" ON public."parse_history" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
 DROP POLICY IF EXISTS "pkc_own" ON public."passkey_credentials";
 CREATE POLICY "pkc_own" ON public."passkey_credentials" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid())));
-DROP POLICY IF EXISTS "pda_own" ON public."practice_daily_assignments";
-CREATE POLICY "pda_own" ON public."practice_daily_assignments" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+-- practice_daily_assignments 的策略不在这里建: 该表直到 Section 83 才 CREATE TABLE,
+-- 而 DROP POLICY 即使带 IF EXISTS 也不容忍"表不存在"(只容忍"策略不存在")。
+-- 本文件是从生产目录导出后追加拼接的, 导出顺序不等于拓扑顺序, 所以这两条必须删掉,
+-- 交给 Section 83 里建表之后再建(那边有等价的同名策略)。
 DROP POLICY IF EXISTS "pss_own" ON public."practice_sequential_state";
 CREATE POLICY "pss_own" ON public."practice_sequential_state" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
 DROP POLICY IF EXISTS "profiles_insert_own" ON public."profiles";
@@ -6427,8 +6429,7 @@ DROP POLICY IF EXISTS "upref_own" ON public."user_preferences";
 CREATE POLICY "upref_own" ON public."user_preferences" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
 DROP POLICY IF EXISTS "user_prompts_own" ON public."user_prompts";
 CREATE POLICY "user_prompts_own" ON public."user_prompts" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin()))) WITH CHECK (((user_id = (select auth.uid())) OR (select is_admin())));
-DROP POLICY IF EXISTS "uset_own" ON public."user_settings";
-CREATE POLICY "uset_own" ON public."user_settings" AS PERMISSIVE FOR ALL TO public USING (((user_id = (select auth.uid())) OR (select is_admin())));
+-- 同上: user_settings 直到 Section 83 才建表, 策略留到那边建
 DROP POLICY IF EXISTS "utd_own" ON public."user_trusted_devices";
 CREATE POLICY "utd_own" ON public."user_trusted_devices" AS PERMISSIVE FOR ALL TO public USING ((user_id = (select auth.uid())));
 
@@ -6768,7 +6769,18 @@ REVOKE ALL ON FUNCTION public.guard_profile_privileged_columns() FROM PUBLIC, an
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.kp_set_sort_key() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.resource_documents_sync_search_text() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+-- rls_auto_enable() 是 Supabase 平台自带的函数(见上方说明), 不属于本项目代码。
+-- 自建的空库里它不存在, 直接 REVOKE 会以 "function does not exist" 中断迁移,
+-- 所以先判存在性再收权限 —— 托管环境收到权限, 自建环境安静跳过。
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'rls_auto_enable'
+  ) THEN
+    EXECUTE 'REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated';
+  END IF;
+END $$;
 REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.sync_category_from_categories() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.trg_dup_cache_sync() FROM PUBLIC, anon, authenticated;
