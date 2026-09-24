@@ -1325,6 +1325,7 @@ export function ResourceReader({
             loading={!scopesLoaded}
             error={scopesError}
             onLocate={locate}
+            onLocatePage={(page) => setJumpToPage({ page, nonce: Date.now() })}
             onChanged={() => setScopeVersion((v) => v + 1)}
             pickMode={pickMode}
             onPickModeChange={(on) => {

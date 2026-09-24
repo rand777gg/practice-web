@@ -9,7 +9,7 @@
  * Usage: node scripts/resource-kp-scopes-smoke.mjs
  */
 import {
-  findDuplicate, groupScopesByDocument, kpCode, overlapping, scopeAnchor, scopePages,
+  findDuplicate, groupScopesByDocument, kpCode, overlapping, scopeAnchor, scopeFromRow, scopePages,
   scopeRangeFromBlocks, scopeRangeFromToc, scopeWhere, scopesByBlock,
 } from '../src/lib/resource-kp-scopes.ts'
 
@@ -133,6 +133,33 @@ check('别的知识点不算重复', findDuplicate([scope()], { subject: '医学
 check('重叠要提示(同一章讲两个知识点是常事, 但得说一声)',
   overlapping([scope()], { blockFrom: 9, blockTo: 20 }), [scope()])
 check('不挨着就不提示', overlapping([scope()], { blockFrom: 10, blockTo: 20 }), [])
+
+// ── 库里那一行 → 前端对象 ──
+// 这段是被真实事故逼出来的: 曾经直接 `data as ResourceKpScope[]` 返回, 于是 page_from 原样留在
+// 对象上, 页面上印出"第 undefined 页"、点"看这段"拿到 undefined 跳不动, 而 tsc 一声不吭。
+const dbRow = {
+  id: 'r1', document_id: 'doc-1', subject: '医学史',
+  kp: 'A14-医学教育教学概论与现代医学教育思想',
+  block_from: 813, block_to: 1066, page_from: 74, page_to: 91,
+  toc_title: '第六章 医学教育教学概论与现代医学教育思想', toc_level: 1,
+  note: '', created_at: '2026-01-01T00:00:00Z',
+}
+const mapped = scopeFromRow(dbRow, '医学导论')
+check('行映射成前端字段(而不是把 snake_case 原样留下)', mapped,
+  {
+    id: 'r1', documentId: 'doc-1', documentTitle: '医学导论', subject: '医学史',
+    kp: 'A14-医学教育教学概论与现代医学教育思想',
+    blockFrom: 813, blockTo: 1066, pageFrom: 74, pageTo: 91,
+    tocTitle: '第六章 医学教育教学概论与现代医学教育思想', tocLevel: 1,
+    note: '', createdAt: '2026-01-01T00:00:00Z',
+  })
+check('映射出来的范围能算文案', scopeWhere(mapped), '第 74-91 页 · 第六章 医学教育教学概论与现代医学教育思想')
+check('映射出来的范围能生成跳转地址', scopeAnchor(mapped), '/resource-library/doc-1?block=813')
+check('映射出来的范围能标到段上',
+  scopesByBlock([scopeFromRow({ ...dbRow, block_from: 4, block_to: 6, page_from: 4, page_to: 6 })], blocks).get(5)?.length, 1)
+check('没有标题的行也能映射', scopeFromRow({ ...dbRow, toc_title: '' }).tocTitle, '')
+// 页码缺失时不许印 undefined(旧数据/字段名对不上都走这条)
+check('页码缺失时说人话', scopePages({ pageFrom: undefined, pageTo: undefined }), '页码未知')
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)

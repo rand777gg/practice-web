@@ -27,7 +27,7 @@ import { supabase } from '@/lib/supabase'
 import { cn, naturalSort } from '@/lib/utils'
 import type { ResourceBlock, TocEntry } from '@/lib/resource-blocks'
 import {
-  findDuplicate, kpCode, overlapping, scopeRangeFromToc, scopeWhere,
+  findDuplicate, kpCode, overlapping, scopeRangeFromBlocks, scopeRangeFromToc, scopeWhere,
   type ResourceKpScope, type ScopeRange, type ScopeSpan,
 } from '@/lib/resource-kp-scopes'
 import { createKpScope, deleteKpScope } from '@/lib/resource-kp-scopes-store'
@@ -66,22 +66,25 @@ function useKpOptions(active: boolean) {
 
 interface DialogProps {
   documentId: string
+  blocks: ResourceBlock[]
   range: ScopeRange
-  /** 区间的终点落到了全篇最后一段 —— 目录层级断掉时"圈整章"会变成"圈到书末", 得说一声 */
-  endsAtDocumentEnd: boolean
   scopes: ResourceKpScope[]
   onClose: () => void
   onSaved: () => void
 }
 
 /** 区间已经定好, 这里只挑"挂到哪个知识点" */
-function KpScopeDialog({ documentId, range, endsAtDocumentEnd, scopes, onClose, onSaved }: DialogProps) {
+function KpScopeDialog({ documentId, blocks, range, scopes, onClose, onSaved }: DialogProps) {
   const { options, loading } = useKpOptions(true)
   const [pickedSubject, setPickedSubject] = useState('')
   const [pickedKp, setPickedKp] = useState('')
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /** 起止段落, 可以手改 —— 目录不准的时候(层级被压平)这是唯一的出路 */
+  const [fromText, setFromText] = useState(String(range.blockFrom))
+  const [toText, setToText] = useState(String(range.blockTo))
 
   // 默认落在第一个学科的第一个知识点上: 打开就能直接存, 不用先点两下。
   // 派生成"有效值"而不是在 effect 里 setState —— 选项是异步来的, 同步那次会先闪一个空选择。
@@ -92,15 +95,31 @@ function KpScopeDialog({ documentId, range, endsAtDocumentEnd, scopes, onClose, 
   )
   const kp = pickedKp || subjectKps[0] || ''
 
-  const duplicate = findDuplicate(scopes, { subject, kp, blockFrom: range.blockFrom, blockTo: range.blockTo })
-  const clashes = overlapping(scopes, range)
+  /**
+   * 用户改过边界就按改后的算, 页码跟着段落重新推(权威值是段落)。
+   * 起点被挪走之后那条"圈的时候用的目录项"就不成立了, 顺手清掉 —— 留着会显示成假出处。
+   */
+  const from = Number(fromText)
+  const to = Number(toText)
+  const recomputed = Number.isFinite(from) && Number.isFinite(to)
+    ? scopeRangeFromBlocks(blocks, from, to)
+    : null
+  const boundsInvalid = Number.isFinite(from) && Number.isFinite(to) && recomputed === null
+  const effective: ScopeRange = recomputed
+    ? { ...recomputed, tocTitle: from === range.blockFrom ? range.tocTitle : '', tocLevel: range.tocLevel }
+    : range
+  const edited = effective.blockFrom !== range.blockFrom || effective.blockTo !== range.blockTo
+  const endsAtEnd = blocks.length > 0 && effective.blockTo === blocks[blocks.length - 1].blockIndex
+
+  const duplicate = findDuplicate(scopes, { subject, kp, blockFrom: effective.blockFrom, blockTo: effective.blockTo })
+  const clashes = overlapping(scopes, effective)
 
   const save = async () => {
-    if (!documentId || !subject || !kp) return
+    if (!documentId || !subject || !kp || boundsInvalid) return
     setSaving(true)
     setError(null)
     try {
-      await createKpScope({ documentId, ...range, subject, kp, note })
+      await createKpScope({ documentId, ...effective, subject, kp, note })
       onSaved()
       onClose()
     } catch (err) {
@@ -120,17 +139,46 @@ function KpScopeDialog({ documentId, range, endsAtDocumentEnd, scopes, onClose, 
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-          <p className="font-medium">{scopeWhere(range)}</p>
-          <p className="mt-0.5 text-muted-foreground">
-            段 {range.blockFrom}–{range.blockTo} · 共 {range.blockTo - range.blockFrom + 1} 段
-          </p>
+        <div className="space-y-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+          <p className="font-medium">{scopeWhere(effective)}</p>
+          <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+            <span>段</span>
+            <Input
+              value={fromText}
+              onChange={(e) => setFromText(e.target.value)}
+              className="h-6 w-20 px-1.5 text-[11px] tabular-nums"
+              aria-label="起始段"
+            />
+            <span>–</span>
+            <Input
+              value={toText}
+              onChange={(e) => setToText(e.target.value)}
+              className="h-6 w-20 px-1.5 text-[11px] tabular-nums"
+              aria-label="结束段"
+            />
+            <span>共 {Math.max(0, effective.blockTo - effective.blockFrom + 1)} 段</span>
+            {edited && (
+              <button
+                type="button"
+                onClick={() => { setFromText(String(range.blockFrom)); setToText(String(range.blockTo)) }}
+                className="ml-auto text-[10px] text-primary hover:underline"
+              >
+                回到按目录算的区间
+              </button>
+            )}
+          </div>
+          {boundsInvalid && <p className="text-[11px] text-red-600 dark:text-red-400">这两个段号里有一个不在本篇正文里。</p>}
         </div>
 
-        {endsAtDocumentEnd && (
+        {endsAtEnd && (
           <p className="rounded-lg border border-amber-300/60 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
             这个区间的终点落到了全篇末尾：这篇的目录在这一级之后已经没有同级的后面几章了（解析时常把后半本的章节层级压平）。
-            要精确到本章末尾的话，先在目录编辑里把后续章节的层级改对，或者改用「正文里拖选一段」。
+            要精确到本章末尾的话，直接在上面改结束段，或者去目录编辑里把后续章节的层级改对。
+          </p>
+        )}
+        {edited && !endsAtEnd && (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            边界改过之后就不再记「用的是哪条目录项」了 —— 那条标签只在按目录一键圈时成立。
           </p>
         )}
 
@@ -209,6 +257,8 @@ interface Props {
   loading: boolean
   error: string | null
   onLocate: (blockIndex: number) => void
+  /** 段落对不上时(重新解析过, block_index 整体重排)退化成翻到那一页 */
+  onLocatePage: (page: number) => void
   onChanged: () => void
   /** 正文拖选模式(拖选本身在阅读页那一侧接管, 这里只开关) */
   pickMode: boolean
@@ -221,7 +271,7 @@ interface Props {
 
 export function KpScopePanel({
   documentId, blocks, toc, canEdit, scopes, loading, error,
-  onLocate, onChanged, pickMode, onPickModeChange, pickedRange, onPickedRangeDone, onClose,
+  onLocate, onLocatePage, onChanged, pickMode, onPickModeChange, pickedRange, onPickedRangeDone, onClose,
 }: Props) {
   const [tocIndex, setTocIndex] = useState<number | null>(null)
   /** 从这里(按目录)算出来的区间 */
@@ -229,6 +279,16 @@ export function KpScopePanel({
   /** 正文拖出来的那条优先: 它就是用户刚做的事 */
   const activeRange = pickedRange ?? range
   const [notice, setNotice] = useState<string | null>(null)
+
+  /**
+   * 「看这段」。
+   * 段落还在就定位过去; 不在了(重新解析后 block_index 整体重排)就翻到那一页 ——
+   * 和目录项失效时的回退同一个道理: 总比点了没反应好。
+   */
+  const jumpTo = (scope: ResourceKpScope) => {
+    if (blocks.some((b) => b.blockIndex === scope.blockFrom)) onLocate(scope.blockFrom)
+    else onLocatePage(scope.pageFrom)
+  }
 
   const closeDialog = () => {
     setRange(null)
@@ -271,6 +331,9 @@ export function KpScopePanel({
         {canEdit && (
           <div className="space-y-1.5 rounded-lg border border-primary/20 bg-primary/[0.04] p-2">
             <p className="text-[10px] font-medium text-muted-foreground">圈一段（管理员）</p>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              按目录圈出来的区间会先显示成「段 a–b」，解析把层级压平的时候它对不上本章末尾，在弹窗里直接改那两个数字即可。
+            </p>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-7 w-full justify-between gap-1 text-[11px]">
@@ -345,7 +408,7 @@ export function KpScopePanel({
                 <span className="min-w-0 flex-1 truncate text-[11px]" title={scope.kp}>{scope.kp}</span>
                 <button
                   type="button"
-                  onClick={() => onLocate(scope.blockFrom)}
+                  onClick={() => jumpTo(scope)}
                   className="shrink-0 text-[10px] text-primary hover:underline"
                 >
                   看这段
@@ -373,8 +436,8 @@ export function KpScopePanel({
       {activeRange && (
         <KpScopeDialog
           documentId={documentId}
+          blocks={blocks}
           range={activeRange}
-          endsAtDocumentEnd={blocks.length > 0 && activeRange.blockTo === blocks[blocks.length - 1].blockIndex}
           scopes={scopes}
           onClose={closeDialog}
           onSaved={onChanged}

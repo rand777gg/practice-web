@@ -6,55 +6,28 @@
  * 同一个写法), 而一次反查最多也就几十行。
  */
 import { supabase } from '@/lib/supabase'
-import type { ResourceKpScope, ResourceKpScopeDraft } from '@/lib/resource-kp-scopes'
+import { scopeFromRow, type KpScopeRow, type ResourceKpScope, type ResourceKpScopeDraft } from '@/lib/resource-kp-scopes'
 
 const SCOPE_COLUMNS = [
   'id', 'document_id', 'subject', 'kp', 'block_from', 'block_to',
   'page_from', 'page_to', 'toc_title', 'toc_level', 'note', 'created_at',
 ].join(', ')
 
-interface RawScopeRow {
-  id: string
-  document_id: string
-  subject: string
-  kp: string
-  block_from: number
-  block_to: number
-  page_from: number
-  page_to: number
-  toc_title: string
-  toc_level: number
-  note: string
-  created_at: string
-}
-
-function toScope(row: RawScopeRow, title: string): ResourceKpScope {
-  return {
-    id: row.id,
-    documentId: row.document_id,
-    documentTitle: title,
-    subject: row.subject,
-    kp: row.kp,
-    blockFrom: row.block_from,
-    blockTo: row.block_to,
-    pageFrom: row.page_from,
-    pageTo: row.page_to,
-    tocTitle: row.toc_title,
-    tocLevel: row.toc_level,
-    note: row.note,
-    createdAt: row.created_at,
-  }
-}
-
-/** 给一批范围补上文献标题(查不到的按"已下线"处理, 不丢这一行) */
-async function withTitles(rows: RawScopeRow[]): Promise<ResourceKpScope[]> {
+/**
+ * 给一批范围补上文献标题(查不到的按"已下线"处理, 不丢这一行)。
+ *
+ * **每个读函数都必须以它收口**: 行 → 对象只有这一条路。曾经图省事写过
+ * `return (data ?? []) as unknown as ResourceKpScope[]`, 页面上就印出"第 undefined 页"、
+ * 点"看这段"跳不动 —— 而 tsc 不报错。所以这里不再留任何 `as ResourceKpScope` 的口子。
+ */
+async function withTitles(rows: KpScopeRow[]): Promise<ResourceKpScope[]> {
   const ids = [...new Set(rows.map((r) => r.document_id))]
   const titles = new Map<string, string>()
   if (ids.length > 0) {
     const { data } = await supabase.from('resource_documents').select('id, title').in('id', ids)
     for (const d of (data ?? []) as { id: string; title: string }[]) titles.set(d.id, d.title)
   }
-  return rows.map((r) => toScope(r, titles.get(r.document_id) ?? '（文献已下线）'))
+  return rows.map((r) => scopeFromRow(r, titles.get(r.document_id) ?? '（文献已下线）'))
 }
 
 /** 这一篇里圈出来的范围(阅读页那一栏; 全体登录用户都能读) */
@@ -66,7 +39,8 @@ export async function listDocumentScopes(documentId: string): Promise<ResourceKp
     .eq('document_id', documentId)
     .order('block_from', { ascending: true })
   if (error) throw new Error(`加载知识点范围失败: ${error.message}`)
-  return (data ?? []) as unknown as ResourceKpScope[]
+  // 单篇列表用不上标题(就在这一篇里), 但映射必须走同一个收口
+  return (data ?? []).map((row) => scopeFromRow(row as unknown as KpScopeRow))
 }
 
 /** 这个知识点的材料都在哪几篇哪几段 —— 知识点解读、专题、路线图都走这一条 */
@@ -79,7 +53,7 @@ export async function listKpScopes(subject: string, kp: string): Promise<Resourc
     .eq('kp', kp)
     .order('page_from', { ascending: true })
   if (error) throw new Error(`加载知识点材料范围失败: ${error.message}`)
-  return withTitles((data ?? []) as unknown as RawScopeRow[])
+  return withTitles((data ?? []) as unknown as KpScopeRow[])
 }
 
 /** 一个学科下所有知识点的范围(专题页按学科列材料时用) */
@@ -93,7 +67,7 @@ export async function listSubjectScopes(subject: string, limit = 200): Promise<R
     .order('page_from', { ascending: true })
     .limit(limit)
   if (error) throw new Error(`加载学科材料范围失败: ${error.message}`)
-  return withTitles((data ?? []) as unknown as RawScopeRow[])
+  return withTitles((data ?? []) as unknown as KpScopeRow[])
 }
 
 /**
@@ -117,7 +91,7 @@ export async function listScopesForSubjectKps(
   if (error) throw new Error(`加载知识点材料范围失败: ${error.message}`)
 
   const wanted = new Set(pairs.map((p) => `${p.subject}\u0000${p.kp}`))
-  const rows = ((data ?? []) as unknown as RawScopeRow[])
+  const rows = ((data ?? []) as unknown as KpScopeRow[])
     .filter((r) => wanted.has(`${r.subject}\u0000${r.kp}`))
   return withTitles(rows)
 }

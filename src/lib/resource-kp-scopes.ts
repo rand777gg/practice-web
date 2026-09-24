@@ -39,6 +39,48 @@ export interface ResourceKpScope {
  */
 export type ResourceKpScopeDraft = Omit<ResourceKpScope, 'id' | 'createdAt' | 'documentTitle'>
 
+/**
+ * 库里那一行的形状。
+ *
+ * 手写而不是从生成的 Database 类型里取: 这一层是**唯一的边界**, 写清楚才看得出哪些字段是
+ * snake_case。踩过的坑 —— 读的时候图省事写 `data as ResourceKpScope[]`, 于是 `page_from`
+ * 原样留在对象上: 页面上印出"第 undefined 页", 点"看这段"拿到 undefined 跳不动, 而
+ * TypeScript 一点都不拦(那是 `as` 出来的)。所以**每次从库里读都必须过 scopeFromRow**。
+ */
+export interface KpScopeRow {
+  id: string
+  document_id: string
+  subject: string
+  kp: string
+  block_from: number
+  block_to: number
+  page_from: number
+  page_to: number
+  toc_title: string
+  toc_level: number
+  note: string
+  created_at: string
+}
+
+/** 行 → 前端对象; documentTitle 由调用方按 document_id 补(单篇列表里留空串) */
+export function scopeFromRow(row: KpScopeRow, documentTitle = ''): ResourceKpScope {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    documentTitle,
+    subject: row.subject,
+    kp: row.kp,
+    blockFrom: row.block_from,
+    blockTo: row.block_to,
+    pageFrom: row.page_from,
+    pageTo: row.page_to,
+    tocTitle: row.toc_title,
+    tocLevel: row.toc_level,
+    note: row.note,
+    createdAt: row.created_at,
+  }
+}
+
 /** 圈一节(到下一个目录项) 还是连它下面的子节一起圈(到下一个同级/更高级目录项) */
 export type ScopeSpan = 'section' | 'subtree'
 
@@ -157,9 +199,11 @@ export function scopeAnchor(scope: Pick<ResourceKpScope, 'documentId' | 'blockFr
 
 /** 页码区间文案: "第 74-90 页" / "第 12 页" */
 export function scopePages(scope: Pick<ResourceKpScope, 'pageFrom' | 'pageTo'>): string {
-  return scope.pageTo > scope.pageFrom
-    ? `第 ${scope.pageFrom}-${scope.pageTo} 页`
-    : `第 ${scope.pageFrom} 页`
+  const from = Number(scope.pageFrom)
+  const to = Number(scope.pageTo)
+  // 页码没带出来时(比如库里读出来的行字段名对不上)不要印"第 undefined 页": 那是让人查半天的假象
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return '页码未知'
+  return to > from ? `第 ${from}-${to} 页` : `第 ${from} 页`
 }
 
 /** 清单里的一行: 页码 + 圈的时候用的那条目录项 */
