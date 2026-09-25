@@ -370,29 +370,58 @@ export async function deleteRouteStage(stageId: string, options: QueryOptions = 
 }
 
 /**
- * 按传入的 id 顺序覆盖 position。
+ * 两段式重排：先把所有受影响的行挪到负数区间，再写目标位置。
  *
- * 这是一串逐行 update，不是事务：中途失败会留下半新半旧的顺序，没有任何回滚。
- * 而且两表都有 UNIQUE(route_id/stage_id, position)，交换两行时后写的那条会撞约束
- * （先写的那条已经把目标位占了）。要真正可靠得走一次 RPC 或先整体挪到临时偏移位，
- * 这个限制目前没有任何地方跟踪。
+ * 为什么不能直接按目标位置逐行写：两表都有 UNIQUE(route_id/stage_id, position)，
+ * 而 Postgres 的唯一约束默认是按语句检查的（不是 DEFERRABLE）。把第 1 位移到第 2 位时第 2 位
+ * 还占着，直接撞约束 —— 也就是说"交换相邻两项"这个最常见的操作本来就必然失败，
+ * 旧代码把返回的 error 丢掉了，所以界面上看起来"拖了但顺序没变"。
+ *
+ * 负数区间与目标区间（0..n-1）不相交，两段之间不会互相冲突。中途失败会留下负 position
+ * 的中间态：重新调用一次即可修好（第一段会把它们再挪一遍）。这比静默半新半旧可接受得多。
  */
+const TEMP_POSITION_BASE = -1_000_000
+
+async function reorderPositions(
+  ids: string[],
+  setPosition: (id: string, position: number) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < ids.length; i++) await setPosition(ids[i], TEMP_POSITION_BASE - i)
+  for (let i = 0; i < ids.length; i++) await setPosition(ids[i], i)
+}
+
+/**
+ * 把「要排在前面的 id」与「该父级下其余的 id」拼成一份完整顺序。
+ *
+ * 为什么要拼：route editor 会在同一次保存里先 insert 再重排，而刚插入的行还没进它的
+ * working 状态，于是传进来的只是部分列表。只重排这部分的话，第二段会去占 0..n-1，
+ * 而没列出的行正占着这些位置 —— 又是唯一约束冲突。旧代码这里同样失败，只是错误被吞了。
+ * 未列出的行按它们原本次序接在后面，与"新加的排在最后"这一既有结果一致。
+ */
+function mergeOrder(preferred: string[], existingOrderedIds: string[]): string[] {
+  const listed = new Set(preferred)
+  return [...preferred, ...existingOrderedIds.filter((id) => !listed.has(id))]
+}
+
+/** 按传入的 id 顺序覆盖 position（两段式 + 补齐未列出的行，见上面两个注释） */
 export async function reorderRouteStages(
   routeId: string,
   orderedStageIds: string[],
   options: QueryOptions = {},
 ): Promise<void> {
-  for (let i = 0; i < orderedStageIds.length; i++) {
+  const existing = await listRouteStages(routeId, options)
+  const finalOrder = mergeOrder(orderedStageIds, existing.map((s) => s.id))
+  await reorderPositions(finalOrder, async (id, position) => {
     const base = db
       .from('learning_route_stages')
-      .update({ position: i })
+      .update({ position })
       .eq('route_id', routeId)
-      .eq('id', orderedStageIds[i])
+      .eq('id', id)
     await run(
       () => (options.signal ? base.abortSignal(options.signal) : base),
       { ...options, context: options.context ?? 'learningRoutes.reorderStages' },
     )
-  }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -518,15 +547,17 @@ export async function reorderRouteQuestions(
   orderedItemIds: string[],
   options: QueryOptions = {},
 ): Promise<void> {
-  for (let i = 0; i < orderedItemIds.length; i++) {
+  const existing = await listStageQuestionItems(stageId, options)
+  const finalOrder = mergeOrder(orderedItemIds, existing.map((it) => it.id))
+  await reorderPositions(finalOrder, async (id, position) => {
     const base = db
       .from('learning_route_questions')
-      .update({ position: i })
+      .update({ position })
       .eq('stage_id', stageId)
-      .eq('id', orderedItemIds[i])
+      .eq('id', id)
     await run(
       () => (options.signal ? base.abortSignal(options.signal) : base),
       { ...options, context: options.context ?? 'learningRoutes.reorderQuestions' },
     )
-  }
+  })
 }
