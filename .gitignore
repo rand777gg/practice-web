@@ -15,6 +15,9 @@ dev-dist
 
 # Environment variables (contains secrets)
 .env
+.env.bak-*
+.env.local
+.env.*.local
 
 # Claude
 .claude
