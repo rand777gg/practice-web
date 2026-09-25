@@ -59,8 +59,13 @@ export function usePracticeQuestion(options: Options = {}) {
     return true
   }, [genRef])
 
-  const setQuestion = useCallback((q: Question | null) => {
-    // null 表示"清掉当前题"；有值则是原地替换（例如切换"已验证"）
+  /** 顺序刷题路径用：过期判定由它自己的计数器负责，这里只落状态 */
+  const applyLoaded = useCallback((question: Question, stats: QuestionAnswerStats | null) => {
+    dispatch({ type: 'load/apply', question, stats })
+    persistRef.current?.(question)
+  }, [])
+
+  const setQuestion = useCallback((q: Question | null) => {    // null 表示"清掉当前题"；有值则是原地替换（例如切换"已验证"）
     if (q) {
       dispatch({ type: 'question/replace', question: q })
       persistRef.current?.(q)
@@ -107,9 +112,10 @@ export function usePracticeQuestion(options: Options = {}) {
     isStale,
     hydrate,
     clearAnswer,
+    applyLoaded,
   }), [
     state, setQuestion, setSelectedAnswer, setIsSubmitted, setAnswerId, setNote, setIsPublic,
-    setAttemptCount, setWrongCount, beginLoad, isStale, hydrate, clearAnswer,
+    setAttemptCount, setWrongCount, beginLoad, isStale, hydrate, clearAnswer, applyLoaded,
   ])
 }
 

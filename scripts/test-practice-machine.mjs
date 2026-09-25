@@ -98,6 +98,26 @@ try {
     assert.equal(bare.isPublic, false)
   })
 
+  check('load/apply 不做过期判定，但走同一条"换题 + 搬统计 + 清作答"规则', () => {
+    // 顺序刷题路径自己判过期，所以这里即便 loadId 对不上也必须落状态
+    const s = reduce(init, { type: 'load/begin' })
+    const applied = reduce(s, { type: 'load/apply', question: q('seq-1'), stats: stats() })
+    assert.equal(applied.question.id, 'seq-1')
+    assert.equal(applied.attempts, 3)
+    assert.equal(applied.wrongs, 1)
+    assert.equal(applied.note, '笔记')
+    assert.equal(applied.isPublic, true)
+    assert.equal(applied.selectedAnswer, null, '换题要清掉上一题的作答')
+    assert.equal(applied.submitted, false)
+  })
+
+  check('load/apply 与 load/hydrate 的落状态结果一致', () => {
+    const base = reduce(init, { type: 'load/begin' })
+    const viaHydrate = reduce(base, { type: 'load/hydrate', loadId: base.loadId, question: q('x'), stats: stats() })
+    const viaApply = reduce(base, { type: 'load/apply', question: q('x'), stats: stats() })
+    assert.deepEqual(viaApply, viaHydrate)
+  })
+
   // ── 过期响应：这次改造的核心规则 ──
   check('过期的 load/hydrate 被整条丢弃（不会把上一道题的结果写到新题上）', () => {
     const s1 = reduce(init, { type: 'load/begin' })

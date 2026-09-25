@@ -186,7 +186,7 @@ export function PracticeSession() {
   const {
     question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount,
     setQuestion, setSelectedAnswer, setIsSubmitted, setAnswerId, setNote, setIsPublic,
-    setAttemptCount, setWrongCount, beginLoad, isStale, hydrate, clearAnswer,
+    setAttemptCount, setWrongCount, beginLoad, isStale, hydrate, clearAnswer, applyLoaded,
   } = usePracticeQuestion({
     generation: fetchGenRef,
     // 首屏先把上次看的那道题显示出来，等新的到了再换 —— 这正是 hydrate 不提前清题目的原因
@@ -743,14 +743,10 @@ export function PracticeSession() {
     if (snap.question && questionMode !== 'sequential') {
       historyRef.current.push({ question: snap.question, answer: snap.answer, submitted: snap.submitted, note: snap.note, isPublic: snap.isPublic, answerId: snap.answerId, attempts: snap.attempts, wrongs: snap.wrongs })
     }
-    fetchGenRef.current++
-    const myGen = fetchGenRef.current
+    const myGen = beginLoad()
 
     setIsLoading(true)
     setQuestionReady(false)
-    setSelectedAnswer(null)
-    setIsSubmitted(false)
-    setAnswerId(null)
     setNoQuestions(false)
 
     const currentUser = useAuthStore.getState().user
@@ -762,7 +758,7 @@ export function PracticeSession() {
     if (currentUser && questionScope === 'favorites') {
       try {
         const favRows = (await fetchFavoritesWithQuestion(currentUser.id, 200)).filter((r): r is FavoriteWithQuestion & { question: QuestionMeta } => r.question !== null)
-        if (fetchGenRef.current !== myGen) return
+        if (isStale(myGen)) return
         if (favRows.length) {
           let filtered = favRows
           if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
@@ -795,7 +791,7 @@ export function PracticeSession() {
           fetchWrongAnswers(currentUser.id, 500),
           fetchFavoritesWithQuestion(currentUser.id, 500),
         ])
-        if (fetchGenRef.current !== myGen) return
+        if (isStale(myGen)) return
         for (const r of wrongRows) {
           if (r.question && inWindow(r.question.subject, r.answered_at) && !byId.has(r.question_id)) byId.set(r.question_id, { question_id: r.question_id, question: r.question })
         }
@@ -819,7 +815,7 @@ export function PracticeSession() {
     if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
       try {
         const wrongRows = (await fetchWrongAnswers(currentUser.id, 200)).filter((r): r is AnswerWithQuestionMeta & { question: QuestionMeta } => r.question !== null)
-        if (fetchGenRef.current !== myGen) return
+        if (isStale(myGen)) return
         if (wrongRows.length) {
           let filtered = wrongRows
           if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
@@ -842,14 +838,14 @@ export function PracticeSession() {
         p_categories: selectedCategory ? [selectedCategory] : undefined,
         p_question_type: selectedType || undefined,
       })
-      if (fetchGenRef.current !== myGen) return
+      if (isStale(myGen)) return
 
       if (!rpcErr && rpcId) {
         pickedId = rpcId
       }
     }
 
-    if (fetchGenRef.current !== myGen) return
+    if (isStale(myGen)) return
 
     // Offline fallback: try IndexedDB prefetched questions
     if (!pickedId) {
@@ -877,7 +873,7 @@ export function PracticeSession() {
     } catch (e) {
       logError('practice.fetchRandomQuestion', e)
     }
-    if (fetchGenRef.current !== myGen) return
+    if (isStale(myGen)) return
     const q = loaded?.[0] ?? null
     const stats = loaded?.[1] ?? null
 
@@ -890,7 +886,7 @@ export function PracticeSession() {
     }
 
     if (!q) {
-      if (fetchGenRef.current !== myGen) return
+      if (isStale(myGen)) return
       const localQ = await getPrefetchedQuestion(pickedId)
       if (localQ) {
         setQuestion(localQ as Question)
@@ -903,21 +899,19 @@ export function PracticeSession() {
     }
 
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-    if (fetchGenRef.current !== myGen) return
+    if (isStale(myGen)) return
 
-    setQuestion(q)
-    setAttemptCount(stats?.attempts ?? 0)
-    setWrongCount(stats?.wrongs ?? 0)
-    setNote(stats?.note ?? '')
-    setIsPublic(stats?.is_public ?? false)
+    hydrate(myGen, q, stats)
 
     setIsLoading(false)
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-    if (fetchGenRef.current !== myGen) return
+    if (isStale(myGen)) return
     setQuestionReady(true)
-  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, releasePinned])
+  }, [selectedSubjects, selectedCategory, selectedType, selectedKeyPoint, planSubjectSet, questionMode, questionScope, releasePinned, beginLoad, isStale, hydrate])
 
   const seqFetchGenRef = useRef(0)
+  /** 顺序刷题那条路径有自己的计数器（它还要管 preloadNext），过期判定也收成一个函数 */
+  const isSeqStale = useCallback((gen: number) => seqFetchGenRef.current !== gen, [])
   const preloadRef = useRef<{ index: number; question: Question; attempts: number; wrongs: number; note: string; isPublic: boolean } | null>(null)
 
   const preloadNext = useCallback(async (nextIdx: number, ids: string[], myGen: number) => {
@@ -932,7 +926,7 @@ export function PracticeSession() {
     } catch (e) {
       logError('practice.preloadNext', e)
     }
-    if (seqFetchGenRef.current !== myGen) return
+    if (isSeqStale(myGen)) return
     const q = loaded?.[0] ?? null
     const stats = loaded?.[1] ?? null
     if (!q) return
@@ -972,15 +966,17 @@ export function PracticeSession() {
     if (rpcPreloaded?.question && index === useSequentialStore.getState().currentIndex) {
       setIsLoading(true); setQuestionReady(false); clearAnswer(); setNoQuestions(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-      if (seqFetchGenRef.current !== myGen) return
-      setQuestion(rpcPreloaded.question as unknown as Question)
-      setAttemptCount(rpcPreloaded.stats?.total ?? 0)
-      setWrongCount(rpcPreloaded.stats?.wrong ?? 0)
-      setNote(rpcPreloaded.stats?.note ?? '')
-      setIsPublic(rpcPreloaded.stats?.isPublic ?? false)
+      if (isSeqStale(myGen)) return
+      // load_practice_session 的预取统计是 total/wrong/isPublic 这套名字，换算成领域形状再落状态
+      applyLoaded(rpcPreloaded.question as unknown as Question, {
+        attempts: rpcPreloaded.stats?.total ?? 0,
+        wrongs: rpcPreloaded.stats?.wrong ?? 0,
+        note: rpcPreloaded.stats?.note ?? '',
+        is_public: rpcPreloaded.stats?.isPublic ?? false,
+      })
       setIsLoading(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-      if (seqFetchGenRef.current !== myGen) return
+      if (isSeqStale(myGen)) return
       setQuestionReady(true)
       preloadNext(index + 1, ids, myGen)
       return
@@ -992,15 +988,16 @@ export function PracticeSession() {
       preloadRef.current = null
       setIsLoading(true); setQuestionReady(false); clearAnswer(); setNoQuestions(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-      if (seqFetchGenRef.current !== myGen) return
-      setQuestion(preloaded.question)
-      setAttemptCount(preloaded.attempts)
-      setWrongCount(preloaded.wrongs)
-      setNote(preloaded.note)
-      setIsPublic(preloaded.isPublic)
+      if (isSeqStale(myGen)) return
+      applyLoaded(preloaded.question, {
+        attempts: preloaded.attempts,
+        wrongs: preloaded.wrongs,
+        note: preloaded.note,
+        is_public: preloaded.isPublic,
+      })
       setIsLoading(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-      if (seqFetchGenRef.current !== myGen) return
+      if (isSeqStale(myGen)) return
       setQuestionReady(true)
       preloadNext(index + 1, ids, myGen)
       return
@@ -1016,10 +1013,10 @@ export function PracticeSession() {
       } catch (e) {
         logError('practice.loadSequentialQuestion', e)
       }
-      if (seqFetchGenRef.current !== myGen) return
+      if (isSeqStale(myGen)) return
       if (!q) { setNoQuestions(true); setIsLoading(false); return }
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-      if (seqFetchGenRef.current !== myGen) return
+      if (isSeqStale(myGen)) return
       setQuestion(q)
       setSelectedAnswer(cached.answer)
       setIsSubmitted(true)
@@ -1030,7 +1027,7 @@ export function PracticeSession() {
       setWrongCount(cached.wrongs)
       setIsLoading(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-      if (seqFetchGenRef.current !== myGen) return
+      if (isSeqStale(myGen)) return
       setQuestionReady(true)
       preloadNext(index + 1, ids, myGen)
       return
@@ -1046,23 +1043,21 @@ export function PracticeSession() {
     } catch (e) {
       logError('practice.loadSequentialQuestion', e)
     }
-    if (seqFetchGenRef.current !== myGen) return
+    if (isSeqStale(myGen)) return
     const q = loaded?.[0] ?? null
     const stats = loaded?.[1] ?? null
     if (!q) { setNoQuestions(true); setIsLoading(false); return }
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-    if (seqFetchGenRef.current !== myGen) return
-    setQuestion(q)
-    setAttemptCount(stats?.attempts ?? 0); setWrongCount(stats?.wrongs ?? 0)
-    setNote(stats?.note ?? ''); setIsPublic(stats?.is_public ?? false)
+    if (isSeqStale(myGen)) return
+    applyLoaded(q, stats)
     setIsLoading(false)
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-    if (seqFetchGenRef.current !== myGen) return
+    if (isSeqStale(myGen)) return
     setQuestionReady(true)
 
     // Preload next question in background
     preloadNext(index + 1, ids, myGen)
-  }, [preloadNext, releasePinned])
+  }, [preloadNext, releasePinned, applyLoaded, isSeqStale])
 
   const switchToSubject = useCallback((block: { subject: string; start: number; end: number; count: number }) => {
     if (currentSubject) { subjectPosRef.current[currentSubject] = seqIndex; saveSubjectPos() }

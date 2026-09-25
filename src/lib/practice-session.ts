@@ -56,6 +56,12 @@ export type PracticeQuestionAction =
   | { type: 'load/begin' }
   /** 响应回来了；`loadId` 与当前不一致则忽略 */
   | { type: 'load/hydrate'; loadId: number; question: Question; stats: QuestionAnswerStats | null }
+  /**
+   * 落一道新题但不做过期判定。顺序刷题那条路径自己管着过期号（`seqFetchGenRef`），
+   * 它的"这次响应还算不算数"由调用方先判过；这里只复用"换题 + 搬统计 + 清作答"这条规则，
+   * 免得那条路径又把这四件事手写一遍。
+   */
+  | { type: 'load/apply'; question: Question; stats: QuestionAnswerStats | null }
   | { type: 'answer/select'; answer: CorrectAnswer | null }
   /** 只落 id：提交后先拿到行 id、再标记交卷，两步顺序不能合并 */
   | { type: 'answer/id'; answerId: string | null }
@@ -77,6 +83,25 @@ function clearAnswer(state: PracticeQuestionState): PracticeQuestionState {
   return { ...state, selectedAnswer: null, submitted: false, answerId: null }
 }
 
+/** 换题 + 搬统计 + 清作答：`load/hydrate` 与 `load/apply` 共用这一条规则 */
+function applyLoadedQuestion(
+  state: PracticeQuestionState,
+  question: Question,
+  stats: QuestionAnswerStats | null,
+): PracticeQuestionState {
+  return {
+    ...state,
+    question,
+    selectedAnswer: null,
+    submitted: false,
+    answerId: null,
+    attempts: stats?.attempts ?? 0,
+    wrongs: stats?.wrongs ?? 0,
+    note: stats?.note ?? '',
+    isPublic: stats?.is_public ?? false,
+  }
+}
+
 /** 过期响应的唯一判据：这次响应对应的 loadId 已经不是最新的了 */
 export function staleResponse(state: PracticeQuestionState, loadId: number): boolean {
   return state.loadId !== loadId
@@ -92,17 +117,10 @@ export function practiceQuestionReducer(
 
     case 'load/hydrate':
       if (staleResponse(state, action.loadId)) return state
-      return {
-        ...state,
-        question: action.question,
-        selectedAnswer: null,
-        submitted: false,
-        answerId: null,
-        attempts: action.stats?.attempts ?? 0,
-        wrongs: action.stats?.wrongs ?? 0,
-        note: action.stats?.note ?? '',
-        isPublic: action.stats?.is_public ?? false,
-      }
+      return applyLoadedQuestion(state, action.question, action.stats)
+
+    case 'load/apply':
+      return applyLoadedQuestion(state, action.question, action.stats)
 
     case 'answer/select':
       // 已交卷就锁住：这不是"界面不该响应"，而是这份状态的规则 —— 交卷后选项必须保持不变
