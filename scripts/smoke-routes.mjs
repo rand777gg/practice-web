@@ -90,7 +90,15 @@ function fakeJwt(sub) {
 
 const USER_ID = '00000000-0000-0000-0000-0000000000aa'
 
-/** verify-totp 的 status 响应：不要求二次验证、已引导完毕，好让 OtpGuard 放行；role 给 admin 才进得了 /admin */
+/**
+ * verify-totp 的 status 响应。
+ *
+ * 两个字段必须一起看：
+ *   · `availableMethods` 至少给一个方法且 `needsMfa: false` —— 否则 OtpGuard 会因为
+ *     "admin 必须配 2FA" 把整个应用跳到 /guide（我第一版就是这么写的，而当时的假象是
+ *     它其实一直在重试、页面还能渲染，所以没暴露）；
+ *   · `role: 'admin'` 与 profiles 那份资料保持一致，/admin/* 才进得去。
+ */
 const MFA_STATUS = {
   needsMfa: false,
   sessionVerified: true,
@@ -100,7 +108,7 @@ const MFA_STATUS = {
   validityDays: 7,
   onboarded: true,
   role: 'admin',
-  availableMethods: { passkey: false, totp: false, recovery: false },
+  availableMethods: { passkey: true, totp: true, recovery: true },
 }
 
 /**
@@ -151,6 +159,20 @@ const json = (route, body, status = 200, headers = {}) =>
 const CONTENT_PROBES = [
   { url: '/practice?mode=random', expect: '冒烟测试题', why: '练习页随机模式要真的把题目渲染出来（状态机 hydrate 的结果）' },
 ]
+
+/**
+ * 交互式断言：选题 → 交卷 → 结果。
+ *
+ * 只断言"题目渲染出来了"覆盖不到交卷那一半：`answer/select` 被交卷锁住、`answer/id` 与
+ * `answer/submitted` 两步顺序、以及判分（isAnswerCorrect）走没走通，都在这之后。
+ * 点的是**正确**选项（fixture 的 correct_answer = 1，即选项 B='7'），所以交卷后题卡上会同时出现
+ * 「正确」标记与「下一题」按钮 —— 前者证明判分结果被渲染，后者证明 `isSubmitted` 真的翻了。
+ *
+ * 名字用正则而不是字面量：选项按钮是 `<span>B</span><span>7</span>` 两个相邻内联元素，
+ * JSX 会把它们之间的空白去掉，所以**可访问名是 "B7"**，而 innerText 看起来是 "B 7"。
+ * 按 "B 7" 精确匹配会一直超时（我试过）。
+ */
+const SUBMIT_FLOW = { url: '/practice?mode=random', optionName: /^B\s*7$/, optionLabel: 'B 7' }
 
 /**
  * 喂了畸形 plan_subjects 时，练习页**正确地**停在"尚未设置学习计划"，不会挑题 ——
@@ -244,6 +266,19 @@ async function installStubs(context) {
     }))
   }, { userId: USER_ID, jwt: fakeJwt(USER_ID) })
 
+  /*
+   * 注意顺序：Playwright 的路由是「后注册的先匹配」，所以通配要写在前面、具体路径写在后面。
+   * 反过来的话通配会把 verify-totp 吃掉 —— 那正是我踩过的坑：MFA 状态接口一直返回 {}，
+   * "mfa status malformed" 让 OtpGuard 进入重试，而每条路由只等 1.2s，恰好落在重试窗口里，
+   * 于是"56 条路由都渲染出内容"看起来全对，实际上 4.5 秒后整个应用会被 MFA 门禁盖住。
+   * （这段注释里不能出现星号加斜杠，会提前结束块注释 —— 也是踩过的。）
+   */
+  await context.route('**/functions/v1/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
+
+  await context.route('**/functions/v1/verify-totp', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MFA_STATUS) }))
+
   await context.route('**/auth/v1/**', (route) => {
     const url = route.request().url()
     if (url.includes('/user')) {
@@ -252,12 +287,6 @@ async function installStubs(context) {
     if (url.includes('/logout')) return route.fulfill({ status: 204, body: '' })
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   })
-
-  await context.route('**/functions/v1/verify-totp', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MFA_STATUS) }))
-
-  await context.route('**/functions/v1/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
 
   // 表查询：profiles 给一份真资料（否则 /admin/* 会被弹回仪表盘，"能挂载"就是假的）；
   // questions / question_meta_cache 喂数据好让练习页真的渲染出题目；其余表回空数组
@@ -270,6 +299,11 @@ async function installStubs(context) {
     const req = route.request()
     const url = req.url()
     const wantsObject = (req.headers()['accept'] ?? '').includes('vnd.pgrst.object')
+    // 写入路径几乎都是 `.insert(...).select(...).single()`，必须回一行才走得下去 ——
+    // 回 406 会让 saveAnswer 抛错，交卷那半条链路就测不到了
+    if (req.method() !== 'GET') {
+      return json(route, wantsObject ? { id: 'smoke-row-1' } : [{ id: 'smoke-row-1' }])
+    }
     if (url.includes('/profiles')) return json(route, wantsObject ? PROFILE : [PROFILE])
     if (url.includes('/questions')) return json(route, wantsObject ? QUESTION_ROW : [QUESTION_ROW])
     if (url.includes('/question_meta_cache')) return json(route, wantsObject ? QUESTION_META_CACHE : [QUESTION_META_CACHE])
@@ -354,6 +388,71 @@ try {
       console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 220))}`)
     }
     results.push({ route: `${probe.url} ⇒ ${probe.expect}`, ok, length: body.length, errors: [...currentErrors], note: hit ? '' : '未出现期望内容' })
+  }
+
+  // ── 交互式断言：选题 → 交卷 → 结果 ──
+  if (planSubjectsUsable) {
+    currentErrors = []
+    const label = '选题交卷'
+    try {
+      await page.goto(`${base}${SUBMIT_FLOW.url}`, { waitUntil: 'load', timeout: 30_000 })
+      await page.getByRole('button', { name: SUBMIT_FLOW.optionName }).first().click({ timeout: 10_000 })
+      const submitBtn = page.getByRole('button', { name: '提交' }).first()
+      console.log(`        · 已点选项；交卷按钮文案=「${(await submitBtn.innerText()).replace(/\s+/g, ' ').trim()}」`)
+      await submitBtn.click({ timeout: 10_000 })
+      console.log('        · 已点交卷')
+      await page.waitForTimeout(1200)
+      const body = await page.locator('body').innerText()
+      // 交卷后：提交按钮换成「下一题」，且正确答案上出现「正确」标记
+      const submitGone = !body.includes('提交本题作答')
+      const nextShown = body.includes('下一题')
+      const graded = body.includes('正确')
+      const ok = submitGone && nextShown && graded && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${SUBMIT_FLOW.url} 选题「${SUBMIT_FLOW.optionLabel}」→ 交卷 → 结果`)
+      if (!ok) {
+        console.log(`        提交按钮消失=${submitGone} 出现「下一题」=${nextShown} 出现判分标记=${graded}`)
+        console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
+      }
+      results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok, length: body.length, errors: [...currentErrors], note: ok ? '' : '交卷链路断言未通过' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ ${SUBMIT_FLOW.url} 选题交卷 —— 操作失败: ${msg.slice(0, 160)}`)
+      // 选择器一飘就会超时，而"超时"本身说不出按钮现在叫什么 —— 把候选名字打出来。
+      // 注意 allInnerTexts 是 DOM 顺序，侧边栏按钮排在最前面，所以这里按形状筛选项按钮。
+      try {
+        const names = (await page.getByRole('button').allInnerTexts()).map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean)
+        const optionish = names.filter((n) => /^[A-D]\s/.test(n))
+        console.log(`        按钮总数=${names.length}，形如选项的=${JSON.stringify(optionish.slice(0, 8))}`)
+        // 交卷按钮可能是 disabled（未选中）或者压根没渲染 —— 两种情况要区分开
+        const submitBtn = page.getByRole('button', { name: '提交' })
+        console.log(`        名字含「提交」的按钮数=${await submitBtn.count()}，disabled=${await submitBtn.first().isDisabled().catch(() => 'n/a')}`)
+        if (optionish.length === 0) console.log(`        前 12 个按钮: ${JSON.stringify(names.slice(0, 12))}`)
+      } catch { /* 页面可能已经崩了，忽略 */ }
+      results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
+    }
+  }
+  // ── 守住"看起来渲染了、其实没登录上"这一类假通过 ──
+  // 这一轮就栽在这里：MFA 桩被通配路由吃掉，OtpGuard 一直在重试，每条路由只等 1.2s
+  // 恰好落在重试窗口里 —— 页面渲染得好好的，4.5 秒后却被门禁盖住。所以这里显式断言
+  // 登录态下看不到落地页的 CTA、也看不到门禁的重试按钮。
+  if (planSubjectsUsable) {
+    currentErrors = []
+    const label = '登录态确实建立'
+    try {
+      await page.goto(`${base}/`, { waitUntil: 'load', timeout: 30_000 })
+      await page.waitForTimeout(5000) // 比 OtpGuard 的重试窗口(约 4.5s)长
+      const body = await page.locator('body').innerText()
+      const landingShown = body.includes('免费注册')
+      const gateShown = body.includes('重试') && body.includes('退出')
+      const ok = !landingShown && !gateShown && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} 登录态确实建立（既没被弹回落地页，也没被 MFA 门禁盖住）`)
+      if (!ok) console.log(`        落地页CTA=${landingShown} 门禁=${gateShown}`)
+      results.push({ route: `session ⇒ ${label}`, ok, length: body.length, errors: [...currentErrors], note: ok ? '' : '会话/门禁状态不对' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ 登录态确实建立 —— 失败: ${msg.slice(0, 160)}`)
+      results.push({ route: `session ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
+    }
   }
 } finally {
   await browser.close()
