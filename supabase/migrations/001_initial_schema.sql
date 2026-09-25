@@ -7108,3 +7108,152 @@ AS $function$
   LEFT JOIN dated_agg da ON da.subject = tot.subject
   ORDER BY tot.subject;
 $function$;
+-- ============================================================================
+-- Section 90: 与生产 schema 的逐列对齐（可重放一致性修复）
+-- ----------------------------------------------------------------------------
+-- 背景：001_initial_schema.sql 定位是生产的「可重放快照」。本次用一个空库把
+-- 本文件完整跑一遍，再与生产库做 information_schema 逐列 diff，发现 20 处偏差：
+--   · 缺 13 个列  —— 前端/服务端在用的列，靠重放做灾备会直接报「列不存在」
+--   · 5 处定义不一致 —— 类型 / 默认值 / 可空性
+--   · 1 处迁移超前于生产（exam_schedules.email_send_date）—— 保留，见 90.7
+-- 本 section 全部幂等：已经是从生产 schema.sql 灌出来的库跑它等于无操作。
+-- ============================================================================
+
+-- ---- 90.1 profiles 缺 11 列 ----
+-- 前端「学习计划」相关字段，生产有、本文件漏建。
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS plan_wrong_only     BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS plan_categories     TEXT,
+  ADD COLUMN IF NOT EXISTS plan_key_points     TEXT,
+  ADD COLUMN IF NOT EXISTS plan_targets        TEXT,
+  ADD COLUMN IF NOT EXISTS kp_order_pos        TEXT,
+  ADD COLUMN IF NOT EXISTS last_question_id    TEXT,
+  ADD COLUMN IF NOT EXISTS skip_question_ids   TEXT,
+  ADD COLUMN IF NOT EXISTS show_overall        BOOLEAN,
+  ADD COLUMN IF NOT EXISTS show_overall_date   TEXT,
+  ADD COLUMN IF NOT EXISTS show_long_overall   BOOLEAN,
+  ADD COLUMN IF NOT EXISTS show_custom_overall BOOLEAN;
+
+-- ---- 90.2 parse_history 缺 1 列 ----
+ALTER TABLE public.parse_history
+  ADD COLUMN IF NOT EXISTS display_name TEXT;
+
+-- ---- 90.3 user_answers 缺 1 列 ----
+ALTER TABLE public.user_answers
+  ADD COLUMN IF NOT EXISTS wrong_reason TEXT;
+
+-- ---- 90.4 parse_history.id: SERIAL(integer) -> BIGINT ----
+-- 生产是 BIGINT。本文件用 SERIAL，重放出来的库主键类型与生产不一致。
+-- 没有任何外键引用该列，转换安全。
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'parse_history'
+      AND column_name  = 'id'
+      AND data_type    = 'integer'
+  ) THEN
+    ALTER TABLE public.parse_history ALTER COLUMN id TYPE BIGINT;
+  END IF;
+END $$;
+
+-- ---- 90.5 去掉生产没有的默认值 ----
+-- 生产这 4 列的 column_default 都是 NULL，本文件多给了占位默认值。
+-- 其中 questions.correct_answer 的 '0' 与 Section 78「分析题本来就没有标准答案」
+-- 的意图直接冲突：有默认值就永远不会是 NULL。
+ALTER TABLE public.parse_history ALTER COLUMN file_name       DROP DEFAULT;
+ALTER TABLE public.parse_history ALTER COLUMN markdown        DROP DEFAULT;
+ALTER TABLE public.questions    ALTER COLUMN correct_answer   DROP DEFAULT;
+ALTER TABLE public.user_answers ALTER COLUMN selected_answer  DROP DEFAULT;
+
+-- ---- 90.6 practice_sequential_state.subject_positions 放开 NOT NULL ----
+-- 生产可空（默认 '{}'），且读取侧到处是 COALESCE(subject_positions, '{}')，
+-- 说明代码本来就预期它可能为 NULL。
+ALTER TABLE public.practice_sequential_state
+  ALTER COLUMN subject_positions DROP NOT NULL;
+
+-- ---- 90.7 user_answers 缺唯一约束 ----
+-- 生产有：UNIQUE (user_id, question_id, exam_session_id)，本文件漏建。
+-- 注意：这是「同一场考试里同一道题只允许一条作答记录」的业务约束，不是性能索引。
+-- 表非空且已有重复行时 ADD CONSTRAINT 会失败 —— 那说明生产数据本身有问题，
+-- 应当先查数据而不是跳过约束。
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint co
+    JOIN pg_class c     ON c.oid = co.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'user_answers'
+      AND co.conname = 'user_answers_session_uniq'
+  ) THEN
+    ALTER TABLE public.user_answers
+      ADD CONSTRAINT user_answers_session_uniq
+      UNIQUE (user_id, question_id, exam_session_id);
+  END IF;
+END $$;
+
+-- ---- 90.8 user_answers.wrong_reason 缺 CHECK 约束 ----
+-- 90.3 刚补上 wrong_reason 这一列，生产上与之配套的取值约束也要一起补。
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint co
+    JOIN pg_class c     ON c.oid = co.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'user_answers'
+      AND co.conname = 'user_answers_wrong_reason_check'
+  ) THEN
+    ALTER TABLE public.user_answers
+      ADD CONSTRAINT user_answers_wrong_reason_check
+      CHECK (wrong_reason IS NULL OR wrong_reason = ANY (ARRAY['concept', 'careless', 'misread', 'unlearned']));
+  END IF;
+END $$;
+
+-- ---- 90.9 questions(question_type) 缺索引 ----
+-- 本文件原来建的是 idx_questions_type，随后在「清理重复索引」那一节被 DROP 掉了，
+-- 但那次清理的依据是「它和另一个在用的索引定义完全相同，删掉重复的那个」——
+-- 而那个「在用的」叫 idx_questions_question_type，生产有、本文件从来没有。
+-- 结果就是重放出来的库在 questions(question_type) 上一条索引都不剩。
+-- 这里按生产的名字补回来，保持「只留一条」的清理意图。
+CREATE INDEX IF NOT EXISTS idx_questions_question_type
+  ON public.questions USING btree (question_type);
+
+-- ---- 90.10 生产上残留的旧函数重载（不是本文件的缺口，方向相反）----
+-- 改函数签名时 PostgreSQL 会新建重载而保留旧的，生产因此多出两个永远不会被命中的版本：
+--   public.get_question_meta()                                    ← 已被 (p_subject TEXT DEFAULT NULL) 取代
+--   public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT, TEXT)  ← 已被带 p_ignore_answered 的 6 参数版取代
+-- 二者语义与新版本完全一致（新版本的默认值补齐后行为相同），本文件正确地只保留新版本。
+--
+-- 危害已实测复现（在香港库上直接调 PostgREST RPC）：
+--   传齐具名参数      -> 200，只有一个候选能匹配
+--   少传一个可空参数  -> 300 PGRST203，两个重载同时可匹配
+-- 实测数据：get_question_meta 传 {} 得 300、传 {p_subject:null} 得 200；
+--          start_sequential_session 传 5 个参数得 300、传 6 个参数得 200。
+-- 即这不是理论风险，只要有任何调用方少传一个可选参数就会直接失败。
+--
+-- 香港库已执行清理，清理后上述 4 种调用全部 200：
+--   DROP FUNCTION IF EXISTS public.get_question_meta();
+--   DROP FUNCTION IF EXISTS public.start_sequential_session(UUID, TEXT[], TEXT[], TEXT, TEXT);
+--   NOTIFY pgrst, 'reload schema';
+-- 云上生产库仍有这两个残留（前端每次都传齐参数，所以暂时没暴露），建议一并清理。
+--
+-- 注：get_subject_progress 同样有 4 参数/5 参数两个版本，但**两个都写在本文件里**，
+-- 属于有意的重载设计，不在本次清理范围。前端三个调用点都传了 p_subject_resets，
+-- 因此目前不报错；将来若有调用方只传 4 个参数，会得到同样的 PGRST203。
+
+-- ---- 90.11 已知的「迁移超前」项，故意不动 ----
+-- public.exam_schedules.email_send_date 存在于本文件（Section 28.1）但生产没有，
+-- 属于尚未上线的邮件提醒功能，不是本文件漏建。对齐方向应是把生产补上，
+-- 而不是从本文件删掉。上线该功能时记得同步应用到生产库。
+--
+-- public.rls_auto_enable() 是 Supabase 平台托管的 event trigger 函数：云上和自建的
+-- supabase/postgres 镜像都会在 initdb 阶段把它建进 public，不由本文件创建。
+-- 本文件对它的 REVOKE 已经用 IF EXISTS 守卫 —— 实测在「只跑本文件」的空库上它确实
+-- 不存在（那种场景 public 是空的），在生产库和自建栈上都存在。
+-- 本文件对每张表都显式写了 ENABLE ROW LEVEL SECURITY，不依赖这个平台钩子。
