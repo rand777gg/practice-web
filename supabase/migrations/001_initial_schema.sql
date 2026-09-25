@@ -7770,3 +7770,38 @@ ON CONFLICT (id) DO NOTHING;
 --   可以少一层解释成本。
 -- ============================================================================
 
+-- ============================================================================
+-- Section 100: 离线 Outbox 的服务端幂等键
+-- ----------------------------------------------------------------------------
+-- 背景：客户端的离线队列（src/lib/offline-db.ts）已经给每次作答生成了
+-- client_operation_id，并在 outbox 里按它去重、按错误类型退避重试。但那只解决了
+-- "客户端不重复入队"，解决不了"请求发出去了、响应没回来、服务端其实已经写入"——
+-- 这种情况下重试会多写一条作答，把错误率和计划进度都算多。
+--
+-- 这里补上服务端的去重键。**本节是向后兼容的**：新列可空，部分唯一索引只约束非空值，
+-- 所以旧客户端（不带这一列）继续按原样插入，不会因为这次迁移而失败。
+--
+-- 配套的客户端改动（还没做，等这一列上线后再动，否则插入会报列不存在）：
+--   1. `OutboxOperation.payload` 增加 client_operation_id；
+--   2. `sync-store` 排空时把它一起发给 insertAnswer；
+--   3. **关键**：重复插入会撞唯一索引得到 23505 —— 那意味着"这次操作早就成功了"，
+--      应当按成功处理（从队列里删掉），而不是像现在这样归类成 conflict 停在队列里。
+--      也就是说 `drainOutbox` 里的 conflict 分支要区分"幂等键冲突"和"真正的数据冲突"。
+--
+-- 顺带说明为什么不能直接靠 upsert 去重：考试作答确实可以按
+-- (user_id, question_id, exam_session_id) upsert（services/practice.ts 的 upsertAnswer 就是这么做的），
+-- 但练习模式 intentionally 允许同一道题反复作答并保留每一次记录（错题回顾和遗忘曲线都依赖这个），
+-- 所以练习路径只能新增一列幂等键，不能改唯一约束。
+-- ============================================================================
+ALTER TABLE public.user_answers
+  ADD COLUMN IF NOT EXISTS client_operation_id UUID;
+
+-- 部分唯一索引：只为带键的行保证唯一，既存数据（全为 NULL）不受影响
+CREATE UNIQUE INDEX IF NOT EXISTS user_answers_client_operation_id_key
+  ON public.user_answers (client_operation_id)
+  WHERE client_operation_id IS NOT NULL;
+
+COMMENT ON COLUMN public.user_answers.client_operation_id IS
+  '离线队列的幂等键：同一次用户动作的重试共用一个值，用来让服务端识别"这条已经写过了"';
+
+

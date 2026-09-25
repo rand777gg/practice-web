@@ -3,7 +3,7 @@ import { insertAnswer, updateAnswer, type AnswerUpdate } from '@/services/practi
 import { isAppError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSyncStore } from '@/stores/sync-store'
-import { addPendingAnswer } from '@/lib/offline-db'
+import { enqueueAnswer } from '@/lib/offline-db'
 import { autoIndex } from '@/lib/rag'
 
 /** sequential = 顺序学习(推进计划轮次), random = 复习自由刷 */
@@ -15,60 +15,38 @@ export function useUserAnswers() {
   const refreshPending = useSyncStore((s) => s.refresh)
   const sync = useSyncStore((s) => s.sync)
 
-  // Load initial pending count and auto-sync when coming back online
-  useEffect(() => {
-    refreshPending()
-    const onOnline = () => { sync() }
-    window.addEventListener('online', onOnline)
-    return () => window.removeEventListener('online', onOnline)
-  }, [])
+  // 只负责首屏读一次计数；"网络恢复就同步"由 sync-store 统一挂的触发点负责，
+  // 这里再挂一个 online 监听只会让同一件事有两个触发源
+  useEffect(() => { refreshPending() }, [])
 
   const saveAnswer = useCallback(
     async (questionId: string, selectedAnswer: unknown, isCorrect: boolean, mode: 'practice' | 'exam', examSessionId?: string, source?: AnswerSource) => {
       if (!user) return null
 
-      // Offline: queue to IndexedDB
-      if (!navigator.onLine) {
-        const localId = await addPendingAnswer({
-          user_id: user.id,
-          question_id: questionId,
-          selected_answer: selectedAnswer,
-          is_correct: isCorrect,
-          mode,
-          exam_session_id: examSessionId ?? null,
-          source: source ?? null,
-          answered_at: new Date().toISOString(),
-        })
-        refreshPending()
-        return `local-${localId}`
+      const base = {
+        user_id: user.id,
+        question_id: questionId,
+        selected_answer: selectedAnswer,
+        is_correct: isCorrect,
+        mode,
+        exam_session_id: examSessionId ?? null,
+        source: source ?? null,
+      }
+      // 入队时补上作答时刻 —— 队列里的时间必须停在作答那一刻，不能是最终同步的时刻
+      const queueIt = async () => {
+        const operationId = await enqueueAnswer({ ...base, answered_at: new Date().toISOString() })
+        await refreshPending()
+        return `local-${operationId}`
       }
 
-      // Online: direct Supabase insert
+      if (!navigator.onLine) return queueIt()
+
       try {
-        return await insertAnswer({
-          user_id: user.id,
-          question_id: questionId,
-          selected_answer: selectedAnswer,
-          is_correct: isCorrect,
-          mode,
-          exam_session_id: examSessionId ?? null,
-          source: source ?? null,
-        })
+        return await insertAnswer(base)
       } catch (e) {
         // 只有网络类失败才值得走离线队列: 校验/权限错误重试也没用
         if (!isAppError(e) || e.kind !== 'network') throw e
-        const localId = await addPendingAnswer({
-          user_id: user.id,
-          question_id: questionId,
-          selected_answer: selectedAnswer,
-          is_correct: isCorrect,
-          mode,
-          exam_session_id: examSessionId ?? null,
-          source: source ?? null,
-          answered_at: new Date().toISOString(),
-        })
-        refreshPending()
-        return `local-${localId}`
+        return queueIt()
       }
     },
     [user],

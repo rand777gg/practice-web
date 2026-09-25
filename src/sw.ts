@@ -21,6 +21,23 @@ clientsClaim()
 
 precacheAndRoute(self.__WB_MANIFEST)
 
+/**
+ * Background Sync：浏览器在恢复网络时唤醒我们，这里把页面叫起来去排空离线队列。
+ *
+ * 为什么只是"叫页面"而不是自己在 SW 里发请求：Supabase 的会话在页面的 localStorage 里，
+ * SW 拿不到 JWT，自己发请求必然是未登录。所以这个事件的价值只是"多一次唤醒机会"，
+ * 页面侧的 online 事件才是主路径（见 lib/offline-db.ts 的 installOutboxTriggers）。
+ * Chromium 之外不支持这个 API，注册失败不影响任何功能。
+ */
+self.addEventListener('sync', ((event: Event) => {
+  const syncEvent = event as ExtendableEvent & { tag?: string }
+  if (syncEvent.tag !== 'outbox-drain') return
+  syncEvent.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
+    for (const client of clients) client.postMessage({ type: 'outbox-drain' })
+  })())
+}) as EventListener)
+
 if (!import.meta.env.DEV) {
   cleanupOutdatedCaches()
 

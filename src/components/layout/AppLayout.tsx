@@ -12,6 +12,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useExamStore } from '@/stores/exam-store'
 import { usePromptStore } from '@/stores/prompt-store'
 import { usePluginStore } from '@/stores/plugin-store'
+import { useSyncStore } from '@/stores/sync-store'
 
 /**
  * 可选功能一律按需加载。以前这些是静态 import，于是小Q 面板、考试预约、计划检测、
@@ -50,6 +51,8 @@ export function AppLayout() {
   useEffect(() => {
     void usePromptStore.getState().load()
     void usePluginStore.getState().load()
+    // 离线队列的三个触发点（网络恢复 / 回到前台 / 定时）挂一次；登出时由 store 的 reset 摘掉
+    useSyncStore.getState().start()
   }, [])
 
   return (
