@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { chunkIds } from '@/lib/chunk-ids'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -1095,8 +1096,10 @@ export function PracticeSession() {
       const qids = (kpRows ?? []).map(r => r.question_id)
       let excludedCount = 0
       if (qids.length > 0) {
-        const { count } = await supabase.from('user_excluded_questions').select('question_id', { count: 'exact', head: true }).eq('user_id', user.id).in('question_id', qids)
-        excludedCount = count ?? 0
+        // qids 可能有几百个, 一次性 .in() 会拼出超长 URL(见 chunk-ids.ts), 分批后把计数相加
+        const parts = await Promise.all(chunkIds(qids).map(c =>
+          supabase.from('user_excluded_questions').select('question_id', { count: 'exact', head: true }).eq('user_id', user.id).in('question_id', c)))
+        excludedCount = parts.reduce((sum, p) => sum + (p.count ?? 0), 0)
       }
       if (excludedCount > 0) setExcludedPrompt({ kps, subs, qids, count: excludedCount })
       else await proceedAfterExcluded(kps, subs)

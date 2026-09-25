@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { chunkIds } from '@/lib/chunk-ids'
 import { useAuthStore } from '@/stores/auth-store'
 import type { Question } from '@/types'
 import type {
@@ -162,7 +163,10 @@ export async function fetchLearningRouteDetail(routeId: string): Promise<RouteDe
     for (const l of links) itemStyles[l.question_id] = l.node_style ?? {}
     let questions: Question[] = []
     if (ids.length > 0) {
-      const { data: qRows } = await supabase.from('questions').select('*').in('id', ids)
+      // 一条路线可能挂几百道题, 一次性 .in() 会拼出超长 URL(见 chunk-ids.ts), 必须分批
+      const parts = await Promise.all(chunkIds(ids).map(c =>
+        supabase.from('questions').select('*').in('id', c)))
+      const qRows = parts.flatMap(p => p.data ?? [])
       const byId = new Map((qRows ?? []).map((x: Question) => [x.id, x]))
       questions = ids.map(id => byId.get(id)).filter(Boolean) as Question[]
     }
@@ -281,7 +285,10 @@ export async function fetchRouteStages(routeId: string): Promise<RouteStageWithQ
     for (const l of links) itemStyles[l.question_id] = l.node_style ?? {}
     let questions: Question[] = []
     if (ids.length > 0) {
-      const { data: qRows } = await supabase.from('questions').select('*').in('id', ids)
+      // 一条路线可能挂几百道题, 一次性 .in() 会拼出超长 URL(见 chunk-ids.ts), 必须分批
+      const parts = await Promise.all(chunkIds(ids).map(c =>
+        supabase.from('questions').select('*').in('id', c)))
+      const qRows = parts.flatMap(p => p.data ?? [])
       const byId = new Map((qRows ?? []).map((x: Question) => [x.id, x]))
       questions = ids.map(id => byId.get(id)).filter(Boolean) as Question[]
     }

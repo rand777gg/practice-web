@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
 import { naturalSort } from '@/lib/utils'
+import { chunkIds } from '@/lib/chunk-ids'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -89,11 +90,17 @@ export function Component() {
     async function load() {
       if (favorites.length === 0) { setQuestions([]); setIsLoading(false); return }
       setIsLoading(true)
-      const { data } = await supabase.from('questions').select('*').in('id', favorites)
-      const qs = (data ?? []) as Question[]
+      // 收藏可能上千条, 一次性 .in() 会拼出超长 URL(见 chunk-ids.ts 的说明), 必须分批
+      const [qParts, aParts] = await Promise.all([
+        Promise.all(chunkIds(favorites).map(ids =>
+          supabase.from('questions').select('*').in('id', ids))),
+        Promise.all(chunkIds(favorites).map(ids =>
+          supabase.from('user_answers').select('question_id, selected_answer, is_correct, answered_at, note, id').in('question_id', ids).order('answered_at', { ascending: false }))),
+      ])
+      const qs = qParts.flatMap(p => (p.data ?? []) as Question[])
       const qMap = new Map(qs.map(q => [q.id, q]))
       // Get latest answer for each question
-      const { data: answers } = await supabase.from('user_answers').select('question_id, selected_answer, is_correct, answered_at, note, id').in('question_id', favorites).order('answered_at', { ascending: false })
+      const answers = aParts.flatMap(p => p.data ?? [])
       const latestAnswer = new Map<string, { selected_answer: CorrectAnswer; is_correct: boolean; answered_at: string; note: string | null; id: string }>()
       for (const a of (answers ?? [])) {
         if (!latestAnswer.has(a.question_id)) latestAnswer.set(a.question_id, { selected_answer: a.selected_answer, is_correct: a.is_correct, answered_at: a.answered_at, note: a.note, id: a.id })
