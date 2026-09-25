@@ -63,6 +63,7 @@ import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerT
 
 
 import { useIsMobile } from '@/hooks/use-mobile'
+import { usePracticeQuestion } from '@/hooks/use-practice-question'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -75,6 +76,23 @@ import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
 const PS_FILTERS = 'practice_filters'
+
+// 首屏缓存：进页面先把上次看的那道题显示出来，等新的到了再换（读/写都由状态机在边缘调用）
+const CACHED_QUESTION_KEY = 'lastPracticeQuestion'
+
+function readCachedQuestion(): Question | null {
+  try {
+    const raw = localStorage.getItem(CACHED_QUESTION_KEY)
+    return raw ? (JSON.parse(raw) as Question) : null
+  } catch { return null }
+}
+
+function writeCachedQuestion(q: Question | null): void {
+  try {
+    if (q) localStorage.setItem(CACHED_QUESTION_KEY, JSON.stringify(q))
+    else localStorage.removeItem(CACHED_QUESTION_KEY)
+  } catch { /* 隐私模式下写不进去，不影响使用 */ }
+}
 
 // Module-level KP cache (P3: avoid repeated question_meta_cache queries across mounts)
 let kpCache: { subject: string; keyPoints: string[] }[] | null = null
@@ -162,16 +180,19 @@ export function PracticeSession() {
   const profile = useAuthStore((s) => s.profile)
   const authUser = useAuthStore((s) => s.user)
   const isAdmin = profile?.role === 'admin'
-  // Restore cached question on mount for instant display
-  const [question, setQuestionState] = useState<Question | null>(() => {
-    try { const raw = localStorage.getItem('lastPracticeQuestion'); if (raw) return JSON.parse(raw) as Question; return null } catch { return null }
+  // 题目与作答状态收在状态机里（字段名与 setter 名保持不变，渲染代码不用动）。
+  // fetchGenRef 声明提前到这里：它同时被顺序加载和预取用着，状态机要跟它共用一套"过期号"。
+  const fetchGenRef = useRef(0)
+  const {
+    question, selectedAnswer, isSubmitted, answerId, note, isPublic, attemptCount, wrongCount,
+    setQuestion, setSelectedAnswer, setIsSubmitted, setAnswerId, setNote, setIsPublic,
+    setAttemptCount, setWrongCount, beginLoad, isStale, hydrate, clearAnswer,
+  } = usePracticeQuestion({
+    generation: fetchGenRef,
+    // 首屏先把上次看的那道题显示出来，等新的到了再换 —— 这正是 hydrate 不提前清题目的原因
+    initialQuestion: readCachedQuestion(),
+    onQuestionPersist: writeCachedQuestion,
   })
-  const setQuestion = useCallback((q: Question | null) => {
-    setQuestionState(q)
-    if (q) { try { localStorage.setItem('lastPracticeQuestion', JSON.stringify(q)) } catch {} }
-  }, [])
-  const [selectedAnswer, setSelectedAnswer] = useState<CorrectAnswer | null>(null)
-  const [isSubmitted, setIsSubmitted] = useState(false)
   const [flagDialogOpen, setFlagDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [showSkeleton, setShowSkeleton] = useState(false)
@@ -195,11 +216,6 @@ export function PracticeSession() {
     return () => { if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current) }
   }, [isLoading, question])
   const [noQuestions, setNoQuestions] = useState(false)
-  const [attemptCount, setAttemptCount] = useState(0)
-  const [wrongCount, setWrongCount] = useState(0)
-  const [answerId, setAnswerId] = useState<string | null>(null)
-  const [note, setNote] = useState('')
-  const [isPublic, setIsPublic] = useState(false)
   const { saveAnswer, updateNote } = useUserAnswers()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
@@ -675,7 +691,6 @@ export function PracticeSession() {
     [filteredCategories],
   )
 
-  const fetchGenRef = useRef(0)
   const kpRetryRef = useRef(0)
 
   /**
@@ -695,13 +710,9 @@ export function PracticeSession() {
 
   /** 直接读一道题(不挑、不过滤): 深链专用 */
   const loadPinnedQuestion = useCallback(async (id: string) => {
-    fetchGenRef.current++
-    const myGen = fetchGenRef.current
+    const myGen = beginLoad()
     setIsLoading(true)
     setQuestionReady(false)
-    setSelectedAnswer(null)
-    setIsSubmitted(false)
-    setAnswerId(null)
     setNoQuestions(false)
 
     const currentUser = useAuthStore.getState().user
@@ -714,21 +725,17 @@ export function PracticeSession() {
     } catch (e) {
       logError('practice.loadPinnedQuestion', e)
     }
-    if (fetchGenRef.current !== myGen) return
+    if (isStale(myGen)) return
     const q = loaded?.[0] ?? null
     const stats = loaded?.[1] ?? null
     if (!q) { setNoQuestions(true); setIsLoading(false); return }
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
-    if (fetchGenRef.current !== myGen) return
+    if (isStale(myGen)) return
 
-    setQuestion(q)
-    setAttemptCount(stats?.attempts ?? 0)
-    setWrongCount(stats?.wrongs ?? 0)
-    setNote(stats?.note ?? '')
-    setIsPublic(stats?.is_public ?? false)
+    hydrate(myGen, q, stats)
     setIsLoading(false)
     setQuestionReady(true)
-  }, [])
+  }, [beginLoad, isStale, hydrate])
 
   const fetchRandomQuestion = useCallback(async () => {
     releasePinned()
@@ -963,7 +970,7 @@ export function PracticeSession() {
     // P1: Check for preloaded question from load_practice_session RPC (skip 1 round-trip)
     const rpcPreloaded = useSequentialStore.getState().consumePreloaded()
     if (rpcPreloaded?.question && index === useSequentialStore.getState().currentIndex) {
-      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
+      setIsLoading(true); setQuestionReady(false); clearAnswer(); setNoQuestions(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
       setQuestion(rpcPreloaded.question as unknown as Question)
@@ -983,7 +990,7 @@ export function PracticeSession() {
     const preloaded = preloadRef.current
     if (preloaded && preloaded.index === index) {
       preloadRef.current = null
-      setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
+      setIsLoading(true); setQuestionReady(false); clearAnswer(); setNoQuestions(false)
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
       setQuestion(preloaded.question)
@@ -999,7 +1006,7 @@ export function PracticeSession() {
       return
     }
 
-    setIsLoading(true); setQuestionReady(false); setSelectedAnswer(null); setIsSubmitted(false); setAnswerId(null); setNoQuestions(false)
+    setIsLoading(true); setQuestionReady(false); clearAnswer(); setNoQuestions(false)
 
     const cached = sessionStateRef.current.get(ids[index])
     if (cached) {

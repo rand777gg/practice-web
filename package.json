@@ -9,6 +9,7 @@
     "budget": "node scripts/check-first-screen-budget.mjs",
     "audit:anon": "node scripts/audit-anon-exposure.mjs",
     "check:schema": "node scripts/check-schema-drift.mjs",
+    "test:machine": "node scripts/test-practice-machine.mjs",
     "types:db": "supabase gen types typescript --linked --schema public > src/types/database.ts",
     "lint": "eslint .",
     "preview": "vite preview"
