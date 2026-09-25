@@ -7257,3 +7257,62 @@ CREATE INDEX IF NOT EXISTS idx_questions_question_type
 -- 本文件对它的 REVOKE 已经用 IF EXISTS 守卫 —— 实测在「只跑本文件」的空库上它确实
 -- 不存在（那种场景 public 是空的），在生产库和自建栈上都存在。
 -- 本文件对每张表都显式写了 ENABLE ROW LEVEL SECURITY，不依赖这个平台钩子。
+-- ============================================================================
+-- Section 91: 网络路径对照探针
+-- ----------------------------------------------------------------------------
+-- 背景：实测中国大陆到香港源站直连裸 TCP 只要 52ms，而经 Cloudflare 免费版
+-- 被 anycast 落到美西/欧洲边缘要 272ms，单次 API 调用从 0.17s 变成 1.42s（8.3 倍）。
+-- 但那只是一条电信线路的样本，不足以决定是否把整个 API 切到直连。
+--
+-- 这张表用来收集真实用户浏览器里两条路径的对比数据：
+--   direct_* —— https://api.pguide.dev   （DNS-only 直连香港源站）
+--   cdn_*    —— https://supabase.pguide.dev（经 Cloudflare）
+-- 前端只用它做「只上报不改行为」的测量，切换与否由数据决定。
+--
+-- 写入走 Edge Function net-probe（service_role），前端不直接写这张表。
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.net_probe_samples (
+  id           BIGSERIAL PRIMARY KEY,
+  user_id      UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  -- 两条路径各自的耗时（毫秒）与是否成功
+  direct_ms    NUMERIC,
+  cdn_ms       NUMERIC,
+  direct_ok    BOOLEAN NOT NULL DEFAULT false,
+  cdn_ok       BOOLEAN NOT NULL DEFAULT false,
+
+  -- 采样点信息：CF 边缘机房、网络类型、运营商侧 RTT、连接方式
+  colo         TEXT,
+  conn_type    TEXT,
+  downlink_mbps NUMERIC,
+  client_rtt_ms NUMERIC,
+  save_data    BOOLEAN,
+
+  -- 粗粒度地域与 UA（不做精确 IP 定位，避免存个人信息）
+  region       TEXT,
+  ua           TEXT
+);
+
+COMMENT ON TABLE public.net_probe_samples IS
+  '网络路径对照探针：同一浏览器同一时刻分别打 api.pguide.dev（直连）与 supabase.pguide.dev（经 CF）的耗时对比。只上报不改行为。';
+COMMENT ON COLUMN public.net_probe_samples.colo IS
+  'Cloudflare 边缘机房代码（取自 /cdn-cgi/trace 的 colo=），用于判断用户被调度到了哪个边缘。';
+
+CREATE INDEX IF NOT EXISTS idx_net_probe_created_at ON public.net_probe_samples(created_at DESC);
+
+ALTER TABLE public.net_probe_samples ENABLE ROW LEVEL SECURITY;
+
+-- 只有管理员能读（含聚合分析）
+DROP POLICY IF EXISTS net_probe_admin_read ON public.net_probe_samples;
+CREATE POLICY net_probe_admin_read ON public.net_probe_samples
+  FOR SELECT TO authenticated
+  USING (public.is_admin());
+
+-- 前端不直接写这张表，全部经 Edge Function net-probe（service_role）写入；
+-- 因此这里不给 anon/authenticated 任何 INSERT 权限，避免被刷。
+REVOKE INSERT, UPDATE, DELETE ON public.net_probe_samples FROM anon, authenticated;
+GRANT SELECT ON public.net_probe_samples TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE public.net_probe_samples_id_seq TO service_role;
+GRANT ALL ON public.net_probe_samples TO service_role;
