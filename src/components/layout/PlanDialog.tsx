@@ -49,7 +49,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import type { PlanGoal, PlanRound } from '@/types'
-import { resolveGoals, resolveRounds, newRoundId, addDays, daysBetweenDays, toDateStr, todayStr } from '@/types'
+import { resolveGoals, resolveRounds, newRoundId, addDays, daysBetweenDays, toDateStr, todayStr, getPlanSubjects } from '@/types'
 import {
   buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanStat,
@@ -69,7 +69,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const { t } = useT()
   const { user, profile, refreshProfile } = useAuthStore()
 
-  const savedSubjects = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
+  const savedSubjects = getPlanSubjects(profile)
   const savedRounds = resolveRounds(profile)
   const savedGoals = resolveGoals(profile)
 
@@ -130,7 +130,7 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   }, [open, user, fetchPlanCache, refreshVersion, profile?.plan_reset_at])
 
   useEffect(() => {
-    const s = profile?.plan_subjects ? JSON.parse(profile.plan_subjects) as string[] : []
+    const s = getPlanSubjects(profile)
     setSelectedSubjects(s)
     setGoals(resolveGoals(profile))
     setRounds(resolveRounds(profile))

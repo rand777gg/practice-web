@@ -5,6 +5,7 @@ import { fetchQuestionMetaRows } from '@/services/questions'
 import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { generateDailySummary, type SummaryData } from '@/lib/ai/summary'
+import { getPlanSubjects } from '@/types'
 import { hasAiConfig } from '@/lib/ai/config'
 import {
   Dialog,
@@ -146,10 +147,7 @@ export function AiSummaryDialog({ open, onOpenChange }: Props) {
         .map(([category, v]) => ({ category, ...v })).sort((a, b) => b.wrong - a.wrong).slice(0, 5)
 
       const deadline = profile?.deadline ?? null
-      const planSubjects: string[] = (() => {
-        if (!profile?.plan_subjects) return []
-        try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
-      })()
+      const planSubjects = getPlanSubjects(profile)
       const scopeIds = new Set(questionRows.filter((q) => planSubjects.length === 0 || planSubjects.includes(q.subject ?? '')).map((q) => q.id))
       const doneIds = new Set(allList.filter((a) => scopeIds.has(a.question_id)).map((a) => a.question_id))
       const remainingTotal = Math.max(scopeIds.size - doneIds.size, 0)

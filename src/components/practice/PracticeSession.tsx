@@ -71,7 +71,7 @@ import { isAnswerCorrect } from '@/lib/answer-utils'
 import { cn } from '@/lib/utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
-import { resolveGoals, resolveRounds } from '@/types'
+import { resolveGoals, resolveRounds, getPlanSubjects } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { useT } from '@/i18n/use-t'
 
@@ -244,10 +244,7 @@ export function PracticeSession() {
     return () => { seqStopSync() }
   }, [seqStartSync, seqStopSync])
 
-  const planSubjects = useMemo(() => {
-    if (!profile?.plan_subjects) return [] as string[]
-    try { const p = JSON.parse(profile.plan_subjects); return Array.isArray(p) ? p : [] } catch { return [] }
-  }, [profile?.plan_subjects])
+  const planSubjects = useMemo(() => getPlanSubjects(profile), [profile])
 
   const dailyTargetSubjects = useMemo(() => {
     const planSet = new Set(planSubjects)

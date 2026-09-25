@@ -364,6 +364,26 @@ export function normalizeDailyTargets(raw: any[] | null | undefined): DailyTarge
 export type PlanScope = Record<string, string[]>
 
 /**
+ * 从 profile 读取计划学科。
+ *
+ * 这个列是 `text`，应用写进去的是 JSON 数组字符串，但**读的时候必须当不可信输入**：
+ * 迁移文件里有兼容旧数据的段落，历史上也可能存过裸字符串/逗号分隔的形态。以前这个解析在
+ * 6 个地方各写了一遍，其中 PlanDialog 里那两处**没有 try/catch** —— 值是坏的就直接在组件体里抛，
+ * 整个应用被错误边界接走（`npm run smoke:routes` 用一个畸形值复现到了）。
+ * 所以收成一个函数：解析失败、不是数组、数组里有非字符串，一律当空数组。
+ */
+export function getPlanSubjects(profile: { plan_subjects?: string | null } | null | undefined): string[] {
+  if (!profile?.plan_subjects) return []
+  try {
+    const raw = JSON.parse(profile.plan_subjects) as unknown
+    if (!Array.isArray(raw)) return []
+    return raw.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+  } catch {
+    return []
+  }
+}
+
+/**
  * 从 profile 读取并归一化 plan_scope。
  * 返回空对象表示"无显式范围"(即沿用旧行为:按整科学科统计)。
  */

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { toJson } from '@/services/db'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
-import { resolveGoals, resolveRounds, todayStr } from '@/types'
+import { resolveGoals, resolveRounds, todayStr, getPlanSubjects } from '@/types'
 import type { PlanGoal, PlanRound } from '@/types'
 
 export interface PlanSubjectProgress {
@@ -429,11 +429,6 @@ function todayStart(): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16, 0, 0, 0))
   if (now < d) d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString()
-}
-
-function getPlanSubjects(profile: { plan_subjects?: string | null } | null): string[] {
-  if (!profile?.plan_subjects) return []
-  try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
 }
 
 async function fetchProgress(params: {

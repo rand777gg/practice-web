@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
 import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
 import { Progress } from '@/components/ui/progress'
-import { resolveGoals, resolveRounds } from '@/types'
+import { resolveGoals, resolveRounds, getPlanSubjects } from '@/types'
 import {
   buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPace, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanItem,
@@ -22,11 +22,6 @@ function todayStart(): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16, 0, 0, 0))
   if (now < d) d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString()
-}
-
-function getPlanSubjects(profile: { plan_subjects?: string | null } | null): string[] {
-  if (!profile?.plan_subjects) return []
-  try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
 }
 
 export function DashboardPlanCards() {

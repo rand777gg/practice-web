@@ -21,7 +21,7 @@ import { SubjectCompositionDonut, TypeRadarChart, WeekHourHeat } from '@/compone
 import { YearHeatPreview, MilestonesCard } from '@/components/dashboard/DashJourneyTop'
 import { ExamGoalPicker } from '@/components/dashboard/ExamGoalPicker'
 import { examGoalLabel } from '@/lib/exam-goals'
-import { resolveGoals } from '@/types'
+import { resolveGoals, getPlanSubjects } from '@/types'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { LazyChart } from '@/components/layout/LazyChart'
@@ -119,12 +119,7 @@ export function Component() {
     ? Math.max(Math.ceil((new Date(profile.deadline).getTime() - nowMs) / 86400000), 0)
     : null
 
-  const planSubjectList = (() => {
-    try {
-      const raw = JSON.parse(profile?.plan_subjects || '[]')
-      return Array.isArray(raw) ? (raw as string[]) : []
-    } catch { return [] }
-  })()
+  const planSubjectList = getPlanSubjects(profile)
   const targetSubjectList = resolveGoals(profile).map((g) => g.subject)
   const subjectUnion = [...new Set([...planSubjectList, ...targetSubjectList])]
   const hasPlanOrTarget = subjectUnion.length > 0
@@ -300,10 +295,7 @@ export function Component() {
 
       // Daily goal
       const deadline = profile?.deadline
-      const planSubjects: string[] = (() => {
-        if (!profile?.plan_subjects) return []
-        try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
-      })()
+      const planSubjects = getPlanSubjects(profile)
       let dailyGoal = 0
       if (deadline) {
         const scopeIds = new Set(

@@ -116,7 +116,9 @@ const PROFILE = {
   avatar_preset: null,
   created_at: new Date(0).toISOString(),
   deadline: null,
-  plan_subjects: null,
+  // 有学科才不会被"尚未设置学习计划"挡住 —— 练习页在没计划时不挑题，也就测不到题目卡片。
+  // SMOKE_PLAN_SUBJECTS 可覆盖：传一个**畸形值**（例如裸字符串）就能验证读取端是否真的容错
+  plan_subjects: process.env.SMOKE_PLAN_SUBJECTS ?? '["冒烟学科"]',
   plan_rounds: null,
   plan_goals: null,
   daily_targets: null,
@@ -140,6 +142,84 @@ const PROFILE = {
 
 const json = (route, body, status = 200, headers = {}) =>
   route.fulfill({ status, contentType: 'application/json', headers: { 'content-range': '*/0', ...headers }, body: JSON.stringify(body) })
+
+/**
+ * 除了逐条打开路由，还要对关键页面断言"该出现的内容出现了"——
+ * 只断言"没抛异常"会让一个渲染成空壳的页面也算通过。
+ * 这里挑的是本轮改过状态归属的两条路径。
+ */
+const CONTENT_PROBES = [
+  { url: '/practice?mode=random', expect: '冒烟测试题', why: '练习页随机模式要真的把题目渲染出来（状态机 hydrate 的结果）' },
+]
+
+/**
+ * 喂了畸形 plan_subjects 时，练习页**正确地**停在"尚未设置学习计划"，不会挑题 ——
+ * 那种模式下内容断言必然不成立，所以跳过它。这一轮仍会跑完整路由扫描，
+ * 而要证明的正是"畸形值不再把整个应用炸掉"（改之前 PlanDialog 里那句裸 JSON.parse 会）。
+ */
+const planSubjectsUsable = (() => {
+  const raw = process.env.SMOKE_PLAN_SUBJECTS
+  if (!raw) return true
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.length > 0
+  } catch { return false }
+})()
+
+/**
+ * 让练习页真的渲染出一道题。
+ *
+ * 默认的空后端下练习页只到"尚未设置学习计划"就停了，题目卡片、选项、交卷按钮都不会出现 ——
+ * 而这一轮改的正是那道题的状态归属，所以必须喂数据才测得到。
+ * 挑题走的是 get_random_question_id（随机模式），所以那个 RPC 也要给一个 id，
+ * 否则页面在"挑不到题"那一步就结束了。
+ */
+const QUESTION_ID = '11111111-1111-1111-1111-111111111111'
+const QUESTION_ROW = {
+  id: QUESTION_ID,
+  question_type: 'single_choice',
+  question_text: '冒烟测试题：以下哪个是质数？',
+  options: ['4', '7', '9', '15'],
+  correct_answer: 1,
+  category: '冒烟分类',
+  categories: ['冒烟分类'],
+  subject: '冒烟学科',
+  analysis: null,
+  key_points: null,
+  answer_explanation: null,
+  seq_number: 1,
+  created_at: new Date(0).toISOString(),
+  created_by: null,
+  verified: true,
+  import_mode: null,
+  allow_unordered: false,
+  unordered_blanks: null,
+  source_page: null,
+  test_cases: null,
+  runtime_config: null,
+  execution_mode: null,
+  examples: null,
+  case_questions: null,
+  paper: null,
+  issue_flag: 'none',
+  issue_note: null,
+  flagged_at: null,
+}
+
+const QUESTION_META_CACHE = {
+  subjects: ['冒烟学科'],
+  categories: ['冒烟分类'],
+  key_points_by_subject: { 冒烟学科: ['冒烟知识点'] },
+  updated_at: new Date(0).toISOString(),
+}
+
+/** RPC → 返回值。只放练习页首屏真的会调的；其余仍是 null（走空态） */
+const RPC_FIXTURES = {
+  get_random_question_id: QUESTION_ID,
+  get_review_pool_count: 0,
+  get_review_count: 0,
+  count_question_items: 1,
+}
 
 async function installStubs(context) {
   // 会话直接写进 localStorage（键名与 lib/supabase.ts 里钉死的 storageKey 一致）
@@ -180,13 +260,19 @@ async function installStubs(context) {
     route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
 
   // 表查询：profiles 给一份真资料（否则 /admin/* 会被弹回仪表盘，"能挂载"就是假的）；
-  // 其余表回空数组，RPC 回 null，配合各服务的默认值走空态 / not_found 分支
-  await context.route('**/rest/v1/rpc/**', (route) => json(route, null))
+  // questions / question_meta_cache 喂数据好让练习页真的渲染出题目；其余表回空数组
+  await context.route('**/rest/v1/rpc/**', (route) => {
+    const name = route.request().url().split('/rpc/')[1]?.split('?')[0] ?? ''
+    const fixture = Object.prototype.hasOwnProperty.call(RPC_FIXTURES, name) ? RPC_FIXTURES[name] : null
+    return json(route, fixture)
+  })
   await context.route('**/rest/v1/**', (route) => {
     const req = route.request()
     const url = req.url()
     const wantsObject = (req.headers()['accept'] ?? '').includes('vnd.pgrst.object')
     if (url.includes('/profiles')) return json(route, wantsObject ? PROFILE : [PROFILE])
+    if (url.includes('/questions')) return json(route, wantsObject ? QUESTION_ROW : [QUESTION_ROW])
+    if (url.includes('/question_meta_cache')) return json(route, wantsObject ? QUESTION_META_CACHE : [QUESTION_META_CACHE])
     if (wantsObject) {
       // 与 PostgREST 对齐：向 .single() 要一行却没有行时是 406 + PGRST116
       return json(route, { code: 'PGRST116', details: 'Results contain 0 rows', hint: null, message: 'JSON object requested, multiple (or no) rows returned' }, 406)
@@ -240,6 +326,34 @@ try {
     console.log(`  ${ok ? '✓' : '✗'} ${route.padEnd(34)} ${String(length).padStart(5)} 字符 ${note}`)
     if (filter.length > 0) console.log(`        正文: ${JSON.stringify(text.replace(/\s+/g, ' ').slice(0, 300))}`)
     if (!ok) for (const e of currentErrors.slice(0, 3)) console.log(`        ${e.slice(0, 160)}`)
+  }
+
+  // ── 关键页面的内容断言 ──
+  // 只断言"没抛异常"会让一个渲染成空壳的页面也算通过，所以这里额外要求该出现的内容出现
+  console.log('')
+  if (!planSubjectsUsable) {
+    console.log(`  – 跳过内容断言：SMOKE_PLAN_SUBJECTS=${JSON.stringify(process.env.SMOKE_PLAN_SUBJECTS)} 不是合法数组，练习页正确地停在"尚未设置学习计划"`)
+  }
+  for (const probe of (planSubjectsUsable ? CONTENT_PROBES : [])) {
+    currentErrors = []
+    let body = ''
+    try {
+      await page.goto(`${base}${probe.url}`, { waitUntil: 'load', timeout: 30_000 })
+      await page.waitForTimeout(1500)
+      body = await page.locator('body').innerText().catch(() => '')
+    } catch (e) {
+      results.push({ route: `${probe.url} ⇒ ${probe.expect}`, ok: false, length: 0, errors: [String(e)], note: '导航失败' })
+      console.log(`  ✗ ${probe.url} 期望出现「${probe.expect}」—— 导航失败`)
+      continue
+    }
+    const hit = body.includes(probe.expect)
+    const ok = hit && currentErrors.length === 0
+    console.log(`  ${ok ? '✓' : '✗'} ${probe.url} 期望出现「${probe.expect}」`)
+    if (!hit) {
+      console.log(`        ${probe.why}`)
+      console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 220))}`)
+    }
+    results.push({ route: `${probe.url} ⇒ ${probe.expect}`, ok, length: body.length, errors: [...currentErrors], note: hit ? '' : '未出现期望内容' })
   }
 } finally {
   await browser.close()
