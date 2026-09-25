@@ -19,15 +19,31 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = mkdtempSync(join(tmpdir(), 'practice-machine-'))
 
 let failures = 0
+function report(name, e) {
+  failures += 1
+  console.error(`  ✗ ${name}`)
+  const msg = e instanceof Error ? e.message : String(e)
+  console.error(`    ${msg.split('\n').join('\n    ')}`)
+}
+
 function check(name, fn) {
   try {
-    fn()
+    const r = fn()
+    // 传进来的要是 async，`fn()` 会立刻返回一个 promise：断言还没跑，汇总就先打印出"全部通过"了，
+    // 之后失败只能以未捕获异常的形式冒出来（看起来像脚本自己崩了）。所以在这里直接拦掉。
+    if (r && typeof r.then === 'function') throw new Error('这个用例是异步的，请写成 await checkAsync(...)')
     console.log(`  ✓ ${name}`)
   } catch (e) {
-    failures += 1
-    console.error(`  ✗ ${name}`)
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error(`    ${msg.split('\n').join('\n    ')}`)
+    report(name, e)
+  }
+}
+
+async function checkAsync(name, fn) {
+  try {
+    await fn()
+    console.log(`  ✓ ${name}`)
+  } catch (e) {
+    report(name, e)
   }
 }
 
@@ -39,7 +55,7 @@ function check(name, fn) {
  * 依赖链刻意写死成清单 —— 多一个文件就多加一行，比实现一个通用打包器划算。
  */
 function buildModules(outDir) {
-  const MODULES = ['lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts']
+  const MODULES = ['lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts', 'lib/practice-pick.ts']
   for (const rel of MODULES) {
     const source = readFileSync(join(root, 'src', rel), 'utf8')
     const { outputText, diagnostics } = ts.transpileModule(source, {
@@ -54,7 +70,11 @@ function buildModules(outDir) {
       })
       throw new Error(`转译 ${rel} 失败：\n${text}`)
     }
-    const rewritten = outputText.replace(/from '@\/([^']+)'/g, (_m, p) => `from './${p.split('/').pop()}.mjs'`)
+    // 转成 node 认得的形式：`@/` 别名改成同目录相对路径，相对导入补上 .mjs
+    // （打包器允许省略扩展名，node 的 ESM 不允许 —— 两边都要照顾到）
+    const rewritten = outputText
+      .replace(/from '@\/([^']+)'/g, (_m, p) => `from './${p.split('/').pop()}.mjs'`)
+      .replace(/from '\.\/([^']+)'/g, (_m, p) => (p.endsWith('.mjs') ? `from './${p}'` : `from './${p}.mjs'`))
     writeFileSync(join(outDir, `${rel.split('/').pop().replace(/\.ts$/, '')}.mjs`), rewritten)
   }
 }
@@ -413,6 +433,163 @@ try {
     assert.equal(reset.questions.length, 0)
     assert.equal(reset.answers.size, 0)
     assert.notEqual(reset.answers, examInit.answers, '必须是新对象')
+  })
+
+  // ── 挑题用例：分支顺序、时间窗、过期判定、离线兜底 ──
+  console.log('\npractice-pick 挑题用例')
+
+  const { resolvePracticePick } = await import(pathToFileURL(join(outDir, 'practice-pick.mjs')).href)
+
+  const NO_FILTERS = { subjects: [], category: '', type: '', keyPoint: '' }
+  /** 每道假题都带一个字段齐全的 question，否则会被"question 为 null"那层过滤掉 */
+  const meta = (over = {}) => ({ subject: 'S', category: 'C', categories: ['C'], question_type: 'single_choice', key_points: null, ...over })
+  const prefetched = (id) => ({ id, question_type: 'single_choice', question_text: `预取 ${id}` })
+
+  /** 假依赖组：每个来源都默认返回空，并把调用记进 calls（覆盖某个来源时也照记） */
+  function deps(over = {}) {
+    const calls = []
+    return Object.assign({
+      calls,
+      fetchFavorites: async (_u, limit) => { calls.push(`fav:${limit}`); return [] },
+      fetchWrong: async (_u, limit) => { calls.push(`wrong:${limit}`); return [] },
+      fetchRandomId: async () => { calls.push('rpc'); return null },
+      getPrefetchedIds: async () => { calls.push('prefetchedIds'); return [] },
+      getPrefetchedQuestion: async (id) => { calls.push(`prefetched:${id}`); return null },
+      isStale: () => false,
+      random: () => 0,
+    }, over)
+  }
+
+  const pickInput = (over = {}) => ({
+    userId: 'u1',
+    scope: 'all',
+    mode: 'new',
+    filters: NO_FILTERS,
+    planSubjects: ['S'],
+    reviewWindows: [],
+    ...over,
+  })
+
+  await checkAsync('范围分支按「收藏 → 错题 → RPC」兜底，前一条挑到就不再问后面的', async () => {
+    const d1 = deps({ fetchFavorites: async (_u, limit) => { d1.calls.push(`fav:${limit}`); return [{ question_id: 'f1', created_at: null, question: meta() }] } })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'favorites' }), d1), { kind: 'id', id: 'f1' })
+    assert.deepEqual(d1.calls, ['fav:200'], '收藏挑到了就不该再问其他来源')
+
+    const d2 = deps({ fetchWrong: async (_u, limit) => { d2.calls.push(`wrong:${limit}`); return [{ question_id: 'w1', answered_at: null, question: meta() }] } })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'wrong' }), d2), { kind: 'id', id: 'w1' })
+    assert.deepEqual(d2.calls, ['wrong:200'], '错题挑到了就不该调随机 RPC')
+
+    const d3 = deps({ fetchRandomId: async () => { d3.calls.push('rpc'); return 'r1' } })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'all' }), d3), { kind: 'id', id: 'r1' })
+    assert.deepEqual(d3.calls, ['rpc'])
+  })
+
+  await checkAsync('"全部"模式切到错题池时走错题分支，不调随机 RPC', async () => {
+    const d = deps({ fetchWrong: async () => [{ question_id: 'w2', answered_at: null, question: meta() }] })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'all', mode: 'wrong' }), d), { kind: 'id', id: 'w2' })
+    assert.ok(!d.calls.includes('rpc'), '错题池不该再随机抽题')
+  })
+
+  await checkAsync('四个筛选器在收藏分支生效：筛不中就继续往下兜底，不是硬塞一道', async () => {
+    const rows = [{ question_id: 'f1', created_at: null, question: meta({ question_type: 'multi_select' }) }]
+    const favOnly = (filters) => resolvePracticePick(pickInput({ scope: 'favorites', filters }), deps({ fetchFavorites: async () => rows }))
+    // 题型对不上 → 收藏分支挑不出，落到（空的）离线兜底 → none
+    assert.deepEqual(await favOnly({ ...NO_FILTERS, type: 'translation' }), { kind: 'none' })
+    // 对得上 → 正常挑出来
+    assert.deepEqual(await favOnly({ ...NO_FILTERS, type: 'multi_select' }), { kind: 'id', id: 'f1' })
+    // 空筛选器 = 不过滤
+    assert.deepEqual(await favOnly(NO_FILTERS), { kind: 'id', id: 'f1' })
+    // 学科是按题目的 subject 精确匹配的
+    assert.deepEqual(await favOnly({ ...NO_FILTERS, subjects: ['别科'] }), { kind: 'none' })
+    assert.deepEqual(await favOnly({ ...NO_FILTERS, subjects: ['S'] }), { kind: 'id', id: 'f1' })
+  })
+
+  await checkAsync('复习范围：错题按作答时间入窗、收藏按收藏时间入窗，同一题只算一次', async () => {
+    const windows = [{ subject: 'S', since: '2025-01-01', until: '2025-01-31' }]
+    const d = deps({
+      fetchWrong: async (_u, limit) => {
+        d.calls.push(`wrong:${limit}`)
+        return [
+          { question_id: 'a', answered_at: '2025-01-10T08:00:00Z', question: meta() },
+          { question_id: 'b', answered_at: '2025-03-10T08:00:00Z', question: meta() },
+        ]
+      },
+      fetchFavorites: async (_u, limit) => {
+        d.calls.push(`fav:${limit}`)
+        // 与错题里的 'a' 是同一道题 → 去重后只剩一个候选
+        return [{ question_id: 'a', created_at: '2025-01-20T08:00:00Z', question: meta() }]
+      },
+    })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'review', reviewWindows: windows }), d), { kind: 'id', id: 'a' })
+    assert.deepEqual(d.calls, ['wrong:500', 'fav:500'], '复习池两边都要查，用的是 500 而不是 200')
+  })
+
+  await checkAsync('复习范围的「全部轮次」窗（until 为空）是不限时间，不是"永不命中"', async () => {
+    // 抽离时发现的既有 bug：原来 to = new Date('T23:59:59.999').getTime() = NaN，t <= NaN 恒为 false，
+    // 于是勾了「复习全部」反而一条候选都挑不到（池子计数是服务端算的，会显示有题）。
+    const windows = [{ subject: 'S', since: '1970-01-01', until: '' }]
+    const old = { question_id: 'old', answered_at: '2019-05-05T00:00:00Z', question: meta() }
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'review', reviewWindows: windows }), deps({ fetchWrong: async () => [old] })), { kind: 'id', id: 'old' })
+  })
+
+  await checkAsync('复习范围：学科对不上或没有时间的都不入池', async () => {
+    const windows = [{ subject: 'S', since: '2025-01-01', until: '2025-01-31' }]
+    const d = deps({
+      fetchWrong: async () => [
+        { question_id: 'x', answered_at: '2025-01-10T00:00:00Z', question: meta({ subject: '别科' }) },
+        { question_id: 'y', answered_at: null, question: meta() },
+      ],
+    })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'review', reviewWindows: windows }), d), { kind: 'none' })
+  })
+
+  await checkAsync('没显式选学科时用计划学科做 RPC 范围；两者都空则不问服务端', async () => {
+    const d = deps({ fetchRandomId: async (args) => { d.calls.push(`rpc:${args.subjects.join(',')}`); return 'r1' } })
+    assert.deepEqual(await resolvePracticePick(pickInput({ planSubjects: ['计划科'] }), d), { kind: 'id', id: 'r1' })
+    assert.deepEqual(d.calls.filter((c) => c.startsWith('rpc')), ['rpc:计划科'])
+
+    const d2 = deps()
+    await resolvePracticePick(pickInput({ planSubjects: [] }), d2)
+    assert.ok(!d2.calls.some((c) => c.startsWith('rpc')), '没有学科范围就别问服务端')
+  })
+
+  await checkAsync('离线兜底：预取里有整题就直接给题；题号在但题没了就当没题', async () => {
+    assert.deepEqual(
+      await resolvePracticePick(pickInput(), deps({ getPrefetchedIds: async () => ['p1'], getPrefetchedQuestion: async () => prefetched('p1') })),
+      { kind: 'prefetched', question: prefetched('p1') },
+    )
+    assert.deepEqual(
+      await resolvePracticePick(pickInput(), deps({ getPrefetchedIds: async () => ['p1'], getPrefetchedQuestion: async () => null })),
+      { kind: 'none' },
+    )
+    assert.deepEqual(await resolvePracticePick(pickInput(), deps()), { kind: 'none' })
+  })
+
+  await checkAsync('没登录：不碰任何**联网**来源，但离线预取仍然要看', async () => {
+    const d = deps()
+    assert.deepEqual(await resolvePracticePick(pickInput({ userId: null }), d), { kind: 'none' })
+    // 预取表是**设备级**的（首页在后台增量灌进去，见 DashboardPage），刻意不按登录态开关：
+    // 这个兜底存在的意义正是"会话过期/断网时还能刷题"。代价是缓存题目在登出后仍然可用，
+    // 里头的题干是用户本来就看得到的公开题，所以先按既有行为保留并记在这里。
+    assert.deepEqual(d.calls, ['prefetchedIds'], '联网来源一条都不许调')
+  })
+
+  await checkAsync('过期判定在每个 await 之后都生效：迟到的响应不许落状态', async () => {
+    const d = deps({
+      fetchFavorites: async () => [{ question_id: 'f1', created_at: null, question: meta() }],
+      fetchWrong: async () => [{ question_id: 'w1', answered_at: '2025-01-10T00:00:00Z', question: meta() }],
+      fetchRandomId: async () => 'r1',
+      getPrefetchedIds: async () => ['p1'],
+      getPrefetchedQuestion: async () => prefetched('p1'),
+      isStale: () => true,
+    })
+    const windows = [{ subject: 'S', since: '2025-01-01', until: '2025-01-31' }]
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'favorites' }), d), { kind: 'stale' })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'review', reviewWindows: windows }), d), { kind: 'stale' })
+    assert.deepEqual(await resolvePracticePick(pickInput({ scope: 'wrong' }), d), { kind: 'stale' })
+    assert.deepEqual(await resolvePracticePick(pickInput(), d), { kind: 'stale' })
+    // 进离线兜底之前那一句判定原来就有，且不带条件 —— 过期了连预取都不该读
+    assert.deepEqual(await resolvePracticePick(pickInput({ userId: null }), d), { kind: 'stale' })
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })

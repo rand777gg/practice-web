@@ -7,7 +7,7 @@ import {
   fetchPracticeFilters, fetchQuestionAnswerStats, fetchSequentialSessionKeyByShortId, fetchWrongAnswers,
   savePracticeFilters, upsertSequentialState,
 } from '@/services/practice'
-import type { AnswerWithQuestionMeta, FavoriteWithQuestion, QuestionAnswerStats, QuestionMeta } from '@/services/practice'
+import type { QuestionAnswerStats } from '@/services/practice'
 import { fetchQuestionById, fetchQuestionIdsByKeyPoints, fetchQuestionMetaCache, updateQuestion } from '@/services/questions'
 import { mergeSubjectResetAt } from '@/services/profiles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -65,7 +65,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePracticeQuestion } from '@/hooks/use-practice-question'
 import { SessionListDrawer } from '@/components/practice/SessionListDrawer'
-import { pickRandomFrom } from '@/lib/practice-session'
+import { resolvePracticePick } from '@/lib/practice-pick'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -750,109 +750,47 @@ export function PracticeSession() {
 
     const currentUser = useAuthStore.getState().user
 
-    // Pick question based on scope + mode
-    let pickedId: string | null = null
-
-    // Scope: favorites — pick from user's favorited questions
-    if (currentUser && questionScope === 'favorites') {
-      try {
-        const favRows = (await fetchFavoritesWithQuestion(currentUser.id, 200)).filter((r): r is FavoriteWithQuestion & { question: QuestionMeta } => r.question !== null)
-        if (isStale(myGen)) return
-        if (favRows.length) {
-          pickedId = pickRandomFrom(favRows, {
-            subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint,
+    // 「这一次做哪道题」整条用例在 lib/practice-pick.ts：四条范围分支的**顺序**是业务规则，
+    // 放在组件里既读不出顺序也测不了。过期判定一起注入 —— 迟到的响应不能落状态是行为的一部分。
+    const pick = await resolvePracticePick(
+      {
+        userId: currentUser?.id ?? null,
+        scope: questionScope,
+        mode: questionMode,
+        filters: { subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint },
+        planSubjects: [...planSubjectSet],
+        reviewWindows,
+      },
+      {
+        fetchFavorites: fetchFavoritesWithQuestion,
+        fetchWrong: fetchWrongAnswers,
+        fetchRandomId: async ({ userId, subjects, category, type }) => {
+          const { data, error } = await supabase.rpc('get_random_question_id', {
+            p_user_id: userId,
+            p_subjects: subjects,
+            p_categories: category ? [category] : undefined,
+            p_question_type: type || undefined,
           })
-        }
-      } catch (e) {
-        logError('practice.favoritePick', e)
-      }
+          return error ? null : (data ?? null)
+        },
+        getPrefetchedIds: getPrefetchedQuestionIds,
+        // 预取表里存的是当初写进去的整题 JSON，读回来没有类型；这道断言原来在 setQuestion 那一句上
+        getPrefetchedQuestion: async (id) => (await getPrefetchedQuestion(id)) as Question | null,
+        isStale: () => isStale(myGen),
+      },
+    )
+    if (pick.kind === 'stale') return
+    if (pick.kind === 'prefetched') {
+      setQuestion(pick.question)
+      setIsLoading(false)
+      return
     }
-
-    // Scope: review — 错题 ∪ 收藏, 只取选中"学科×轮次"时间窗内的, 同一题只算一次
-    if (!pickedId && currentUser && questionScope === 'review') {
-      // 时间窗: 各轮 [createdAt, target] 的本地时间边界
-      const winBounds = reviewWindows.map((w) => ({
-        subject: w.subject,
-        from: new Date(`${w.since}T00:00:00`).getTime(),
-        to: new Date(`${w.until}T23:59:59.999`).getTime(),
-      }))
-      const inWindow = (subject: string | null, at: string | null) => {
-        if (!subject || !at) return false
-        const t = new Date(at).getTime()
-        return winBounds.some((w) => w.subject === subject && t >= w.from && t <= w.to)
-      }
-      const byId = new Map<string, { question_id: string; question: QuestionMeta }>()
-      try {
-        const [wrongRows, favRows] = await Promise.all([
-          fetchWrongAnswers(currentUser.id, 500),
-          fetchFavoritesWithQuestion(currentUser.id, 500),
-        ])
-        if (isStale(myGen)) return
-        for (const r of wrongRows) {
-          if (r.question && inWindow(r.question.subject, r.answered_at) && !byId.has(r.question_id)) byId.set(r.question_id, { question_id: r.question_id, question: r.question })
-        }
-        for (const r of favRows) {
-          if (r.question && inWindow(r.question.subject, r.created_at) && !byId.has(r.question_id)) byId.set(r.question_id, { question_id: r.question_id, question: r.question })
-        }
-      } catch (e) {
-        logError('practice.reviewPick', e)
-      }
-      if (byId.size > 0) {
-        pickedId = pickRandomFrom([...byId.values()], {
-          subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint,
-        })
-      }
-    }
-
-    // Scope: wrong — pick from previously wrong-answered questions
-    if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
-      try {
-        const wrongRows = (await fetchWrongAnswers(currentUser.id, 200)).filter((r): r is AnswerWithQuestionMeta & { question: QuestionMeta } => r.question !== null)
-        if (isStale(myGen)) return
-        if (wrongRows.length) {
-          pickedId = pickRandomFrom(wrongRows, {
-            subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint,
-          })
-        }
-      } catch (e) {
-        logError('practice.wrongPick', e)
-      }
-    }
-
-    // Scope: all with mixed/new mode — RPC random pick
-    const effectiveSubjects = selectedSubjects.length > 0 ? selectedSubjects : [...planSubjectSet]
-    if (!pickedId && currentUser && questionScope === 'all' && questionMode !== 'wrong' && effectiveSubjects.length > 0) {
-      const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
-        p_user_id: currentUser.id,
-        p_subjects: effectiveSubjects,
-        p_categories: selectedCategory ? [selectedCategory] : undefined,
-        p_question_type: selectedType || undefined,
-      })
-      if (isStale(myGen)) return
-
-      if (!rpcErr && rpcId) {
-        pickedId = rpcId
-      }
-    }
-
-    if (isStale(myGen)) return
-
-    // Offline fallback: try IndexedDB prefetched questions
-    if (!pickedId) {
-      const localIds = await getPrefetchedQuestionIds()
-      if (localIds.length > 0) {
-        pickedId = localIds[Math.floor(Math.random() * localIds.length)]
-        const localQ = await getPrefetchedQuestion(pickedId)
-        if (localQ) {
-          setQuestion(localQ as Question)
-          setIsLoading(false)
-          return
-        }
-      }
+    if (pick.kind === 'none') {
       setNoQuestions(true)
       setIsLoading(false)
       return
     }
+    const pickedId = pick.id
 
     let loaded: [Question | null, QuestionAnswerStats | null] | null = null
     try {
