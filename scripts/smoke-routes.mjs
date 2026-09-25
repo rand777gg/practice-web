@@ -158,6 +158,7 @@ const json = (route, body, status = 200, headers = {}) =>
  */
 const CONTENT_PROBES = [
   { url: '/practice?mode=random', expect: '冒烟测试题', why: '练习页随机模式要真的把题目渲染出来（状态机 hydrate 的结果）' },
+  { url: '/practice', expect: '冒烟测试题', why: '顺序刷题分支：恢复上次会话后要把题渲染出来（走 applyLoaded 那条）' },
 ]
 
 /**
@@ -235,12 +236,42 @@ const QUESTION_META_CACHE = {
   updated_at: new Date(0).toISOString(),
 }
 
-/** RPC → 返回值。只放练习页首屏真的会调的；其余仍是 null（走空态） */
+/**
+ * 一份已存在的顺序刷题进度。
+ *
+ * 顺序模式的入口是"恢复上次会话"：页面先列会话（practice_sequential_state），
+ * 找到学科范围一致的一条就 load_practice_session 恢复，再 loadSequentialQuestion 渲染。
+ * 没有这条记录，练习页只会停在"尚未选择知识点"，顺序分支（走 applyLoaded 那条）就永远测不到。
+ */
+const SEQUENTIAL_STATE_ROW = {
+  session_key: 'smoke-session',
+  selected_kps: ['冒烟知识点'],
+  plan_subjects: ['冒烟学科'],
+  question_ids: [QUESTION_ID],
+  current_index: 0,
+  subject_positions: {},
+  short_id: 'smk1',
+  updated_at: new Date(0).toISOString(),
+  created_at: new Date(0).toISOString(),
+}
+
+/** RPC → 返回值。只放首屏真的会调的；其余仍是 null（走空态） */
 const RPC_FIXTURES = {
   get_random_question_id: QUESTION_ID,
   get_review_pool_count: 0,
   get_review_count: 0,
   count_question_items: 1,
+  load_practice_session: {
+    found: true,
+    sessionKey: 'smoke-session',
+    shortId: 'smk1',
+    savedKps: ['冒烟知识点'],
+    questionIds: [QUESTION_ID],
+    questionKps: ['冒烟知识点'],
+    questionSubjects: ['冒烟学科'],
+    currentIndex: 0,
+    subjectPositions: {},
+  },
 }
 
 async function installStubs(context) {
@@ -307,6 +338,7 @@ async function installStubs(context) {
     if (url.includes('/profiles')) return json(route, wantsObject ? PROFILE : [PROFILE])
     if (url.includes('/questions')) return json(route, wantsObject ? QUESTION_ROW : [QUESTION_ROW])
     if (url.includes('/question_meta_cache')) return json(route, wantsObject ? QUESTION_META_CACHE : [QUESTION_META_CACHE])
+    if (url.includes('/practice_sequential_state')) return json(route, wantsObject ? SEQUENTIAL_STATE_ROW : [SEQUENTIAL_STATE_ROW])
     if (wantsObject) {
       // 与 PostgREST 对齐：向 .single() 要一行却没有行时是 406 + PGRST116
       return json(route, { code: 'PGRST116', details: 'Results contain 0 rows', hint: null, message: 'JSON object requested, multiple (or no) rows returned' }, 406)
