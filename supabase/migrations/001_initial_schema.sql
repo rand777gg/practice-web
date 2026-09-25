@@ -7718,3 +7718,55 @@ FROM auth.users u
 LEFT JOIN public.profiles p ON p.id = u.id
 WHERE p.id IS NULL
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Section 99: 匿名暴露面审计记录（只读实测 + 静态核对，未附可执行 DDL）
+-- ----------------------------------------------------------------------------
+-- 本节只留结论，**故意不含 SQL**：下面这些收紧都会改变"未登录访客能不能读/调"的语义，
+-- 而我这次只拿到了 publishable key（匿名身份），无法完成 anon / 普通用户 / 管理员
+-- 三种身份的对照测试。没有那个对照就改权限，等于拿线上行为做赌注。
+-- 复跑方式：node scripts/audit-anon-exposure.mjs（只读，不打印行内容）
+--
+-- ---- 99.1 表读取：3 张表对匿名可读，均走 is_public「公开内容」路径，未发现私有数据外泄 ----
+--   · user_answers      21 行（全部 is_public = true，即「公开笔记」）
+--   · question_banks    is_public = true 的公开题库
+--   · question_bank_items 上述题库里的题
+--   三张表的策略（user_answers_public_select / qb_select / qbi_select）都带了
+--   `OR user_id = auth.uid() OR is_admin()`，只是**没写 TO authenticated**，所以对 anon 也生效。
+--   这些页面在应用里全在 OtpGuard 之后，未登录访客本来也看不到 —— 如果确认公开内容不需要
+--   给匿名访客看，逐个加 `TO authenticated` 即可，对已登录用户零影响。
+--
+-- ---- 99.2 函数 EXECUTE：24/67 个函数对匿名可调，只有 1 个值得盯 ----
+--   Supabase 给 public schema 设了默认权限，新建函数会被显式授予 anon / authenticated，
+--   所以判据不是"有没有 GRANT"，而是"有没有 REVOKE FROM anon"（Section 68 已踩过这个坑）。
+--   24 个匿名可调里：
+--     · qr_login_status —— 匿名可调 + SECURITY DEFINER + 函数体不判身份。**这是有意为之**：
+--       扫码页在未登录时轮询它，安全性来自 `secret_hash = sha256(p_secret)` 这个只有
+--       发起端知道的秘密，不是身份。它的兄弟 qr_login_claim（真正换 user_id 的那个）已经
+--       只授权给 service_role。抽查确认无问题。
+--     · is_study_room_member / is_study_room_owner —— DEFINER 但函数体有身份判断，
+--       且它们本来就是给 RLS 策略当谓词用的，匿名执行是 RLS 求值的一部分。
+--     · 其余 21 个都是 SECURITY INVOKER（按调用者权限跑，受 RLS 约束），属于多余的暴露面，
+--       不是漏洞。登录前真正需要匿名的只有 qr_login_status，其余都可以 REVOKE FROM anon。
+--
+-- ---- 99.3 需要留意的一类"现在安全、但很脆"的写法（未改） ----
+--   下面 11 个函数都接收 p_user_id，但没有一个校验 `p_user_id = auth.uid()`，
+--   函数体里也完全没有 auth.uid() / is_admin()：
+--     get_plan_stats, get_subject_progress, get_review_count, get_review_pool_count,
+--     get_kp_exclusion_stats, get_excluded_kp_questions, load_practice_session,
+--     get_sessions_answered, get_type_accuracy, get_accuracy_change, get_daily_completion
+--   现在**不构成越权**：它们都是 SECURITY INVOKER，读 user_answers / profiles 时照样受 RLS
+--   约束，传别人的 uuid 只会读到空。但这层保护完全靠"记得不要改成 SECURITY DEFINER" ——
+--   而为了跨表读取把函数改成 DEFINER 是很自然的下一步，那一刻这 11 个会同时变成 IDOR
+--   （任何登录用户传别人的 uuid 就能读别人的统计）。建议补一句
+--   `IF p_user_id <> auth.uid() AND NOT public.is_admin() THEN RAISE EXCEPTION ...`。
+--   Section 66/68/71 的教训（"DEFINER 里不能拿 current_user 判管理员"）是同一类问题的另一面。
+--
+-- ---- 99.4 策略层：88 条策略没有 TO 子句，但没有一条是"漏写身份判断" ----
+--   静态扫过全部策略：不带 TO 子句的 88 条里，每一条的 USING/WITH CHECK 都引用了
+--   auth.uid() / auth.role() / auth.jwt() / is_admin()，没有出现"完全不判身份"的策略。
+--   它们对 anon 生效是因为未加 TO 限制，但谓词本身在 anon 身份下恒假（auth.uid() 为 NULL），
+--   所以实测匿名读不到行。这类策略是"看起来危险、实际安全"，收尾时加 TO authenticated
+--   可以少一层解释成本。
+-- ============================================================================
+
