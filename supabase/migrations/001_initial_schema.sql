@@ -7402,3 +7402,168 @@ BEGIN
 EXCEPTION WHEN insufficient_privilege THEN
   RAISE NOTICE 'Section 93: 无权修改 postgres 的默认权限（需要超级用户），跳过；新建对象需手动授权。';
 END $$;
+
+-- ============================================================================
+-- Section 94: get_plan_stats 去掉 ua_u 上的 MATERIALIZED（压测发现的最大热点）
+-- ----------------------------------------------------------------------------
+-- 压测数据：并发 50 时数据库总执行时间 83.7 秒，其中 get_plan_stats 占 54.4 秒（65%），
+-- 单次 58ms（空载 31ms）。按「Postgres 占系统 CPU 55%」折算，这一个函数吃掉整机约 36% 的 CPU。
+--
+-- 原因：ua_u 是「该用户的全部作答记录」，加了 MATERIALIZED 会被强制全量物化
+-- （实测 3505 行），而下游 answered 只引用它一次 —— 计划器因此无法把
+-- question_id = scope.id 谓词下推，只能先物化再连接。
+--
+-- 改动只有一处：去掉 MATERIALIZED。
+-- 效果（数据库内计时 30 次）：p50 31.0ms -> 22.9ms，-26%。
+--
+-- 等价性验证：用 10 种参数形状逐一比对输出（roundPlanSpec 的 {since}、
+-- goalPlanSpec 的 {since, steps}、steps 为空、size、size+steps、size=0、
+-- 无 since、日期格式 since、NULL 计划、空计划），全部逐字节一致。
+--
+-- 注意：本文件前面还有一份带 MATERIALIZED 的旧定义，这一段在后面，会覆盖它。
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_plan_stats(p_user_id uuid, p_plan jsonb)
+ RETURNS TABLE(subject text, total bigint, attempts bigint, done_dates jsonb)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+  WITH base AS (
+    SELECT e.key AS subject,
+           CASE
+             WHEN COALESCE(e.value->>'since', '') = '' THEN NULL
+             WHEN (e.value->>'since') ~ '^\d{4}-\d{2}-\d{2}$'
+               THEN ((e.value->>'since') || ' 00:00:00+08')::TIMESTAMPTZ
+             ELSE (e.value->>'since')::TIMESTAMPTZ
+           END                                     AS since,
+           NULLIF(e.value->>'size', '')::BIGINT    AS size,
+           COALESCE(e.value->'steps', '[]'::jsonb) AS steps
+    FROM jsonb_each(COALESCE(p_plan, '{}'::jsonb)) AS e
+  ),
+  sess AS (
+    SELECT s.question_ids
+    FROM public.practice_sequential_state s
+    WHERE s.user_id = p_user_id
+    ORDER BY s.updated_at DESC
+    LIMIT 1
+  ),
+  sess_ids AS (
+    SELECT DISTINCT unnest(s.question_ids) AS qid
+    FROM sess s
+    WHERE s.question_ids IS NOT NULL
+  ),
+  scope AS (
+    SELECT q.id, b.subject, b.since, b.size, b.steps, true AS by_goal
+    FROM base b
+    JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) > 0
+    UNION ALL
+    SELECT q.id, b.subject, b.since, b.size, b.steps, false
+    FROM base b
+    JOIN sess_ids si ON true
+    JOIN public.questions q
+      ON q.id = si.qid AND q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) = 0
+    UNION ALL
+    SELECT q.id, b.subject, b.since, b.size, b.steps, false
+    FROM base b
+    JOIN public.questions q
+      ON q.subject = b.subject
+     AND q.key_points IS NOT NULL AND q.key_points <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_excluded_questions ueq
+       WHERE ueq.question_id = q.id AND ueq.user_id = p_user_id
+     )
+    WHERE jsonb_array_length(b.steps) = 0
+      AND (SELECT question_ids FROM sess) IS NULL
+  ),
+  tot AS (
+    SELECT sc.subject, sc.since, sc.size, sc.steps, sc.by_goal, COUNT(sc.id)::BIGINT AS total
+    FROM scope sc
+    GROUP BY sc.subject, sc.since, sc.size, sc.steps, sc.by_goal
+  ),
+  ua_u AS (
+    SELECT ua.id AS answer_id, ua.question_id, ua.answered_at, ua.mode, ua.source
+    FROM public.user_answers ua
+    WHERE ua.user_id = p_user_id
+  ),
+  answered AS (
+    SELECT sc.subject, sc.by_goal, ua.question_id, ua.answer_id, ua.answered_at, ua.mode, ua.source
+    FROM scope sc
+    JOIN ua_u ua ON ua.question_id = sc.id
+    WHERE sc.since IS NULL OR ua.answered_at >= sc.since
+  ),
+  q_once AS (
+    SELECT a.subject, a.question_id, MIN(a.answered_at) AS answered_at
+    FROM answered a
+    WHERE NOT a.by_goal
+    GROUP BY a.subject, a.question_id
+  ),
+  q_rank AS (
+    SELECT q.subject, q.question_id, q.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY q.subject ORDER BY q.answered_at, q.question_id) AS rn
+    FROM q_once q
+  ),
+  evt AS (
+    SELECT a.subject, a.answered_at,
+           ROW_NUMBER() OVER (PARTITION BY a.subject ORDER BY a.answered_at, a.answer_id) AS rn
+    FROM answered a
+    WHERE a.by_goal AND a.mode = 'practice' AND a.source IS DISTINCT FROM 'random'
+  ),
+  mark_goal AS (
+    SELECT b.subject, SUM(x.v) OVER (PARTITION BY b.subject ORDER BY x.ord) AS rn
+    FROM tot b
+    CROSS JOIN LATERAL (
+      SELECT (v.value)::BIGINT AS v, v.ord
+      FROM jsonb_array_elements_text(b.steps) WITH ORDINALITY AS v(value, ord)
+    ) x
+  ),
+  mark_round AS (
+    SELECT d.subject, d.rn, d.answered_at
+    FROM q_rank d
+    JOIN tot b ON b.subject = d.subject
+    WHERE jsonb_array_length(b.steps) = 0
+      AND COALESCE(b.size, b.total) > 0
+      AND d.rn = COALESCE(b.size, b.total)
+  ),
+  dated AS (
+    SELECT g.subject, e.answered_at
+    FROM mark_goal g
+    JOIN evt e ON e.subject = g.subject AND e.rn = g.rn
+    UNION ALL
+    SELECT r.subject, r.answered_at FROM mark_round r
+  ),
+  evt_cnt AS (SELECT subject, COUNT(*) AS n FROM evt GROUP BY subject),
+  q_once_cnt AS (SELECT subject, COUNT(*) AS n FROM q_once GROUP BY subject),
+  dated_agg AS (
+    SELECT subject,
+           jsonb_agg(to_char((answered_at AT TIME ZONE 'Asia/Shanghai')::DATE, 'YYYY-MM-DD')
+                     ORDER BY answered_at) AS arr
+    FROM dated
+    GROUP BY subject
+  )
+  SELECT tot.subject,
+         tot.total,
+         CASE WHEN jsonb_array_length(tot.steps) > 0
+              THEN COALESCE(ec.n, 0)
+              ELSE LEAST(COALESCE(qc.n, 0), tot.total)
+         END AS attempts,
+         COALESCE(da.arr, '[]'::jsonb) AS done_dates
+  FROM tot
+  LEFT JOIN evt_cnt ec ON ec.subject = tot.subject
+  LEFT JOIN q_once_cnt qc ON qc.subject = tot.subject
+  LEFT JOIN dated_agg da ON da.subject = tot.subject
+  ORDER BY tot.subject;
+$function$
