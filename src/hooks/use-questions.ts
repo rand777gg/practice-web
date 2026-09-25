@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
+import { logError, userMessage } from '@/services/errors'
+import {
+  countQuestionItems,
+  deleteQuestion as deleteQuestionRow,
+  fetchQuestionPage,
+  fetchQuestionsByIds,
+  insertQuestions,
+  toQuestionInsert,
+  updateQuestion as updateQuestionRow,
+  type QuestionPageQuery,
+} from '@/services/questions'
 import type { Question, QuestionType } from '@/types'
 
 const DEFAULT_PAGE_SIZE = 20
@@ -38,52 +48,22 @@ export function useQuestions() {
     setIsLoading(true)
     setError(null)
 
-    const from = (p - 1) * ps
-    const to = from + ps - 1
-
-    let query = supabase
-      .from('questions')
-      .select('*', { count: 'exact' })
-
-    if (search) query = query.ilike('question_text', `%${search}%`)
-    if (subject) query = query.eq('subject', subject)
-    if (category === '__unset__') query = query.is('category', null)
-    else if (category) query = query.or(`category.eq."${category}",categories.cs.["${category}"]`)
-    if (questionType) query = query.eq('question_type', questionType)
-    if (importMode) query = query.eq('import_mode', importMode)
-    if (verified === 'true') query = query.eq('verified', true)
-    else if (verified === 'false') query = query.eq('verified', false)
-    if (issueFlag) query = query.eq('issue_flag', issueFlag)
-    if (keyPoints === '__none__') query = query.or('key_points.is.null,key_points.eq.""')
-    else if (keyPoints) query = query.ilike('key_points', `%${keyPoints}%`)
-
-    query = query.order('created_at', { ascending: false }).range(from, to)
-
-    // 记录数（分页用）与小题数（展示用）一起拿：分页在服务端做，小题数只能让库聚合
-    const orNull = (v?: string) => (v ? v : null)
-    const [{ data, error: fetchError, count: total }, stats] = await Promise.all([
-      query,
-      supabase.rpc('count_question_items', {
-        p_search: orNull(search),
-        p_subject: orNull(subject),
-        // '__unset__'（无分类）要原样传下去，库里认这个哨兵值
-        p_category: orNull(category),
-        p_question_type: orNull(questionType),
-        p_import_mode: orNull(importMode),
-        p_verified: verified === 'true' ? true : verified === 'false' ? false : null,
-        p_key_points: orNull(keyPoints),
-        p_issue_flag: orNull(issueFlag),
-      }),
-    ])
-
-    if (fetchError) {
-      setError(fetchError.message)
-    } else {
-      setQuestions((data ?? []) as Question[])
-      if (total !== null) setCount(total)
+    // 列表与总数走同一套筛选口径（'__unset__' / '__none__' 两个哨兵值也一致），
+    // 记录数与小题数都交给 count_question_items，不再依赖 PostgREST 的 count 头
+    const query: QuestionPageQuery = { page: p, pageSize: ps, search, subject, category, questionType, importMode, verified, keyPoints, issueFlag }
+    try {
+      const [rows, counts] = await Promise.all([fetchQuestionPage(query), countQuestionItems(query)])
+      // 列表列集不含 case_questions, 而列表里的小题徽标是按 case_questions 算的,
+      // 所以按本页 id 再取一次整题 —— 少了这步, 完形/案例分析那类记录的"N 题"徽标会整片消失
+      const full = await fetchQuestionsByIds(rows.map((r) => r.id))
+      const byId = new Map(full.map((q) => [q.id, q]))
+      setQuestions(rows.flatMap((r) => { const q = byId.get(r.id); return q ? [q] : [] }))
+      setCount(counts.rows)
+      setItemCount(counts.items)
+    } catch (e) {
+      logError('useQuestions.fetchQuestions', e)
+      setError(userMessage(e))
     }
-    const items = (stats.data as { items?: number } | null)?.items
-    if (typeof items === 'number') setItemCount(items)
     setPage(p)
     if (ps !== pageSize) setPageSize(ps)
     setIsLoading(false)
@@ -95,23 +75,19 @@ export function useQuestions() {
   }, [])
 
   const createQuestion = async (question: Omit<Question, 'id' | 'created_at' | 'created_by'>) => {
-    const { data, error: createError } = await supabase
-      .from('questions').insert(question as Record<string, unknown>).select('id').single()
-    if (createError) throw createError
-    autoIndex('question', (data as { id: string } | null)?.id)
+    const [id] = await insertQuestions([toQuestionInsert(question)])
+    autoIndex('question', id)
     await fetchQuestions({ ...paramsRef.current, page: 1 })
   }
 
   const updateQuestion = async (id: string, question: Partial<Question>) => {
-    const { error: updateError } = await supabase.from('questions').update(question as Record<string, unknown>).eq('id', id)
-    if (updateError) throw updateError
+    await updateQuestionRow(id, question)
     autoIndex('question', id)
     await fetchQuestions({ ...paramsRef.current, page })
   }
 
   const deleteQuestion = async (id: string) => {
-    const { error: deleteError } = await supabase.from('questions').delete().eq('id', id)
-    if (deleteError) throw deleteError
+    await deleteQuestionRow(id)
     // 删题也要同步: 差集里多出来的旧块靠这一次调用清掉, 否则被删的题还会被小Q 引用出来
     autoIndex('question', id)
     // If last item on page and not first page, go back one page

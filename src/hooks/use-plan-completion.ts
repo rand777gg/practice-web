@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { toJson } from '@/services/db'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import { resolveGoals, resolveRounds, todayStr } from '@/types'
@@ -180,7 +181,7 @@ export async function fetchPlanStats(
 ): Promise<Map<string, PlanStat>> {
   const map = new Map<string, PlanStat>()
   if (Object.keys(plan).length === 0) return map
-  const { data, error } = await supabase.rpc('get_plan_stats', { p_user_id: userId, p_plan: plan })
+  const { data, error } = await supabase.rpc('get_plan_stats', { p_user_id: userId, p_plan: toJson(plan) })
   if (error) {
     console.error('fetchPlanStats:', error)
     return map
@@ -442,7 +443,14 @@ async function fetchProgress(params: {
   p_subjects: string[] | null
   p_subject_resets: Record<string, string> | null
 }): Promise<ProgressRow[] | null> {
-  const { data, error } = await supabase.rpc('get_subject_progress', params)
+  // 可选参数省略即 SQL 的 DEFAULT NULL；生成类型只接受 undefined 表示省略
+  const { data, error } = await supabase.rpc('get_subject_progress', {
+    p_user_id: params.p_user_id,
+    p_plan_reset_at: params.p_plan_reset_at ?? undefined,
+    p_today_since: params.p_today_since,
+    p_subjects: params.p_subjects ?? undefined,
+    p_subject_resets: params.p_subject_resets ? toJson(params.p_subject_resets) : undefined,
+  })
   if (error) {
     console.error('usePlanCompletion:', error)
     return null
@@ -545,7 +553,7 @@ export function usePlanCompletion(): PlanCompletion {
         ])]
         const reviewRes = await supabase.rpc('get_review_count', {
           p_user_id: uid,
-          p_subjects: planSubs.length > 0 ? planSubs : null,
+          p_subjects: planSubs.length > 0 ? planSubs : undefined,
         })
         if (cancelled) return
         setReviewCount(reviewRes.data == null ? 0 : Number(reviewRes.data))

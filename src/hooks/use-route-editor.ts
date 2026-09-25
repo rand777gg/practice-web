@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { logError, userMessage } from '@/services/errors'
+import { fetchLearningRoute, fetchMaxRouteOrder, listQuestionItemsByStages } from '@/services/learning-routes'
+import { fetchQuestionsByIds } from '@/services/questions'
 import {
   addRouteQuestions,
   createRouteStage,
@@ -14,7 +16,7 @@ import {
   updateRouteQuestionItem,
   updateRouteStage,
 } from '@/hooks/use-learning-routes'
-import type { LearningRoute, RouteNodeStyle } from '@/types/learning-routes'
+import type { RouteNodeStyle } from '@/types/learning-routes'
 import type { Question } from '@/types'
 import type { DrawioFigureHandle } from '@/components/learning-route/DrawioFigure'
 import type { RoadmapEditor, RoadmapNodeTarget, RoadmapStage } from '@/components/learning-route/RoadmapCanvas'
@@ -98,34 +100,23 @@ export function useRouteEditor(routeId: string | undefined) {
     setNotFound(false)
     setError('')
     try {
-      const { data: routeRow, error: routeErr } = await supabase
-        .from('learning_routes')
-        .select('*')
-        .eq('id', rid)
-        .single()
-      if (routeErr || !routeRow) {
+      const route = await fetchLearningRoute(rid)
+      if (!route) {
         setNotFound(true)
         return
       }
-      const route = routeRow as LearningRoute
       const stageList = await fetchRouteStages(rid)
 
       const stageIds = stageList.map((s) => s.id)
       const linkByStageQid = new Map<string, Map<string, { itemId: string; nodeStyle: RouteNodeStyle }>>()
       if (stageIds.length > 0) {
-        const { data: linkRows } = await supabase
-          .from('learning_route_questions')
-          .select('id, stage_id, question_id, node_style')
-          .in('stage_id', stageIds)
-        for (const row of (linkRows ?? []) as {
-          id: string; stage_id: string; question_id: string; node_style: RouteNodeStyle | null
-        }[]) {
+        for (const row of await listQuestionItemsByStages(stageIds)) {
           let m = linkByStageQid.get(row.stage_id)
           if (!m) {
             m = new Map()
             linkByStageQid.set(row.stage_id, m)
           }
-          m.set(row.question_id, { itemId: row.id, nodeStyle: row.node_style ?? {} })
+          m.set(row.question_id, { itemId: row.id, nodeStyle: row.node_style })
         }
       }
 
@@ -168,7 +159,7 @@ export function useRouteEditor(routeId: string | undefined) {
       )
       setDirty(false)
     } catch (err) {
-      console.error(err)
+      logError('useRouteEditor.loadRoute', err)
       setError('加载失败，请稍后重试')
     } finally {
       setLoading(false)
@@ -353,9 +344,8 @@ export function useRouteEditor(routeId: string | undefined) {
     const replace = replaceTarget
     setSavingQids(new Set(questionIds))
     try {
-      const { data } = await supabase.from('questions').select('*').in('id', questionIds)
       const byId = new Map<string, Question>()
-      for (const row of (data ?? []) as Question[]) byId.set(row.id, row)
+      for (const row of await fetchQuestionsByIds(questionIds)) byId.set(row.id, row)
       setDirty(true)
       setStages((prev) =>
         prev.map((s, i) => {
@@ -380,7 +370,7 @@ export function useRouteEditor(routeId: string | undefined) {
       setPickerStage(null)
       setReplaceTarget(null)
     } catch (err) {
-      console.error(err)
+      logError('useRouteEditor.handlePickerAdd', err)
       setError('添加题目失败，请稍后重试')
     } finally {
       setSavingQids(new Set())
@@ -393,12 +383,7 @@ export function useRouteEditor(routeId: string | undefined) {
       : new Set<string>()
 
   const nextRouteOrder = async (): Promise<number> => {
-    const { data } = await supabase
-      .from('learning_routes')
-      .select('route_order')
-      .order('route_order', { ascending: false })
-      .limit(1)
-    return ((data?.[0]?.route_order as number | undefined) ?? -1) + 1
+    return ((await fetchMaxRouteOrder()) ?? -1) + 1
   }
 
   const handleSave = async () => {
@@ -470,8 +455,8 @@ export function useRouteEditor(routeId: string | undefined) {
         navigate(`/admin/learning-routes/${rid}/edit`)
       }
     } catch (err) {
-      console.error(err)
-      setError(err instanceof Error ? err.message : '保存失败，请稍后重试')
+      logError('useRouteEditor.handleSave', err)
+      setError(userMessage(err))
     } finally {
       setSaving(false)
     }

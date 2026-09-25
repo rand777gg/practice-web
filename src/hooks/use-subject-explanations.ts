@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { fetchSubjectExplanations, type SubjectExplanation } from '@/services/practice'
+import { logError } from '@/services/errors'
 
-export interface SubjectExplanation {
-  subject: string
-  content: string
-  updated_at: string
-}
+export type { SubjectExplanation }
 
 let cache: Map<string, SubjectExplanation> | null = null
 
@@ -15,9 +12,12 @@ export function useSubjectExplanations() {
 
   const load = useCallback(async () => {
     if (cache) { setExplanations(cache); setLoaded(true); return }
-    const { data } = await supabase.from('subject_explanations').select('subject, content, updated_at')
     const map = new Map<string, SubjectExplanation>()
-    for (const row of (data ?? []) as SubjectExplanation[]) map.set(row.subject, row)
+    try {
+      for (const row of await fetchSubjectExplanations()) map.set(row.subject, row)
+    } catch (e) {
+      logError('useSubjectExplanations.load', e)
+    }
     cache = map
     setExplanations(map)
     setLoaded(true)

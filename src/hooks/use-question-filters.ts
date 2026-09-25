@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { logError } from '@/services/errors'
+import { fetchQuestionCategories, fetchQuestionMetaCache } from '@/services/questions'
 
 let cacheSubs: string[] | null = null
 let cacheCats: string[] | null = null
@@ -15,13 +16,16 @@ export function useQuestionFilters() {
     let cancelled = false
     async function load() {
       // ponytail: question_meta_cache has 1 row, vs scanning 1281 questions rows
-      const { data } = await supabase
-        .from('question_meta_cache')
-        .select('subjects, categories')
-        .single()
+      let subs: string[] = []
+      let cats: string[] = []
+      try {
+        const meta = await fetchQuestionMetaCache()
+        subs = meta.subjects
+        cats = meta.categories
+      } catch (e) {
+        logError('useQuestionFilters.load', e)
+      }
       if (cancelled) return
-      const subs = (data?.subjects ?? []) as string[]
-      const cats = (data?.categories ?? []) as string[]
       cacheSubs = subs
       cacheCats = cats
       setSubjects(subs)
@@ -39,20 +43,14 @@ export function useQuestionFilters() {
       return
     }
     // ponytail: subject has an index now, query is fast on filtered subset
-    const { data } = await supabase
-      .from('questions')
-      .select('category, categories')
-      .eq('subject', subject)
-    const cats = new Set<string>()
-    for (const row of data ?? []) {
-      if (row.category) cats.add(row.category)
-      if (row.categories) {
-        for (const c of row.categories as string[]) {
-          if (c) cats.add(c)
-        }
-      }
+    let cats: string[] = []
+    try {
+      // 一个学科的分类就可能上千条, PostgREST 单次最多回 1000 行 —— 服务层翻页取全
+      cats = await fetchQuestionCategories([subject])
+    } catch (e) {
+      logError('useQuestionFilters.updateFilteredCategories', e)
     }
-    setFilteredCategories([...cats].sort())
+    setFilteredCategories(cats)
   }, [categories])
 
   return { subjects, categories, filteredCategories, loading, updateFilteredCategories }

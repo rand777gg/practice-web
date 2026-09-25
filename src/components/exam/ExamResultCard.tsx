@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { fetchExamSession } from '@/services/exam'
+import { fetchExamAnswersWithQuestion, type AnswerWithQuestion } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { EXAM_PAPER_TITLE_KEY } from '@/lib/constants'
 import { fetchQuestionsByIds } from '@/lib/exam-compose'
 import { Card, CardContent } from '@/components/ui/card'
@@ -8,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { ExamPaperReview } from './ExamPaperReview'
 import { questionItemCount, questionCorrectItemCount } from '@/lib/answer-utils'
-import type { ExamSession, UserAnswer, Question, CorrectAnswer, ExamTemplate, ExamTemplateSection } from '@/types'
+import type { ExamSession, Question, CorrectAnswer, ExamTemplate, ExamTemplateSection } from '@/types'
 import { RotateCcw, Home, FileText, Columns2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
@@ -34,7 +36,7 @@ function viewBtnClass(on: boolean) {
 export function ExamResultCard({ sessionId }: Props) {
   const { t } = useT()
   const [session, setSession] = useState<ExamSession | null>(null)
-  const [answers, setAnswers] = useState<(UserAnswer & { questions: Question })[]>([])
+  const [answers, setAnswers] = useState<AnswerWithQuestion[]>([])
   const [paperQuestions, setPaperQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [paperLoading, setPaperLoading] = useState(true)
@@ -42,24 +44,16 @@ export function ExamResultCard({ sessionId }: Props) {
 
   useEffect(() => {
     async function load() {
-      const { data: sData } = await supabase
-        .from('exam_sessions')
-        .select('*')
-        .eq('id', sessionId)
-        .single()
-
-      if (sData) {
-        setSession(sData as ExamSession)
+      try {
+        setSession(await fetchExamSession(sessionId))
+      } catch (e) {
+        logError('examResult.session', e)
       }
 
-      const { data: aData } = await supabase
-        .from('user_answers')
-        .select('*, questions(*)')
-        .eq('exam_session_id', sessionId)
-        .order('answered_at', { ascending: true })
-
-      if (aData) {
-        setAnswers(aData as (UserAnswer & { questions: Question })[])
+      try {
+        setAnswers(await fetchExamAnswersWithQuestion(sessionId))
+      } catch (e) {
+        logError('examResult.answers', e)
       }
 
       setIsLoading(false)
@@ -88,7 +82,7 @@ export function ExamResultCard({ sessionId }: Props) {
     [answers],
   )
   const paperList = useMemo(
-    () => (paperQuestions.length ? paperQuestions : answers.map((a) => a.questions).filter(Boolean)),
+    () => (paperQuestions.length ? paperQuestions : answers.map((a) => a.question).filter((q): q is Question => q !== null)),
     [paperQuestions, answers],
   )
 
@@ -141,7 +135,7 @@ export function ExamResultCard({ sessionId }: Props) {
   const subjectStats = useMemo(() => {
     const map = new Map<string, { total: number; correct: number }>()
     for (const a of answers) {
-      const q = a.questions
+      const q = a.question
       if (!q) continue
       const s = q.subject || 'Other'
       const entry = map.get(s) || { total: 0, correct: 0 }

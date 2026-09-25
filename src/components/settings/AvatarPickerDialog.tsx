@@ -9,7 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { supabase } from '@/lib/supabase'
+import { updateProfile } from '@/services/profiles'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useT } from '@/i18n/use-t'
 import {
@@ -50,7 +51,7 @@ export function AvatarPickerDialog({
 
   const apply = async (patch: { avatar_preset: string | null; avatar_url: string | null }) => {
     if (!user) return
-    await supabase.from('profiles').update(patch).eq('id', user.id)
+    await updateProfile(user.id, patch).catch((e) => logError('avatarPicker.apply', e))
     await refreshProfile()
   }
 

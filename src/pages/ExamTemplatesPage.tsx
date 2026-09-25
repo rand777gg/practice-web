@@ -8,7 +8,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowLeft, ChevronDown, Copy, GripVertical, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
-import { supabase } from '@/lib/supabase'
+import { fetchQuestionMetaCache } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -113,16 +114,14 @@ export function Component() {
   useEffect(() => {
     let cancelled = false
     async function loadFilters() {
-      const { data } = await supabase.from('questions').select('subject, category')
-      if (cancelled) return
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
+      try {
+        const meta = await fetchQuestionMetaCache()
+        if (cancelled) return
+        setSubjects(meta.subjects)
+        setCategories(meta.categories)
+      } catch (e) {
+        logError('examTemplates.filters', e)
       }
-      setSubjects([...subs].sort())
-      setCategories([...cats].sort())
     }
     loadFilters()
     return () => { cancelled = true }

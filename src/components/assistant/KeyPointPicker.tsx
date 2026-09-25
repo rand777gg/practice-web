@@ -25,7 +25,8 @@ async function loadKeyPoints(subject: string | null): Promise<string[]> {
   const key = subject ?? ''
   const cached = cache.get(key)
   if (cached) return cached
-  const { data, error } = await supabase.rpc('get_question_meta', { p_subject: subject })
+  // 省略 p_subject 即 SQL 的 DEFAULT NULL（全学科）；生成类型只接受 undefined 表示省略
+  const { data, error } = await supabase.rpc('get_question_meta', { p_subject: subject ?? undefined })
   const list = error ? [] : ((data as { key_points?: string[] } | null)?.key_points ?? [])
   cache.set(key, list)
   for (const notify of listeners) notify()

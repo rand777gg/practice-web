@@ -1,12 +1,9 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
 import { pluginDefaults } from '@/lib/plugin-catalog'
-
-export interface UserPlugin {
-  plugin_id: string
-  enabled: boolean
-  config: Record<string, number | boolean>
-}
+import { fetchUserPlugins, upsertUserPlugin, type UserPlugin } from '@/services/account'
+import { logError, userMessage } from '@/services/errors'
+import { useAuthStore } from '@/stores/auth-store'
+import { registerUserScopedStore } from '@/stores/user-scope'
 
 interface PluginState {
   rows: Record<string, UserPlugin>
@@ -14,16 +11,7 @@ interface PluginState {
   load: () => Promise<void>
   setEnabled: (id: string, enabled: boolean) => Promise<void>
   setConfig: (id: string, config: Record<string, number | boolean>) => Promise<void>
-}
-
-async function currentUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession()
-  return data.session?.user.id ?? null
-}
-
-function toRow(raw: { plugin_id: string; enabled: boolean; config: unknown }): UserPlugin {
-  const config = raw.config && typeof raw.config === 'object' ? (raw.config as Record<string, number | boolean>) : {}
-  return { plugin_id: raw.plugin_id, enabled: raw.enabled, config }
+  reset: () => void
 }
 
 export const usePluginStore = create<PluginState>((set) => ({
@@ -31,47 +19,57 @@ export const usePluginStore = create<PluginState>((set) => ({
   loaded: false,
 
   async load() {
-    const userId = await currentUserId()
+    const userId = useAuthStore.getState().user?.id
     if (!userId) {
       set({ rows: {}, loaded: true })
       return
     }
-    const { data, error } = await supabase
-      .from('user_plugins')
-      .select('plugin_id, enabled, config')
-      .eq('user_id', userId)
-    if (error) {
+    let plugins: UserPlugin[]
+    try {
+      plugins = await fetchUserPlugins(userId)
+    } catch (e) {
+      logError('plugin.load', e)
       set({ loaded: true })
       return
     }
     const rows: Record<string, UserPlugin> = {}
-    for (const raw of data ?? []) rows[raw.plugin_id] = toRow(raw)
+    for (const plugin of plugins) rows[plugin.plugin_id] = plugin
     set({ rows, loaded: true })
   },
 
   async setEnabled(id, enabled) {
-    const userId = await currentUserId()
+    const userId = useAuthStore.getState().user?.id
     if (!userId) throw new Error('未登录')
-    const existing = usePluginStore.getState().rows[id]
-    const config = existing?.config ?? {}
-    const { error } = await supabase
-      .from('user_plugins')
-      .upsert({ user_id: userId, plugin_id: id, enabled, config }, { onConflict: 'user_id,plugin_id' })
-    if (error) throw new Error(error.message)
-    set((state) => ({ rows: { ...state.rows, [id]: { plugin_id: id, enabled, config } } }))
+    const config = usePluginStore.getState().rows[id]?.config ?? {}
+    const plugin: UserPlugin = { plugin_id: id, enabled, config }
+    try {
+      await upsertUserPlugin(userId, plugin)
+    } catch (e) {
+      logError('plugin.setEnabled', e)
+      throw new Error(`保存插件失败: ${userMessage(e)}`, { cause: e })
+    }
+    set((state) => ({ rows: { ...state.rows, [id]: plugin } }))
   },
 
   async setConfig(id, config) {
-    const userId = await currentUserId()
+    const userId = useAuthStore.getState().user?.id
     if (!userId) throw new Error('未登录')
     const enabled = usePluginStore.getState().rows[id]?.enabled ?? false
-    const { error } = await supabase
-      .from('user_plugins')
-      .upsert({ user_id: userId, plugin_id: id, enabled, config }, { onConflict: 'user_id,plugin_id' })
-    if (error) throw new Error(error.message)
-    set((state) => ({ rows: { ...state.rows, [id]: { plugin_id: id, enabled, config } } }))
+    const plugin: UserPlugin = { plugin_id: id, enabled, config }
+    try {
+      await upsertUserPlugin(userId, plugin)
+    } catch (e) {
+      logError('plugin.setConfig', e)
+      throw new Error(`保存插件失败: ${userMessage(e)}`, { cause: e })
+    }
+    set((state) => ({ rows: { ...state.rows, [id]: plugin } }))
   },
+
+  /** loaded 一并清掉：插件开关决定挂哪些全局副作用，绝不能沿用上一个用户的状态 */
+  reset: () => set({ rows: {}, loaded: false }),
 }))
+
+registerUserScopedStore(() => usePluginStore.getState().reset())
 
 /** 同步取用:插件都挂在渲染路径上,不能为了读开关变成异步 */
 export function getPlugin(id: string): UserPlugin {

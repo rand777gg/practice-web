@@ -1,4 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
@@ -43,16 +44,16 @@ async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit, retr
 // Create client only when env vars are present — otherwise use a no-op
 // placeholder that won't crash the app. Auth / data calls will fail
 // gracefully at call sites.
-function createSafeClient(url: string, key: string) {
+function createSafeClient(url: string, key: string): SupabaseClient<Database> {
   if (!url || !key) {
-    return new Proxy({} as ReturnType<typeof createClient>, {
+    return new Proxy({} as SupabaseClient<Database>, {
       get(_, prop) {
         if (prop === 'auth') return { getSession: () => Promise.resolve({ data: { session: null }, error: null }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({ error: null }) }
         return () => Promise.resolve({ data: null, error: new Error('Supabase not configured') })
       },
     })
   }
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: {
       autoRefreshToken: true,
       persistSession: true,

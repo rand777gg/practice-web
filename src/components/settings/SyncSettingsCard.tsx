@@ -7,7 +7,9 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { supabase } from '@/lib/supabase'
+import { fetchUserSettings } from '@/services/account'
+import { logError } from '@/services/errors'
+import { useAuthStore } from '@/stores/auth-store'
 import { useT } from '@/i18n/use-t'
 import { Cloud, CloudUpload, CloudDownload, RefreshCw, Download, Upload, Check, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -65,18 +67,16 @@ export function SyncSettingsCard() {
   const checkedRef = useRef(false)
 
   const checkConflict = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSyncStatus('idle'); return }
+    const userId = useAuthStore.getState().user?.id
+    if (!userId) { setSyncStatus('idle'); return }
 
-    const { data } = await supabase
-      .from('user_settings')
-      .select('settings')
-      .eq('user_id', user.id)
-      .maybeSingle()
+    const stored = await fetchUserSettings(userId).catch((e) => {
+      logError('syncSettings.checkConflict', e)
+      return null
+    })
+    if (!stored) { setSyncStatus('ok'); setConflictKeys([]); return }
 
-    if (!data?.settings) { setSyncStatus('ok'); setConflictKeys([]); return }
-
-    const server = data.settings as Record<string, unknown>
+    const server = stored.settings
     const local = collectLocalSettings(syncedKeys)
     const diffKeys: string[] = []
     for (const key of syncedKeys) {

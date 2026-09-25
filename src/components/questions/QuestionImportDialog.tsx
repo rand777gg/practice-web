@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { insertQuestions, toQuestionInsert } from '@/services/questions'
+import { logError, userMessage } from '@/services/errors'
 import { autoIndex } from '@/lib/rag'
 import {
   Dialog,
@@ -165,26 +166,30 @@ export function QuestionImportDialog({ open, onClose, onImported }: Props) {
 
   const handleImport = async () => {
     setState('importing')
-    const { error } = await supabase.from('questions').insert(
-      parsed.map((q) => ({
-        question_type: q.question_type ?? 'single_choice',
-        question_text: q.question_text,
-        options: q.options,
-        correct_answer: q.correct_answer,
+    try {
+      await insertQuestions(parsed.map((q) => ({
+        ...toQuestionInsert({
+          question_type: q.question_type ?? 'single_choice',
+          question_text: q.question_text,
+          options: q.options,
+          correct_answer: q.correct_answer,
+          subject: q.subject ?? null,
+          analysis: q.analysis ?? null,
+          key_points: q.key_points ?? null,
+          allow_unordered: q.allow_unordered ?? false,
+        }),
+        // 无分类时旧写法落库是 NULL(不是空数组), toQuestionInsert 的入参不允许 null, 这里显式补回
         categories: q.categories?.length ? q.categories : q.category ? [q.category] : null,
-        subject: q.subject ?? null,
-        analysis: q.analysis ?? null,
-        key_points: q.key_points ?? null,
-        allow_unordered: q.allow_unordered ?? false,
-      })),
-    )
-    if (error) { setMessage(error.message); setState('error') }
-    else {
+      })))
       // 一次导入可能上百道, 逐条同步还不如整源跑一遍(服务端按内容差分, 新题才会算向量)
       autoIndex('question')
       setMessage(`成功导入 ${parsed.length} 道题目`)
       setState('done')
       onImported()
+    } catch (e) {
+      logError('QuestionImportDialog.handleImport', e)
+      setMessage(userMessage(e))
+      setState('error')
     }
   }
 

@@ -1,6 +1,10 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
+import { completeExamSession, createExamSession, fetchExamSession, saveExamCursor } from '@/services/exam'
+import { fetchExamAnswers, upsertAnswer, upsertAnswers } from '@/services/practice'
+import { logError, userMessage } from '@/services/errors'
+import type { AnswerInsert } from '@/services/practice'
 import { useRefreshStore } from './refresh-store'
+import { registerUserScopedStore } from '@/stores/user-scope'
 import {
   isAnswerCorrect,
   questionCorrectItemCount,
@@ -53,9 +57,9 @@ interface ExamState {
   startExam: (params: StartExamParams) => Promise<StartExamResult>
   resumeExam: (sessionId: string) => Promise<void>
   answerQuestion: (questionId: string, answer: CorrectAnswer) => void
-  nextQuestion: () => void
-  previousQuestion: () => void
-  jumpTo: (index: number) => void
+  nextQuestion: () => Promise<void>
+  previousQuestion: () => Promise<void>
+  jumpTo: (index: number) => Promise<void>
   submitExam: () => Promise<void>
   reset: () => void
 }
@@ -105,33 +109,28 @@ export const useExamStore = create<ExamState>((set, get) => ({
     const totalItems = orderedQuestions.reduce((sum, q) => sum + questionItemCount(q), 0)
 
     // 模板快照随会话入库: 刷新/续考后可还原封面、工具栏名称与排版(与模板本体解耦)
-    const baseSessionRow = {
-      user_id: userId,
-      total_questions: totalItems,
-      duration_ms: durationMs,
-      question_ids: questionIds,
-      current_index: 0,
-      status: 'in_progress',
-      correct_count: 0,
+    let session: ExamSession | null
+    try {
+      session = await createExamSession({
+        user_id: userId,
+        total_questions: totalItems,
+        duration_ms: durationMs,
+        question_ids: questionIds,
+        template: template ?? null,
+      })
+    } catch (e) {
+      logError('exam.startExam', e)
+      set({ isLoading: false, error: userMessage(e) })
+      return { ok: false }
     }
-    const withTpl = await supabase
-      .from('exam_sessions')
-      .insert({ ...baseSessionRow, template: template ?? null })
-      .select()
-      .single()
-    // DB 尚未执行加列迁移(缺 template 列, PGRST204)时降级为旧插入, 不阻塞开考
-    const tplColumnMissing = template != null && withTpl.error?.message?.includes('template')
-    const { data: session, error: sError } = tplColumnMissing
-      ? await supabase.from('exam_sessions').insert(baseSessionRow).select().single()
-      : withTpl
 
-    if (sError || !session) {
-      set({ isLoading: false, error: sError?.message ?? 'Failed to create session' })
+    if (!session) {
+      set({ isLoading: false, error: 'Failed to create session' })
       return { ok: false }
     }
 
     set({
-      session: session as unknown as ExamSession,
+      session,
       questions: orderedQuestions,
       currentIndex: 0,
       answers: new Map(),
@@ -143,53 +142,40 @@ export const useExamStore = create<ExamState>((set, get) => ({
   resumeExam: async (sessionId) => {
     set({ isLoading: true, error: null })
 
-    const { data: session, error: sError } = await supabase
-      .from('exam_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single()
+    let sess: ExamSession | null
+    try {
+      sess = await fetchExamSession(sessionId)
+    } catch (e) {
+      logError('exam.resumeExam', e)
+      sess = null
+    }
 
-    if (sError || !session) {
+    if (!sess) {
       set({ isLoading: false, error: 'Session not found' })
       return
     }
-
-    const sess = session as unknown as ExamSession
 
     if (sess.status === 'completed') {
       set({ isLoading: false, session: sess })
       return
     }
 
-    const questionIds = sess.question_ids as string[]
-    const { data: questions, error: qError } = await supabase
-      .from('questions')
-      .select('*')
-      .in('id', questionIds)
-
-    if (qError || !questions) {
+    let orderedQuestions: Question[]
+    try {
+      orderedQuestions = await fetchQuestionsByIds(sess.question_ids)
+    } catch (e) {
+      logError('exam.resumeExam.questions', e)
       set({ isLoading: false, error: 'Failed to load questions' })
       return
     }
 
-    const questionMap = new Map<string, Question>()
-    for (const q of questions as Question[]) {
-      questionMap.set(q.id, q)
-    }
-    const orderedQuestions = questionIds
-      .map((id) => questionMap.get(id))
-      .filter((q): q is Question => q !== undefined)
-
-    const { data: existingAnswers } = await supabase
-      .from('user_answers')
-      .select('*')
-      .eq('exam_session_id', sessionId)
-
     const answersMap = new Map<string, CorrectAnswer>()
-    if (existingAnswers) {
-      for (const ans of existingAnswers as { question_id: string; selected_answer: CorrectAnswer }[]) {
+    try {
+      for (const ans of await fetchExamAnswers(sessionId)) {
         answersMap.set(ans.question_id, ans.selected_answer)
       }
+    } catch (e) {
+      logError('exam.resumeExam.answers', e)
     }
 
     set({
@@ -212,50 +198,47 @@ export const useExamStore = create<ExamState>((set, get) => ({
       const q = questions.find(x => x.id === questionId)
       const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions) : false
       void (async () => {
-        const { error: saveErr } = await supabase.from('user_answers').upsert({
-          user_id: session.user_id,
-          question_id: questionId,
-          selected_answer: answer as any,
-          is_correct: isC,
-          mode: 'exam',
-          exam_session_id: session.id,
-          answered_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,question_id,exam_session_id' })
-        if (saveErr) console.error('[exam] auto-save answer failed:', saveErr)
+        try {
+          await upsertAnswer({
+            user_id: session.user_id,
+            question_id: questionId,
+            selected_answer: answer,
+            is_correct: isC,
+            mode: 'exam',
+            exam_session_id: session.id,
+            answered_at: new Date().toISOString(),
+          })
+        } catch (e) {
+          logError('exam.autoSaveAnswer', e)
+        }
       })()
     }
   },
 
-  nextQuestion: () => {
+  nextQuestion: async () => {
     const { currentIndex, questions, session } = get()
     // 游标按**小题（卡片）**走：卷面题型一条记录含多个小题，用 questions.length 会卡在第 9 张卡
     if (currentIndex < cardCount(questions) - 1) {
       const newIndex = currentIndex + 1
       set({ currentIndex: newIndex })
-      if (session) {
-        supabase.from('exam_sessions').update({ current_index: newIndex }).eq('id', session.id).then()
-      }
+      if (session) await saveExamCursor(session.id, newIndex).catch((e) => logError('exam.saveCursor', e))
     }
   },
 
-  previousQuestion: () => {
+  previousQuestion: async () => {
     const { currentIndex, session } = get()
     if (currentIndex > 0) {
       const newIndex = currentIndex - 1
       set({ currentIndex: newIndex })
-      if (session) {
-        supabase.from('exam_sessions').update({ current_index: newIndex }).eq('id', session.id).then()
-      }
+      if (session) await saveExamCursor(session.id, newIndex).catch((e) => logError('exam.saveCursor', e))
     }
   },
 
-  jumpTo: (index) => {
+  jumpTo: async (index) => {
     const { questions, session } = get()
     if (index >= 0 && index < cardCount(questions)) {
       set({ currentIndex: index })
-      if (session) {
-        supabase.from('exam_sessions').update({ current_index: index }).eq('id', session.id).then()
-      }
+      if (session) await saveExamCursor(session.id, index).catch((e) => logError('exam.saveCursor', e))
     }
   },
 
@@ -267,14 +250,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     let correctItems = 0
     const totalItems = questions.reduce((sum, q) => sum + questionItemCount(q), 0)
-    const answerRecords: {
-      user_id: string
-      question_id: string
-      selected_answer: unknown
-      is_correct: boolean
-      mode: string
-      exam_session_id: string
-    }[] = []
+    const answerRecords: AnswerInsert[] = []
 
     for (const q of questions) {
       const selected = answers.get(q.id)
@@ -304,29 +280,26 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     if (answerRecords.length > 0) {
       // upsert(而非 insert): 作答中的自动保存可能已写过同键行, 交卷时覆盖为最终判定, 避免重复键
-      const { error: aError } = await supabase
-        .from('user_answers')
-        .upsert(answerRecords, { onConflict: 'user_id,question_id,exam_session_id' })
-      if (aError) {
-        set({ isSubmitting: false, error: aError.message })
+      try {
+        await upsertAnswers(answerRecords)
+      } catch (e) {
+        logError('exam.submitExam.answers', e)
+        set({ isSubmitting: false, error: userMessage(e) })
         return
       }
     }
 
-    const { error: uError } = await supabase
-      .from('exam_sessions')
-      .update({
-        status: 'completed',
+    try {
+      await completeExamSession(session.id, {
         correct_count: correctItems,
         score,
         duration_ms: actualDuration,
         current_index: get().currentIndex,
         completed_at: now.toISOString(),
       })
-      .eq('id', session.id)
-
-    if (uError) {
-      set({ isSubmitting: false, error: uError.message })
+    } catch (e) {
+      logError('exam.submitExam', e)
+      set({ isSubmitting: false, error: userMessage(e) })
       return
     }
 
@@ -349,3 +322,5 @@ export const useExamStore = create<ExamState>((set, get) => ({
     })
   },
 }))
+
+registerUserScopedStore(() => useExamStore.getState().reset())

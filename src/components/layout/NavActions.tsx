@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Camera, Check, ChevronRight, Keyboard, Languages, LogOut, Monitor, Moon, MoreHorizontal, Settings, Sparkles, Sun,
@@ -26,8 +26,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { AiSummaryDialog } from '@/components/ai/AiSummaryDialog'
-import { QrScanner } from '@/components/auth/QrScanner'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
 import { HeaderPlanMenu } from './HeaderPlanMenu'
 import { hasAiConfig } from '@/lib/ai'
@@ -38,6 +36,13 @@ import { useAssistantStore } from '@/stores/assistant-store'
 import { useSettingsStore, EYE_CARE_PALETTES, HEADER_ACTIONS } from '@/stores/settings-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useT } from '@/i18n/use-t'
+
+/**
+ * 扫码和小Q 总结都只在用户点开时才需要，而扫码器（html5-qrcode）和 AI 总结面板
+ * 都很重。顶栏是每个页面都渲染的，静态引入等于让所有人替这两个弹窗付首屏的钱。
+ */
+const QrScanner = lazy(() => import('@/components/auth/QrScanner').then((m) => ({ default: m.QrScanner })))
+const AiSummaryDialog = lazy(() => import('@/components/ai/AiSummaryDialog').then((m) => ({ default: m.AiSummaryDialog })))
 
 /** 顶栏右侧: block 里 NavActions 的形态 —— 一个上下文入口 + 一个「更多」面板 */
 export function NavActions() {
@@ -250,8 +255,10 @@ export function NavActions() {
         </PopoverContent>
       </Popover>
 
-      <QrScanner open={qrOpen} onOpenChange={setQrOpen} />
-      {aiAvailable && <AiSummaryDialog open={aiOpen} onOpenChange={setAiOpen} />}
+      <Suspense fallback={null}>
+        {qrOpen && <QrScanner open={qrOpen} onOpenChange={setQrOpen} />}
+        {aiAvailable && aiOpen && <AiSummaryDialog open={aiOpen} onOpenChange={setAiOpen} />}
+      </Suspense>
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>

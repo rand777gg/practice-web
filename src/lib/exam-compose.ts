@@ -1,5 +1,6 @@
-import { supabase } from '@/lib/supabase'
 import { EXAM_MAX_COUNT, QUESTION_TYPE_LABELS } from '@/lib/constants'
+import { composeExam } from '@/services/exam'
+import { fetchQuestionsByIds as fetchQuestionRows } from '@/services/questions'
 import type { ExamTemplate, ExamSampleMode, ExamComposeStat, Question } from '@/types'
 
 export interface ComposeRequest {
@@ -47,31 +48,24 @@ export async function composeExamIds(req: ComposeRequest): Promise<ComposeResult
   const hasSections = (req.template?.sections?.length ?? 0) > 0
   const subjectFilter = req.template?.subject?.length ? req.template.subject : req.subjects?.length ? req.subjects : null
 
-  const { data, error } = await supabase.rpc('compose_exam', {
-    p_subjects: subjectFilter,
-    p_categories: req.categories?.length ? req.categories : null,
-    p_sections: sections as unknown as Record<string, unknown>[],
-    p_types: hasSections ? null : req.questionTypes?.length ? req.questionTypes : null,
-    p_sample_mode: req.sampleMode ?? req.template?.sample_mode ?? 'random',
-    p_order_mode: req.template?.order_mode ?? 'section',
-    p_bank_id: req.bankId ?? null,
-    p_scope_categories: req.scopeCategories?.length ? req.scopeCategories : null,
-    p_key_points: req.keyPoints?.length ? req.keyPoints : null,
+  return composeExam({
+    subjects: subjectFilter,
+    categories: req.categories?.length ? req.categories : null,
+    sections,
+    types: hasSections ? null : req.questionTypes?.length ? req.questionTypes : null,
+    sampleMode: req.sampleMode ?? req.template?.sample_mode ?? 'random',
+    orderMode: req.template?.order_mode ?? 'section',
+    bankId: req.bankId ?? null,
+    scopeCategories: req.scopeCategories?.length ? req.scopeCategories : null,
+    keyPoints: req.keyPoints?.length ? req.keyPoints : null,
   })
-
-  if (error) throw new Error(error.message)
-  const result = data as { question_ids?: string[]; sections?: ExamComposeStat[] } | null
-  return {
-    questionIds: (result?.question_ids ?? []).filter((id): id is string => typeof id === 'string'),
-    stats: result?.sections ?? [],
-  }
 }
 
+/** 服务层按库里的顺序返回, 这里还原成传入 id 的顺序 —— 题单顺序就是卷面顺序 */
 export async function fetchQuestionsByIds(ids: string[]): Promise<Question[]> {
   if (ids.length === 0) return []
-  const { data, error } = await supabase.from('questions').select('*').in('id', ids)
-  if (error || !data) throw new Error(error?.message ?? 'Failed to load questions')
-  const map = new Map((data as Question[]).map((q) => [q.id, q]))
+  const rows = await fetchQuestionRows(ids)
+  const map = new Map(rows.map((q) => [q.id, q]))
   return ids.map((id) => map.get(id)).filter((q): q is Question => q !== undefined)
 }
 

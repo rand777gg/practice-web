@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { fetchCompletedExamSessions } from '@/services/exam'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import {
@@ -36,15 +37,14 @@ export function ExamHistory() {
       setIsLoading(false)
       return
     }
-    supabase
-      .from('exam_sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
-      .limit(20)
-      .then(({ data }) => {
-        setSessions((data ?? []) as ExamSession[])
+    fetchCompletedExamSessions(user.id)
+      .then((rows) => {
+        setSessions(rows)
+        setIsLoading(false)
+      })
+      .catch((e: unknown) => {
+        logError('exam.history', e)
+        setSessions([])
         setIsLoading(false)
       })
   }, [user?.id, version])

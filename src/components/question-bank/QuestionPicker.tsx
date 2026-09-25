@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import {
@@ -16,6 +15,8 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
+import { logError } from '@/services/errors'
+import { countQuestionItems, fetchQuestionPage, type QuestionListItem } from '@/services/questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS } from '@/lib/constants'
 import type { QuestionType } from '@/types'
@@ -37,7 +38,7 @@ interface Props {
 export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingIds }: Props) {
   const { t } = useT()
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
-  const [questions, setQuestions] = useState<Array<{ id: string; question_text: string; subject: string | null; category: string | null; categories: string[] | null; question_type: string }>>([])
+  const [questions, setQuestions] = useState<QuestionListItem[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
@@ -57,23 +58,22 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
 
   const fetchQuestions = useCallback(async () => {
     setLoading(true)
-    let query = supabase.from('questions').select('id, question_text, subject, category, categories, question_type', { count: 'exact' })
-
-    if (search) query = query.ilike('question_text', `%${search}%`)
-    if (selectedSubject) query = query.eq('subject', selectedSubject)
-    if (selectedCategory) query = query.or(`category.eq."${selectedCategory}",categories.cs.["${selectedCategory}"]`)
-    if (selectedType) query = query.eq('question_type', selectedType)
-
-    const from = (page - 1) * pageSize
-    const to = from + pageSize - 1
-
-    const { data, count } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to)
-
-    setQuestions((data ?? []) as typeof questions)
-    setTotalCount(count ?? 0)
-    setLoading(false)
+    const filter = { search, subject: selectedSubject, category: selectedCategory, questionType: selectedType }
+    try {
+      // 列表与总数同一套筛选口径, 所以总数交给 count_question_items, 不再依赖 PostgREST 的 count 头
+      const [items, counts] = await Promise.all([
+        fetchQuestionPage({ ...filter, page, pageSize }),
+        countQuestionItems(filter),
+      ])
+      setQuestions(items)
+      setTotalCount(counts.rows)
+    } catch (e) {
+      logError('QuestionPicker.fetchQuestions', e)
+      setQuestions([])
+      setTotalCount(0)
+    } finally {
+      setLoading(false)
+    }
   }, [page, pageSize, search, selectedSubject, selectedCategory, selectedType])
 
   useEffect(() => {
@@ -247,7 +247,7 @@ export function QuestionPicker({ open, onOpenChange, onAdd, existingIds, savingI
                       <TableCell className="text-xs py-2 text-muted-foreground">{q.subject || '—'}</TableCell>
                       <TableCell className="text-xs py-2 text-muted-foreground whitespace-nowrap">
                         {(() => {
-                          const cats = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
+                          const cats = q.categories.length ? q.categories : q.category ? [q.category] : []
                           if (!cats.length) return '—'
                           const yearPattern = /^\d{4}年真题$/
                           const yearCats = cats.filter((c: string) => yearPattern.test(c))

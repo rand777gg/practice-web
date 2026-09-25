@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { fetchKpExplanations, type KpExplanation } from '@/services/practice'
+import { logError } from '@/services/errors'
 
-export interface KpExplanation {
-  subject: string
-  kp: string
-  content: string
-  updated_at: string
-}
+export type { KpExplanation }
 
 // Composite key — the same KP name can exist under different subjects
 export function kpExplanationKey(subject: string, kp: string) {
@@ -21,9 +17,12 @@ export function useKpExplanations() {
 
   const load = useCallback(async () => {
     if (cache) { setExplanations(cache); setLoaded(true); return }
-    const { data } = await supabase.from('kp_explanations').select('subject, kp, content, updated_at')
     const map = new Map<string, KpExplanation>()
-    for (const row of (data ?? []) as KpExplanation[]) map.set(kpExplanationKey(row.subject, row.kp), row)
+    try {
+      for (const row of await fetchKpExplanations()) map.set(kpExplanationKey(row.subject, row.kp), row)
+    } catch (e) {
+      logError('useKpExplanations.load', e)
+    }
     cache = map
     setExplanations(map)
     setLoaded(true)

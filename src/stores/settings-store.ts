@@ -1,238 +1,35 @@
 import { create } from 'zustand'
+import type { SidebarGroup, SidebarOrder } from '@/lib/nav-order'
 import {
+  SETTINGS,
+  readAllSettings,
+  writeSetting,
   DEFAULT_SIDEBAR_ORDER,
-  normalizeSidebarOrder,
-  type SidebarGroup,
-  type SidebarOrder,
-} from '@/lib/nav-order'
+  BOTTOM_NAV_HIDE_DELAY_MAX,
+  BOTTOM_NAV_HIDE_DELAY_MIN,
+  FONT_SIZE_MAX,
+  FONT_SIZE_MIN,
+  FONT_WEIGHT_MAX,
+  FONT_WEIGHT_MIN,
+  type AiFeatureFlags,
+  type BottomNavTabKey,
+  type ExamViewMode,
+  type HeaderActionKey,
+  type NoteRecognitionMode,
+  type PinnedNavKey,
+  type PracticeUiVariant,
+  type ShortcutAction,
+  type ShortcutConfig,
+} from '@/lib/settings-schema'
 
-export interface AiFeatureFlags {
-  exam: boolean        // AI 智能出题
-  summary: boolean     // AI 学习总结
-  suggestions: boolean // AI 学习建议
-  analysis: boolean    // AI 图表分析
-  mineru: boolean      // MinerU 精准解析
-  keypoints: boolean   // AI 生成知识点
-
-}
-
-const FLAGS_KEY = 'ai_feature_flags'
-const BOTTOM_NAV_TABS_KEY = 'bottom_nav_tabs'
-const HEADER_ACTIONS_KEY = 'header_actions'
-const PINNED_NAV_KEY = 'pinned_nav'
-const BOTTOM_NAV_HIDE_DELAY_KEY = 'bottom_nav_hide_delay'
-const NOTE_RECOGNITION_MODE_KEY = 'note_recognition_mode'
-const OFFLINE_KEY = 'offline_mode'
-const LAUNCHER_HIDDEN_KEY = 'assistant_launcher_hidden'
-const PRACTICE_SHORTCUTS_KEY = 'practice_shortcuts'
-const DEFAULT_PAGE_KEY = 'default_page'
-const EYE_CARE_KEY = 'eye_care'
-const DARK_CODE_THEME_KEY = 'dark_code_theme'
-const LIGHT_CODE_THEME_KEY = 'light_code_theme'
-const FONT_FAMILY_KEY = 'font_family'
-const FONT_SIZE_KEY = 'font_size'
-const FONT_WEIGHT_KEY = 'font_weight'
-const EXAM_VIEW_MODE_KEY = 'exam_view_mode'
-const PRACTICE_UI_VARIANT_KEY = 'practice_ui_variant'
-const SIDEBAR_ORDER_KEY = 'sidebar_order'
-
-/** 练习界面的呈现模式: old=旧版布局 / new=参考图风格新布局 */
-export type PracticeUiVariant = 'old' | 'new'
-
-function loadPracticeUiVariant(): PracticeUiVariant {
-  // 新版练习界面暂未启用：先强制使用旧版，后续开放时再读取 localStorage 恢复记忆
-  return 'old'
-}
-
-/** 考试界面的呈现模式: card=卡片模式 / sheet=卷面·单页摊开 / spread=卷面·双页摊开 */
-export type ExamViewMode = 'card' | 'sheet' | 'spread'
-
-export const EXAM_VIEW_MODES: ExamViewMode[] = ['card', 'sheet', 'spread']
-
-function loadExamViewMode(): ExamViewMode {
-  const v = localStorage.getItem(EXAM_VIEW_MODE_KEY)
-  return v === 'sheet' || v === 'spread' || v === 'card' ? v : 'card'
-}
-
-export const FONT_OPTIONS = [
-  { value: 'Noto Sans SC',       label: '思源黑体',   google: 'Noto+Sans+SC',       weights: '300;400;500;700' },
-  { value: 'Noto Serif SC',      label: '思源宋体',   google: 'Noto+Serif+SC',      weights: '300;400;500;700' },
-  { value: 'LXGW WenKai',        label: '霞鹜文楷',   google: 'LXGW+WenKai',        weights: '300;400;700' },
-  { value: 'ZCOOL QingKe HuangYou', label: '站酷庆科黄油体', google: 'ZCOOL+QingKe+HuangYou', weights: '400' },
-  { value: 'ZCOOL XiaoWei',      label: '站酷小薇',   google: 'ZCOOL+XiaoWei',      weights: '400' },
-  { value: 'ZCOOL KuaiLe',       label: '站酷快乐体', google: 'ZCOOL+KuaiLe',       weights: '400' },
-  { value: 'Ma Shan Zheng',      label: '马山正',     google: 'Ma+Shan+Zheng',      weights: '400' },
-  { value: 'system',             label: '系统默认',   google: null,                 weights: '' },
-] as const
-
-export const FONT_SIZES = [14, 15, 16, 17, 18, 20] as const
-export const FONT_WEIGHTS = [
-  { value: 300, label: '细体' },
-  { value: 400, label: '常规' },
-  { value: 500, label: '中等' },
-  { value: 600, label: '半粗' },
-  { value: 700, label: '粗体' },
-] as const
-
-export const EYE_CARE_PALETTES = [
-  { value: '',       label: '默认',   preview: 'hsl(0 0% 100%)' },
-  { value: 'paper',  label: '纸张',   preview: '#FBF5D7' },
-  { value: 'silk',   label: '绢色',   preview: '#F4EDE4' },
-  { value: 'celadon', label: '青瓷',  preview: '#EAF0E5' },
-  { value: 'lotus',  label: '藕荷',   preview: '#F4EEF1' },
-  { value: 'tea',    label: '茶白',   preview: '#F2EFEA' },
-  { value: 'bamboo', label: '竹青',   preview: '#EFF3E7' },
-] as const
-
-export type NoteRecognitionMode = 'mineru' | 'ai'
-
-export const BOTTOM_NAV_TABS = [
-  { key: 'dashboard' as const, labelZh: '仪表盘', labelEn: 'Dashboard' },
-  { key: 'practice' as const, labelZh: '练习', labelEn: 'Practice' },
-  { key: 'exam' as const, labelZh: '考试', labelEn: 'Exam' },
-  { key: 'favorites' as const, labelZh: '收藏', labelEn: 'Favorites' },
-  { key: 'review' as const, labelZh: '错题回顾', labelEn: 'Wrong Review' },
-]
-
-export type BottomNavTabKey = (typeof BOTTOM_NAV_TABS)[number]['key']
-const DEFAULT_BOTTOM_NAV_TABS: BottomNavTabKey[] = ['dashboard', 'practice', 'exam', 'favorites', 'review']
-
-/** 侧边栏固定区里可自定义的入口; 仪表盘是常驻项, 不在这里 */
-export const PINNED_NAV_ITEMS = [
-  { key: 'search' as const, labelZh: '快速搜索', labelEn: 'Quick search' },
-] as const
-
-export type PinnedNavKey = (typeof PINNED_NAV_ITEMS)[number]['key']
-const DEFAULT_PINNED_NAV: PinnedNavKey[] = ['search']
-
-/** 顶栏可配置的快捷按钮; 顺序即显示顺序。
- *  深浅色 / 语言 / 护眼配色不在这里 —— 它们在「更多」的账号区已经是常驻入口(二级菜单),
- *  再留一份开关就成了同一个面板里两处改同一个东西。 */
-export const HEADER_ACTIONS = [
-  { key: 'qr' as const, labelZh: '扫码登录', labelEn: 'QR sign-in' },
-  { key: 'aiSummary' as const, labelZh: 'AI 学习总结', labelEn: 'AI summary' },
-  { key: 'settings' as const, labelZh: '设置', labelEn: 'Settings' },
-] as const
-
-export type HeaderActionKey = (typeof HEADER_ACTIONS)[number]['key']
-const DEFAULT_HEADER_ACTIONS: HeaderActionKey[] = ['qr', 'settings']
-
-function loadFlags(): AiFeatureFlags {
-  try {
-    const raw = localStorage.getItem(FLAGS_KEY)
-    if (raw) return JSON.parse(raw) as AiFeatureFlags
-  } catch { /* ignore */ }
-  return { exam: true, summary: false, suggestions: false, analysis: false, mineru: true, keypoints: true }
-}
-
-export type ShortcutAction = 'prev' | 'next' | 'submit' | 'markUnsure' | 'markWrong' | 'favorite' | 'tooEasy' | 'flagIssue'
-export type ShortcutConfig = Record<ShortcutAction, string>
-
-export const DEFAULT_SHORTCUTS: ShortcutConfig = { prev: 'ArrowLeft', next: 'ArrowRight', submit: 'Enter', markUnsure: 'e', markWrong: 'x', favorite: 'q', tooEasy: 'w', flagIssue: 'r' }
-
-function loadPracticeShortcuts(): ShortcutConfig {
-  try {
-    const raw = localStorage.getItem(PRACTICE_SHORTCUTS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<ShortcutConfig>
-      // v1: 'r' 原属"纠错",现归"标记问题"所有,老配置自动迁移
-      if (parsed.markWrong === 'r' && !parsed.flagIssue) parsed.markWrong = 'x'
-      return { ...DEFAULT_SHORTCUTS, ...parsed }
-    }
-  } catch { /* ignore */ }
-  return { ...DEFAULT_SHORTCUTS }
-}
-
-export const USER_PAGE_OPTIONS = [
-  { value: '/', label: '仪表盘' },
-  { value: '/practice', label: '练习' },
-  { value: '/exam', label: '考试' },
-  { value: '/favorites', label: '收藏' },
-  { value: '/review', label: '错题回顾' },
-  { value: '/notes', label: '公开笔记' },
-  { value: '/question-bank', label: '题库' },
-]
-
-export const ADMIN_PAGE_OPTIONS = [
-  { value: '/admin/questions', label: '题目管理' },
-  { value: '/admin/ai-import', label: 'AI 智能解析' },
-  { value: '/admin/users', label: '用户管理' },
-  { value: '/admin/ai', label: 'AI 管理' },
-]
-
-function loadDefaultPage(): string {
-  return localStorage.getItem(DEFAULT_PAGE_KEY) || '/'
-}
-
-function loadOfflineMode(): boolean {
-  return localStorage.getItem(OFFLINE_KEY) === 'true'
-}
-
-function loadLauncherHidden(): boolean {
-  return localStorage.getItem(LAUNCHER_HIDDEN_KEY) === 'true'
-}
-
-function loadBottomNavTabs(): BottomNavTabKey[] {
-  try {
-    const raw = localStorage.getItem(BOTTOM_NAV_TABS_KEY)
-    if (raw) return JSON.parse(raw) as BottomNavTabKey[]
-  } catch { /* ignore */ }
-  return [...DEFAULT_BOTTOM_NAV_TABS]
-}
-
-function loadPinnedNav(): PinnedNavKey[] {
-  try {
-    const raw = localStorage.getItem(PINNED_NAV_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as PinnedNavKey[]
-      const valid = new Set(PINNED_NAV_ITEMS.map((a) => a.key))
-      return parsed.filter((k) => valid.has(k))
-    }
-  } catch { /* ignore */ }
-  return [...DEFAULT_PINNED_NAV]
-}
-
-function loadHeaderActions(): HeaderActionKey[] {
-  try {
-    const raw = localStorage.getItem(HEADER_ACTIONS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as HeaderActionKey[]
-      const valid = new Set(HEADER_ACTIONS.map((a) => a.key))
-      return parsed.filter((k) => valid.has(k))
-    }
-  } catch { /* ignore */ }
-  return [...DEFAULT_HEADER_ACTIONS]
-}
-
-function loadNoteRecognitionMode(): NoteRecognitionMode {
-  return (localStorage.getItem(NOTE_RECOGNITION_MODE_KEY) as NoteRecognitionMode) || 'mineru'
-}
-
-function loadDarkCodeTheme(): string {
-  return localStorage.getItem(DARK_CODE_THEME_KEY) || 'houston'
-}
-
-function loadLightCodeTheme(): string {
-  return localStorage.getItem(LIGHT_CODE_THEME_KEY) || 'github-light'
-}
-
-export const BOTTOM_NAV_HIDE_DELAY_MIN = 1
-export const BOTTOM_NAV_HIDE_DELAY_MAX = 5
-export const BOTTOM_NAV_HIDE_DELAY_DEFAULT = 3
-
-function loadSidebarOrder(): SidebarOrder {
-  try {
-    const raw = localStorage.getItem(SIDEBAR_ORDER_KEY)
-    if (raw) return normalizeSidebarOrder(JSON.parse(raw))
-  } catch { /* ignore */ }
-  return { ...DEFAULT_SIDEBAR_ORDER }
-}
-
-function loadBottomNavHideDelay(): number {
-  const v = Number(localStorage.getItem(BOTTOM_NAV_HIDE_DELAY_KEY))
-  if (Number.isFinite(v) && v >= BOTTOM_NAV_HIDE_DELAY_MIN && v <= BOTTOM_NAV_HIDE_DELAY_MAX) return Math.round(v)
-  return BOTTOM_NAV_HIDE_DELAY_DEFAULT
-}
+/**
+ * 客户端展示偏好。
+ *
+ * 键名、默认值、解析和版本迁移都在 lib/settings-schema.ts —— 这里只负责把定义接到 zustand 状态上。
+ * 这个 store 装的是设备级偏好（主题、字号、导航布局），不是账号数据，所以登出时不清空：
+ * 它跟着设备走，换个人登录不该把界面重置一遍。
+ */
+export * from '@/lib/settings-schema'
 
 interface SettingsState {
   flags: AiFeatureFlags
@@ -278,135 +75,106 @@ interface SettingsState {
   isEnabled: (key: keyof AiFeatureFlags) => boolean
 }
 
-function loadFontFamily(): string {
-  return localStorage.getItem(FONT_FAMILY_KEY) || 'Noto Sans SC'
-}
-function loadFontSize(): number {
-  const v = localStorage.getItem(FONT_SIZE_KEY)
-  return v ? Number(v) : 16
-}
-function loadFontWeight(): number {
-  const v = localStorage.getItem(FONT_WEIGHT_KEY)
-  return v ? Number(v) : 400
-}
+export const EXAM_VIEW_MODES: ExamViewMode[] = ['card', 'sheet', 'spread']
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  flags: loadFlags(),
-  offlineMode: loadOfflineMode(),
-  assistantLauncherHidden: loadLauncherHidden(),
-  eyeCare: localStorage.getItem(EYE_CARE_KEY) || '',
-  sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
-  darkCodeTheme: loadDarkCodeTheme(),
-  lightCodeTheme: loadLightCodeTheme(),
-  fontFamily: loadFontFamily(),
-  fontSize: loadFontSize(),
-  fontWeight: loadFontWeight(),
-  noteRecognitionMode: loadNoteRecognitionMode(),
-  bottomNavTabs: loadBottomNavTabs(),
-  bottomNavHideDelay: loadBottomNavHideDelay(),
-  headerActions: loadHeaderActions(),
-  pinnedNav: loadPinnedNav(),
-  practiceShortcuts: loadPracticeShortcuts(),
-  defaultPage: loadDefaultPage(),
-  sidebarOrder: loadSidebarOrder(),
-  examViewMode: loadExamViewMode(),
-  practiceUiVariant: loadPracticeUiVariant(),
+  ...readAllSettings(),
+  // 新版练习界面暂未启用：只保留开关的形态，值恒为旧版，也不落盘
+  practiceUiVariant: 'old',
+
   setFlag: (key, value) => {
-    set((s) => {
-      const next = { ...s.flags, [key]: value }
-      localStorage.setItem(FLAGS_KEY, JSON.stringify(next))
-      return { flags: next }
-    })
+    const next = { ...get().flags, [key]: value }
+    writeSetting(SETTINGS.flags, next)
+    set({ flags: next })
   },
   setOfflineMode: (value) => {
-    localStorage.setItem(OFFLINE_KEY, String(value))
+    writeSetting(SETTINGS.offlineMode, value)
     set({ offlineMode: value })
   },
   setAssistantLauncherHidden: (value) => {
-    localStorage.setItem(LAUNCHER_HIDDEN_KEY, String(value))
+    writeSetting(SETTINGS.assistantLauncherHidden, value)
     set({ assistantLauncherHidden: value })
   },
   setEyeCare: (value) => {
-    localStorage.setItem(EYE_CARE_KEY, value)
+    writeSetting(SETTINGS.eyeCare, value)
     set({ eyeCare: value })
   },
   setSidebarCollapsed: (value) => {
-    localStorage.setItem('sidebar_collapsed', String(value))
+    writeSetting(SETTINGS.sidebarCollapsed, value)
     set({ sidebarCollapsed: value })
   },
   setCodeTheme: (theme) => {
+    // 代码主题分深浅两套，按主题名判断该覆盖哪一套
     const isDarkTheme = !/(light|dawn|latte|lotus)/.test(theme)
     if (isDarkTheme) {
-      localStorage.setItem(DARK_CODE_THEME_KEY, theme)
+      writeSetting(SETTINGS.darkCodeTheme, theme)
       set({ darkCodeTheme: theme })
     } else {
-      localStorage.setItem(LIGHT_CODE_THEME_KEY, theme)
+      writeSetting(SETTINGS.lightCodeTheme, theme)
       set({ lightCodeTheme: theme })
     }
   },
   setFontFamily: (value) => {
-    localStorage.setItem(FONT_FAMILY_KEY, value)
+    writeSetting(SETTINGS.fontFamily, value)
     set({ fontFamily: value })
   },
   setFontSize: (value) => {
-    localStorage.setItem(FONT_SIZE_KEY, String(value))
-    set({ fontSize: value })
+    const clamped = Math.min(Math.max(Math.round(value), FONT_SIZE_MIN), FONT_SIZE_MAX)
+    writeSetting(SETTINGS.fontSize, clamped)
+    set({ fontSize: clamped })
   },
   setFontWeight: (value) => {
-    localStorage.setItem(FONT_WEIGHT_KEY, String(value))
-    set({ fontWeight: value })
+    const clamped = Math.min(Math.max(Math.round(value), FONT_WEIGHT_MIN), FONT_WEIGHT_MAX)
+    writeSetting(SETTINGS.fontWeight, clamped)
+    set({ fontWeight: clamped })
   },
   setNoteRecognitionMode: (value) => {
-    localStorage.setItem(NOTE_RECOGNITION_MODE_KEY, value)
+    writeSetting(SETTINGS.noteRecognitionMode, value)
     set({ noteRecognitionMode: value })
   },
   setBottomNavTabs: (tabs) => {
-    localStorage.setItem(BOTTOM_NAV_TABS_KEY, JSON.stringify(tabs))
+    writeSetting(SETTINGS.bottomNavTabs, tabs)
     set({ bottomNavTabs: tabs })
   },
   setBottomNavHideDelay: (value) => {
     const clamped = Math.min(Math.max(Math.round(value), BOTTOM_NAV_HIDE_DELAY_MIN), BOTTOM_NAV_HIDE_DELAY_MAX)
-    localStorage.setItem(BOTTOM_NAV_HIDE_DELAY_KEY, String(clamped))
+    writeSetting(SETTINGS.bottomNavHideDelay, clamped)
     set({ bottomNavHideDelay: clamped })
   },
   setHeaderActions: (actions) => {
-    localStorage.setItem(HEADER_ACTIONS_KEY, JSON.stringify(actions))
+    writeSetting(SETTINGS.headerActions, actions)
     set({ headerActions: actions })
   },
   setPinnedNav: (keys) => {
-    localStorage.setItem(PINNED_NAV_KEY, JSON.stringify(keys))
+    writeSetting(SETTINGS.pinnedNav, keys)
     set({ pinnedNav: keys })
   },
   setPracticeShortcut: (action, keys) => {
-    set((s) => {
-      const next = { ...s.practiceShortcuts, [action]: keys }
-      localStorage.setItem(PRACTICE_SHORTCUTS_KEY, JSON.stringify(next))
-      return { practiceShortcuts: next }
-    })
+    const next = { ...get().practiceShortcuts, [action]: keys }
+    writeSetting(SETTINGS.practiceShortcuts, next)
+    set({ practiceShortcuts: next })
   },
   setDefaultPage: (page) => {
-    localStorage.setItem(DEFAULT_PAGE_KEY, page)
+    writeSetting(SETTINGS.defaultPage, page)
     set({ defaultPage: page })
   },
   setSidebarOrder: (group, ids) => {
-    set((s) => {
-      const next: SidebarOrder = { ...s.sidebarOrder, [group]: ids }
-      localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(next))
-      return { sidebarOrder: next }
-    })
+    const next: SidebarOrder = { ...get().sidebarOrder, [group]: ids }
+    writeSetting(SETTINGS.sidebarOrder, next)
+    set({ sidebarOrder: next })
   },
   resetSidebarOrder: () => {
-    localStorage.removeItem(SIDEBAR_ORDER_KEY)
-    set({ sidebarOrder: { ...DEFAULT_SIDEBAR_ORDER } })
+    const next = { ...DEFAULT_SIDEBAR_ORDER }
+    writeSetting(SETTINGS.sidebarOrder, next)
+    set({ sidebarOrder: next })
   },
   setExamViewMode: (value) => {
-    localStorage.setItem(EXAM_VIEW_MODE_KEY, value)
+    writeSetting(SETTINGS.examViewMode, value)
     set({ examViewMode: value })
   },
   setPracticeUiVariant: (value) => {
     // 新版练习界面暂未启用：忽略 'new'，保证只能使用旧版
     if (value === 'new') return
-    localStorage.setItem(PRACTICE_UI_VARIANT_KEY, value)
     set({ practiceUiVariant: value })
   },
   isEnabled: (key) => get().flags[key],

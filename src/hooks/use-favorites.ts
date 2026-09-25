@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { addFavorite, fetchFavoriteQuestionIds, removeFavorite as unfavorite } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 
@@ -20,14 +21,15 @@ export function useFavorites() {
     fetchGenRef.current++
     const myGen = fetchGenRef.current
 
-    const { data } = await supabase
-      .from('favorites')
-      .select('question_id')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    let ids: string[] = []
+    try {
+      ids = await fetchFavoriteQuestionIds(user.id)
+    } catch (e) {
+      logError('useFavorites.fetchFavorites', e)
+    }
     if (fetchGenRef.current !== myGen) return
 
-    setFavorites((data ?? []).map((r: { question_id: string }) => r.question_id))
+    setFavorites(ids)
     setLoaded(true)
   }, [user?.id])
 
@@ -40,10 +42,10 @@ export function useFavorites() {
       if (!user) return
       setFavorites((prev) => {
         if (prev.includes(questionId)) {
-          supabase.from('favorites').delete().eq('user_id', user.id).eq('question_id', questionId).then()
+          unfavorite(user.id, questionId).catch((e) => logError('useFavorites.toggleFavorite', e))
           return prev.filter((id) => id !== questionId)
         }
-        supabase.from('favorites').insert({ user_id: user.id, question_id: questionId }).then()
+        addFavorite(user.id, questionId).catch((e) => logError('useFavorites.toggleFavorite', e))
         return [...prev, questionId]
       })
     },
@@ -59,11 +61,11 @@ export function useFavorites() {
     async (questionId: string) => {
       if (!user) return
       setFavorites((prev) => prev.filter((id) => id !== questionId))
-      await supabase
-        .from('favorites')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('question_id', questionId)
+      try {
+        await unfavorite(user.id, questionId)
+      } catch (e) {
+        logError('useFavorites.removeFavorite', e)
+      }
     },
     [user?.id],
   )

@@ -4,22 +4,17 @@
  */
 
 import { supabase } from '@/lib/supabase'
+import { logError, userMessage } from '@/services/errors'
+import { listResourceTocEntries } from '@/services/resources'
 import type { TocDraftEntry } from '@/lib/resource-toc'
 
 export async function loadManualToc(documentId: string): Promise<TocDraftEntry[]> {
-  const { data, error } = await supabase
-    .from('resource_toc_entries')
-    .select('id, level, title, block_index, page_no')
-    .eq('document_id', documentId)
-    .order('sort_order', { ascending: true })
-  if (error) throw new Error(`加载人工目录失败: ${error.message}`)
-  return (data ?? []).map((r) => ({
-    id: r.id as number,
-    level: r.level as number,
-    title: r.title as string,
-    blockIndex: (r.block_index as number | null) ?? null,
-    pageNo: r.page_no as number,
-  }))
+  try {
+    return await listResourceTocEntries(documentId)
+  } catch (e) {
+    logError('resource-toc-store.loadManualToc', e)
+    throw new Error(`加载人工目录失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /**

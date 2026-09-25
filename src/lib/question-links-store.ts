@@ -6,62 +6,26 @@
  * 就得跟着改这里(kp-question-refs-store 踩过同一个坑, 用同一套写法)。
  */
 import { supabase } from '@/lib/supabase'
-import { questionFromRow, type LinkedQuestion } from '@/lib/kp-question-refs'
+import { logError, userMessage } from '@/services/errors'
+import {
+  addQuestionSourceLinks,
+  deleteQuestionSourceLink,
+  listLinkedQuestions as listLinkedQuestionRefs,
+  listQuestionSourceLinks,
+} from '@/services/questions'
+import type { LinkedQuestion } from '@/lib/kp-question-refs'
 import type { RagSource } from '@/lib/rag'
 import type { QuestionLinkDraft, QuestionSourceLink } from '@/lib/question-links'
-
-const LINK_COLUMNS = [
-  'id', 'source', 'source_id', 'block_index', 'page_no', 'label', 'sub_label',
-  'anchor', 'snippet', 'note', 'origin', 'created_at',
-].join(', ')
-
-const QUESTION_COLUMNS = [
-  'id', 'question_type', 'question_text', 'options', 'correct_answer',
-  'subject', 'category', 'categories', 'analysis', 'answer_explanation',
-].join(', ')
-
-interface RawLinkRow {
-  id: string
-  source: string
-  source_id: string
-  block_index: number
-  page_no: number | null
-  label: string
-  sub_label: string | null
-  anchor: string | null
-  snippet: string
-  note: string
-  origin: string
-  created_at: string
-}
-
-function toLink(row: RawLinkRow): QuestionSourceLink {
-  return {
-    id: row.id,
-    source: row.source as RagSource,
-    sourceId: row.source_id,
-    blockIndex: row.block_index,
-    pageNo: row.page_no,
-    label: row.label,
-    subLabel: row.sub_label,
-    anchor: row.anchor,
-    snippet: row.snippet,
-    note: row.note,
-    origin: row.origin === 'littleq' ? 'littleq' : 'manual',
-    createdAt: row.created_at,
-  }
-}
 
 /** 这道题挂着的全部信源(按挂的时间升序 —— 清单的顺序就是用户挂的顺序) */
 export async function listQuestionLinks(questionId: string): Promise<QuestionSourceLink[]> {
   if (!questionId) return []
-  const { data, error } = await supabase
-    .from('question_source_links')
-    .select(LINK_COLUMNS)
-    .eq('question_id', questionId)
-    .order('created_at', { ascending: true })
-  if (error) throw new Error(`加载关联信源失败: ${error.message}`)
-  return ((data ?? []) as unknown as RawLinkRow[]).map(toLink)
+  try {
+    return await listQuestionSourceLinks(questionId)
+  } catch (e) {
+    logError('question-links.listQuestionLinks', e)
+    throw new Error(`加载关联信源失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /**
@@ -76,34 +40,21 @@ export async function addQuestionLinks(questionId: string, drafts: QuestionLinkD
   const userId = userData.user?.id
   if (!userId) throw new Error('未登录')
 
-  const rows = drafts.map((d) => ({
-    user_id: userId,
-    question_id: questionId,
-    source: d.source,
-    source_id: d.sourceId,
-    block_index: d.blockIndex,
-    page_no: d.pageNo,
-    label: d.label,
-    sub_label: d.subLabel,
-    anchor: d.anchor,
-    snippet: d.snippet,
-    note: d.note,
-    origin: d.origin,
-  }))
-
-  const { error } = await supabase
-    .from('question_source_links')
-    .upsert(rows, {
-      onConflict: 'user_id,question_id,source,source_id,block_index',
-      ignoreDuplicates: true,
-    })
-  if (error) throw new Error(`挂到本题失败: ${error.message}`)
-  return rows.length
+  try {
+    return await addQuestionSourceLinks(userId, questionId, drafts)
+  } catch (e) {
+    logError('question-links.addQuestionLinks', e)
+    throw new Error(`挂到本题失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 export async function removeQuestionLink(id: string): Promise<void> {
-  const { error } = await supabase.from('question_source_links').delete().eq('id', id)
-  if (error) throw new Error(`取消关联失败: ${error.message}`)
+  try {
+    await deleteQuestionSourceLink(id)
+  } catch (e) {
+    logError('question-links.removeQuestionLink', e)
+    throw new Error(`取消关联失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /** 反查回来的一道题: 关联本身(备注/时间) + 那道题 */
@@ -124,36 +75,12 @@ export interface LinkedQuestionRef {
  */
 export async function listLinkedQuestions(source: RagSource, sourceId: string): Promise<LinkedQuestionRef[]> {
   if (!sourceId) return []
-  const { data, error } = await supabase
-    .from('question_source_links')
-    .select('id, question_id, note, origin, created_at')
-    .eq('source', source)
-    .eq('source_id', sourceId)
-    .order('created_at', { ascending: false })
-  if (error) throw new Error(`加载关联题目失败: ${error.message}`)
-
-  const rows = (data ?? []) as unknown as {
-    id: string; question_id: string; note: string; origin: string; created_at: string
-  }[]
-  if (rows.length === 0) return []
-
-  const { data: qs, error: qErr } = await supabase
-    .from('questions')
-    .select(QUESTION_COLUMNS)
-    .in('id', rows.map((r) => r.question_id))
-  if (qErr) throw new Error(`加载关联题目内容失败: ${qErr.message}`)
-
-  const byId = new Map<string, LinkedQuestion>(
-    ((qs ?? []) as unknown as Parameters<typeof questionFromRow>[0][]).map((q) => [q.id, questionFromRow(q)]),
-  )
-
-  return rows.map((r) => ({
-    linkId: r.id,
-    note: r.note,
-    origin: r.origin === 'littleq' ? 'littleq' : 'manual',
-    createdAt: r.created_at,
-    question: byId.get(r.question_id) ?? null,
-  }))
+  try {
+    return await listLinkedQuestionRefs(source, sourceId)
+  } catch (e) {
+    logError('question-links.listLinkedQuestions', e)
+    throw new Error(`加载关联题目失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /** 这道题被哪些别的题挂过(相关题那一类反查) */

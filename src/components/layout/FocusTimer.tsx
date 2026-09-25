@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Pause, Play, Square } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { supabase } from '@/lib/supabase'
+import { recordFocusSession } from '@/services/account'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   POMODORO_SEC,
@@ -37,15 +38,14 @@ export function FocusTimer() {
 
   const save = useCallback(async (session: FinishedSession | null) => {
     if (!session || !user) return
-    const { error: insertError } = await supabase.from('focus_sessions').insert({
-      user_id: user.id,
-      mode: session.mode,
-      started_at: session.startedAt,
-      ended_at: new Date().toISOString(),
-      duration_sec: session.durationSec,
-    })
-    if (insertError) {
-      console.error('focus_sessions insert:', insertError)
+    try {
+      await recordFocusSession(user.id, {
+        mode: session.mode,
+        startedAt: session.startedAt,
+        durationSec: session.durationSec,
+      })
+    } catch (e) {
+      logError('focus.recordSession', e)
       setError(true)
     }
   }, [user])

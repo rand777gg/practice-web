@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { fetchQuestionKeyPoints } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -34,16 +35,16 @@ export function KpSelectDialog({ open, onOpenChange, kpBySubject, planSubjects, 
     if (!open || filteredSubjects.length === 0) return
     let c = false
     const subjects = filteredSubjects.map(s => s.subject)
-    supabase.from('questions').select('key_points').in('subject', subjects).not('key_points', 'is', null).then(({ data }) => {
+    fetchQuestionKeyPoints(subjects).then((rows) => {
       if (c) return
       const counts = new Map<string, number>()
-      for (const r of (data ?? []) as { key_points: string }[]) {
-        for (const k of r.key_points.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)) {
+      for (const keyPoints of rows) {
+        for (const k of keyPoints.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)) {
           counts.set(k, (counts.get(k) ?? 0) + 1)
         }
       }
       setKpCounts(counts)
-    })
+    }).catch((e) => { logError('KpSelectDialog.loadKpCounts', e) })
     return () => { c = true }
   }, [open, filteredSubjects])
 

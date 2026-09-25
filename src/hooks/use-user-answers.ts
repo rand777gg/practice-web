@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { insertAnswer, updateAnswer, type AnswerUpdate } from '@/services/practice'
+import { isAppError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSyncStore } from '@/stores/sync-store'
 import { addPendingAnswer } from '@/lib/offline-db'
@@ -43,35 +44,32 @@ export function useUserAnswers() {
       }
 
       // Online: direct Supabase insert
-      const { data, error } = await supabase.from('user_answers').insert({
-        user_id: user.id,
-        question_id: questionId,
-        selected_answer: selectedAnswer,
-        is_correct: isCorrect,
-        mode,
-        exam_session_id: examSessionId ?? null,
-        source: source ?? null,
-      }).select('id').single()
-
-      if (error) {
-        // Fallback: save to offline queue if network error
-        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('timeout')) {
-          const localId = await addPendingAnswer({
-            user_id: user.id,
-            question_id: questionId,
-            selected_answer: selectedAnswer,
-            is_correct: isCorrect,
-            mode,
-            exam_session_id: examSessionId ?? null,
-            source: source ?? null,
-            answered_at: new Date().toISOString(),
-          })
-          refreshPending()
-          return `local-${localId}`
-        }
-        throw error
+      try {
+        return await insertAnswer({
+          user_id: user.id,
+          question_id: questionId,
+          selected_answer: selectedAnswer,
+          is_correct: isCorrect,
+          mode,
+          exam_session_id: examSessionId ?? null,
+          source: source ?? null,
+        })
+      } catch (e) {
+        // 只有网络类失败才值得走离线队列: 校验/权限错误重试也没用
+        if (!isAppError(e) || e.kind !== 'network') throw e
+        const localId = await addPendingAnswer({
+          user_id: user.id,
+          question_id: questionId,
+          selected_answer: selectedAnswer,
+          is_correct: isCorrect,
+          mode,
+          exam_session_id: examSessionId ?? null,
+          source: source ?? null,
+          answered_at: new Date().toISOString(),
+        })
+        refreshPending()
+        return `local-${localId}`
       }
-      return data?.id as string | null
     },
     [user],
   )
@@ -81,13 +79,9 @@ export function useUserAnswers() {
       // Offline answers can't be updated — skip
       if (answerId.startsWith('local-')) return
 
-      const payload: { note: string | null; is_public?: boolean } = { note: note || null }
+      const payload: AnswerUpdate = { note: note || null }
       if (isPublic !== undefined) payload.is_public = isPublic
-      const { error } = await supabase
-        .from('user_answers')
-        .update(payload)
-        .eq('id', answerId)
-      if (error) throw error
+      await updateAnswer(answerId, payload)
       // 笔记改成公开/改内容/取消公开都走这里, 索引跟着一起动(服务端只看 is_public, 私密笔记不会进)
       autoIndex('note', answerId)
     },

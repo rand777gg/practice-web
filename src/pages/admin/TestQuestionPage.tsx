@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { fetchQuestionById, searchQuestions } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { QuestionCard } from '@/components/questions/QuestionCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,7 +11,7 @@ import { isAnswerCorrect, getDefaultAnswer } from '@/lib/answer-utils'
 import { naturalSort, cn } from '@/lib/utils'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { QUESTION_TYPE_LABELS, QUESTION_TYPE_OPTIONS } from '@/lib/constants'
-import type { Question, CorrectAnswer } from '@/types'
+import type { Question, CorrectAnswer, QuestionType } from '@/types'
 import { ArrowLeft, Search, RotateCcw, Check, X, FlaskConical, ChevronDown, ChevronRight, FileSearch } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -33,7 +34,7 @@ export function Component() {
   const [search, setSearch] = useState(initialId)
   const [selectedSubject, setSelectedSubject] = useState(() => searchParams.get('subject') || '')
   const [selectedCategory, setSelectedCategory] = useState(() => searchParams.get('category') || '')
-  const [selectedType, setSelectedType] = useState<string>(() => searchParams.get('type') || '')
+  const [selectedType, setSelectedType] = useState<QuestionType | ''>(() => (searchParams.get('type') || '') as QuestionType | '')
 
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
@@ -78,14 +79,19 @@ export function Component() {
   // 通过 ?id= 直达: 直接加载并进入试做
   useEffect(() => {
     if (!initialId) return
-    supabase.from('questions').select('*').eq('id', initialId).single().then(({ data }) => {
-      if (data) {
-        const q = data as Question
-        setSelectedQuestion(q)
-        setSelectedAnswer(getDefaultAnswer(q.question_type))
-      }
-      setInitialLoading(false)
-    })
+    fetchQuestionById(initialId)
+      .then((q) => {
+        if (q) {
+          setSelectedQuestion(q)
+          setSelectedAnswer(getDefaultAnswer(q.question_type))
+        }
+        setInitialLoading(false)
+      })
+      .catch((e) => {
+        // 旧写法忽略 error: 取不到就当没有, 一样结束初始加载
+        logError('TestQuestionPage.loadById', e)
+        setInitialLoading(false)
+      })
   }, [initialId])
 
   const startTest = useCallback((q: Question) => {
@@ -115,41 +121,41 @@ export function Component() {
 
     // 完整 UUID 先尝试精确定位
     if (UUID_RE.test(trimmed)) {
-      const { data } = await supabase.from('questions').select('*').eq('id', trimmed).single()
-      if (data) {
-        startTest(data as Question)
-        setQuestions([])
-        setListVisible(false)
-        setLoading(false)
-        return
+      try {
+        const exact = await fetchQuestionById(trimmed)
+        if (exact) {
+          startTest(exact)
+          setQuestions([])
+          setListVisible(false)
+          setLoading(false)
+          return
+        }
+      } catch (e) {
+        logError('TestQuestionPage.searchExactId', e)
       }
     }
 
-    let query = supabase.from('questions').select('*').order('created_at', { ascending: false }).limit(RESULT_LIMIT)
-    if (selectedSubject) query = query.eq('subject', selectedSubject)
-    if (selectedCategory === '__unset__') {
-      query = query.is('category', null)
-    } else if (selectedCategory) {
-      query = query.eq('category', selectedCategory)
-    }
-    if (selectedType) query = query.eq('question_type', selectedType)
-    if (trimmed) {
-      if (/^[0-9a-f-]+$/i.test(trimmed)) {
-        query = query.eq('id', trimmed)
+    try {
+      const list = await searchQuestions({
+        search: trimmed,
+        subject: selectedSubject,
+        category: selectedCategory,
+        questionType: selectedType,
+        limit: RESULT_LIMIT,
+      })
+      // 仅 1 条精确命中时直接进入试做, 避免多一步选择
+      if (list.length === 1 && trimmed && list[0].id === trimmed) {
+        startTest(list[0])
+        setQuestions([])
+        setListVisible(false)
       } else {
-        const escaped = trimmed.replace(/%/g, '\\%')
-        query = query.or(`question_text.ilike.%${escaped}%,id.eq.${trimmed}`)
+        setQuestions(list)
+        setListVisible(true)
       }
-    }
-    const { data } = await query
-    const list = (data ?? []) as Question[]
-    // 仅 1 条精确命中时直接进入试做, 避免多一步选择
-    if (list.length === 1 && trimmed && list[0].id === trimmed) {
-      startTest(list[0])
+    } catch (e) {
+      // 旧写法忽略 error, 结果当成 0 条: 保留空结果而不是留着上一次的列表
+      logError('TestQuestionPage.runSearch', e)
       setQuestions([])
-      setListVisible(false)
-    } else {
-      setQuestions(list)
       setListVisible(true)
     }
     setLoading(false)

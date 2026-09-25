@@ -10,18 +10,19 @@
  * 调用也白花钱; 而"该判给哪个学科"这种字段本身就是从已有选项里选, 让用户点两下最准。
  */
 import { z } from 'zod'
-import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
 import { searchKnowledge, type RagHit, type RagSource } from '@/lib/rag'
 import { hasAiConfig, getAiConfig } from '@/lib/ai/config'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { loadDocumentSections } from '@/lib/resource-library'
+import { insertQuestions } from '@/services/questions'
+import { toJson, type Insert } from '@/services/db'
 import {
   DEFAULT_CREATE_SPEC, PLATFORM_SOURCES, formatKeyPoints, normalizeSpec, retrievalSources, splitKeyPoints,
   type CreateSelection, type CreateSource, type CreateSpec, type PlatformSource,
 } from '@/lib/create-spec'
 import type { ParsedQuestion } from '@/lib/ai/types'
-import type { CorrectAnswer, QuestionType } from '@/types'
+import type { QuestionType } from '@/types'
 
 export type {
   CreateSelection, CreateSource, CreateSpec, CreateSpread, PlatformSource,
@@ -418,12 +419,12 @@ export interface QuestionRowMeta {
   verified?: boolean
 }
 
-export function questionRowFromParsed(q: ParsedQuestion, meta: QuestionRowMeta): Record<string, unknown> {
+export function questionRowFromParsed(q: ParsedQuestion, meta: QuestionRowMeta): Insert<'questions'> {
   return {
     question_type: q.question_type,
     question_text: q.question_text,
     options: q.options,
-    correct_answer: (q.correct_answer ?? '') as CorrectAnswer,
+    correct_answer: toJson(q.correct_answer ?? ''),
     category: meta.categories[0] ?? null,
     categories: meta.categories,
     subject: meta.subject,
@@ -449,11 +450,7 @@ export async function insertCreatedQuestions(
   meta: QuestionRowMeta,
 ): Promise<number> {
   if (questions.length === 0) return 0
-  const { data, error } = await supabase
-    .from('questions')
-    .insert(questions.map((q) => questionRowFromParsed(q, meta)))
-    .select('id')
-  if (error) throw new Error(`入库失败: ${error.message}`)
+  const ids = await insertQuestions(questions.map((q) => questionRowFromParsed(q, meta)))
   autoIndex('question')
-  return (data ?? []).length
+  return ids.length
 }

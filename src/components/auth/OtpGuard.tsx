@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@/stores/auth-store'
+import { useAuthStore, selectAuthSettled } from '@/stores/auth-store'
 import { getMfaStatus, getDeviceTokenSync } from '@/lib/mfa'
 import { supabase } from '@/lib/supabase'
 import { useT } from '@/i18n/use-t'
@@ -73,7 +73,9 @@ function MfaGateBlocked({ onRetry, onLogout, busy }: { onRetry: () => void; onLo
 }
 
 export function OtpGuard({ children }: Props) {
-  const { user, isInitialized, refreshProfile, signOut } = useAuthStore()
+  const user = useAuthStore((s) => s.user)
+  const settled = useAuthStore(selectAuthSettled)
+  const signOut = useAuthStore((s) => s.signOut)
   const navigate = useNavigate()
   const [showReminder, setShowReminder] = useState(false)
   const [otpCleared, setOtpCleared] = useState(false)
@@ -86,7 +88,7 @@ export function OtpGuard({ children }: Props) {
   // second run and the guard would never act. Rely on per-run `cancelled`
   // cleanup instead — the stale StrictMode run aborts, the live one proceeds.
   useEffect(() => {
-    if (!user || !isInitialized) return
+    if (!user || !settled) return
 
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -94,9 +96,9 @@ export function OtpGuard({ children }: Props) {
     async function run() {
       // The login form is handling MFA / onboarding — skip the dialog
       if (sessionStorage.getItem('mfa_pending')) return
-      await refreshProfile()
-      if (cancelled) return
 
+      // 这里不再刷新资料：MFA 判定是服务端权威的（verify-totp 自己读 profile），
+      // 而本地资料由 ProfileLoader 拉取；再刷一次只是往首屏串行链上多加一个请求。
       const status = await getMfaStatus().catch(() => null)
       if (cancelled) return
 
@@ -142,7 +144,7 @@ export function OtpGuard({ children }: Props) {
       cancelled = true
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [user, isInitialized, refreshProfile, navigate, attempt])
+  }, [user, settled, navigate, attempt])
 
   // Realtime: when this device's trust row is deleted elsewhere → force re-verification immediately
   useEffect(() => {
@@ -191,7 +193,7 @@ export function OtpGuard({ children }: Props) {
     navigate('/', { replace: true })
   }, [signOut, navigate])
 
-  if (!user || !isInitialized) return <>{children}</>
+  if (!user || !settled) return <>{children}</>
 
   if (gateError) {
     return <MfaGateBlocked onRetry={handleGateRetry} onLogout={handleGateLogout} busy={loggingOut} />

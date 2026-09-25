@@ -14,7 +14,7 @@ import { ReadAloudButton } from '@/components/tts/ReadAloudButton'
 import { LinkedQuestions } from '@/components/questions/LinkedQuestions'
 import { KpScopeLinks } from '@/components/resource/KpScopeLinks'
 import { markdownToSpeech, splitForSpeech } from '@/lib/tts/speech'
-import { supabase } from '@/lib/supabase'
+import { fetchKpExplanationContent } from '@/services/practice'
 import { OPTION_LABELS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { kpSourceId } from '@/lib/question-links'
@@ -194,13 +194,7 @@ export function KpExplanationContent({ subject, kp, onOpenRef }: Props) {
     void (async () => {
       const loadContent = async (): Promise<string> => {
         try {
-          const { data } = await supabase
-            .from('kp_explanations')
-            .select('content')
-            .eq('subject', subject)
-            .eq('kp', kp)
-            .maybeSingle()
-          return (data?.content as string | undefined) ?? ''
+          return await fetchKpExplanationContent(subject, kp)
         } catch {
           return ''
         }

@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react"
 import ReactECharts from "echarts-for-react"
 import echarts from "@/lib/echarts"
+import { fetchFirstAnsweredAt } from "@/services/practice"
+import { logError } from "@/services/errors"
 import { supabase } from "@/lib/supabase"
 import { useAuthStore } from "@/stores/auth-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -55,14 +57,13 @@ export function PlanCompletionChart({ planSubjects, targetSubjects }: Props) {
 
     ;(async () => {
       // 找到用户做第一题的那一天,作为时间轴的"第一天"
-      const { data: firstRows } = await supabase
-        .from('user_answers')
-        .select('answered_at')
-        .eq('user_id', user.id)
-        .order('answered_at', { ascending: true })
-        .limit(1)
+      let firstAt: string | null = null
+      try {
+        firstAt = await fetchFirstAnsweredAt(user.id)
+      } catch (e) {
+        logError('PlanCompletionChart.firstAnsweredAt', e)
+      }
       if (!live) return
-      const firstAt = (firstRows as { answered_at: string }[] | null)?.[0]?.answered_at
       const firstDay = firstAt ? localStart(new Date(firstAt)) : localStart(new Date())
 
       const total = daysSince(firstDay)

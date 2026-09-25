@@ -23,14 +23,15 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { supabase } from '@/lib/supabase'
-import { cn, naturalSort } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { ResourceBlock, TocEntry } from '@/lib/resource-blocks'
 import {
   findDuplicate, kpCode, overlapping, scopeRangeFromBlocks, scopeRangeFromToc, scopeWhere,
   type ResourceKpScope, type ScopeRange, type ScopeSpan,
 } from '@/lib/resource-kp-scopes'
 import { createKpScope, deleteKpScope } from '@/lib/resource-kp-scopes-store'
+import { logError } from '@/services/errors'
+import { fetchQuestionMetaCache } from '@/services/questions'
 
 interface KpOption {
   subject: string
@@ -47,13 +48,11 @@ function useKpOptions(active: boolean) {
     let cancelled = false
     void (async () => {
       try {
-        const { data } = await supabase.from('question_meta_cache').select('key_points_by_subject').single()
+        const cache = await fetchQuestionMetaCache()
         if (cancelled) return
-        const raw = (data?.key_points_by_subject ?? []) as { subject: string; key_points: string[] }[]
-        setOptions(raw
-          .map((item) => ({ subject: item.subject || '其他', keyPoints: [...item.key_points].sort(naturalSort) }))
-          .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN')))
-      } catch {
+        setOptions(cache.keyPointsBySubject)
+      } catch (e) {
+        logError('KpScopePanel.useKpOptions', e)
         if (!cancelled) setOptions([])
       } finally {
         if (!cancelled) setLoaded(true)

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { toJson, type Update } from '@/services/db'
+import { logError } from '@/services/errors'
+import { savePlanGoals, savePlanRounds, updateProfile } from '@/services/profiles'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 import {
@@ -151,23 +153,25 @@ export function PlanWatcher() {
   // 下一次加载又会被搬回来(凭空复活已删掉的记录)。
   useEffect(() => {
     if (!user || !profile) return
-    const patch: Record<string, unknown> = {}
+    const patch: Update<'profiles'> = {}
     if (profile.milestones) {
       if (normalizePlanRounds(profile.plan_rounds).length === 0) {
         const migrated = migrateMilestonesToRounds(profile.milestones, todayStr())
-        patch.plan_rounds = migrated.length > 0 ? migrated : null
+        patch.plan_rounds = migrated.length > 0 ? toJson(migrated) : null
       }
       patch.milestones = null
     }
     if (profile.daily_targets) {
       if (normalizePlanGoals(profile.plan_goals).length === 0) {
         const migrated = migrateDailyTargetsToGoals(profile.daily_targets, todayStr())
-        patch.plan_goals = migrated.length > 0 ? migrated : null
+        patch.plan_goals = migrated.length > 0 ? toJson(migrated) : null
       }
       patch.daily_targets = null
     }
     if (Object.keys(patch).length === 0) return
-    void supabase.from('profiles').update(patch).eq('id', user.id).then(() => refreshProfile())
+    void updateProfile(user.id, patch)
+      .then(() => refreshProfile())
+      .catch((e) => logError('PlanWatcher.migrateLegacyPlan', e))
   }, [user, profile, refreshProfile])
 
   useEffect(() => {
@@ -180,13 +184,13 @@ export function PlanWatcher() {
       ])
       if (cancelled || busy.current) return
 
-      const patch: Record<string, unknown> = {}
+      const patch: Update<'profiles'> = {}
       let latest: CompletedBatch | null = null
       let latestDates: string[] = []
       if (roundStats) {
         const synced = syncCompletedRounds(rounds, roundStats)
         if (synced.rounds) {
-          patch.plan_rounds = synced.rounds
+          patch.plan_rounds = toJson(synced.rounds)
           if (synced.latest) {
             latest = synced.latest
             latestDates = doneDatesOf(synced.rounds, synced.latest.subject)
@@ -196,7 +200,7 @@ export function PlanWatcher() {
       if (goalStats) {
         const synced = syncCompletedGoals(goals, goalStats)
         if (synced.goals) {
-          patch.plan_goals = synced.goals
+          patch.plan_goals = toJson(synced.goals)
           if (synced.latest && (!latest || synced.latest.doneAt > latest.doneAt)) {
             latest = synced.latest
             latestDates = doneDatesOf(synced.goals, synced.latest.subject)
@@ -206,11 +210,13 @@ export function PlanWatcher() {
       if (Object.keys(patch).length === 0) return
 
       busy.current = true
-      const { error } = await supabase.from('profiles').update(patch).eq('id', user.id)
-      busy.current = false
-      if (error) {
-        console.error('PlanWatcher:', error)
+      try {
+        await updateProfile(user.id, patch)
+      } catch (e) {
+        logError('PlanWatcher.syncCompletedBatches', e)
         return
+      } finally {
+        busy.current = false
       }
       await refreshProfile()
       if (cancelled || !latest) return
@@ -229,11 +235,11 @@ export function PlanWatcher() {
     if (!user || !ask) return
     const current = useAuthStore.getState().profile
     setAsk(null)
-    if (ask.kind === 'round') {
-      const list = resolveRounds(current).filter((r) => r.subject === ask.subject)
-      const nextRound = list.reduce((max, r) => Math.max(max, r.round), 0) + 1
-      await supabase.from('profiles').update({
-        plan_rounds: [...resolveRounds(current), {
+    try {
+      if (ask.kind === 'round') {
+        const list = resolveRounds(current).filter((r) => r.subject === ask.subject)
+        const nextRound = list.reduce((max, r) => Math.max(max, r.round), 0) + 1
+        await savePlanRounds(user.id, [...resolveRounds(current), {
           id: newRoundId(),
           subject: ask.subject,
           round: nextRound,
@@ -241,19 +247,20 @@ export function PlanWatcher() {
           target,
           createdAt: todayStr(),
           doneAt: null,
-        }].sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.round - b.round),
-      }).eq('id', user.id)
-    } else {
-      await supabase.from('profiles').update({
-        plan_goals: [...resolveGoals(current), {
+        }].sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.round - b.round))
+      } else {
+        await savePlanGoals(user.id, [...resolveGoals(current), {
           id: newRoundId(),
           subject: ask.subject,
           count: Math.max(1, count),
           target,
           createdAt: todayStr(),
           doneAt: null,
-        }].sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.target.localeCompare(b.target)),
-      }).eq('id', user.id)
+        }].sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN') || a.target.localeCompare(b.target)))
+      }
+    } catch (e) {
+      // 旧代码不看返回值: 落库失败也照样刷新资料(弹窗已经关掉了)
+      logError('PlanWatcher.confirmNext', e)
     }
     await refreshProfile()
   }

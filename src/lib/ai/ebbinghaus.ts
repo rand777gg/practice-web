@@ -1,4 +1,6 @@
-import { supabase } from '@/lib/supabase'
+import { logError } from '@/services/errors'
+import { fetchAnswerHistory, type AnswerWithQuestionMeta } from '@/services/practice'
+import { fetchQuestionMetaRows } from '@/services/questions'
 
 export interface ReviewItem {
   questionId: string
@@ -50,14 +52,15 @@ function daysAgo(iso: string): number {
 
 export async function computeEbbinghaus(userId: string): Promise<EbbinghausData> {
   // 1. Fetch all wrong answers with question info
-  const { data: answers } = await supabase
-    .from('user_answers')
-    .select('question_id, is_correct, answered_at, questions(subject, category)')
-    .eq('user_id', userId)
-    .order('answered_at', { ascending: false })
-    .limit(2000)
+  let answers: AnswerWithQuestionMeta[] = []
+  try {
+    answers = await fetchAnswerHistory(userId)
+  } catch (e) {
+    // 旧代码不看读的结果: 拿不到作答历史就当没有历史, 面板显示空曲线而不是整块炸掉
+    logError('ebbinghaus.fetchAnswerHistory', e)
+  }
 
-  if (!answers?.length) {
+  if (answers.length === 0) {
     return { curve: [], urgency: [], totalReviewQueue: 0 }
   }
 
@@ -72,11 +75,10 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
   }>()
 
   for (const a of answers) {
-    const q = (a as any).questions as { subject?: string; category?: string } | null
     const existing = questionMap.get(a.question_id)
     const entry = {
-      subject: q?.subject || 'Other',
-      category: q?.category || 'Other',
+      subject: a.question?.subject || 'Other',
+      category: a.question?.category || 'Other',
       lastAnswerAt: existing?.lastAnswerAt || a.answered_at,
       wrongCount: (existing?.wrongCount ?? 0) + (a.is_correct ? 0 : 1),
       totalAttempts: (existing?.totalAttempts ?? 0) + 1,
@@ -109,11 +111,15 @@ export async function computeEbbinghaus(userId: string): Promise<EbbinghausData>
   }
 
   // 4. Fetch total questions per subject for ratio
-  const { data: allQs } = await supabase.from('questions').select('subject').limit(5000)
   const totalPerSubject = new Map<string, number>()
-  for (const q of (allQs ?? [])) {
-    const s = q.subject || 'Other'
-    totalPerSubject.set(s, (totalPerSubject.get(s) ?? 0) + 1)
+  try {
+    for (const row of await fetchQuestionMetaRows()) {
+      const s = row.subject || 'Other'
+      totalPerSubject.set(s, (totalPerSubject.get(s) ?? 0) + 1)
+    }
+  } catch (e) {
+    // 拿不到就退回按作答过的题数算, 不让整块面板失败
+    logError('ebbinghaus.fetchSubjectTotals', e)
   }
 
   // 5. Calculate urgency scores (0-100)

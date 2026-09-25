@@ -1,10 +1,21 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
 import { autoIndex } from '@/lib/rag'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { cn } from '@/lib/utils'
 import { OPTION_LABELS, QUESTION_TYPE_LABELS, IMPORT_MODE_LABELS, TYPE_COLORS } from '@/lib/constants'
+import {
+  keepDupGroup,
+  mergeDupGroup,
+  mergeDupQuestions,
+  saveDupReview,
+  scanQuestionDuplicates,
+  type DupCandidate,
+  type DupGroup,
+  type DupQuestion,
+  type DupScanResult as ScanResult,
+} from '@/services/questions'
+import { isAppError, userMessage } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { LoadingTips } from '@/components/layout/LoadingTips'
@@ -24,49 +35,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ArrowLeft, RefreshCw, GitMerge, Copy, Check, X, TriangleAlert, Search, ChevronDown, Layers } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
-
-interface DupQuestion {
-  id: string
-  subject: string | null
-  category: string | null
-  categories: string[]
-  questionType: string
-  questionText: string
-  options: string[] | null
-  correctAnswer: unknown
-  keyPoints: string | null
-  verified: boolean
-  importMode: string | null
-  sourcePage: string | null
-  seqNumber: number | null
-  createdAt: string | null
-  answerExplanation: string | null
-}
-
-interface DupGroup {
-  key: string
-  size: number
-  members: DupQuestion[]
-}
-
-interface DupCandidate {
-  kind: 'exact' | 'fuzzy'
-  score: number
-  prob: number
-  level: 'high' | 'mid' | 'low'
-  signals: { sText: number; oOverlap: number; aSame: number }
-  group: DupGroup | null
-  a: DupQuestion
-  b: DupQuestion
-}
-
-interface ScanResult {
-  subject: string | null
-  total: number
-  limit: number
-  truncated: boolean
-  candidates: DupCandidate[]
-}
 
 type ConfirmState =
   | { kind: 'group'; group: DupGroup; keepId: string }
@@ -206,21 +174,17 @@ export function Component() {
     setScanning(true)
     setError('')
     setResult(null)
-    const { data, error: rpcError } = await supabase.rpc('scan_question_duplicates', {
-      p_subject: subject,
-      p_min_sim: Number(minSim),
-      p_limit: 500,
-    })
-    setScanning(false)
-    if (rpcError) {
+    try {
+      setResult(await scanQuestionDuplicates(subject, Number(minSim), 500))
+    } catch (e) {
       setError(
-        rpcError.message.includes('does not exist')
+        isAppError(e) && e.message.includes('does not exist')
           ? '数据库尚未包含查重函数（迁移未执行）。请把 supabase/migrations/001_initial_schema.sql 中从 “Section 20” 到文件末尾的 SQL，在 Supabase SQL Editor 里执行一次（或在项目目录运行 npx supabase db query --linked），之后回到本页重新扫描。'
-          : rpcError.message,
+          : userMessage(e),
       )
-      return
+    } finally {
+      setScanning(false)
     }
-    setResult(data as ScanResult)
   }, [subject, minSim])
 
   // 完全一致的重复按“组”聚合(同一指纹的 N 条题), 相似重复保留两两候选
@@ -266,16 +230,14 @@ export function Component() {
       const { group, keepId } = confirm
       const removedIds = group.members.map((m) => m.id).filter((id) => id !== keepId)
       setConfirm(null)
-      const { error: rpcError } = await supabase.rpc('merge_dup_group', {
-        p_keep: keepId,
-        p_removes: removedIds,
-        p_reason: '题目查重组内合并',
-      })
-      setActing(false)
-      if (rpcError) {
-        setError(`合并失败：${rpcError.message}`)
+      try {
+        await mergeDupGroup(keepId, removedIds, '题目查重组内合并')
+      } catch (e) {
+        setActing(false)
+        setError(`合并失败：${userMessage(e)}`)
         return
       }
+      setActing(false)
       setStats((s) => ({ ...s, merged: s.merged + 1 }))
       setLastAction(`已合并重复组：保留 1 条，删除 ${removedIds.length} 条`)
       // 删掉的行由数据库触发器清索引; 但保留下来的那条并了别人的分类, 正文变了得自己重索引
@@ -287,16 +249,14 @@ export function Component() {
     const keepId = keep === 'a' ? candidate.a.id : candidate.b.id
     const removeId = keep === 'a' ? candidate.b.id : candidate.a.id
     setConfirm(null)
-    const { error: rpcError } = await supabase.rpc('merge_dup_questions', {
-      p_keep: keepId,
-      p_remove: removeId,
-      p_reason: '题目查重后台手动合并',
-    })
-    setActing(false)
-    if (rpcError) {
-      setError(`合并失败：${rpcError.message}`)
+    try {
+      await mergeDupQuestions(keepId, removeId, '题目查重后台手动合并')
+    } catch (e) {
+      setActing(false)
+      setError(`合并失败：${userMessage(e)}`)
       return
     }
+    setActing(false)
     setStats((s) => ({ ...s, merged: s.merged + 1 }))
     setLastAction(`已合并：保留 ${keepId.slice(0, 8)}…，删除 ${removeId.slice(0, 8)}…`)
     autoIndex('question')
@@ -306,15 +266,14 @@ export function Component() {
   const keepAllInGroup = async (group: DupGroup) => {
     setActing(true)
     setError('')
-    const { error: rpcError } = await supabase.rpc('keep_dup_group', {
-      p_ids: group.members.map((m) => m.id),
-      p_note: null,
-    })
-    setActing(false)
-    if (rpcError) {
-      setError(`操作失败：${rpcError.message}`)
+    try {
+      await keepDupGroup(group.members.map((m) => m.id), null)
+    } catch (e) {
+      setActing(false)
+      setError(`操作失败：${userMessage(e)}`)
       return
     }
+    setActing(false)
     setStats((s) => ({ ...s, kept: s.kept + group.members.length }))
     setLastAction(`已记录「保留全部 ${group.members.length} 条」，该组下次扫描不再提示`)
     const key = group.key
@@ -324,16 +283,14 @@ export function Component() {
   const reviewPair = async (c: DupCandidate, status: 'keep' | 'not_dup') => {
     setActing(true)
     setError('')
-    const { error: rpcError } = await supabase.rpc('save_dup_review', {
-      p_q1: c.a.id,
-      p_q2: c.b.id,
-      p_status: status,
-    })
-    setActing(false)
-    if (rpcError) {
-      setError(`操作失败：${rpcError.message}`)
+    try {
+      await saveDupReview(c.a.id, c.b.id, status)
+    } catch (e) {
+      setActing(false)
+      setError(`操作失败：${userMessage(e)}`)
       return
     }
+    setActing(false)
     prunePair(c.a.id, c.b.id)
     if (status === 'keep') {
       setStats((s) => ({ ...s, kept: s.kept + 1 }))

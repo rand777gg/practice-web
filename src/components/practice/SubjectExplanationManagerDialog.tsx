@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { deleteSubjectExplanation, saveSubjectExplanation } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -37,10 +38,11 @@ export function SubjectExplanationManagerDialog({ open, onOpenChange }: Props) {
     if (!selected) return
     setSaving(true)
     const content = draft.trim()
-    if (content) {
-      await supabase.from('subject_explanations').upsert({ subject: selected, content, updated_at: new Date().toISOString() })
-    } else {
-      await supabase.from('subject_explanations').delete().eq('subject', selected)
+    try {
+      if (content) await saveSubjectExplanation(selected, content)
+      else await deleteSubjectExplanation(selected)
+    } catch (e) {
+      logError('SubjectExplanationManagerDialog.handleSave', e)
     }
     setSaving(false)
     // 学科解读同上: 管理员独占的编辑入口, 整源增量同步
@@ -86,7 +88,11 @@ export function SubjectExplanationManagerDialog({ open, onOpenChange }: Props) {
             <Button variant="ghost" size="sm" className="text-destructive" disabled={saving}
               onClick={async () => {
                 setSaving(true)
-                await supabase.from('subject_explanations').delete().eq('subject', selected)
+                try {
+                  await deleteSubjectExplanation(selected)
+                } catch (e) {
+                  logError('SubjectExplanationManagerDialog.delete', e)
+                }
                 autoIndex('subject')
                 setSaving(false)
                 setDraft('')

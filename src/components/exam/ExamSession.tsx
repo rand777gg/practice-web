@@ -1,6 +1,9 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { deleteExamSession, fetchRunningExamSession } from '@/services/exam'
+import { fetchQuestionCategories, fetchQuestionMetaCache } from '@/services/questions'
+import { fetchAnswerHistory } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
@@ -549,16 +552,14 @@ export function ExamSession() {
 
   useEffect(() => {
     async function loadFilters() {
-      const { data } = await supabase.from('questions').select('subject, category')
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
+      try {
+        const meta = await fetchQuestionMetaCache()
+        setSubjects(meta.subjects)
+        setCategories(meta.categories)
+        setFilteredCategories(meta.categories)
+      } catch (e) {
+        logError('exam.loadFilters', e)
       }
-      setSubjects([...subs].sort())
-      setCategories([...cats].sort())
-      setFilteredCategories([...cats].sort())
     }
     loadFilters()
   }, [])
@@ -568,16 +569,12 @@ export function ExamSession() {
     if (selectedSubjects.length === 0) return
     let cancelled = false
     async function loadCats() {
-      const { data } = await supabase
-        .from('questions')
-        .select('category')
-        .in('subject', selectedSubjects)
-      if (cancelled) return
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.category) cats.add(row.category)
+      try {
+        const cats = await fetchQuestionCategories(selectedSubjects)
+        if (!cancelled) setFilteredCategories(cats)
+      } catch (e) {
+        logError('exam.loadCategories', e)
       }
-      setFilteredCategories([...cats].sort())
     }
     loadCats()
     return () => { cancelled = true }
@@ -587,7 +584,7 @@ export function ExamSession() {
   const restoreResumedTemplate = useCallback(() => {
     const sess = useExamStore.getState().session
     if (!sess) return
-    const snap = (sess as ExamSessionType & { template?: ExamTemplate | null }).template
+    const snap = sess.template
     if (snap) { setTemplate(snap); return }
     try {
       const map = JSON.parse(localStorage.getItem(EXAM_PAPER_TITLE_KEY) || '{}') as Record<string, unknown>
@@ -633,21 +630,18 @@ export function ExamSession() {
     const urlHasSession = searchParams.has('sessionId')
     if (urlHasSession) return
     setCheckingSession(true)
-    supabase
-      .from('exam_sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('status', 'in_progress')
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
+    fetchRunningExamSession(user.id)
+      .then((running) => {
         if (cancelled) return
-        if (data) {
-          setPendingSession(data as unknown as ExamSessionType)
+        if (running) {
+          setPendingSession(running)
           setShowResumeDialog(true)
         }
         setCheckingSession(false)
+      })
+      .catch((e: unknown) => {
+        logError('exam.runningSession', e)
+        if (!cancelled) setCheckingSession(false)
       })
     return () => { cancelled = true }
   }, [searchParams, user?.id, resumeExam, restoreResumedTemplate])
@@ -702,7 +696,11 @@ export function ExamSession() {
 
   const handleDiscard = async () => {
     if (pendingSession) {
-      await supabase.from('exam_sessions').delete().eq('id', pendingSession.id)
+      try {
+        await deleteExamSession(pendingSession.id)
+      } catch (e) {
+        logError('exam.discardSession', e)
+      }
     }
     setShowResumeDialog(false)
     setPendingSession(null)
@@ -799,28 +797,25 @@ export function ExamSession() {
                     setAiLoading(true)
                     setAiGlow(true)
                     try {
-                      const { data: history } = await supabase
-                        .from('user_answers')
-                        .select('is_correct, questions(subject, category, question_type)')
-                        .eq('user_id', user.id)
+                      const history = await fetchAnswerHistory(user.id)
 
                       const wrongBySubject = new Map<string, { wrong: number; total: number }>()
                       const wrongByCategory = new Map<string, number>()
                       const wrongByType = new Map<string, number>()
-                      for (const r of (history ?? [])) {
-                        const q = (r.questions as any)
+                      for (const r of history) {
+                        const q = r.question
                         if (!q) continue
                         const s = q.subject || 'Other'
                         const c = q.category || 'Other'
-                        const t = q.question_type || 'single_choice'
+                        const qt = q.question_type
                         const se = wrongBySubject.get(s) || { wrong: 0, total: 0 }
                         se.total++
-                        if (!r.is_correct) { se.wrong++; wrongByCategory.set(c, (wrongByCategory.get(c) ?? 0) + 1); wrongByType.set(t, (wrongByType.get(t) ?? 0) + 1) }
+                        if (!r.is_correct) { se.wrong++; wrongByCategory.set(c, (wrongByCategory.get(c) ?? 0) + 1); wrongByType.set(qt, (wrongByType.get(qt) ?? 0) + 1) }
                         wrongBySubject.set(s, se)
                       }
 
                       const result = await suggestExamConfig({
-                        totalPractice: (history ?? []).length,
+                        totalPractice: history.length,
                         wrongBySubject: [...wrongBySubject.entries()].map(([subject, v]) => ({ subject, ...v })),
                         wrongByCategory: [...wrongByCategory.entries()].map(([category, wrong]) => ({ category, wrong })),
                         wrongByType: [...wrongByType.entries()].map(([type, wrong]) => ({ type, wrong })),
@@ -836,7 +831,7 @@ export function ExamSession() {
                       setDurationMin(Math.max(EXAM_MIN_DURATION_MIN, Math.min(EXAM_MAX_DURATION_MIN, result.durationMin)))
                       setAiReason(result.reason)
                     } catch (e) {
-                      console.error('AI suggest exam failed:', e)
+                      logError('exam.aiSuggest', e)
                       setAiReason('AI 推荐失败，请手动设置参数')
                     }
                     setAiLoading(false)

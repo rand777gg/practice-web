@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { fetchFocusSessionStatsSince, type FocusSessionStat } from '@/services/account'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useFocusStore } from '@/stores/focus-store'
 
@@ -35,26 +36,23 @@ export function useFocusStats() {
       const todayStart = beijingMidnight(now, 0)
       const weekStart = beijingMidnight(now, daysSinceMonday(now))
 
-      const { data, error } = await supabase
-        .from('focus_sessions')
-        .select('started_at, duration_sec')
-        .eq('user_id', uid)
-        .gte('started_at', weekStart.toISOString())
-
-      if (cancelled) return
-
-      if (error) {
-        console.error('useFocusStats:', error)
+      let rows: FocusSessionStat[]
+      try {
+        rows = await fetchFocusSessionStatsSince(uid, weekStart.toISOString())
+      } catch (e) {
+        if (cancelled) return
+        logError('useFocusStats', e)
         setLoading(false)
         return
       }
 
+      if (cancelled) return
+
       let week = 0
       let today = 0
-      for (const row of (data ?? []) as { started_at: string; duration_sec: number }[]) {
-        const sec = Number(row.duration_sec) || 0
-        week += sec
-        if (new Date(row.started_at) >= todayStart) today += sec
+      for (const row of rows) {
+        week += row.duration_sec
+        if (new Date(row.started_at) >= todayStart) today += row.duration_sec
       }
       setTodaySec(today)
       setWeekSec(week)

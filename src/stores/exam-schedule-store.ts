@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
+import { createExamSchedule, deleteExamSchedule, fetchExamSchedules, updateExamSchedule } from '@/services/exam'
+import { logError, userMessage } from '@/services/errors'
 import type { ExamSchedule, ExamTemplate } from '@/types'
-import { rowToSchedule } from '@/lib/exam-schedule'
+import { registerUserScopedStore } from '@/stores/user-scope'
 
 export interface ExamScheduleDraft {
   name: string
@@ -38,80 +39,55 @@ export const useExamScheduleStore = create<ExamScheduleState>((set, get) => ({
 
   load: async (userId) => {
     set({ isLoading: true, error: null })
-    const { data, error } = await supabase
-      .from('exam_schedules')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true })
-    if (error) {
-      set({ isLoading: false, error: error.message })
-      return
+    try {
+      set({ schedules: await fetchExamSchedules(userId), isLoading: false })
+    } catch (e) {
+      logError('examSchedule.load', e)
+      set({ isLoading: false, error: userMessage(e) })
     }
-    set({ schedules: (data ?? []).map((r) => rowToSchedule(r as Record<string, unknown>)), isLoading: false })
   },
 
   create: async (userId, draft) => {
     set({ error: null })
-    const { data, error } = await supabase
-      .from('exam_schedules')
-      .insert({
-        user_id: userId,
-        name: draft.name,
-        days_of_week: draft.days_of_week,
-        fire_time: draft.fire_time,
-        template: draft.template as unknown as Record<string, unknown>,
-        enabled: draft.enabled,
-        tz: draft.tz,
-        email_enabled: draft.email_enabled ?? false,
-        email_time: draft.email_time ?? null,
-        email_send_date: draft.email_send_date ?? null,
-      })
-      .select()
-      .single()
-    if (error || !data) {
-      set({ error: error?.message ?? 'Failed to create schedule' })
+    try {
+      const created = await createExamSchedule(userId, draft)
+      if (!created) {
+        set({ error: 'Failed to create schedule' })
+        return null
+      }
+      set({ schedules: [...get().schedules, created] })
+      return created
+    } catch (e) {
+      logError('examSchedule.create', e)
+      set({ error: userMessage(e) })
       return null
     }
-    const created = rowToSchedule(data as Record<string, unknown>)
-    set({ schedules: [...get().schedules, created] })
-    return created
   },
 
   update: async (id, patch) => {
     set({ error: null })
-    const payload: Record<string, unknown> = {}
-    if (patch.name !== undefined) payload.name = patch.name
-    if (patch.days_of_week !== undefined) payload.days_of_week = patch.days_of_week
-    if (patch.fire_time !== undefined) payload.fire_time = patch.fire_time
-    if (patch.template !== undefined) payload.template = patch.template as unknown as Record<string, unknown>
-    if (patch.enabled !== undefined) payload.enabled = patch.enabled
-    if (patch.tz !== undefined) payload.tz = patch.tz
-    if (patch.email_enabled !== undefined) payload.email_enabled = patch.email_enabled
-    if (patch.email_time !== undefined) payload.email_time = patch.email_time
-    if (patch.email_send_date !== undefined) payload.email_send_date = patch.email_send_date
-
-    const { data, error } = await supabase
-      .from('exam_schedules')
-      .update(payload)
-      .eq('id', id)
-      .select()
-      .single()
-    if (error || !data) {
-      set({ error: error?.message ?? 'Failed to update schedule' })
-      return
+    try {
+      const updated = await updateExamSchedule(id, patch)
+      if (!updated) {
+        set({ error: 'Failed to update schedule' })
+        return
+      }
+      set({ schedules: get().schedules.map((s) => (s.id === id ? updated : s)) })
+    } catch (e) {
+      logError('examSchedule.update', e)
+      set({ error: userMessage(e) })
     }
-    const updated = rowToSchedule(data as Record<string, unknown>)
-    set({ schedules: get().schedules.map((s) => (s.id === id ? updated : s)) })
   },
 
   remove: async (id) => {
     set({ error: null })
-    const { error } = await supabase.from('exam_schedules').delete().eq('id', id)
-    if (error) {
-      set({ error: error.message })
-      return
+    try {
+      await deleteExamSchedule(id)
+      set({ schedules: get().schedules.filter((s) => s.id !== id) })
+    } catch (e) {
+      logError('examSchedule.remove', e)
+      set({ error: userMessage(e) })
     }
-    set({ schedules: get().schedules.filter((s) => s.id !== id) })
   },
 
   markFired: (id, date) => {
@@ -121,3 +97,5 @@ export const useExamScheduleStore = create<ExamScheduleState>((set, get) => ({
 
   clear: () => set({ schedules: [], isLoading: false, error: null }),
 }))
+
+registerUserScopedStore(() => useExamScheduleStore.getState().clear())

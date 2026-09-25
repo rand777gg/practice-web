@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
+import { createQrLoginChallenge, fetchQrLoginStatus } from '@/services/account'
+import { logError } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { QrCode, RefreshCw, Loader2 } from 'lucide-react'
@@ -8,12 +10,6 @@ import { QrCode, RefreshCw, Loader2 } from 'lucide-react'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-/** 表里存的是这个哈希, 原始 secret 永远不离开本机 */
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 export function QrLoginDialog({ open, onOpenChange }: Props) {
@@ -24,17 +20,15 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
 
   const generateToken = async () => {
     setStatus('generating')
-    const token = crypto.randomUUID()
     // 这把 secret 只留在本机: 表里存的是它的 sha256, 二维码里只有 token。
     // 于是"读到表"或"扫到码"都换不到登录态, 能换的只有这个窗口自己。
-    const secret = `${crypto.randomUUID()}${crypto.randomUUID()}`
-    secretRef.current = secret
-
-    const { error } = await supabase.from('qr_login_tokens').insert({
-      token,
-      secret_hash: await sha256Hex(secret),
+    const challenge = await createQrLoginChallenge().catch((e) => {
+      logError('qrLogin.createChallenge', e)
+      return null
     })
-    if (error) { setStatus('error'); return }
+    if (!challenge) { setStatus('error'); return }
+    const { token, secret } = challenge
+    secretRef.current = secret
 
     const confirmUrl = `${window.location.origin}/qr-confirm?token=${token}`
     // 二维码必须深色码点 + 浅色底才扫得动（浅色写成透明在白底上会完全看不见）
@@ -49,9 +43,11 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
     if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
       // 不再直读 qr_login_tokens(那张表对任何人都不再开放读): 走只认 token+secret 的窄接口
-      const { data, error } = await supabase.rpc('qr_login_status', { p_token: token, p_secret: secretRef.current })
-      const state = data as string | null
-      if (error || !state) { setStatus('expired'); clearInterval(pollRef.current); return }
+      const state = await fetchQrLoginStatus(token, secretRef.current).catch((e) => {
+        logError('qrLogin.poll', e)
+        return null
+      })
+      if (!state) { setStatus('expired'); clearInterval(pollRef.current); return }
       if (state === 'confirmed') {
         clearInterval(pollRef.current)
         setStatus('loggingIn')

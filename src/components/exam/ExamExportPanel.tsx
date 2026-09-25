@@ -11,7 +11,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '@/lib/supabase'
+import { fetchQuestionMetaCache } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
@@ -55,16 +56,14 @@ export function ExamExportPanel({ userId }: { userId: string }) {
   useEffect(() => {
     let cancelled = false
     async function loadFilters() {
-      const { data } = await supabase.from('questions').select('subject, category')
-      if (cancelled) return
-      const subs = new Set<string>()
-      const cats = new Set<string>()
-      for (const row of data ?? []) {
-        if (row.subject) subs.add(row.subject)
-        if (row.category) cats.add(row.category)
+      try {
+        const meta = await fetchQuestionMetaCache()
+        if (cancelled) return
+        setSubjects(meta.subjects)
+        setCategories(meta.categories)
+      } catch (e) {
+        logError('examExport.filters', e)
       }
-      setSubjects([...subs].sort())
-      setCategories([...cats].sort())
     }
     loadFilters()
     return () => { cancelled = true }

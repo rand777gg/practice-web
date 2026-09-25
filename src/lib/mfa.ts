@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { getDeviceInfoSync } from '@/lib/device-info'
+import { updateProfile } from '@/services/profiles'
+import { logError } from '@/services/errors'
 
 export interface AvailableMethods {
   passkey: boolean
@@ -116,5 +118,7 @@ export async function recoverWithCode(code: string): Promise<{ valid: boolean }>
 export async function completeOnboarding(): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
-  await supabase.from('profiles').update({ onboarded_at: new Date().toISOString() }).eq('id', user.id)
+  // 写不上不打断引导流程: 用户已经在应用里了, 下一次进站会再走一遍这个分支
+  await updateProfile(user.id, { onboarded_at: new Date().toISOString() })
+    .catch((e) => logError('mfa.completeOnboarding', e))
 }

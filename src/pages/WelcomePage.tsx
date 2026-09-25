@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@/stores/auth-store'
+import { useAuthStore, selectAuthSettled } from '@/stores/auth-store'
 import { useT } from '@/i18n/use-t'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, PartyPopper, Sparkles } from 'lucide-react'
@@ -8,14 +8,15 @@ import { cn } from '@/lib/utils'
 
 export function Component() {
   const { t } = useT()
-  const { user, isInitialized } = useAuthStore()
+  const user = useAuthStore((s) => s.user)
+  const settled = useAuthStore(selectAuthSettled)
   const navigate = useNavigate()
   const [visible, setVisible] = useState(false)
   const [countingDown, setCountingDown] = useState(false)
   const hasRedirected = useRef(false)
 
   useEffect(() => {
-    if (!isInitialized) return
+    if (!settled) return
     if (!user && !hasRedirected.current) {
       hasRedirected.current = true
       navigate('/', { replace: true })
@@ -30,7 +31,7 @@ export function Component() {
       }
     }, 5000)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [isInitialized, user, navigate])
+  }, [settled, user, navigate])
 
   const handleGo = () => {
     if (hasRedirected.current) return
@@ -38,7 +39,7 @@ export function Component() {
     navigate('/', { replace: true })
   }
 
-  if (!isInitialized || !user) {
+  if (!settled || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />

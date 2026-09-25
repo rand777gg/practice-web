@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase'
+import { upsertPushSubscription } from '@/services/account'
+import { logError } from '@/services/errors'
 
 const PUSH_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
 
@@ -57,19 +58,15 @@ export async function ensurePushSubscription(userId: string): Promise<boolean> {
     const auth = json.keys?.auth
     if (!endpoint || !p256dh || !auth) return false
 
-    const { error } = await supabase.from('push_subscriptions').upsert(
-      {
-        user_id: userId,
-        endpoint,
-        p256dh,
-        auth,
-        user_agent: navigator.userAgent,
-        last_used_at: new Date().toISOString(),
-      },
-      { onConflict: 'endpoint' },
-    )
-    return !error
-  } catch {
+    await upsertPushSubscription(userId, {
+      endpoint,
+      p256dh,
+      auth,
+      userAgent: navigator.userAgent,
+    })
+    return true
+  } catch (e) {
+    logError('push.ensureSubscription', e)
     return false
   }
 }

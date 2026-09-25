@@ -168,7 +168,7 @@ export function Component() {
     const key = q.subject ?? ''
     const cached = vocabRef.current.get(key)
     if (cached) return cached
-    const { data } = await supabase.rpc('get_question_meta', { p_subject: q.subject })
+    const { data } = await supabase.rpc('get_question_meta', { p_subject: q.subject ?? undefined })
     const list = ((data as { key_points?: string[] } | null)?.key_points ?? [])
     vocabRef.current.set(key, list)
     return list

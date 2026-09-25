@@ -6,6 +6,7 @@
  * (ai_usage_overview), 前端不再二次统计 —— 免得"卡片上的总数"和"图表里的柱子"对不上。
  */
 import { supabase } from '@/lib/supabase'
+import { fetchAiModelPrices, fetchAiUsageLogs } from '@/services/stats'
 
 export interface AiUsageTotals {
   calls: number
@@ -167,36 +168,11 @@ function toLog(r: NonNullable<RawOverview['recent']>[number]): AiUsageLog {
 
 /** 「查看更多」用: 直接翻明细表, 比把 overview 撑大更省 */
 export async function loadAiUsageLogs(limit = 50): Promise<AiUsageLog[]> {
-  const { data, error } = await supabase
-    .from('ai_usage')
-    .select('id, model, source, ok, status_code, latency_ms, prompt_tokens, completion_tokens, created_at')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  if (error) throw new Error(`读取调用日志失败: ${error.message}`)
-  return (data ?? []).map((r) => toLog({
-    id: r.id,
-    model: r.model,
-    source: r.source,
-    ok: r.ok,
-    status_code: r.status_code,
-    latency_ms: r.latency_ms,
-    tokens: (r.prompt_tokens ?? 0) + (r.completion_tokens ?? 0),
-    created_at: r.created_at,
-  }))
+  return fetchAiUsageLogs(limit)
 }
 
 export async function loadAiPrices(): Promise<AiModelPrice[]> {
-  const { data, error } = await supabase
-    .from('ai_model_prices')
-    .select('model, input_per_1m, output_per_1m, currency')
-    .order('model')
-  if (error) throw new Error(`读取单价失败: ${error.message}`)
-  return (data ?? []).map((r) => ({
-    model: r.model,
-    inputPer1m: Number(r.input_per_1m),
-    outputPer1m: Number(r.output_per_1m),
-    currency: r.currency,
-  }))
+  return fetchAiModelPrices()
 }
 
 /**

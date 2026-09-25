@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { supabase } from '@/lib/supabase'
+import { logError } from '@/services/errors'
+import { fetchProfile } from '@/services/profiles'
+import { fetchQuestionMetaCache } from '@/services/questions'
+import { registerUserScopedStore } from '@/stores/user-scope'
 
 export interface PlanCache {
   allSubjects: string[]
@@ -53,6 +57,7 @@ interface DashboardState {
   fetchPlanCache: (userId: string, refreshVersion?: number, planResetAt?: string | null) => Promise<PlanCache>
   getPlanCache: () => PlanCache | null
   invalidatePlanCache: () => void
+  reset: () => void
 }
 
 const Q_META_TTL = 30 * 60 * 1000
@@ -91,13 +96,20 @@ export const useDashboardStore = create<DashboardState>()(
         if (state.planCache && Date.now() - state.planCache.fetchedAt < PLAN_CACHE_TTL && state.planCache.refreshVersion === refreshVersion) return state.planCache
 
         // Get per-subject reset timestamps
-        const { data: profile } = await supabase.from('profiles').select('subject_reset_at').eq('id', userId).single()
-        const subjectResets = (profile?.subject_reset_at ?? null) as Record<string, string> | null
+        let subjectResets: Record<string, string> | null = null
+        try {
+          const profile = await fetchProfile(userId)
+          subjectResets = (profile?.subject_reset_at ?? null) as Record<string, string> | null
+        } catch (e) {
+          // 旧代码不看读的结果: 拿不到就按"没有学科重置"算, 别把整个计划缓存打掉
+          logError('dashboard.fetchPlanCache.profile', e)
+        }
 
         // Single RPC call replaces: paginated questions + paginated user_answers + client-side Set counting
+        // p_plan_reset_at 在库里默认就是 NULL, 传 undefined 让参数整个不出现, 与旧代码传 null 等价
         const { data: rows } = await supabase.rpc('get_subject_progress', {
           p_user_id: userId,
-          p_plan_reset_at: planResetAt || null,
+          p_plan_reset_at: planResetAt || undefined,
           p_subject_resets: subjectResets,
         }) as { data: { subject: string; total: number; done_all: number; missing_kp: number }[] | null }
 
@@ -105,8 +117,11 @@ export const useDashboardStore = create<DashboardState>()(
         const subjects = new Set<string>()
 
         // Load subject list from cached meta (fast — single row)
-        const { data: meta } = await supabase.from('question_meta_cache').select('subjects').single()
-        for (const s of ((meta?.subjects ?? []) as string[])) subjects.add(s)
+        try {
+          for (const s of (await fetchQuestionMetaCache()).subjects) subjects.add(s)
+        } catch (e) {
+          logError('dashboard.fetchPlanCache.meta', e)
+        }
 
         for (const r of (rows ?? [])) {
           subjectProgress[r.subject] = { total: Number(r.total), done: Number(r.done_all), missing_kp: Number((r as any).missing_kp ?? 0) }
@@ -134,6 +149,10 @@ export const useDashboardStore = create<DashboardState>()(
       },
 
       invalidatePlanCache: () => set({ planCache: null }),
+
+      // 这些缓存是按用户算出来的（答题统计、计划进度），而这个 store 是持久化的：
+      // 不清就等于下一个登录的人先看到上一个人的数据。
+      reset: () => set({ chartData: null, cacheKey: '', cacheTs: 0, qMeta: null, qMetaTs: 0, planCache: null }),
     }),
     {
       name: 'dashboard-cache',
@@ -147,3 +166,5 @@ export const useDashboardStore = create<DashboardState>()(
     },
   ),
 )
+
+registerUserScopedStore(() => useDashboardStore.getState().reset())

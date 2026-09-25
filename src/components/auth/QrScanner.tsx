@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
-import { supabase } from '@/lib/supabase'
+import { confirmQrLogin } from '@/services/account'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -45,13 +46,14 @@ export function QrScanner({ open, onOpenChange }: Props) {
         setStatus('confirming')
         await scanner.stop()
 
-        const { error } = await supabase.from('qr_login_tokens').update({
-          user_id: user.id,
-          status: 'confirmed',
-          device_info: navigator.userAgent.slice(0, 200),
-        }).eq('token', token).eq('status', 'pending').gt('expires_at', new Date().toISOString())
-
-        if (error) { setStatus('error'); setErrorMsg('二维码已过期或已被使用'); return }
+        // 确认必须走 SECURITY DEFINER 的 RPC: qr_login_tokens 对客户端没有 UPDATE 策略,
+        // 直写表不报错但影响 0 行, 扫码端会一直以为自己"确认成功"
+        try {
+          await confirmQrLogin(token, navigator.userAgent.slice(0, 200))
+        } catch (e) {
+          logError('qrScanner.confirm', e)
+          setStatus('error'); setErrorMsg('二维码已过期或已被使用'); return
+        }
         setStatus('success')
       },
       () => {}

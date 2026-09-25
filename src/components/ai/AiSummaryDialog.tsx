@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import { fetchAnswerStats } from '@/services/practice'
+import { fetchQuestionMetaRows } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
-import { supabase } from '@/lib/supabase'
 import { generateDailySummary, type SummaryData } from '@/lib/ai/summary'
 import { hasAiConfig } from '@/lib/ai/config'
 import {
@@ -89,30 +91,34 @@ export function AiSummaryDialog({ open, onOpenChange }: Props) {
       const twoWeeksAgo = new Date(now)
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
 
-      const [
-        { data: allAnswers },
-        { data: todayAnswers },
-        { data: recentAnswers },
-        { data: questions },
-      ] = await Promise.all([
-        supabase.from('user_answers').select('is_correct, answered_at, question_id').eq('user_id', user.id),
-        supabase.from('user_answers').select('is_correct, answered_at, question_id').eq('user_id', user.id).gte('answered_at', todayStart),
-        supabase.from('user_answers').select('is_correct, answered_at, question_id').eq('user_id', user.id).gte('answered_at', twoWeeksAgo.toISOString()),
-        supabase.from('questions').select('id, subject, category'),
+      // 三个时间窗的作答流水: 服务函数内部翻页, 不再被 PostgREST 单次 1000 行的上限静默截断
+      const [allList, todayList, recentList, questionRows] = await Promise.all([
+        fetchAnswerStats(user.id, null).catch((e: unknown) => {
+          logError('ai.summary.allAnswers', e)
+          return []
+        }),
+        fetchAnswerStats(user.id, todayStart).catch((e: unknown) => {
+          logError('ai.summary.todayAnswers', e)
+          return []
+        }),
+        fetchAnswerStats(user.id, twoWeeksAgo.toISOString()).catch((e: unknown) => {
+          logError('ai.summary.recentAnswers', e)
+          return []
+        }),
+        fetchQuestionMetaRows().catch((e: unknown) => {
+          logError('ai.summary.questionMeta', e)
+          return []
+        }),
       ])
 
       const qMap = new Map<string, { subject: string; category: string }>()
-      for (const q of questions ?? []) qMap.set(q.id, { subject: q.subject ?? '未分类', category: q.category ?? '未分类' })
-
-      const allList = allAnswers ?? []
-      const recentList = recentAnswers ?? []
-      const todayList = todayAnswers ?? []
+      for (const q of questionRows) qMap.set(q.id, { subject: q.subject ?? '未分类', category: q.category ?? '未分类' })
 
       let todayCorrect = 0; let todayWrong = 0
       const todayHourCount = new Array(24).fill(0)
       for (const a of todayList) {
         if (a.is_correct) todayCorrect++; else todayWrong++
-        todayHourCount[new Date(a.answered_at as string).getHours()]++
+        todayHourCount[new Date(a.answered_at).getHours()]++
       }
       const todayPeakHour = todayHourCount.indexOf(Math.max(...todayHourCount))
 
@@ -144,7 +150,7 @@ export function AiSummaryDialog({ open, onOpenChange }: Props) {
         if (!profile?.plan_subjects) return []
         try { return JSON.parse(profile.plan_subjects) as string[] } catch { return [] }
       })()
-      const scopeIds = new Set((questions ?? []).filter((q) => planSubjects.length === 0 || planSubjects.includes(q.subject ?? '')).map((q) => q.id))
+      const scopeIds = new Set(questionRows.filter((q) => planSubjects.length === 0 || planSubjects.includes(q.subject ?? '')).map((q) => q.id))
       const doneIds = new Set(allList.filter((a) => scopeIds.has(a.question_id)).map((a) => a.question_id))
       const remainingTotal = Math.max(scopeIds.size - doneIds.size, 0)
       const daysLeft = deadline ? Math.max(Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000), 1) : 30

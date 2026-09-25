@@ -2,7 +2,11 @@ import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ScrollArea } from '@radix-ui/themes'
 import { Spinner } from '@/components/ui/spinner'
-import { supabase } from '@/lib/supabase'
+import { fetchAnsweredQuestionIds } from '@/services/practice'
+import { fetchQuestionMetaRows, fetchQuestionOfflineRows, type QuestionMetaRow } from '@/services/questions'
+import { fetchDailyStats } from '@/services/stats'
+import { updateProfile } from '@/services/profiles'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDashboardStore } from '@/stores/dashboard-store'
 import { prefetchQuestions, clearPrefetchedQuestions } from '@/lib/offline-db'
@@ -72,6 +76,11 @@ interface ChartData {
 
 interface QMeta { id: string; subject: string; category: string; categories: string[]; question_type: string }
 
+// 服务层的题目元数据是领域形状(可空 + camelCase), 缓存里存的仍是页面这套窄形状
+function toQMeta(rows: QuestionMetaRow[]): QMeta[] {
+  return rows.map((r) => ({ id: r.id, subject: r.subject ?? '', category: r.category ?? '', categories: r.categories, question_type: r.questionType }))
+}
+
 export function Component() {
   const { t } = useT()
   const { user, profile, setProfile, refreshProfile } = useAuthStore()
@@ -84,26 +93,16 @@ export function Component() {
     if (!user || !profile) return
     const next = v || null
     setProfile({ ...profile, goal_type: next })
-    const { error } = await supabase.from('profiles').update({ goal_type: next }).eq('id', user.id)
-    if (error) {
-      console.error('set goal_type failed:', error.message)
-      await refreshProfile()
-    } else {
-      await refreshProfile()
-    }
+    await updateProfile(user.id, { goal_type: next }).catch((e: unknown) => logError('dashboard.setGoalType', e))
+    await refreshProfile()
   }
 
   const applyDeadline = async (date: string) => {
     if (!user || !profile) return
     const next = date || null
     setProfile({ ...profile, deadline: next })
-    const { error } = await supabase.from('profiles').update({ deadline: next }).eq('id', user.id)
-    if (error) {
-      console.error('set deadline failed:', error.message)
-      await refreshProfile()
-    } else {
-      await refreshProfile()
-    }
+    await updateProfile(user.id, { deadline: next }).catch((e: unknown) => logError('dashboard.setDeadline', e))
+    await refreshProfile()
   }
 
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -163,37 +162,48 @@ export function Component() {
       const end7d = new Date(today)
       end7d.setDate(end7d.getDate() + 7)
 
-      // Questions metadata: try cache first, otherwise fetch (without heavy key_points)
+      // 题目元数据: 命中缓存就不查; 冷缓存时并行拉一次, 拉回来的结果直接用, 不再丢掉重查
       let questions = dashboardStore.getQMetaCache()
-      const qFetchPromise = questions
+      const qMetaPromise = questions
         ? Promise.resolve(null)
-        : supabase.from('questions').select('id, subject, category, categories, question_type')
-            .then(({ data }) => { if (data) dashboardStore.setQMetaCache(data as QMeta[]); return null })
+        : fetchQuestionMetaRows()
+            .then(toQMeta)
+            .catch((e: unknown) => {
+              logError('dashboard.questionMeta', e)
+              return null
+            })
 
-      // Pre-aggregated daily stats (lightweight — replaces raw user_answers for charts)
-      const [{ data: statsRows }, { data: kgAnswers }] = await Promise.all([
-        supabase
-          .from('user_daily_stats')
-          .select('date, subject, question_type, total, correct, hourly')
-          .eq('user_id', user!.id)
-          .gte('date', start12wk.toISOString().slice(0, 10)),
-        supabase
-          .from('user_answers')
-          .select('question_id')
-          .eq('user_id', user!.id),
-        qFetchPromise,
+      // 预聚合每日统计: 行数是 天数 × 学科 × 题型, 长期用户过千行, 所以走会翻页的服务函数
+      const [statsRows, answeredIds, freshQMeta] = await Promise.all([
+        fetchDailyStats(user!.id, start12wk.toISOString().slice(0, 10)).catch((e: unknown) => {
+          logError('dashboard.dailyStats', e)
+          return []
+        }),
+        fetchAnsweredQuestionIds(user!.id).catch((e: unknown) => {
+          logError('dashboard.answeredIds', e)
+          return []
+        }),
+        qMetaPromise,
       ])
       if (isStale(myGen)) { setIsRefreshing(false); return }
 
       if (!questions) {
-        const { data: fresh } = await supabase.from('questions').select('id, subject, category, categories, question_type')
-        if (isStale(myGen)) { setIsRefreshing(false); return }
-        questions = (fresh ?? []) as QMeta[]
+        if (freshQMeta) {
+          questions = freshQMeta
+        } else {
+          // 并行那次没回来就再试一次(老代码的顺序是第一次只写缓存、第二次才用于计算)
+          try {
+            questions = toQMeta(await fetchQuestionMetaRows())
+          } catch (e) {
+            logError('dashboard.questionMeta', e)
+            questions = []
+          }
+          if (isStale(myGen)) { setIsRefreshing(false); return }
+        }
         dashboardStore.setQMetaCache(questions)
       }
 
-      type StatsRow = { date: string; subject: string; question_type: string; total: number; correct: number; hourly: number[] }
-      const rows = (statsRows ?? []) as StatsRow[]
+      const rows = statsRows
 
       let correctCount = 0
       let totalAnswered = 0
@@ -302,11 +312,7 @@ export function Component() {
             .map((q) => q.id),
         )
         // Use knowledge-graph answers for question-level uniqueness
-        const distinctDone = new Set(
-          (kgAnswers ?? [])
-            .filter((a: { question_id: string }) => scopeIds.has(a.question_id))
-            .map((a: { question_id: string }) => a.question_id),
-        )
+        const distinctDone = new Set(answeredIds.filter((id) => scopeIds.has(id)))
         const totalInScope = scopeIds.size
         const remaining = Math.max(totalInScope - distinctDone.size, 0)
         const daysLeft = Math.max(Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000), 1)
@@ -356,20 +362,19 @@ export function Component() {
           const SYNC_TS_KEY = 'q_last_sync_ts'
           const lastSync = localStorage.getItem(SYNC_TS_KEY)
           // ponytail: exclude analysis/key_points/answer_explanation to cut ~60% egress; offline practice doesn't need them
-          let query = supabase.from('questions').select('id,question_type,question_text,options,correct_answer,category,categories,subject,seq_number,created_at,updated_at,created_by,verified,import_mode,allow_unordered')
-          if (lastSync) {
-            query = query.gte('updated_at', lastSync)
-          }
-          const { data } = await query
+          const data = await fetchQuestionOfflineRows(lastSync)
           if (loadGenRef.current !== prefetchGen) return
-          if (data && data.length > 0) {
+          if (data.length > 0) {
             // Full sync on first run; incremental upsert thereafter
             if (!lastSync) await clearPrefetchedQuestions()
             if (loadGenRef.current !== prefetchGen) return
-            await prefetchQuestions(data.map((q: Record<string, unknown>) => ({ id: q.id as string, data: q })))
+            await prefetchQuestions(data.map((q) => ({ id: q.id, data: q })))
           }
+          // 拉失败就别推进时间戳: 否则这一段增量会被永久跳过(由下面的 catch 兜住)
           localStorage.setItem(SYNC_TS_KEY, new Date().toISOString())
-        } catch { /* best-effort */ }
+        } catch (e) {
+          logError('dashboard.prefetchQuestions', e)
+        }
       })()
     }
     load()

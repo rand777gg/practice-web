@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { rpcJsonRows } from '@/services/db'
 import { cn, naturalSort } from '@/lib/utils'
 import { earliestPassStart, fetchAnsweredRows } from '@/lib/answered-rows'
 import { ExcludedQuestionsDialog } from '@/components/practice/ExcludedQuestionsDialog'
@@ -134,9 +135,10 @@ export function SequentialKpNav({ userId, questionIds, questionKps, questionSubj
 
   const loadExclStats = useCallback(async () => {
     if (!userId || !selectedKps || selectedKps.length === 0) { setExclStats(new Map()); return }
+    // 这个函数 RETURNS JSONB（内部 jsonb_agg），生成类型只有 Json；行形状见 001_initial_schema.sql
     const { data } = await supabase.rpc('get_kp_exclusion_stats', { p_user_id: userId, p_kps: selectedKps })
     const map = new Map<string, ExclStat>()
-    for (const r of (data ?? []) as ExclStatRow[]) map.set(r.kp, r)
+    for (const r of rpcJsonRows<ExclStatRow>(data)) map.set(r.kp, r)
     setExclStats(map)
   }, [userId, selectedKps])
 

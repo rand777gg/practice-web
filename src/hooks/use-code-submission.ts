@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react'
+import { insertSubmission } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { judgeOnJudge0, JUDGE0_DEFAULT_URL, isJudge0Reachable } from '@/lib/judge0'
@@ -43,7 +45,7 @@ export function useCodeSubmission(questionId: string) {
     }) => {
       if (!user) return
       try {
-        await supabase.from('submissions').insert({
+        await insertSubmission({
           user_id: user.id,
           question_id: questionId,
           code: payload.code,
@@ -56,7 +58,7 @@ export function useCodeSubmission(questionId: string) {
         })
       } catch (e) {
         // 落库失败不影响判题主流程;本地自测更不应因记录失败而报错
-        console.error('persist submission failed', e)
+        logError('useCodeSubmission.persist', e)
       }
     },
     [user, questionId],

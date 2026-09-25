@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { logError } from '@/services/errors'
+import { fetchQuestionById } from '@/services/questions'
 import { useQuestions } from '@/hooks/use-questions'
 import { QuestionForm } from '@/components/questions/QuestionForm'
 import { Button } from '@/components/ui/button'
@@ -28,12 +29,12 @@ export function Component() {
   loadedRef.current = true
   const draftParam = searchParams.get('draft')
   void (async () => {
-   const { data } = await supabase
-    .from('questions')
-    .select('*')
-    .eq('id', questionId)
-    .single()
-   setQuestion(data as Question | null)
+   try {
+    setQuestion(await fetchQuestionById(questionId))
+   } catch (e) {
+    logError('QuestionEditPage.load', e)
+    setQuestion(null)
+   }
    // 有草稿就先看草稿: 上次存到一半的内容比库里的旧版本更接近真实意图
    if (draftParam) {
     const d = await getDraft(draftParam).catch(() => null)

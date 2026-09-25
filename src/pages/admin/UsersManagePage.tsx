@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { logError } from '@/services/errors'
+import { listAllProfiles, setProfileRole } from '@/services/profiles'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -31,12 +33,13 @@ export function Component() {
 
  useEffect(() => {
   async function load() {
-   const { data } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: true })
-
-   const list = (data ?? []) as UserRow[]
+   let list: UserRow[] = []
+   try {
+    list = await listAllProfiles()
+   } catch (e) {
+    // 读不到就按空列表收场: 老代码同样把查不到当成没有用户
+    logError('UsersManagePage.load', e)
+   }
    const [emails, providers, signIns, confirmeds] = await Promise.all([
     Promise.all(list.map(async (p) => {
      const { data } = await supabase.rpc('get_user_email', { user_id: p.id })
@@ -75,7 +78,12 @@ export function Component() {
  const toggleRole = async (profile: Profile) => {
   if (profile.id === myProfile?.id) return
   const newRole = profile.role === 'admin' ? 'user' : 'admin'
-  await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id)
+  try {
+   await setProfileRole(profile.id, newRole)
+  } catch (e) {
+   // 改角色失败也照旧乐观更新: 列表下次加载就会把界面拉回真实值
+   logError('UsersManagePage.toggleRole', e)
+  }
   setProfiles((prev) =>
    prev.map((p) => (p.id === profile.id ? { ...p, role: newRole as 'admin' | 'user' } : p)),
   )

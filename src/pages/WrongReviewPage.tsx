@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
+import { deleteAnswer, fetchWrongAnswerDetails, updateAnswer, type AnswerWithQuestion } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { autoIndex } from '@/lib/rag'
 import { naturalSort } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -20,11 +21,9 @@ import { QUESTION_TYPE_OPTIONS, OPTION_LABELS, POINT_COLORS } from '@/lib/consta
 import { Trash2, Lightbulb, Pencil, Check, X, Star, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import type { UserAnswer, Question, QuestionType, CorrectAnswer } from '@/types'
+import type { Question, QuestionType, CorrectAnswer } from '@/types'
 import { useT } from '@/i18n/use-t'
 import { useFavorites } from '@/hooks/use-favorites'
-
-type WrongWithQuestion = UserAnswer & { questions: Question }
 
 function AnswerInfo({ q, selected }: { q: Question; selected: CorrectAnswer }) {
   const type = q.question_type
@@ -82,7 +81,7 @@ export function Component() {
   const [mode, setMode] = useState<FilterMode>('all')
   const [sortBy, setSortBy] = useState<SortMode>('wrongCount')
   const [wrongCounts, setWrongCounts] = useState<Record<string, number>>({})
-  const [answers, setAnswers] = useState<WrongWithQuestion[]>([])
+  const [answers, setAnswers] = useState<AnswerWithQuestion[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [analysisId, setAnalysisId] = useState<string | null>(null)
@@ -100,7 +99,7 @@ export function Component() {
   const kpBySubject = useMemo(() => {
     const map = new Map<string, Set<string>>()
     for (const a of answers) {
-      const q = a.questions
+      const q = a.question
       if (!q) continue
       const subj = q.subject || '其他'
       if (!map.has(subj)) map.set(subj, new Set())
@@ -112,7 +111,7 @@ export function Component() {
   useEffect(() => { updateFilteredCategories(selectedSubject) }, [selectedSubject, updateFilteredCategories])
 
   const filtered = useMemo(() => answers.filter(a => {
-    const q = a.questions
+    const q = a.question
     if (!q) return false
     if (selectedSubject && q.subject !== selectedSubject) return false
     if (selectedCategory && !(q.categories?.includes(selectedCategory) || q.category === selectedCategory)) return false
@@ -125,13 +124,13 @@ export function Component() {
   const kpWrongCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const a of filtered) {
-      for (const kp of splitKeyPoints(a.questions?.key_points ?? null)) counts[kp] = (counts[kp] ?? 0) + 1
+      for (const kp of splitKeyPoints(a.question?.key_points ?? null)) counts[kp] = (counts[kp] ?? 0) + 1
     }
     return counts
   }, [filtered])
 
   // 一道题归到它最薄弱的那个知识点上, 多知识点时取最大值
-  const topKpWrongCount = useCallback((q?: Question) => {
+  const topKpWrongCount = useCallback((q?: Question | null) => {
     let max = 0
     for (const kp of splitKeyPoints(q?.key_points ?? null)) max = Math.max(max, kpWrongCounts[kp] ?? 0)
     return max
@@ -139,9 +138,9 @@ export function Component() {
 
   const sorted = useMemo(() => {
     const list = [...filtered]
-    const byWrongCount = (a: WrongWithQuestion, b: WrongWithQuestion) => (wrongCounts[b.question_id] ?? 0) - (wrongCounts[a.question_id] ?? 0)
-    const byLatest = (a: WrongWithQuestion, b: WrongWithQuestion) => new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime()
-    const byKp = (a: WrongWithQuestion, b: WrongWithQuestion) => topKpWrongCount(b.questions) - topKpWrongCount(a.questions)
+    const byWrongCount = (a: AnswerWithQuestion, b: AnswerWithQuestion) => (wrongCounts[b.question_id] ?? 0) - (wrongCounts[a.question_id] ?? 0)
+    const byLatest = (a: AnswerWithQuestion, b: AnswerWithQuestion) => new Date(b.answered_at).getTime() - new Date(a.answered_at).getTime()
+    const byKp = (a: AnswerWithQuestion, b: AnswerWithQuestion) => topKpWrongCount(b.question) - topKpWrongCount(a.question)
     if (sortBy === 'wrongCount') list.sort((a, b) => byWrongCount(a, b) || byLatest(a, b))
     else if (sortBy === 'keyPoint') list.sort((a, b) => byKp(a, b) || byWrongCount(a, b) || byLatest(a, b))
     else list.sort(byLatest)
@@ -155,14 +154,16 @@ export function Component() {
     fetchGenRef.current++
     const myGen = fetchGenRef.current
     setIsLoading(true)
-    let query = supabase.from('user_answers').select('*, questions(*)').eq('user_id', user.id).eq('is_correct', false).order('answered_at', { ascending: false }).limit(1000)
-    if (mode !== 'all') query = query.eq('mode', mode)
-    const { data } = await query
+    let rows: AnswerWithQuestion[] = []
+    try {
+      rows = await fetchWrongAnswerDetails(user.id, mode === 'all' ? null : mode)
+    } catch (e) {
+      logError('WrongReviewPage.fetchAnswers', e)
+    }
     if (fetchGenRef.current !== myGen) return
-    const rows = (data ?? []) as WrongWithQuestion[]
     const seen = new Set<string>()
     const counts: Record<string, number> = {}
-    const deduped: WrongWithQuestion[] = []
+    const deduped: AnswerWithQuestion[] = []
     for (const row of rows) {
       counts[row.question_id] = (counts[row.question_id] ?? 0) + 1
       if (seen.has(row.question_id)) continue
@@ -177,12 +178,20 @@ export function Component() {
   useEffect(() => { fetchAnswers() }, [fetchAnswers])
 
   const handleDelete = async (id: string) => {
-    await supabase.from('user_answers').delete().eq('id', id)
+    try {
+      await deleteAnswer(id)
+    } catch (e) {
+      logError('WrongReviewPage.handleDelete', e)
+    }
     fetchAnswers()
   }
 
   const handleSaveNote = async (id: string) => {
-    await supabase.from('user_answers').update({ note: editText }).eq('id', id)
+    try {
+      await updateAnswer(id, { note: editText })
+    } catch (e) {
+      logError('WrongReviewPage.handleSaveNote', e)
+    }
     // 公开笔记改了正文要跟着重索引(删行那条不用管: 数据库触发器会清块)
     autoIndex('note', id)
     setAnswers(prev => prev.map(a => a.id === id ? { ...a, note: editText } : a))
@@ -269,7 +278,7 @@ export function Component() {
       ) : (
         <div className="space-y-3">
           {visible.map((a) => {
-            const q = a.questions
+            const q = a.question
             const fav = isFavorite(a.question_id)
             if (!q) return null
             return (

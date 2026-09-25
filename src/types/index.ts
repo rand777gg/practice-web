@@ -400,10 +400,10 @@ export interface Profile {
   avatar_preset?: string | null
   deadline: string | null
   plan_subjects: string | null
-  /** 长期计划下的轮次(JSONB 列, PostgREST 直接回数组), 见 PlanRound */
-  plan_rounds: PlanRound[] | null
-  /** 自定义计划的批次目标(JSONB 列), 见 PlanGoal */
-  plan_goals: PlanGoal[] | null
+  /** 长期计划下的轮次；服务层已归一化，空数组表示没有轮次（此时回退看 milestones） */
+  plan_rounds: PlanRound[]
+  /** 自定义计划的批次目标；服务层已归一化 */
+  plan_goals: PlanGoal[]
   /** 已废弃的每日定额, 只在首次加载时用来搬成 plan_goals */
   daily_targets: string | null
   daily_deadline: string | null
@@ -418,8 +418,8 @@ export interface Profile {
   /** 自习室公开开关 {goal_type,exam_status,target_school}, 缺键=不公开 */
   profile_visibility?: Record<string, boolean> | null
   plan_reset_at: string | null
-  /** 计划学科 -> 认领知识点数组的映射。如 {"数学":["一元二次方程"]}。NULL 或缺省=该学科全部知识点 */
-  plan_scope: PlanScope | null
+  /** 计划学科 -> 认领知识点数组的映射。如 {"数学":["一元二次方程"]}。空对象 = 该学科全部知识点 */
+  plan_scope: PlanScope
   subject_reset_at: Record<string, string> | null
   daily_reset_at: string | null
   totp_enabled?: boolean

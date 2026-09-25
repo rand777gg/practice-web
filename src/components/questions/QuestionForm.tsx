@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
+import { rpcJson } from '@/services/db'
 import { getPrompt } from '@/stores/prompt-store'
 import {
   Plus, Trash2, Check, ChevronDown, RotateCcw, Sparkles, Save, X, Wand2, FileText, Loader2,
@@ -84,9 +85,10 @@ export function QuestionForm({ initialData, onSubmit, onCancel, onSaveDraft, dra
 
   // Fetch key points filtered by subject
   useEffect(() => {
-    supabase.rpc('get_question_meta', { p_subject: subject || null }).then(({ data, error }: { data: { key_points: string[] } | null; error: unknown }) => {
-      if (!error && data?.key_points) setAllKeyPoints(data.key_points)
-      else setAllKeyPoints([])
+    // p_subject 省略即 SQL 的 DEFAULT NULL（全学科）；函数 RETURNS JSONB，形状见 001_initial_schema.sql
+    supabase.rpc('get_question_meta', { p_subject: subject || undefined }).then(({ data, error }) => {
+      const kps = error ? null : rpcJson<{ key_points?: string[] }>(data)?.key_points
+      setAllKeyPoints(kps ?? [])
     })
   }, [subject])
 

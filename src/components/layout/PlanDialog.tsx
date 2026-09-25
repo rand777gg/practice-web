@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { toJson } from '@/services/db'
+import { logError } from '@/services/errors'
+import { removeExcludedQuestions } from '@/services/practice'
+import { mergeSubjectResetAt, updateProfile } from '@/services/profiles'
+import { fetchQuestionIdsBySubjects } from '@/services/questions'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { useDashboardStore } from '@/stores/dashboard-store'
@@ -355,15 +359,15 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
     // Only reset the selected subjects
     const resetEntries: Record<string, string> = {}
     for (const s of selectedSubjects) resetEntries[s] = now
-    const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', user.id).single()
-    const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
-    const merged = { ...existingResets, ...resetEntries }
-    await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', user.id)
-    if (resetTooEasy && selectedSubjects.length > 0) {
-      const { data: qids } = await supabase.from('questions').select('id').in('subject', selectedSubjects)
-      if (qids && qids.length > 0) {
-        await supabase.from('user_excluded_questions').delete().eq('user_id', user.id).in('question_id', qids.map(q => q.id))
+    try {
+      await mergeSubjectResetAt(user.id, resetEntries)
+      if (resetTooEasy && selectedSubjects.length > 0) {
+        const qids = await fetchQuestionIdsBySubjects(selectedSubjects)
+        if (qids.length > 0) await removeExcludedQuestions(user.id, qids)
       }
+    } catch (e) {
+      // 旧代码不看这几条写的返回值: 失败也照样刷新资料、清缓存、弹「是否加载新会话」
+      logError('PlanDialog.handleResetLong', e)
     }
     await refreshProfile()
     useRefreshStore.getState().bump()
@@ -396,7 +400,11 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
   const handleDeleteLong = async () => {
     if (!user) return
     setSaving(true)
-    await supabase.from('profiles').update({ deadline: null, plan_subjects: null, plan_rounds: null }).eq('id', user.id)
+    try {
+      await updateProfile(user.id, { deadline: null, plan_subjects: null, plan_rounds: null })
+    } catch (e) {
+      logError('PlanDialog.handleDeleteLong', e)
+    }
     await refreshProfile()
     setDeadline('')
     setSelectedSubjects([])
@@ -430,15 +438,16 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
       return
     }
     setSaving(true)
-    await supabase
-      .from('profiles')
-      .update({
+    try {
+      await updateProfile(user.id, {
         deadline: deadline || null,
         plan_subjects: selectedSubjects.length > 0 ? JSON.stringify(selectedSubjects) : null,
-        plan_rounds: sortedRounds.length > 0 ? sortedRounds : null,
-        plan_goals: sortedGoals.length > 0 ? sortedGoals : null,
+        plan_rounds: sortedRounds.length > 0 ? toJson(sortedRounds) : null,
+        plan_goals: sortedGoals.length > 0 ? toJson(sortedGoals) : null,
       })
-      .eq('id', user.id)
+    } catch (e) {
+      logError('PlanDialog.handleSave', e)
+    }
     await refreshProfile()
 
     // 学科的"计划范围" = 长期计划学科 ∪ 自定义计划的学科。注意别拿会话自己的 planSubjects 比:

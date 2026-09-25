@@ -1,7 +1,12 @@
 import { useCallback, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { logError, userMessage } from '@/services/errors'
+import {
+  createQuestionBankPaper,
+  deleteQuestionBankPaper,
+  listQuestionBankPapers,
+  regenerateQuestionBankPaper,
+} from '@/services/questions'
 import { useAuthStore } from '@/stores/auth-store'
-import { normalizeTemplate } from '@/stores/exam-template-store'
 import { composeExamIds } from '@/lib/exam-compose'
 import {
   defaultPaperName,
@@ -11,33 +16,6 @@ import {
   type BankPaperScope,
 } from '@/lib/bank-papers'
 import type { ExamComposeStat, ExamTemplate, QuestionBankPaper } from '@/types'
-
-function rowToPaper(row: Record<string, unknown>): QuestionBankPaper {
-  return {
-    id: String(row.id),
-    bank_id: String(row.bank_id),
-    created_by: String(row.created_by),
-    name: String(row.name ?? ''),
-    kind: row.kind === 'real' ? 'real' : 'mock',
-    scope_type:
-      row.scope_type === 'year' || row.scope_type === 'chapter' || row.scope_type === 'key_point'
-        ? row.scope_type
-        : 'comprehensive',
-    year: row.year == null ? null : Number(row.year),
-    scope_values: Array.isArray(row.scope_values)
-      ? (row.scope_values as unknown[]).filter((v): v is string => typeof v === 'string')
-      : [],
-    subject: Array.isArray(row.subject) ? (row.subject as string[]) : null,
-    duration_min: Math.max(1, Math.min(600, Number(row.duration_min) || 60)),
-    template: normalizeTemplate((row.template ?? {}) as Record<string, unknown>),
-    question_ids: Array.isArray(row.question_ids)
-      ? (row.question_ids as unknown[]).filter((v): v is string => typeof v === 'string')
-      : [],
-    generated_at: String(row.generated_at ?? ''),
-    created_at: String(row.created_at ?? ''),
-    updated_at: String(row.updated_at ?? ''),
-  }
-}
 
 export interface GeneratePaperInput extends BankPaperScope {
   bankId: string
@@ -63,15 +41,14 @@ export function useBankPapers(bankId: string) {
   const load = useCallback(async () => {
     if (!bankId) return
     setIsLoading(true)
-    const { data } = await supabase
-      .from('question_bank_papers')
-      .select('*')
-      .eq('bank_id', bankId)
-      .order('kind', { ascending: true })
-      .order('year', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: true })
-    setPapers((data ?? []).map((r) => rowToPaper(r as Record<string, unknown>)))
-    setIsLoading(false)
+    try {
+      setPapers(await listQuestionBankPapers(bankId))
+    } catch (e) {
+      logError('useBankPapers.load', e)
+      setPapers([])
+    } finally {
+      setIsLoading(false)
+    }
   }, [bankId])
 
   /** 按范围+模板组一份新卷并落库(题单冻结) */
@@ -92,30 +69,26 @@ export function useBankPapers(bankId: string) {
         return { ok: false, paper: null, stats: composed.stats, error: 'error' in composed ? composed.error : undefined }
       }
 
-      const { data, error } = await supabase
-        .from('question_bank_papers')
-        .insert({
-          bank_id: input.bankId,
-          created_by: user.id,
+      try {
+        const paper = await createQuestionBankPaper({
+          bankId: input.bankId,
+          createdBy: user.id,
           name: (input.name ?? '').trim() || defaultPaperName(input),
           kind: input.kind,
-          scope_type: input.scopeType,
-          year: input.scopeType === 'year' ? input.year : null,
-          scope_values: input.values,
+          scopeType: input.scopeType,
+          year: input.year,
+          scopeValues: input.values,
           subject: tpl.subject?.length ? tpl.subject : null,
-          duration_min: input.durationMin ?? tpl.duration_min ?? 60,
-          template: JSON.parse(JSON.stringify(tpl)) as Record<string, unknown>,
-          question_ids: composed.questionIds,
-          generated_at: new Date().toISOString(),
+          durationMin: input.durationMin ?? tpl.duration_min ?? 60,
+          template: tpl,
+          questionIds: composed.questionIds,
         })
-        .select()
-        .single()
-
-      if (error || !data) return { ok: false, paper: null, stats: composed.stats, error: error?.message }
-
-      const paper = rowToPaper(data as Record<string, unknown>)
-      setPapers((prev) => [...prev, paper])
-      return { ok: true, paper, stats: composed.stats }
+        setPapers((prev) => [...prev, paper])
+        return { ok: true, paper, stats: composed.stats }
+      } catch (e) {
+        logError('useBankPapers.generate', e)
+        return { ok: false, paper: null, stats: composed.stats, error: userMessage(e) }
+      }
     },
     [user],
   )
@@ -138,27 +111,24 @@ export function useBankPapers(bankId: string) {
         return { ok: false, paper: null, stats: composed.stats, error: 'error' in composed ? composed.error : undefined }
       }
 
-      const { data, error } = await supabase
-        .from('question_bank_papers')
-        .update({
-          question_ids: composed.questionIds,
-          generated_at: new Date().toISOString(),
-        })
-        .eq('id', paper.id)
-        .select()
-        .single()
-
-      if (error || !data) return { ok: false, paper: null, stats: composed.stats, error: error?.message }
-
-      const next = rowToPaper(data as Record<string, unknown>)
-      setPapers((prev) => prev.map((p) => (p.id === paper.id ? next : p)))
-      return { ok: true, paper: next, stats: composed.stats }
+      try {
+        const next = await regenerateQuestionBankPaper(paper.id, composed.questionIds)
+        setPapers((prev) => prev.map((p) => (p.id === paper.id ? next : p)))
+        return { ok: true, paper: next, stats: composed.stats }
+      } catch (e) {
+        logError('useBankPapers.regenerate', e)
+        return { ok: false, paper: null, stats: composed.stats, error: userMessage(e) }
+      }
     },
     [],
   )
 
   const remove = useCallback(async (id: string) => {
-    await supabase.from('question_bank_papers').delete().eq('id', id)
+    try {
+      await deleteQuestionBankPaper(id)
+    } catch (e) {
+      logError('useBankPapers.remove', e)
+    }
     setPapers((prev) => prev.filter((p) => p.id !== id))
   }, [])
 

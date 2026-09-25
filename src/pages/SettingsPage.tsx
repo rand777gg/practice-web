@@ -11,6 +11,9 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@radix-ui/themes'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { fetchMfaSessions, revokeMfaSession, revokeTrustedDevice, trustDevice, type MfaSession } from '@/services/account'
+import { updateProfile } from '@/services/profiles'
+import { logError } from '@/services/errors'
 import { getPrompt } from '@/stores/prompt-store'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
@@ -108,17 +111,12 @@ export function Component() {
 
  // MFA validity + verified sessions
  const [mfaValidity, setMfaValidity] = useState(profile?.mfa_validity_days ?? 7)
- const [mfaSessions, setMfaSessions] = useState<any[]>([])
+ const [mfaSessions, setMfaSessions] = useState<MfaSession[]>([])
  const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null)
  useEffect(() => {
   if (!user) return
   getMfaStatus().then(setMfaStatus).catch(() => {})
-  supabase
-   .from('user_mfa_sessions')
-   .select('session_id, method, verified_at, expires_at')
-   .eq('user_id', user.id)
-   .order('verified_at', { ascending: false })
-   .then(({ data }) => setMfaSessions((data as any[]) || []))
+  fetchMfaSessions(user.id).then(setMfaSessions).catch((e) => logError('settings.mfaSessions', e))
  }, [user])
 
  const hasTotp = mfaStatus?.availableMethods.totp === true
@@ -130,32 +128,31 @@ export function Component() {
  const updateMfaValidity = async (days: number) => {
   if (!user) return
   setMfaValidity(days)
-  await supabase.from('profiles').update({ mfa_validity_days: days }).eq('id', user.id)
+  await updateProfile(user.id, { mfa_validity_days: days }).catch((e) => logError('settings.mfaValidity', e))
   // Apply immediately to THIS device: days>0 → trust it for that long; 0 → revoke this device's trust
   const deviceId = getDeviceToken()
   if (days > 0) {
     const expiresAt = new Date(Date.now() + days * 86400_000).toISOString()
-    await supabase.from('user_trusted_devices').upsert({
-      user_id: user.id,
-      device_id: deviceId,
-      device_name: getDeviceInfoSync().displayName,
-      device_info: {},
-      expires_at: expiresAt,
-    }, { onConflict: 'user_id,device_id' })
+    // 不写 device_info: 那列是 verify-totp 在服务端写入的设备指纹, 这里带上去会把它覆盖掉
+    await trustDevice(user.id, {
+      deviceId,
+      deviceName: getDeviceInfoSync().displayName,
+      expiresAt,
+    }).catch((e) => logError('settings.trustDevice', e))
   } else {
     // 0 = verify every sign-in: revoke this device's trust (mark as self-revoke so Realtime won't force re-verify)
     sessionStorage.setItem('mfa_self_revoke', '1')
     setTimeout(() => sessionStorage.removeItem('mfa_self_revoke'), 5000)
-    await supabase.from('user_trusted_devices').delete().eq('user_id', user.id).eq('device_id', deviceId)
+    await revokeTrustedDevice(user.id, deviceId).catch((e) => logError('settings.revokeDevice', e))
   }
   refreshProfile()
   getMfaStatus().then(setMfaStatus).catch(() => {})
  }
 
- const revokeMfaSession = async (sessionId: string) => {
+ const handleRevokeMfaSession = async (sessionId: string) => {
   if (!user) return
   if (!confirm(t('auth.mfaRevokeConfirm'))) return
-  await supabase.from('user_mfa_sessions').delete().eq('user_id', user.id).eq('session_id', sessionId)
+  await revokeMfaSession(user.id, sessionId).catch((e) => logError('settings.revokeMfaSession', e))
   setMfaSessions((prev) => prev.filter((s) => s.session_id !== sessionId))
  }
 
@@ -203,7 +200,7 @@ export function Component() {
  const saveNickname = async (name: string) => {
   if (!name.trim()) return
   setNickSaving(true)
-  await supabase.from('profiles').update({ nickname: name.trim() }).eq('id', user!.id)
+  await updateProfile(user!.id, { nickname: name.trim() }).catch((e) => logError('settings.saveNickname', e))
   await refreshProfile()
   setNickSaving(false)
   setNickEditing(false)
@@ -453,7 +450,7 @@ export function Component() {
                <DropdownMenuContent align="start">
                 <DropdownMenuItem
                  onClick={async () => {
-                  await supabase.from('profiles').update({ preferred_2fa: 'totp' }).eq('id', user!.id)
+                  await updateProfile(user!.id, { preferred_2fa: 'totp' }).catch((e) => logError('settings.preferred2fa', e))
                   await refreshProfile()
                  }}
                 >
@@ -463,7 +460,7 @@ export function Component() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                  onClick={async () => {
-                  await supabase.from('profiles').update({ preferred_2fa: 'passkey' }).eq('id', user!.id)
+                  await updateProfile(user!.id, { preferred_2fa: 'passkey' }).catch((e) => logError('settings.preferred2fa', e))
                   await refreshProfile()
                  }}
                 >
@@ -557,7 +554,7 @@ export function Component() {
                  variant="ghost"
                  size="sm"
                  className="h-5 text-[10px] text-muted-foreground hover:text-destructive"
-                 onClick={() => revokeMfaSession(s.session_id)}
+                 onClick={() => handleRevokeMfaSession(s.session_id)}
                 >
                  {t('auth.mfaRevokeSession')}
                 </Button>
@@ -590,7 +587,7 @@ export function Component() {
                 } else {
                  // 解绑后 GitHub 头像不再可用, 清掉回落到生成头像
                  if (isGitHubAvatarUrl(profile?.avatar_url)) {
-                  await supabase.from('profiles').update({ avatar_url: null }).eq('id', user!.id)
+                  await updateProfile(user!.id, { avatar_url: null }).catch((e) => logError('settings.clearGithubAvatar', e))
                  }
                  const { data: { session } } = await supabase.auth.getSession()
                  if (session) {

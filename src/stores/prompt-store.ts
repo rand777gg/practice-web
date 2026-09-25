@@ -1,14 +1,9 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
 import { PROMPT_DEFS, extractVariables, getPromptDefault } from '@/lib/ai/prompt-catalog'
-
-export interface UserPrompt {
-  prompt_key: string
-  title: string | null
-  body: string
-  variables: string[]
-  enabled: boolean
-}
+import { deleteUserPrompt, fetchUserPrompts, saveUserPrompt, seedUserPrompts, type UserPrompt } from '@/services/account'
+import { logError, userMessage } from '@/services/errors'
+import { useAuthStore } from '@/stores/auth-store'
+import { registerUserScopedStore } from '@/stores/user-scope'
 
 /** 收敛前的老 key(localStorage),首次加载时搬进库里 */
 const LEGACY_KEYS: Record<string, string> = {
@@ -24,27 +19,7 @@ interface PromptState {
   seedBuiltins: () => Promise<void>
   save: (key: string, body: string, title?: string | null, enabled?: boolean) => Promise<void>
   remove: (key: string) => Promise<void>
-}
-
-function toRow(raw: {
-  prompt_key: string
-  title: string | null
-  body: string
-  variables: string[] | null
-  enabled: boolean
-}): UserPrompt {
-  return {
-    prompt_key: raw.prompt_key,
-    title: raw.title,
-    body: raw.body,
-    variables: raw.variables ?? [],
-    enabled: raw.enabled,
-  }
-}
-
-async function currentUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession()
-  return data.session?.user.id ?? null
+  reset: () => void
 }
 
 export const usePromptStore = create<PromptState>((set) => ({
@@ -52,22 +27,22 @@ export const usePromptStore = create<PromptState>((set) => ({
   loaded: false,
 
   async load() {
-    const userId = await currentUserId()
+    const userId = useAuthStore.getState().user?.id
     if (!userId) {
       set({ rows: {}, loaded: true })
       return
     }
-    const { data, error } = await supabase
-      .from('user_prompts')
-      .select('prompt_key, title, body, variables, enabled')
-      .eq('user_id', userId)
-    if (error) {
+    let prompts: UserPrompt[]
+    try {
+      prompts = await fetchUserPrompts(userId)
+    } catch (e) {
       // 读不到就退回内置默认,页面自己会提示;不抛错以免连带打断 AI 调用
+      logError('prompt.load', e)
       set({ loaded: true })
       return
     }
     const rows: Record<string, UserPrompt> = {}
-    for (const raw of data ?? []) rows[raw.prompt_key] = toRow(raw)
+    for (const prompt of prompts) rows[prompt.prompt_key] = prompt
 
     // 把收敛前存在 localStorage 的自定义搬进库里,只搬一次
     for (const [key, storageKey] of Object.entries(LEGACY_KEYS)) {
@@ -77,37 +52,39 @@ export const usePromptStore = create<PromptState>((set) => ({
       } catch { /* 隐私模式下 localStorage 可能不可用 */ }
       if (!legacy || rows[key] || legacy === getPromptDefault(key)) continue
       const variables = extractVariables(legacy)
-      const { error: upsertError } = await supabase
-        .from('user_prompts')
-        .upsert({ user_id: userId, prompt_key: key, body: legacy, variables }, { onConflict: 'user_id,prompt_key' })
-      if (!upsertError) {
-        rows[key] = { prompt_key: key, title: null, body: legacy, variables, enabled: true }
-        try {
-          localStorage.removeItem(storageKey)
-        } catch { /* ignore */ }
+      try {
+        await saveUserPrompt(userId, { prompt_key: key, body: legacy, variables })
+      } catch (e) {
+        logError('prompt.migrateLegacy', e)
+        continue
       }
+      rows[key] = { prompt_key: key, title: null, body: legacy, variables, enabled: true }
+      try {
+        localStorage.removeItem(storageKey)
+      } catch { /* ignore */ }
     }
 
     set({ rows, loaded: true })
   },
 
   async seedBuiltins() {
-    const userId = await currentUserId()
+    const userId = useAuthStore.getState().user?.id
     if (!userId) return
     const missing = PROMPT_DEFS.filter((def) => !usePromptStore.getState().rows[def.key])
     if (!missing.length) return
-    const { error } = await supabase
-      .from('user_prompts')
-      .upsert(
+    try {
+      await seedUserPrompts(
+        userId,
         missing.map((def) => ({
-          user_id: userId,
           prompt_key: def.key,
           body: def.default,
           variables: extractVariables(def.default),
         })),
-        { onConflict: 'user_id,prompt_key', ignoreDuplicates: true },
       )
-    if (error) return
+    } catch (e) {
+      logError('prompt.seedBuiltins', e)
+      return
+    }
     set((state) => {
       const rows = { ...state.rows }
       for (const def of missing) {
@@ -124,33 +101,42 @@ export const usePromptStore = create<PromptState>((set) => ({
     })
   },
 
-  async save(key, body, title, enabled = true) {    const userId = await currentUserId()
+  async save(key, body, title, enabled = true) {
+    const userId = useAuthStore.getState().user?.id
     if (!userId) throw new Error('未登录')
     const variables = extractVariables(body)
-    const { error } = await supabase
-      .from('user_prompts')
-      .upsert(
-        { user_id: userId, prompt_key: key, body, title: title ?? null, variables, enabled },
-        { onConflict: 'user_id,prompt_key' },
-      )
-    if (error) throw new Error(error.message)
+    try {
+      await saveUserPrompt(userId, { prompt_key: key, body, title: title ?? null, variables, enabled })
+    } catch (e) {
+      logError('prompt.save', e)
+      throw new Error(`保存提示词失败: ${userMessage(e)}`, { cause: e })
+    }
     set((state) => ({
       rows: { ...state.rows, [key]: { prompt_key: key, title: title ?? null, body, variables, enabled } },
     }))
   },
 
   async remove(key) {
-    const userId = await currentUserId()
+    const userId = useAuthStore.getState().user?.id
     if (!userId) throw new Error('未登录')
-    const { error } = await supabase.from('user_prompts').delete().eq('user_id', userId).eq('prompt_key', key)
-    if (error) throw new Error(error.message)
+    try {
+      await deleteUserPrompt(userId, key)
+    } catch (e) {
+      logError('prompt.remove', e)
+      throw new Error(`删除提示词失败: ${userMessage(e)}`, { cause: e })
+    }
     set((state) => {
       const rows = { ...state.rows }
       delete rows[key]
       return { rows }
     })
   },
+
+  /** loaded 也一并清掉：这样下一个用户进来会重新 load，而不是直接吃到上一个人的提示词 */
+  reset: () => set({ rows: {}, loaded: false }),
 }))
+
+registerUserScopedStore(() => usePromptStore.getState().reset())
 
 /**
  * 同步取用:调用点都在 generateText / generateObject 的参数里直接拼,

@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import {
+  deleteSequentialState, fetchExcludedQuestionIds, fetchSequentialShortId, fetchSequentialStates, upsertSequentialState,
+  type SequentialState,
+} from '@/services/practice'
+import { fetchQuestionKeyPoints, fetchQuestionsByKeyPoints, type QuestionKpLookupSource } from '@/services/questions'
+import { logError } from '@/services/errors'
+import { registerUserScopedStore } from '@/stores/user-scope'
+import { rpcJson } from '@/services/db'
 
 export interface SessionInfo {
   sessionKey: string
@@ -11,6 +19,32 @@ export interface SessionInfo {
   subjectPositions: Record<string, number>
   updatedAt: string
   createdAt: string
+}
+
+/*
+ * PostgREST 把 RPC 的返回一律当成 Json, 服务端函数真正的返回形状只能在前端声明一份 ——
+ * 改 SQL 时要同步改这里(见 supabase/migrations/001_initial_schema.sql 的 start_sequential_session)。
+ */
+interface StartSequentialResult {
+  sessionKey: string | null
+  questionIds: string[]
+  questionKps: string[]
+  questionSubjects: string[]
+  currentIndex: number
+}
+
+/** 形状照 001_initial_schema.sql 的 load_practice_session: 只在没找到会话时只回 found */
+interface LoadPracticeSessionResult {
+  found: boolean
+  shortId?: string | null
+  savedKps?: string[]
+  subjectPositions?: Record<string, number>
+  questionIds?: string[]
+  questionKps?: (string | null)[]
+  questionSubjects?: string[]
+  currentIndex?: number
+  firstQuestion?: Record<string, unknown> | null
+  firstStats?: { total: number; wrong: number; note: string | null; isPublic: boolean } | null
 }
 
 interface SequentialStore {
@@ -78,30 +112,41 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       const sessionKey = makeSessionKey(kps, subjects, type)
       const { data, error } = await supabase.rpc('start_sequential_session', {
         p_user_id: userId, p_kps: kps,
-        p_subjects: subjects.length > 0 ? subjects : null,
-        p_question_type: type || null,
+        p_subjects: subjects.length > 0 ? subjects : undefined,
+        p_question_type: type || undefined,
         p_session_key: sessionKey,
         p_ignore_answered: ignoreAnswered,
       })
       if (error || !data) { set({ isLoading: false }); return }
+      // start_sequential_session RETURNS JSONB，生成类型只有 Json；形状见 001_initial_schema.sql
+      const session = rpcJson<StartSequentialResult>(data)
+      if (!session) { set({ isLoading: false }); return }
 
       set({
-        sessionKey: data.sessionKey || sessionKey,
+        sessionKey: session.sessionKey || sessionKey,
         planSubjects: subjects,
-        questionIds: data.questionIds ?? [],
-        questionKps: data.questionKps ?? [],
-        questionSubjects: data.questionSubjects ?? [],
-        currentIndex: data.currentIndex ?? 0,
+        questionIds: session.questionIds ?? [],
+        questionKps: session.questionKps ?? [],
+        questionSubjects: session.questionSubjects ?? [],
+        currentIndex: session.currentIndex ?? 0,
         isActive: true, isLoading: false,
       })
       const { selectedKps: sKps, questionIds: qids, currentIndex: idx, subjectPositions: sps } = get()
       gLastLocalSave = Date.now()
-      await supabase.from('practice_sequential_state').upsert({
-        user_id: userId, session_key: sessionKey, selected_kps: sKps, question_ids: qids,
-        plan_subjects: subjects, current_index: idx, subject_positions: sps, updated_at: new Date().toISOString(),
-      })
-      const { data: sidRow } = await supabase.from('practice_sequential_state').select('short_id').eq('user_id', userId).eq('session_key', sessionKey).maybeSingle()
-      if (sidRow?.short_id) set({ shortId: sidRow.short_id })
+      try {
+        await upsertSequentialState({
+          user_id: userId, session_key: sessionKey, selected_kps: sKps, question_ids: qids,
+          plan_subjects: subjects, current_index: idx, subject_positions: sps,
+        })
+      } catch (e) {
+        logError('sequential.startSequential', e)
+      }
+      try {
+        const shortId = await fetchSequentialShortId(userId, sessionKey)
+        if (shortId) set({ shortId })
+      } catch (e) {
+        logError('sequential.startSequential.shortId', e)
+      }
     } catch { set({ isLoading: false }) }
   },
 
@@ -118,32 +163,40 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       const { selectedKps, planSubjects, questionIds, currentIndex, sessionKey, subjectPositions } = get()
       if (!sessionKey) return
       gLastLocalSave = Date.now()
-      await supabase.from('practice_sequential_state').upsert({
-        user_id: userId, session_key: sessionKey, selected_kps: selectedKps, question_ids: questionIds,
-        plan_subjects: planSubjects, current_index: currentIndex, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
-      })
+      try {
+        await upsertSequentialState({
+          user_id: userId, session_key: sessionKey, selected_kps: selectedKps, question_ids: questionIds,
+          plan_subjects: planSubjects, current_index: currentIndex, subject_positions: subjectPositions,
+        })
+      } catch (e) {
+        logError('sequential.saveToDb', e)
+      }
     }, 300)
   },
 
   loadFromDb: async (userId, sessionKey) => {
     const { data, error } = await supabase.rpc('load_practice_session', { p_user_id: userId, p_session_key: sessionKey })
-    if (error || !data || !data.found) return false
+    if (error || !data) return false
+    // load_practice_session RETURNS JSONB，生成类型只有 Json；形状见 001_initial_schema.sql
+    const session = rpcJson<LoadPracticeSessionResult>(data)
+    if (!session?.found) return false
 
-    const ids: string[] = data.questionIds ?? []
-    const idx = data.currentIndex ?? 0
+    const ids: string[] = session.questionIds ?? []
+    const idx = session.currentIndex ?? 0
     set({
       isActive: ids.length > 0,
       sessionKey,
-      shortId: data.shortId ?? '',
-      selectedKps: data.savedKps ?? [],
-      planSubjects: data.planSubjects ?? get().sessions.find((session) => session.sessionKey === sessionKey)?.planSubjects ?? [],
+      shortId: session.shortId ?? '',
+      selectedKps: session.savedKps ?? [],
+      // 服务端这个函数不回 planSubjects, 只能从会话列表里认
+      planSubjects: get().sessions.find((s) => s.sessionKey === sessionKey)?.planSubjects ?? [],
       questionIds: ids,
-      questionKps: data.questionKps ?? [],
-      questionSubjects: data.questionSubjects ?? [],
+      questionKps: session.questionKps ?? [],
+      questionSubjects: session.questionSubjects ?? [],
       currentIndex: idx,
-      subjectPositions: data.subjectPositions ?? {},
-      preloadedQuestion: (data.firstQuestion ?? null) as Record<string, unknown> | null,
-      preloadedStats: data.firstStats as { total: number; wrong: number; note: string | null; isPublic: boolean } | null,
+      subjectPositions: session.subjectPositions ?? {},
+      preloadedQuestion: (session.firstQuestion ?? null) as Record<string, unknown> | null,
+      preloadedStats: session.firstStats ?? null,
       preloadedIndex: ids.length > 0 ? idx : -1,
     })
     return ids.length > 0
@@ -157,16 +210,21 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
   },
 
   loadSessions: async (userId) => {
-    const { data } = await supabase.from('practice_sequential_state').select('*').eq('user_id', userId).order('updated_at', { ascending: false })
-    const sessions: SessionInfo[] = (data ?? []).map((r: any) => ({
-      sessionKey: r.session_key,
-      selectedKps: r.selected_kps ?? [],
-      planSubjects: r.plan_subjects ?? [],
-      questionIds: r.question_ids ?? [],
-      currentIndex: r.current_index ?? 0,
-      subjectPositions: r.subject_positions ?? {},
-      updatedAt: r.updated_at,
-      createdAt: r.created_at,
+    let states: SequentialState[] = []
+    try {
+      states = await fetchSequentialStates(userId)
+    } catch (e) {
+      logError('sequential.loadSessions', e)
+    }
+    const sessions: SessionInfo[] = states.map((state) => ({
+      sessionKey: state.session_key,
+      selectedKps: state.selected_kps,
+      planSubjects: state.plan_subjects,
+      questionIds: state.question_ids,
+      currentIndex: state.current_index,
+      subjectPositions: state.subject_positions,
+      updatedAt: state.updated_at,
+      createdAt: state.created_at,
     }))
     set({ sessions })
   },
@@ -178,10 +236,14 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       const { selectedKps, planSubjects, questionIds, currentIndex } = get()
       const { subjectPositions } = get()
       gLastLocalSave = Date.now()
-      await supabase.from('practice_sequential_state').upsert({
-        user_id: userId, session_key: currentKey, selected_kps: selectedKps, question_ids: questionIds,
-        plan_subjects: planSubjects, current_index: currentIndex, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
-      })
+      try {
+        await upsertSequentialState({
+          user_id: userId, session_key: currentKey, selected_kps: selectedKps, question_ids: questionIds,
+          plan_subjects: planSubjects, current_index: currentIndex, subject_positions: subjectPositions,
+        })
+      } catch (e) {
+        logError('sequential.switchSession', e)
+      }
     }
     // Load target session
     const found = await get().loadFromDb(userId, sessionKey)
@@ -203,23 +265,28 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (addedKps.length === 0 && removedKps.size === 0) return
 
     // 1. Fetch new questions for added KPs
-    let newQuestions: { id: string; subject: string | null; key_points: string | null; seq_number: number | null }[] = []
+    let newQuestions: QuestionKpLookupSource[] = []
     if (addedKps.length > 0) {
-      const kpFilters = addedKps.map(k => `key_points.ilike.%${k}%`).join(',')
-      let query = supabase.from('questions').select('id, subject, key_points, seq_number').or(kpFilters)
-      if (subjects.length > 0) query = query.in('subject', subjects)
-      if (type) query = query.eq('question_type', type)
-      const [{ data }, { data: excluded }] = await Promise.all([
-        query,
-        supabase.from('user_excluded_questions').select('question_id').eq('user_id', userId),
-      ])
-      let rows = (data ?? []) as { id: string; subject: string | null; key_points: string | null; seq_number: number | null }[]
-      const excludedIds = new Set((excluded ?? []).map((e: any) => e.question_id))
-      rows = rows.filter(r => !excludedIds.has(r.id))
+      let rows: QuestionKpLookupSource[] = []
+      let excludedIds: string[] = []
+      try {
+        ;[rows, excludedIds] = await Promise.all([
+          fetchQuestionsByKeyPoints({
+            keyPoints: addedKps,
+            subjects: subjects.length > 0 ? subjects : undefined,
+            questionType: type || undefined,
+          }),
+          fetchExcludedQuestionIds(userId),
+        ])
+      } catch (e) {
+        logError('sequential.mergeKps', e)
+      }
+      const excluded = new Set(excludedIds)
 
       const existingIds = new Set(oldIds)
       newQuestions = rows.filter(r => {
         if (!r.key_points) return false
+        if (excluded.has(r.id)) return false
         if (existingIds.has(r.id)) return false
         const kpList = r.key_points.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)
         return addedKps.some(k => kpList.includes(k))
@@ -276,28 +343,28 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
       currentIndex: finalIndex,
     })
 
-    if (oldKey) supabase.from('practice_sequential_state').delete().eq('user_id', userId).eq('session_key', oldKey).then(() => {})
+    if (oldKey) {
+      deleteSequentialState(userId, oldKey).catch((e) => { logError('sequential.mergeKps.deleteOld', e) })
+    }
     const { selectedKps: sKps, questionIds: qids, currentIndex: idx } = get()
     gLastLocalSave = Date.now()
-    supabase.from('practice_sequential_state').upsert({
+    upsertSequentialState({
       user_id: userId, session_key: newKey, selected_kps: sKps, question_ids: qids,
-      plan_subjects: subjects.length > 0 ? subjects : oldPlanSubjects, current_index: idx, subject_positions: subjectPositions, updated_at: new Date().toISOString(),
-    }).then(() => {})
+      plan_subjects: subjects.length > 0 ? subjects : oldPlanSubjects, current_index: idx, subject_positions: subjectPositions,
+    }).catch((e) => { logError('sequential.mergeKps.save', e) })
   },
 
   syncKpsFromPlanSubjects: async (userId, planSubjects) => {
     if (planSubjects.length === 0) return
 
     // Query all KPs for these subjects
-    const PAGE = 500; let from = 0; const kps = new Set<string>()
-    while (true) {
-      const { data } = await supabase.from('questions').select('key_points').in('subject', planSubjects).not('key_points', 'is', null).range(from, from + PAGE - 1)
-      if (!data || data.length === 0) break
-      for (const r of (data as { key_points: string }[])) {
-        for (const k of r.key_points.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)) kps.add(k)
+    const kps = new Set<string>()
+    try {
+      for (const keyPoints of await fetchQuestionKeyPoints(planSubjects)) {
+        for (const k of keyPoints.split(/[,，;；]/).map(s => s.trim()).filter(Boolean)) kps.add(k)
       }
-      if (data.length < PAGE) break
-      from += PAGE
+    } catch (e) {
+      logError('sequential.syncKpsFromPlanSubjects', e)
     }
 
     const newKps = [...kps].sort()
@@ -381,3 +448,9 @@ export const useSequentialStore = create<SequentialStore>((set, get) => ({
     if (syncTimeout) { clearTimeout(syncTimeout); syncTimeout = null }
   },
 }))
+
+// 顺序刷题进度是按用户存的（practice_sequential_state），换号时必须断开实时通道并清空
+registerUserScopedStore(() => {
+  useSequentialStore.getState().stopSync()
+  useSequentialStore.getState().reset()
+})

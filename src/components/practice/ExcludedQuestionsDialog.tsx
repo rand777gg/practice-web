@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { removeExcludedQuestion, removeExcludedQuestions } from '@/services/practice'
+import { rpcJsonRows } from '@/services/db'
+import { logError } from '@/services/errors'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -34,19 +37,25 @@ export function ExcludedQuestionsDialog({ userId, kp, open, onOpenChange, onRest
     if (!open) return
     let c = false
     setLoading(true)
-    supabase.rpc('get_excluded_kp_questions', { p_user_id: userId, p_kp: kp }).then(({ data }) => {
-      if (c) return
-      const list = (data ?? []) as ExcludedItem[]
-      setItems(list)
-      setSelectedId(prev => prev && list.some(i => i.question.id === prev) ? prev : (list[0]?.question.id ?? null))
-      setLoading(false)
-    })
+    // 这个函数 RETURNS JSONB（内部 jsonb_agg），生成类型只有 Json；行形状见 001_initial_schema.sql
+    supabase.rpc('get_excluded_kp_questions', { p_user_id: userId, p_kp: kp })
+      .then(({ data }) => {
+        if (c) return
+        const list = rpcJsonRows<ExcludedItem>(data)
+        setItems(list)
+        setSelectedId(prev => prev && list.some(i => i.question.id === prev) ? prev : (list[0]?.question.id ?? null))
+        setLoading(false)
+      })
     return () => { c = true }
   }, [open, kp, userId])
 
   const restore = async (id: string) => {
     setRestoring(id)
-    await supabase.from('user_excluded_questions').delete().eq('user_id', userId).eq('question_id', id)
+    try {
+      await removeExcludedQuestion(userId, id)
+    } catch (e) {
+      logError('ExcludedQuestionsDialog.restore', e)
+    }
     dirtyRef.current = true
     const next = items.filter(i => i.question.id !== id)
     setItems(next)
@@ -57,7 +66,11 @@ export function ExcludedQuestionsDialog({ userId, kp, open, onOpenChange, onRest
   const restoreAll = async () => {
     if (items.length === 0) return
     setRestoring('__all__')
-    await supabase.from('user_excluded_questions').delete().eq('user_id', userId).in('question_id', items.map(i => i.question.id))
+    try {
+      await removeExcludedQuestions(userId, items.map(i => i.question.id))
+    } catch (e) {
+      logError('ExcludedQuestionsDialog.restoreAll', e)
+    }
     dirtyRef.current = true
     setItems([])
     setSelectedId(null)

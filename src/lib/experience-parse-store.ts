@@ -16,61 +16,24 @@ import {
   mergeKeyPoints, needsTriage, usableToc, sectionNodes, triageFromRow, withChapterTag,
   type SectionNode, type TriageCriterion, type TriageQuestion, type TriageRow,
 } from '@/lib/experience-parse'
-import { getResourceDocument, loadDocumentToc } from '@/lib/resource-library'
-import type { TocEntry } from '@/lib/resource-blocks'
-
-const QUESTION_COLUMNS = [
-  'id', 'subject', 'question_type', 'question_text', 'options', 'correct_answer',
-  'analysis', 'answer_explanation', 'key_points', 'categories', 'category', 'source_page', 'seq_number',
-].join(', ')
+import { getResourceDocument, loadAutoToc, loadDocumentToc } from '@/lib/resource-library'
+import { logError, userMessage } from '@/services/errors'
+import { countResourceChunks } from '@/services/resources'
+import { fetchQuestionTriagePage, updateQuestion } from '@/services/questions'
+import type { QuestionInput } from '@/types'
 
 const PAGE_SIZE = 1000
-const HEADING_PAGE_SIZE = 1000
 
 // ── 材料 ──
 
 /** 一份材料在检索索引里的块数。0 块 = 检索恒为空, 页面上必须先让人看见这一点 */
 export async function documentIndexStatus(documentId: string): Promise<{ chunks: number; embedded: number }> {
-  const base = () => supabase
-    .from('rag_chunks')
-    .select('id', { count: 'exact', head: true })
-    .eq('source', 'resource')
-    .eq('source_id', documentId)
-  const [all, embedded] = await Promise.all([
-    base(),
-    base().not('embedded_at', 'is', null),
-  ])
-  if (all.error) throw new Error(`读取索引状态失败: ${all.error.message}`)
-  return { chunks: all.count ?? 0, embedded: embedded.count ?? 0 }
-}
-
-/**
- * 材料的标题行 —— 必须分页取全。
- *
- * 不能直接用 loadAutoToc: 它 `.limit(1000)`, 而 PostgREST 的 db-max-rows 也是 1000,
- * 一本 544 页的书有 1194 个标题, 于是**书后半段的节全部缺失**。缺了会怎样: sectionsFromToc
- * 把最后一个节点的页区间一路延到全书末尾, 后半本书的命中就都被算到"最后一个节点"头上 ——
- * 抽查实测 p521 的概念技能被归到了 17.2 早期的领导理论, 一个完全不沾边的节。
- */
-async function loadHeadings(documentId: string): Promise<TocEntry[]> {
-  const out: TocEntry[] = []
-  for (let from = 0; ; from += HEADING_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from('resource_blocks')
-      .select('block_index, page_no, heading_level, text')
-      .eq('document_id', documentId)
-      .gt('heading_level', 0)
-      .order('block_index', { ascending: true })
-      .range(from, from + HEADING_PAGE_SIZE - 1)
-    if (error) throw new Error(`加载目录失败: ${error.message}`)
-    const rows = (data ?? []) as unknown as { block_index: number; page_no: number; heading_level: number; text: string }[]
-    for (const r of rows) {
-      if ((r.text ?? '').trim().length === 0) continue
-      out.push({ key: r.block_index, blockIndex: r.block_index, level: r.heading_level, title: r.text, pageNo: r.page_no })
-    }
-    if (rows.length < HEADING_PAGE_SIZE) break
+  try {
+    return await countResourceChunks(documentId)
+  } catch (e) {
+    logError('experience-parse.documentIndexStatus', e)
+    throw new Error(`读取索引状态失败: ${userMessage(e)}`, { cause: e })
   }
-  return out
 }
 
 export interface MaterialSections {
@@ -89,7 +52,13 @@ export async function loadMaterialSections(documentId: string): Promise<Material
   const manualToc = await loadDocumentToc(documentId).catch(() => null)
   if (manualToc) return { nodes: sectionNodes(manualToc, pages), headingCount: manualToc.length, manual: true }
 
-  const toc = await loadHeadings(documentId)
+  /*
+   * 标题行必须取全。这里曾经自己 `.limit(1000)` 翻页, 而 PostgREST 的 db-max-rows 也是 1000,
+   * 一本 544 页的书有 1194 个标题 —— 后半本书的节全部缺失, sectionsFromToc 把最后一个节点的页区间
+   * 一路延到全书末尾, 后半本的命中就都被算到"最后一个节点"头上(抽查实测 p521 的概念技能被归到了
+   * 一个完全不沾边的节)。loadAutoToc 现在由服务层翻页取全, 不再有截断。
+   */
+  const toc = await loadAutoToc(documentId)
   return { nodes: sectionNodes(usableToc(toc), pages), headingCount: toc.length, manual: false }
 }
 
@@ -102,7 +71,8 @@ export interface QuestionMetaOptions {
 }
 
 export async function loadQuestionMeta(): Promise<QuestionMetaOptions> {
-  const { data, error } = await supabase.rpc('get_question_meta', { p_subject: null })
+  // p_subject 省略即 SQL 里的 DEFAULT NULL（全学科）；生成类型也只接受 undefined 表示省略
+  const { data, error } = await supabase.rpc('get_question_meta', {})
   if (error) throw new Error(`读取学科与年份失败: ${error.message}`)
   const meta = (data ?? {}) as { subjects?: string[]; categories?: string[] }
   const years = new Set<number>()
@@ -134,19 +104,22 @@ export interface TriageLoadResult {
 export async function loadTriageQuestions(query: TriageQuery): Promise<TriageLoadResult> {
   const rows: TriageQuestion[] = []
   let scanned = 0
+  const year = query.year ? realYearCategory(query.year) : null
 
   for (let from = 0; ; from += PAGE_SIZE) {
     // 按 id 排序而不是 created_at: 分页要求排序键唯一, 否则翻页会漏行或重复
-    let q = supabase.from('questions').select(QUESTION_COLUMNS).order('id', { ascending: true }).range(from, from + PAGE_SIZE - 1)
-    if (query.subject) q = q.eq('subject', query.subject)
-    // 用 filter('cs', JSON 数组) 而不是 contains(): categories 是 jsonb 列, 而 contains()
-    // 对数组值发的是 PostgREST 的数组字面量 `cs.{2024年真题}`, jsonb 解析不了这个写法,
-    // 服务端直接 400 invalid input syntax for type json(实测)。jsonb 要的是 JSON 数组。
-    if (query.year) q = q.filter('categories', 'cs', JSON.stringify([realYearCategory(query.year)]))
-
-    const { data, error } = await q
-    if (error) throw new Error(`加载题目失败: ${error.message}`)
-    const page = (data ?? []) as unknown as TriageRow[]
+    let page: TriageRow[]
+    try {
+      page = await fetchQuestionTriagePage({
+        subject: query.subject,
+        year,
+        from,
+        to: from + PAGE_SIZE - 1,
+      })
+    } catch (e) {
+      logError('experience-parse.loadTriageQuestions', e)
+      throw new Error(`加载题目失败: ${userMessage(e)}`, { cause: e })
+    }
     scanned += page.length
 
     for (const row of page) {
@@ -166,18 +139,22 @@ export async function saveAttribution(
   question: TriageQuestion,
   patch: { chapterTag?: string | null; keyPoints?: string[] },
 ): Promise<void> {
-  const update: Record<string, unknown> = {}
+  const write: Pick<Partial<QuestionInput>, 'categories' | 'key_points'> = {}
   if (patch.chapterTag && patch.chapterTag.trim()) {
-    update.categories = withChapterTag(question.categories, patch.chapterTag)
+    write.categories = withChapterTag(question.categories, patch.chapterTag)
   }
   if (patch.keyPoints && patch.keyPoints.length > 0) {
     const merged = mergeKeyPoints(question.keyPoints, patch.keyPoints)
-    if (merged) update.key_points = merged
+    if (merged) write.key_points = merged
   }
-  if (Object.keys(update).length === 0) return
+  if (Object.keys(write).length === 0) return
 
-  const { error } = await supabase.from('questions').update(update).eq('id', question.id)
-  if (error) throw new Error(`写入失败: ${error.message}`)
+  try {
+    await updateQuestion(question.id, write)
+  } catch (e) {
+    logError('experience-parse.saveAttribution', e)
+    throw new Error(`写入失败: ${userMessage(e)}`, { cause: e })
+  }
   // categories / key_points 都进了检索块正文, 采纳完不重索引就还是旧标签
   autoIndex('question', question.id)
 }

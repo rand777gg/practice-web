@@ -87,10 +87,12 @@ export async function searchBlocks(
 
   const { data, error } = await supabase.rpc('search_resource_blocks', {
     p_query: query.trim(),
-    p_document_id: options.documentId ?? null,
-    p_subject: options.subject ?? null,
-    p_doc_type: options.docType ?? null,
-    p_tag: options.tag ?? null,
+    // 这几个过滤参数在 SQL 里的默认值就是 NULL，省略与显式传 null 等价；
+    // 而生成类型把它们标成 `T | undefined`，所以这里统一用 undefined 让可选参数被省略
+    p_document_id: options.documentId ?? undefined,
+    p_subject: options.subject ?? undefined,
+    p_doc_type: options.docType ?? undefined,
+    p_tag: options.tag ?? undefined,
     p_limit: options.limit ?? 50,
   }) as { data: RawBlockRow[] | null; error: { message: string } | null }
 
@@ -117,9 +119,9 @@ export async function searchDocuments(
 ): Promise<DocumentHit[]> {
   const { data, error } = await supabase.rpc('search_resource_documents', {
     p_query: query.trim(),
-    p_subject: options.subject ?? null,
-    p_doc_type: options.docType ?? null,
-    p_tag: options.tag ?? null,
+    p_subject: options.subject ?? undefined,
+    p_doc_type: options.docType ?? undefined,
+    p_tag: options.tag ?? undefined,
     p_limit: options.limit ?? 30,
     p_offset: options.offset ?? 0,
   }) as { data: RawDocRow[] | null; error: { message: string } | null }

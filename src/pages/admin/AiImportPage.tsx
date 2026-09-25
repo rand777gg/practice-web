@@ -44,6 +44,11 @@ import { R2_PUBLIC_HOST, isOwnStorageUrl, r2PublicUrl } from '@/lib/r2'
 import { uploadBlobToR2 } from '@/lib/r2-upload'
 import { autoIndex } from '@/lib/rag'
 import { questionRowFromParsed } from '@/lib/assistant-create'
+import { logError, userMessage } from '@/services/errors'
+import { createParseHistory, deleteParseHistory, listParseHistory, saveParseHistoryPageUrls, saveParseHistoryQuestions, saveParseHistoryStatus, updateParseHistory } from '@/services/resources'
+import type { ParseHistoryPatch } from '@/services/resources'
+import { fetchQuestionMetaCache, insertQuestions } from '@/services/questions'
+import type { Insert } from '@/services/db'
 import type { ParsedQuestion, MinerUModelVersion } from '@/lib/ai/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { Icon } from '@/lib/icons'
@@ -238,69 +243,70 @@ export function Component() {
   const user = useAuthStore((s) => s.user)
 
   const HISTORY_PAGE_SIZE = 50
-  const historySelect = 'id, file_name, display_name, markdown, json_data, questions_json, status_json, page_ranges, pdf_total_pages, mode, created_at, pdf_page_urls, subject, category, key_points'
 
   const loadHistoryList = async () => {
     if (!user) return
     setHistoryLoading(true)
-    const { data, error } = await supabase
-      .from('parse_history')
-      .select(historySelect)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(HISTORY_PAGE_SIZE)
-    if (error) {
-      console.error('loadHistoryList error:', error)
-      setHistoryError(error.message || '加载失败')
+    try {
+      const rows = await listParseHistory(user.id, { limit: HISTORY_PAGE_SIZE })
+      setHistory(rows)
+      setHistoryHasMore(rows.length >= HISTORY_PAGE_SIZE)
+    } catch (e) {
+      logError('AiImportPage.loadHistoryList', e)
+      setHistoryError(userMessage(e))
+      // 旧写法读失败时 data 是 null: 列表清空、没有下一页, 这里保持同样的结果
+      setHistory([])
+      setHistoryHasMore(false)
     }
-    setHistory(data ?? [])
-    setHistoryHasMore((data?.length ?? 0) >= HISTORY_PAGE_SIZE)
     setHistoryLoading(false)
   }
 
   const loadMoreHistory = async () => {
     if (!user || historyLoadingMore) return
     setHistoryLoadingMore(true)
-    const { data, error } = await supabase
-      .from('parse_history')
-      .select(historySelect)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .range(history.length, history.length + HISTORY_PAGE_SIZE - 1)
-    if (error) {
-      console.error('loadMoreHistory error:', error)
-    } else {
-      setHistory(prev => [...prev, ...(data ?? [])])
-      setHistoryHasMore((data?.length ?? 0) >= HISTORY_PAGE_SIZE)
+    try {
+      const rows = await listParseHistory(user.id, { limit: HISTORY_PAGE_SIZE, offset: history.length })
+      setHistory(prev => [...prev, ...rows])
+      setHistoryHasMore(rows.length >= HISTORY_PAGE_SIZE)
+    } catch (e) {
+      logError('AiImportPage.loadMoreHistory', e)
     }
     setHistoryLoadingMore(false)
   }
 
   const saveToHistory = async (record: { fileName: string; markdown: string; jsonData?: string; questions?: ParsedQuestion[]; mode: string; pageRanges?: string; extraFormats?: string[]; pdfTotalPages?: number }) => {
     if (!user) return null
-    const { data } = await supabase.from('parse_history').insert({
-      user_id: user.id,
-      file_name: record.fileName,
-      markdown: record.markdown,
-      json_data: record.jsonData || null,
-      questions_json: record.questions ? JSON.stringify(record.questions) : null,
-      mode: record.mode,
-      status_json: parseStatusRef.current ? JSON.stringify(parseStatusRef.current) : null,
-      page_ranges: record.pageRanges || null,
-      extra_formats: record.extraFormats?.length ? JSON.stringify(record.extraFormats) : null,
-      pdf_total_pages: record.pdfTotalPages || null,
-      subject: subject || null,
-      category: category || null,
-      key_points: keyPoints || null,
-    }).select('id').single()
-    return data?.id ?? null
+    try {
+      return await createParseHistory({
+        userId: user.id,
+        fileName: record.fileName,
+        markdown: record.markdown,
+        mode: record.mode,
+        pageRanges: record.pageRanges,
+        pdfTotalPages: record.pdfTotalPages,
+        jsonData: record.jsonData,
+        questions: record.questions,
+        status: parseStatusRef.current,
+        extraFormats: record.extraFormats,
+        subject: subject || null,
+        category: category || null,
+        keyPoints: keyPoints || null,
+      })
+    } catch (e) {
+      // 历史记录只是留痕: 存不进去不该挡住解析流程
+      logError('AiImportPage.saveToHistory', e)
+      return null
+    }
   }
 
   const updateHistoryEntry = async (id: number, updates: { questions?: ParsedQuestion[]; status?: Record<string, unknown> }) => {
-    const payload: Record<string, unknown> = {}
-    if (updates.questions) payload.questions_json = JSON.stringify(updates.questions)
-    if (updates.status) payload.status_json = JSON.stringify(updates.status)
-    await supabase.from('parse_history').update(payload).eq('id', id)
+    try {
+      // 两个 JSON 文本列各有一个写口, 序列化留在服务层
+      if (updates.questions) await saveParseHistoryQuestions(id, updates.questions)
+      if (updates.status) await saveParseHistoryStatus(id, updates.status)
+    } catch (e) {
+      logError('AiImportPage.updateHistoryEntry', e)
+    }
   }
 
   const loadHistory = async (id: number) => {
@@ -376,11 +382,13 @@ export function Component() {
           await supabase.functions.invoke('r2', { body: { action: 'delete', prefix: `pdf-cache/${id}/` } }).catch(() => {})
         }
       }
-      await supabase.from('parse_history').delete().in('id', ids)
-      setHistory(prev => prev.filter(h => !ids.includes(h.id)))
+      await deleteParseHistory(ids)
+    } catch (e) {
+      logError('AiImportPage.handleDeleteConfirm', e)
     } finally {
       setDeleting(false)
     }
+    setHistory(prev => prev.filter(h => !ids.includes(h.id)))
   }
 
   const deleteHistory = (id: number) => setDeleteConfirm({ ids: [id] })
@@ -388,20 +396,24 @@ export function Component() {
   const batchDeleteHistory = (ids: number[]) => setDeleteConfirm({ ids })
 
   const saveHistoryEdit = async (id: number, edits: HistoryEdits) => {
-    const payload: Record<string, unknown> = {}
-    if (edits.display_name !== undefined) payload.display_name = edits.display_name
-    if (edits.subject !== undefined) payload.subject = edits.subject
-    if (edits.category !== undefined) payload.category = edits.category
-    if (edits.key_points !== undefined) payload.key_points = edits.key_points
-    if (edits.page_ranges !== undefined) payload.page_ranges = edits.page_ranges
-    await supabase.from('parse_history').update(payload).eq('id', id)
-    setHistory(prev => prev.map(h => h.id === id ? { ...h, ...payload } : h))
+    const patch: ParseHistoryPatch = {}
+    if (edits.display_name !== undefined) patch.display_name = edits.display_name
+    if (edits.subject !== undefined) patch.subject = edits.subject
+    if (edits.category !== undefined) patch.category = edits.category
+    if (edits.key_points !== undefined) patch.key_points = edits.key_points
+    if (edits.page_ranges !== undefined) patch.page_ranges = edits.page_ranges
+    try {
+      await updateParseHistory(id, patch)
+    } catch (e) {
+      logError('AiImportPage.saveHistoryEdit', e)
+    }
+    setHistory(prev => prev.map(h => h.id === id ? { ...h, ...patch } : h))
     if (id === currentHistoryId) {
-      if (payload.display_name !== undefined) setCurrentDisplayName(payload.display_name as string | null)
-      if (payload.subject !== undefined) setSubject((payload.subject as string) || '')
-      if (payload.category !== undefined) setCategory((payload.category as string) || '')
-      if (payload.key_points !== undefined) setKeyPoints((payload.key_points as string) || '')
-      if (payload.page_ranges !== undefined) setPageRanges((payload.page_ranges as string) || '')
+      if (patch.display_name !== undefined) setCurrentDisplayName(patch.display_name)
+      if (patch.subject !== undefined) setSubject(patch.subject || '')
+      if (patch.category !== undefined) setCategory(patch.category || '')
+      if (patch.key_points !== undefined) setKeyPoints(patch.key_points || '')
+      if (patch.page_ranges !== undefined) setPageRanges(patch.page_ranges || '')
     }
   }
 
@@ -411,7 +423,11 @@ export function Component() {
   const savePdfUrl = async () => {
     if (!editPdfId || !editPdfUrl.trim()) return
     const id = editPdfId; const newUrl = editPdfUrl.trim()
-    await supabase.from('parse_history').update({ file_name: newUrl, pdf_page_urls: null }).eq('id', id)
+    try {
+      await updateParseHistory(id, { file_name: newUrl, pdf_page_urls: null })
+    } catch (e) {
+      logError('AiImportPage.savePdfUrl', e)
+    }
     setHistory(prev => prev.map(h => h.id === id ? { ...h, file_name: newUrl, pdf_page_urls: null } : h))
     setEditPdfId(null)
     setParseResult(prev => prev ? { ...prev, fileName: newUrl } : null)
@@ -452,10 +468,14 @@ export function Component() {
     if (!user) return
     async function loadMeta() {
       // Use question_meta_cache for complete subject/category lists (not get_question_meta RPC which only checks old category column)
-      const { data, error } = await supabase.from('question_meta_cache').select('subjects, categories').single()
-      if (error) { console.warn('loadMeta error:', error); return }
-      setExistingSubjects((data?.subjects ?? []) as string[])
-      setExistingCategories((data?.categories ?? []) as string[])
+      try {
+        const cache = await fetchQuestionMetaCache()
+        setExistingSubjects(cache.subjects)
+        setExistingCategories(cache.categories)
+      } catch (e) {
+        // 旧写法读失败只打一条 warning: 下拉框留空, 不报错给用户
+        logError('AiImportPage.loadMeta', e)
+      }
     }
     loadMeta()
   }, [user?.id])
@@ -464,7 +484,7 @@ export function Component() {
   useEffect(() => {
     ;(async () => {
       try {
-        const { data, error } = await supabase.rpc('get_question_meta', { p_subject: subject || null }) as { data: { key_points?: string[] } | null; error: unknown }
+        const { data, error } = await supabase.rpc('get_question_meta', { p_subject: subject || undefined }) as { data: { key_points?: string[] } | null; error: unknown }
         if (!error && data?.key_points) setExistingKeyPoints(data.key_points)
         else setExistingKeyPoints([])
       } catch { setExistingKeyPoints([]) }
@@ -495,10 +515,11 @@ export function Component() {
     const acc: { p: number; w: number; h: number; src: string }[] = []
 
     const saveUrls = async (urls: typeof acc) => {
-      const { error } = await supabase.from('parse_history').update({
-        pdf_page_urls: JSON.stringify(urls),
-      }).eq('id', historyId)
-      if (error) console.error('Failed to save pdf_page_urls:', error)
+      try {
+        await saveParseHistoryPageUrls(historyId, urls)
+      } catch (e) {
+        logError('AiImportPage.savePageUrls', e)
+      }
     }
 
     setPageRendering(true)
@@ -802,25 +823,30 @@ export function Component() {
     const toImport = questions.filter((_, i) => selectedIds.has(i))
 
     try {
-      const { error: insertErr } = await supabase.from('questions').insert(
-        toImport.map((q) => questionRowFromParsed(q, {
-          subject: subject || null,
-          categories: Array.isArray(category) ? category : category ? [category] : [],
-          importMode: parseMode,
-          sourcePageFallback: pageRangesRef.current || null,
-        })),
-      )
+      // questionRowFromParsed 返回的是列名对齐的写入行, 但签名是 Record<string, unknown>
+      const rows = toImport.map((q) => questionRowFromParsed(q, {
+        subject: subject || null,
+        categories: Array.isArray(category) ? category : category ? [category] : [],
+        importMode: parseMode,
+        sourcePageFallback: pageRangesRef.current || null,
+      }) as Insert<'questions'>)
 
-      if (insertErr) throw insertErr
+      await insertQuestions(rows)
       // 批量导入也要补索引: 新题不补的话, 在下次重建索引之前小Q 搜不到它们
       autoIndex('question')
       setImportCount(toImport.length)
       if (currentHistoryId) {
-        await supabase.from('parse_history').update({ status_json: JSON.stringify({ state: 'imported' }) }).eq('id', currentHistoryId)
+        try {
+          await saveParseHistoryStatus(currentHistoryId, { state: 'imported' })
+        } catch (e) {
+          // 进度快照写失败不影响入库结果, 页面照样进 done
+          logError('AiImportPage.startImport.status', e)
+        }
       }
       setStepPersisted('done')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '导入失败')
+      logError('AiImportPage.startImport', err)
+      setError(userMessage(err))
       setStepPersisted('preview')
     }
   }
@@ -911,7 +937,11 @@ export function Component() {
           loadHistoryList()
         }}
         onRename={async (id, displayName) => {
-          await supabase.from('parse_history').update({ display_name: displayName }).eq('id', id)
+          try {
+            await updateParseHistory(id, { display_name: displayName })
+          } catch (e) {
+            logError('AiImportPage.renameHistory', e)
+          }
           setHistory(prev => prev.map(h => h.id === id ? { ...h, display_name: displayName } : h))
           if (id === currentHistoryId) setCurrentDisplayName(displayName)
         }}
@@ -924,12 +954,13 @@ export function Component() {
           setHistory(prev => prev.map(h =>
             ids.includes(h.id) ? { ...h, file_name: newUrl, pdf_page_urls: null } : h
           ))
-          await Promise.all(ids.map(id =>
-            supabase.from('parse_history').update({
-              file_name: newUrl,
-              pdf_page_urls: null,
-            }).eq('id', id)
-          ))
+          try {
+            await Promise.all(ids.map(id =>
+              updateParseHistory(id, { file_name: newUrl, pdf_page_urls: null })
+            ))
+          } catch (e) {
+            logError('AiImportPage.batchReplaceUrl', e)
+          }
           loadHistoryList()
         }}
         r2DisplayNames={r2DisplayNames}

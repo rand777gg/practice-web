@@ -12,47 +12,40 @@
  * 都不是发给模型的, 各自走自己的分支, 结果作为一条带 meta 的消息落到同一个会话里。
  */
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
-import { produceReply } from '@/lib/assistant-runtime'
-import { exportConversation } from '@/lib/assistant-export'
+import { registerUserScopedStore } from '@/stores/user-scope'
+import {
+  appendMessage, createConversation, deleteConversation, fetchConversations, fetchMessages,
+  findConversationIdByQuestion, renameConversation, updateMessageMeta,
+  type ChatMessage, type ConversationSummary, type NewMessage,
+} from '@/services/assistant'
+import { fetchQuestionMetaCache } from '@/services/questions'
+import { listPublishedDocuments } from '@/services/resources'
+import { logError, userMessage } from '@/services/errors'
 import { hasAiConfig } from '@/lib/ai/config'
-import { normalizeRoundUsage, type AiRoundUsage } from '@/lib/ai-usage'
 import {
-  generateFromSpec, insertCreatedQuestions, normalizeSpec, parseCreateRequest,
-  type CreateSpec,
-} from '@/lib/assistant-create'
-import {
-  activeSkillFrom, conversationTitleFrom, listSkills, loadSkillDoc, normalizeMeta, parseCommand,
+  activeSkillFrom, conversationTitleFrom, listSkills, loadSkillDoc, parseCommand,
   type CommandSpec, type CreateDraftMeta, type MessageMeta,
 } from '@/lib/assistant-commands'
-import type { AssistantMode, AssistantReply, LittleQEmotion } from '@/lib/assistant-demo'
+import type { CreateSpec } from '@/lib/assistant-create'
+import type { AssistantMode, LittleQEmotion } from '@/lib/assistant-demo'
 import type { AssistantTurn } from '@/lib/ai/assistant'
 import type { QuestionContext } from '@/lib/ai/question-context'
 import type { ParsedQuestion } from '@/lib/ai/types'
 import type { SkillId } from '@/lib/skills-catalog'
 
-export interface ChatMessage {
-  id: number
-  role: 'user' | 'assistant'
-  content: string
-  sub: string | null
-  tags: string[] | null
-  sources: NonNullable<AssistantReply['sources']> | null
-  followups: string[] | null
-  /** 指令卡片的结构化数据; 普通对话是 null */
-  meta: MessageMeta | null
-  /** 这一轮花掉的 tokens(用户消息是 null; 内置剧本答的也是 null —— 它没调模型) */
-  usage: AiRoundUsage | null
-  createdAt: string | null
-}
+/**
+ * 出题、回复生成、导出这三件事都不在首屏路径上，但它们的模块会拖进整条重依赖链
+ * （assistant-create → resource-library → pdf-page-renderer → pdfjs 及其 1.3MB worker，
+ * 还有 r2-upload、MinerU）。这个 store 被全局布局 AppLayout 引入，一旦静态 import，
+ * 那 1.6MB 就会跟着首屏一起下载 —— 所以这三个都在用到的那一刻才加载。
+ */
+const loadCreate = () => import('@/lib/assistant-create')
+const loadRuntime = () => import('@/lib/assistant-runtime')
+const loadExport = () => import('@/lib/assistant-export')
 
-export interface ConversationSummary {
-  id: string
-  title: string
-  updated_at: string
-}
+export type { ChatMessage, ConversationSummary }
 
 /**
  * 练习模式里"正在解释的那道题"。
@@ -67,7 +60,6 @@ export interface QuestionScope {
   context: QuestionContext
 }
 
-const MESSAGE_COLUMNS = 'id, role, content, sub, tags, sources, followups, meta, usage, created_at'
 const ACTIVE_KEY = 'littleq_active_conversation'
 
 /**
@@ -89,36 +81,6 @@ function writeActiveId(id: string | null): void {
 /** 会话标题直接取第一句话 —— 让模型起标题要多花一次调用, 而用户自己写的那句往往更准 */
 const titleFrom = conversationTitleFrom
 
-interface Row {
-  id: number
-  role: 'user' | 'assistant'
-  content: string
-  sub: string | null
-  tags: string[] | null
-  sources: ChatMessage['sources']
-  followups: string[] | null
-  /** 库里躺着的可能是旧版本写下的卡片形状, 所以这里收 unknown, 由 normalizeMeta 收口 */
-  meta: unknown
-  /** 同上: 这一列是后加的, 旧消息是 null; 形状由 normalizeRoundUsage 收口 */
-  usage: unknown
-  created_at: string | null
-}
-
-function toMessage(row: Row): ChatMessage {
-  return {
-    id: row.id,
-    role: row.role,
-    content: row.content,
-    sub: row.sub,
-    tags: row.tags,
-    sources: row.sources,
-    followups: row.followups,
-    meta: normalizeMeta(row.meta),
-    usage: normalizeRoundUsage(row.usage),
-    createdAt: row.created_at ?? null,
-  }
-}
-
 function emptyMessage(id: number, role: ChatMessage['role'], content: string, meta: MessageMeta | null = null): ChatMessage {
   return { id, role, content, sub: null, tags: null, sources: null, followups: null, meta, usage: null, createdAt: null }
 }
@@ -130,16 +92,10 @@ async function ensureConversationId(
   questionId: string | null = null,
 ): Promise<{ id: string; created: ConversationSummary | null }> {
   if (activeId) return { id: activeId, created: null }
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData.user?.id
+  const userId = useAuthStore.getState().user?.id
   if (!userId) throw new Error('未登录')
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .insert({ user_id: userId, title, question_id: questionId })
-    .select('id, title, updated_at')
-    .single()
-  if (error) throw error
-  return { id: (data as ConversationSummary).id, created: data as ConversationSummary }
+  const created = await createConversation(userId, { title, questionId })
+  return { id: created.id, created }
 }
 
 /**
@@ -150,30 +106,24 @@ async function ensureConversationId(
  * 所以新建之后不往列表里塞。
  */
 async function ensureQuestionConversation(questionId: string, title: string): Promise<string> {
-  const { data: existing, error: findErr } = await supabase
-    .from('chat_conversations')
-    .select('id')
-    .eq('question_id', questionId)
-    .maybeSingle()
-  if (findErr) throw findErr
-  if (existing) return (existing as { id: string }).id
+  const existing = await findConversationIdByQuestion(questionId)
+  if (existing) return existing
 
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData.user?.id
+  const userId = useAuthStore.getState().user?.id
   if (!userId) throw new Error('未登录')
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .insert({ user_id: userId, title, question_id: questionId })
-    .select('id')
-    .single()
-  if (error) throw error
-  return (data as { id: string }).id
+  return (await createConversation(userId, { title, questionId })).id
 }
 
-async function insertMessage(row: Record<string, unknown>): Promise<{ id: number; error: string | null }> {
-  const { data, error } = await supabase.from('chat_messages').insert(row).select('id').single()
-  if (error) return { id: -Date.now(), error: error.message }
-  return { id: (data as { id: number }).id, error: null }
+/**
+ * 落一条消息。写失败不往上抛: 消息已经上了屏, 各调用点自己决定"这条没存上"怎么跟用户说。
+ */
+async function insertMessage(input: NewMessage): Promise<{ id: number; error: string | null }> {
+  try {
+    return { id: await appendMessage(input), error: null }
+  } catch (e) {
+    logError('assistant.appendMessage', e)
+    return { id: -Date.now(), error: userMessage(e) }
+  }
 }
 
 /** 参数卡片要用的候选项: 学科/分类走缓存表(跟题库筛选同一份数据源), 文献只列已发布的 */
@@ -182,15 +132,8 @@ async function loadCreateOptions(): Promise<{
   categories: string[]
   documents: { id: string; title: string }[]
 }> {
-  const [metaRes, docsRes] = await Promise.all([
-    supabase.from('question_meta_cache').select('subjects, categories').single(),
-    supabase.from('resource_documents').select('id, title').eq('is_published', true).order('created_at'),
-  ])
-  return {
-    subjects: (metaRes.data?.subjects ?? []) as string[],
-    categories: (metaRes.data?.categories ?? []) as string[],
-    documents: (docsRes.data ?? []) as { id: string; title: string }[],
-  }
+  const [meta, documents] = await Promise.all([fetchQuestionMetaCache(), listPublishedDocuments()])
+  return { subjects: meta.subjects, categories: meta.categories, documents }
 }
 
 interface AssistantState {
@@ -243,6 +186,8 @@ interface AssistantState {
   reopenCreateSpec: (messageId: number) => Promise<void>
   confirmCreateDraft: (messageId: number, questions?: ParsedQuestion[]) => Promise<number>
   discardCreateDraft: (messageId: number) => Promise<void>
+  /** 换账号时清空账号数据（会话、消息、题目上下文）；界面开合状态保留 */
+  reset: () => void
 }
 
 /**
@@ -261,9 +206,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     extra: { sub?: string | null; tags?: string[] | null; sources?: ChatMessage['sources']; followups?: string[] | null; meta?: MessageMeta | null; emotion?: LittleQEmotion } = {},
     serial?: number,
   ): Promise<void> {
-    const row = {
-      conversation_id: conversationId,
-      role: 'assistant' as const,
+    const { id, error } = await insertMessage({
+      conversationId,
+      role: 'assistant',
       content,
       sub: extra.sub ?? null,
       tags: extra.tags ?? null,
@@ -271,8 +216,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       followups: extra.followups ?? null,
       meta: extra.meta ?? null,
       emotion: extra.emotion ?? null,
-    }
-    const { id, error } = await insertMessage(row)
+    })
     if (error && (serial === undefined || serial === sendSerial)) {
       set({ error: `消息保存失败(本次仍可查看): ${error}` })
     }
@@ -306,17 +250,20 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
    */
   async function writeMeta(messageId: number, meta: MessageMeta): Promise<void> {
     set({ messages: get().messages.map((m) => (m.id === messageId ? { ...m, meta } : m)) })
-    const { error } = await supabase.from('chat_messages').update({ meta }).eq('id', messageId)
-    if (error) set({ error: `卡片状态保存失败: ${error.message}` })
+    try {
+      await updateMessageMeta(messageId, meta)
+    } catch (e) {
+      logError('assistant.writeMeta', e)
+      set({ error: `卡片状态保存失败: ${userMessage(e)}` })
+    }
   }
 
   /** 用户那条消息先上屏再落库: 等一次往返才显示自己发的话, 感觉像卡住了 */
-  async function pushUserMessage(conversationId: string, value: string, serial: number): Promise<void> {    const tempId = -Date.now()
+  async function pushUserMessage(conversationId: string, value: string, serial: number): Promise<void> {
+    const tempId = -Date.now()
     set({ messages: [...get().messages, emptyMessage(tempId, 'user', value)] })
-    const { error } = await supabase.from('chat_messages').insert({
-      conversation_id: conversationId, role: 'user', content: value,
-    })
-    if (error && serial === sendSerial) set({ error: `消息保存失败: ${error.message}` })
+    const { error } = await insertMessage({ conversationId, role: 'user', content: value })
+    if (error && serial === sendSerial) set({ error: `消息保存失败: ${error}` })
   }
 
   /** 指令的统一入口: 会话 + 用户消息 + 指令自己的产物 */
@@ -334,8 +281,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       }
       await pushUserMessage(conversationId, raw, serial)
     } catch (err) {
+      logError('assistant.runCommand', err)
       if (serial === sendSerial) {
-        set({ sending: false, emotion: 'concerned', error: err instanceof Error ? err.message : String(err) })
+        set({ sending: false, emotion: 'concerned', error: userMessage(err) })
       }
       return
     }
@@ -352,6 +300,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         case 'export': {
           // 导出的是"到目前为止的对话", 不含这条导出回执本身
           const snapshot = get().messages.filter((m) => m.role !== 'user' || m.content !== raw)
+          const { exportConversation } = await loadExport()
           const { filename, bytes } = await exportConversation({
             conversationId,
             title: get().conversations.find((c) => c.id === conversationId)?.title ?? '小Q 会话',
@@ -423,6 +372,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
           // 先只解析需求、不出题: 出题要花几十秒和一次生成的钱, 而参数没对齐的话
           // 那几十秒和那笔钱都是白花的。用户在卡片上确认完再走 startCreateGeneration。
           const options = await loadCreateOptions()
+          const { parseCreateRequest } = await loadCreate()
           const { spec, understanding } = await parseCreateRequest(args, options)
           await appendAssistant(conversationId, args.trim()
             ? '先跟你对一下参数，确认没问题我再出题。'
@@ -490,18 +440,15 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
 
     loadConversations: async () => {
       const uid = useAuthStore.getState().user?.id ?? null
-      const { data, error } = await supabase
-        .from('chat_conversations')
-        .select('id, title, updated_at')
-        // 题目专属会话不进这张列表: 它属于某一道题, 在侧栏里只会变成一串认不出来的标题
-        .is('question_id', null)
-        .order('updated_at', { ascending: false })
-        .limit(100)
-      if (error) {
-        set({ error: `会话列表读取失败: ${error.message}`, conversationsLoaded: true, loadedForUserId: uid })
+      let list: ConversationSummary[]
+      try {
+        // 题目专属会话不进这张列表(服务层按 question_id is null 过滤): 它属于某一道题, 在侧栏里只会变成一串认不出来的标题
+        list = await fetchConversations()
+      } catch (e) {
+        logError('assistant.loadConversations', e)
+        set({ error: `会话列表读取失败: ${userMessage(e)}`, conversationsLoaded: true, loadedForUserId: uid })
         return
       }
-      const list = (data ?? []) as ConversationSummary[]
       // 上次记住的那条已经被删了(或换账号了) → 清掉, 否则会停在一个不存在的会话上。
       // 正在解释某道题时不清: 那个会话本来就不在这张列表里, 清了等于把用户踢出这道题。
       const activeId = get().activeId
@@ -520,19 +467,17 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       sendSerial++
       writeActiveId(id)
       set({ activeId: id, view: 'chat', messages: [], loadingMessages: true, sending: false, error: null })
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select(MESSAGE_COLUMNS)
-        .eq('conversation_id', id)
-        .order('id', { ascending: true })
-        .limit(500)
-      // 加载期间用户可能又点了别的会话, 这份结果就过期了
-      if (get().activeId !== id) return
-      if (error) {
-        set({ error: `会话内容读取失败: ${error.message}`, loadingMessages: false })
+      let messages: ChatMessage[]
+      try {
+        messages = await fetchMessages(id)
+      } catch (e) {
+        // 加载期间用户可能又点了别的会话, 这份结果就过期了
+        if (get().activeId !== id) return
+        logError('assistant.openConversation', e)
+        set({ error: `会话内容读取失败: ${userMessage(e)}`, loadingMessages: false })
         return
       }
-      const messages = ((data ?? []) as Row[]).map(toMessage)
+      if (get().activeId !== id) return
       set({ messages, loadingMessages: false, activeSkillId: activeSkillFrom(messages) })
     },
 
@@ -565,24 +510,15 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         // 那时 questionScope 已经丢了, 接回来的会是一条没有题干上下文的普通对话。
         // 想再看它就再点一次「问小Q解释本题」, 会话还在库里等着。
         set({ activeId: id, messages: [], loadingMessages: true })
-        const { data, error } = await supabase
-          .from('chat_messages')
-          .select(MESSAGE_COLUMNS)
-          .eq('conversation_id', id)
-          .order('id', { ascending: true })
-          .limit(500)
+        const messages = await fetchMessages(id)
         if (get().questionScope?.id !== scope.id) return
-        if (error) {
-          set({ error: `这道题的会话读取失败: ${error.message}`, loadingMessages: false })
-          return
-        }
-        const messages = ((data ?? []) as Row[]).map(toMessage)
         set({ messages, loadingMessages: false, activeSkillId: activeSkillFrom(messages) })
         // 第一次打开这道题: 直接把这句问出去(用户点的是"解释本题", 不是"打开一个空对话框")。
         // 已经聊过就只把上次的内容接回来, 不再自动发一次 —— 那会变成每点一次花一次钱。
         if (ask && messages.length === 0) await get().send(ask)
       } catch (err) {
-        set({ error: err instanceof Error ? err.message : String(err), loadingMessages: false })
+        logError('assistant.openForQuestion', err)
+        set({ error: userMessage(err), loadingMessages: false })
       }
     },
 
@@ -600,8 +536,12 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       const next = title.trim() || '新会话'
       const prev = get().conversations
       set({ conversations: prev.map((c) => (c.id === id ? { ...c, title: next } : c)) })
-      const { error } = await supabase.from('chat_conversations').update({ title: next }).eq('id', id)
-      if (error) set({ conversations: prev, error: `重命名失败: ${error.message}` })
+      try {
+        await renameConversation(id, next)
+      } catch (e) {
+        logError('assistant.renameConversation', e)
+        set({ conversations: prev, error: `重命名失败: ${userMessage(e)}` })
+      }
     },
 
     deleteConversation: async (id) => {
@@ -609,8 +549,12 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       set({ conversations: prev.filter((c) => c.id !== id) })
       if (get().activeId === id) get().startNewConversation()
       // 消息靠外键 ON DELETE CASCADE 一起走, 不用前端再删一遍
-      const { error } = await supabase.from('chat_conversations').delete().eq('id', id)
-      if (error) set({ conversations: prev, error: `删除失败: ${error.message}` })
+      try {
+        await deleteConversation(id)
+      } catch (e) {
+        logError('assistant.deleteConversation', e)
+        set({ conversations: prev, error: `删除失败: ${userMessage(e)}` })
+      }
     },
 
     send: async (text) => {
@@ -635,7 +579,8 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
             tags: ['未知指令'],
           }, serial)
         } catch (err) {
-          set({ error: err instanceof Error ? err.message : String(err) })
+          logError('assistant.unknownCommand', err)
+          set({ error: userMessage(err) })
         } finally {
           if (serial === sendSerial) set({ sending: false, emotion: 'happy' })
         }
@@ -658,8 +603,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         }
         await pushUserMessage(conversationId, value, serial)
       } catch (err) {
+        logError('assistant.send', err)
         if (serial === sendSerial) {
-          set({ sending: false, emotion: 'concerned', error: err instanceof Error ? err.message : String(err) })
+          set({ sending: false, emotion: 'concerned', error: userMessage(err) })
         }
         return
       }
@@ -670,12 +616,13 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
 
       // 会话 id 一起带下去: 服务端拿它把这次调用的 tokens/成本归到这个会话上(见 Section 76),
       // 于是管理页「按会话」那一栏里的数, 和这里每条回答下面显示的是同一笔账。
+      const { produceReply } = await loadRuntime()
       const outcome = await produceReply(value, history, mode, {
         skill, conversationId, question: questionScope?.context,
       })
       const { reply, emotion, scripted, usage } = outcome
       const { error } = await insertMessage({
-        conversation_id: conversationId,
+        conversationId,
         role: 'assistant',
         content: reply.text,
         sub: reply.sub ?? null,
@@ -712,6 +659,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     startCreateGeneration: async (messageId, spec) => {
       const meta = get().messages.find((m) => m.id === messageId)?.meta
       if (!meta || meta.kind !== 'create-draft') return
+      const { normalizeSpec, generateFromSpec } = await loadCreate()
       const saved = normalizeSpec(spec)
 
       // 用户改过的参数先落库: 出题要几十秒, 中途刷新不该把刚填好的参数弄丢
@@ -771,6 +719,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         return 0
       }
       try {
+        const { insertCreatedQuestions } = await loadCreate()
         const inserted = await insertCreatedQuestions(questions, {
           subject: spec.subject,
           categories: spec.categories,
@@ -790,5 +739,31 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
       if (!meta || meta.kind !== 'create-draft') return
       await writeMeta(messageId, { ...meta, status: 'discarded' })
     },
+
+    /**
+     * 换账号时清空。loadedForUserId 归 null 会让下一个用户重新拉会话列表 ——
+     * 这个字段本来就是为"别把上一个人的会话标题留在界面上"而加的，reset 必须跟着它走。
+     * 面板开合状态（open / view）是用户此刻的界面状态，不属于账号数据，保留。
+     */
+    reset: () => {
+      sendSerial += 1
+      set({
+        conversations: [],
+        conversationsLoaded: false,
+        loadedForUserId: null,
+        activeId: null,
+        messages: [],
+        loadingMessages: false,
+        sending: false,
+        emotion: 'happy',
+        error: null,
+        activeSkillId: null,
+        pendingInput: '',
+        questionScope: null,
+        mainActiveId: null,
+      })
+    },
   }
 })
+
+registerUserScopedStore(() => useAssistantStore.getState().reset())

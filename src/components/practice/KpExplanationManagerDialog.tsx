@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { deleteKpExplanation, saveKpExplanation } from '@/services/practice'
+import { fetchQuestionMetaCache, type KpBySubject } from '@/services/questions'
+import { logError, userMessage } from '@/services/errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -11,7 +13,6 @@ import { ContentPickerDialog } from '@/components/assistant/ContentPickerDialog'
 import { KpRefPickerDialog } from './KpRefPickerDialog'
 import { KpQuestionPickerDialog } from './KpQuestionPickerDialog'
 import { kpExplanationKey, useKpExplanations } from '@/hooks/use-kp-explanations'
-import { naturalSort } from '@/lib/utils'
 import { autoIndex } from '@/lib/rag'
 import {
   draftFromRef, draftFromSelection, refWhere,
@@ -27,11 +28,6 @@ import { listKpQuestions, saveKpQuestions } from '@/lib/kp-question-refs-store'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-interface KpBySubject {
-  subject: string
-  keyPoints: string[]
 }
 
 interface Doc {
@@ -177,14 +173,10 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
     setMetaLoading(true)
     ;(async () => {
       try {
-        const { data } = await supabase.from('question_meta_cache').select('key_points_by_subject').single()
+        const meta = await fetchQuestionMetaCache()
         if (cancelled) return
-        const raw = (data?.key_points_by_subject ?? []) as { subject: string; key_points: string[] }[]
-        const items = raw
-          .map((item) => ({ subject: item.subject || '其他', keyPoints: [...item.key_points].sort(naturalSort) }))
-          .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN'))
-        setKpBySubject(items)
-      } catch { /* ignore */ } finally { if (!cancelled) setMetaLoading(false) }
+        setKpBySubject(meta.keyPointsBySubject)
+      } catch (e) { logError('KpExplanationManagerDialog.loadMeta', e) } finally { if (!cancelled) setMetaLoading(false) }
     })()
     // 文献列表只给"按章节挑"用, 而 resource-library 会拖进 MinerU/PDF 那一堆模块,
     // 所以按需动态加载, 不在打开管理弹窗时就拉进来
@@ -282,10 +274,7 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
     const content = draft.trim()
     try {
       if (content) {
-        const { error } = await supabase.from('kp_explanations').upsert({
-          subject: selectedSubject, kp: selectedKp, content, updated_at: new Date().toISOString(),
-        })
-        if (error) throw new Error(error.message)
+        await saveKpExplanation(selectedSubject, selectedKp, content)
         // 依据挂在解读上(复合外键), 所以必须等正文落库之后再写。
         // 写完重拉一次: 页码与摘录是服务端从 resource_blocks 补的, 本地这份没有
         await saveKpRefs(selectedSubject, selectedKp, refs)
@@ -294,9 +283,7 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
         setQState(await fetchQuestions(selectedSubject, selectedKp))
       } else if (hasContent) {
         // 正文清空 = 删掉这条解读, 依据和真题跟着级联删掉
-        const { error } = await supabase.from('kp_explanations').delete()
-          .eq('subject', selectedSubject).eq('kp', selectedKp)
-        if (error) throw new Error(error.message)
+        await deleteKpExplanation(selectedSubject, selectedKp)
         setRefState({ key: refsKey, drafts: [], orphans: [] })
         setQState({ key: refsKey, items: [] })
       }
@@ -304,7 +291,7 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
       autoIndex('kp')
       await refresh()
     } catch (err) {
-      setSaveError({ key: refsKey, message: err instanceof Error ? err.message : String(err) })
+      setSaveError({ key: refsKey, message: userMessage(err) })
     } finally {
       setSaving(false)
     }
@@ -519,7 +506,11 @@ export function KpExplanationManagerDialog({ open, onOpenChange }: Props) {
               onClick={async () => {
                 if (!selectedSubject || !selectedKp) return
                 setSaving(true)
-                await supabase.from('kp_explanations').delete().eq('subject', selectedSubject).eq('kp', selectedKp)
+                try {
+                  await deleteKpExplanation(selectedSubject, selectedKp)
+                } catch (e) {
+                  logError('KpExplanationManagerDialog.delete', e)
+                }
                 autoIndex('kp')
                 setSaving(false)
                 setDraft('')

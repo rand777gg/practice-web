@@ -6,70 +6,33 @@
  * 本来就没有逐段内容 —— 服务端一句 SQL 就能从 resource_blocks 里补齐(见 Section 63)。
  */
 import { supabase } from '@/lib/supabase'
+import { logError, userMessage } from '@/services/errors'
+import {
+  listDocumentRefs as listDocumentRefRows,
+  listKpRefs as listKpRefRows,
+} from '@/services/resources'
 import type { KpRefDraft, KpResourceRef } from '@/lib/kp-resource-refs'
-
-const COLUMNS = [
-  'id', 'subject', 'kp', 'document_id', 'block_index', 'page_from', 'page_to',
-  'blocks', 'doc_title', 'label', 'snippet', 'note', 'sort_order',
-].join(', ')
-
-interface RawRef {
-  id: string
-  subject: string
-  kp: string
-  document_id: string | null
-  block_index: number | null
-  page_from: number
-  page_to: number
-  blocks: number[] | null
-  doc_title: string
-  label: string
-  snippet: string
-  note: string
-  sort_order: number
-}
-
-function toRef(r: RawRef): KpResourceRef {
-  return {
-    id: r.id,
-    subject: r.subject,
-    kp: r.kp,
-    documentId: r.document_id,
-    blockIndex: r.block_index,
-    pageFrom: r.page_from,
-    pageTo: r.page_to,
-    blocks: r.blocks ?? [],
-    docTitle: r.doc_title,
-    label: r.label,
-    snippet: r.snippet,
-    note: r.note,
-    sortOrder: r.sort_order,
-  }
-}
 
 /** 某条解读的全部依据(复制/展示用) */
 export async function listKpRefs(subject: string, kp: string): Promise<KpResourceRef[]> {
   if (!subject || !kp) return []
-  const { data, error } = await supabase
-    .from('kp_resource_refs')
-    .select(COLUMNS)
-    .eq('subject', subject)
-    .eq('kp', kp)
-    .order('sort_order', { ascending: true })
-  if (error) throw new Error(`加载依据失败: ${error.message}`)
-  return ((data ?? []) as unknown as RawRef[]).map(toRef)
+  try {
+    return await listKpRefRows(subject, kp)
+  } catch (e) {
+    logError('kp-resource-refs.listKpRefs', e)
+    throw new Error(`加载依据失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /** 某篇文献被哪些解读引为依据 —— 阅读页的块标记用这条反查 */
 export async function listDocumentRefs(documentId: string): Promise<KpResourceRef[]> {
   if (!documentId) return []
-  const { data, error } = await supabase
-    .from('kp_resource_refs')
-    .select(COLUMNS)
-    .eq('document_id', documentId)
-    .order('sort_order', { ascending: true })
-  if (error) throw new Error(`加载引用失败: ${error.message}`)
-  return ((data ?? []) as unknown as RawRef[]).map(toRef)
+  try {
+    return await listDocumentRefRows(documentId)
+  } catch (e) {
+    logError('kp-resource-refs.listDocumentRefs', e)
+    throw new Error(`加载引用失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /**

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run budget",
+    "budget": "node scripts/check-first-screen-budget.mjs",
+    "types:db": "supabase gen types typescript --linked --schema public > src/types/database.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },

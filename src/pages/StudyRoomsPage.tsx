@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { logError, userMessage } from '@/services/errors'
+import { updateProfile } from '@/services/profiles'
+import {
+  deleteStudyRoom,
+  fetchRoomMembers,
+  fetchStudyRooms,
+  removeRoomMember,
+  type StudyRoom,
+  type StudyRoomMember,
+} from '@/services/study-rooms'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOnlineStore } from '@/stores/online-store'
 import { Button } from '@/components/ui/button'
@@ -51,15 +61,6 @@ import {
 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
-interface RoomRow {
-  id: string
-  owner_id: string
-  name: string
-  description: string
-  invite_code: string
-  created_at: string
-}
-
 interface RoomMember {
   user_id: string
   nickname: string
@@ -72,7 +73,7 @@ interface RoomMember {
 }
 
 interface RoomDetail {
-  room: RoomRow
+  room: StudyRoom
   date: string
   members: RoomMember[]
 }
@@ -221,7 +222,7 @@ export function Component() {
   const [searchParams, setSearchParams] = useSearchParams()
   const roomParam = searchParams.get('room')
 
-  const [rooms, setRooms] = useState<RoomRow[] | null>(null)
+  const [rooms, setRooms] = useState<StudyRoom[] | null>(null)
   const [roomMembers, setRoomMembers] = useState<Record<string, string[]>>({})
   const [profiles, setProfiles] = useState<ProfileMap>({})
   const [listError, setListError] = useState('')
@@ -261,17 +262,18 @@ export function Component() {
     if (!me) return
     let cancelled = false
     ;(async () => {
-      const { data: roomRows, error } = await supabase
-        .from('study_rooms')
-        .select('*')
-        .order('created_at', { ascending: false })
-      if (cancelled) return
-      if (error) {
-        setListError(error.message)
-        setRooms([])
+      let list: StudyRoom[]
+      try {
+        list = await fetchStudyRooms()
+      } catch (e) {
+        logError('StudyRoomsPage.fetchRooms', e)
+        if (!cancelled) {
+          setListError(userMessage(e))
+          setRooms([])
+        }
         return
       }
-      const list = (roomRows ?? []) as unknown as RoomRow[]
+      if (cancelled) return
       setRooms(list)
 
       const ids = list.map((r) => r.id)
@@ -279,16 +281,18 @@ export function Component() {
         setRoomMembers({})
         return
       }
-      const { data: mrows } = await supabase
-        .from('study_room_members')
-        .select('room_id, user_id, joined_at')
-        .in('room_id', ids)
-        .order('joined_at', { ascending: true })
+      let mrows: StudyRoomMember[] = []
+      try {
+        mrows = await fetchRoomMembers(ids)
+      } catch (e) {
+        // 成员拉不到时卡片照常渲染, 只是头像为空 —— 与旧行为一致
+        logError('StudyRoomsPage.fetchRoomMembers', e)
+      }
       if (cancelled) return
       const grouped: Record<string, string[]> = {}
       for (const r of list) grouped[r.id] = []
       const allIds = new Set<string>()
-      for (const m of (mrows ?? []) as { room_id: string; user_id: string }[]) {
+      for (const m of mrows) {
         if (!grouped[m.room_id]) grouped[m.room_id] = []
         if (!grouped[m.room_id].includes(m.user_id)) grouped[m.room_id].push(m.user_id)
         allIds.add(m.user_id)
@@ -362,7 +366,7 @@ export function Component() {
       setListError(errText(error.message))
       return false
     }
-    const row = ((data ?? []) as RoomRow[])[0]
+    const row = ((data ?? []) as StudyRoom[])[0]
     bumpList()
     if (row) setSearchParams({ room: row.id })
     return true
@@ -383,9 +387,11 @@ export function Component() {
   const handleLeaveRoom = async (roomId: string) => {
     if (!me) return
     if (!window.confirm('确定退出这个自习室吗？')) return
-    const { error } = await supabase.from('study_room_members').delete().eq('room_id', roomId).eq('user_id', me)
-    if (error) {
-      setActionMsg(error.message)
+    try {
+      await removeRoomMember(roomId, me)
+    } catch (e) {
+      logError('StudyRoomsPage.leaveRoom', e)
+      setActionMsg(userMessage(e))
       return
     }
     closeRoom()
@@ -394,9 +400,11 @@ export function Component() {
 
   const handleDeleteRoom = async (roomId: string) => {
     if (!window.confirm('确定解散这个自习室吗？所有成员都会被移出。')) return
-    const { error } = await supabase.from('study_rooms').delete().eq('id', roomId)
-    if (error) {
-      setActionMsg(error.message)
+    try {
+      await deleteStudyRoom(roomId)
+    } catch (e) {
+      logError('StudyRoomsPage.deleteRoom', e)
+      setActionMsg(userMessage(e))
       return
     }
     closeRoom()
@@ -405,9 +413,11 @@ export function Component() {
 
   const handleRemoveMember = async (roomId: string, memberId: string, nickname: string) => {
     if (!window.confirm(`确定把 ${nickname} 移出自习室吗？`)) return
-    const { error } = await supabase.from('study_room_members').delete().eq('room_id', roomId).eq('user_id', memberId)
-    if (error) {
-      setActionMsg(error.message)
+    try {
+      await removeRoomMember(roomId, memberId)
+    } catch (e) {
+      logError('StudyRoomsPage.removeMember', e)
+      setActionMsg(userMessage(e))
       return
     }
     bumpDetail()
@@ -990,20 +1000,20 @@ function PublicProfileForm({ onClose, onSaved }: { onClose: () => void; onSaved:
     if (!user) return
     setSaving(true)
     setErr('')
-    const { error } = await supabase
-      .from('profiles')
-      .update({
+    try {
+      await updateProfile(user.id, {
         goal_type: goalType || null,
         exam_status: examStatus || null,
         target_school: school.trim() || null,
         profile_visibility: serializeVisibility(visibility),
       })
-      .eq('id', user.id)
-    setSaving(false)
-    if (error) {
-      setErr(error.message)
+    } catch (e) {
+      logError('StudyRoomsPage.savePublicProfile', e)
+      setSaving(false)
+      setErr(userMessage(e))
       return
     }
+    setSaving(false)
     await refreshProfile()
     onSaved()
     onClose()

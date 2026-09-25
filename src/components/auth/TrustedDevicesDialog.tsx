@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { supabase } from '@/lib/supabase'
+import { fetchTrustedDevices, renameTrustedDevice, revokeTrustedDevice, type TrustedDevice } from '@/services/account'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useT } from '@/i18n/use-t'
 import { Button } from '@/components/ui/button'
@@ -21,15 +22,6 @@ import { DeviceLabel } from '@/components/ui/device-label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Pencil, Check, X } from 'lucide-react'
-
-// --- Types ---
-
-interface TrustedDevice {
-  id: string; user_id: string; device_id: string
-  device_name: string | null; custom_name: string | null
-  device_info: Record<string, any> | null
-  expires_at: string; created_at: string
-}
 
 // --- Editable device name ---
 
@@ -149,7 +141,7 @@ const DeviceDetailPanel = memo(function DeviceDetailPanel({ device, onRename, on
     )
   }
 
-  const info = device.device_info || {}
+  const info: Record<string, unknown> = device.device_info ?? {}
   const entries = Object.entries(info).filter(([k, v]) => v != null && !isSkipKey(k))
 
   return (
@@ -190,8 +182,10 @@ const DeviceDetailPanel = memo(function DeviceDetailPanel({ device, onRename, on
                 )
               })}
               {entries.map(([key, val]) => {
-                const v = val?.value !== undefined ? val.value : val
-                if (v == null || val?.error) return null
+                // 指纹字段有两种形状: 直接是值, 或 FPJS 的 { value, error } 包装
+                const signal = val as { value?: unknown; error?: unknown }
+                const v = signal.value !== undefined ? signal.value : val
+                if (v == null || signal.error) return null
                 return (
                   <TableRow key={key}>
                     <TableCell className="text-muted-foreground text-xs w-[140px]">{fieldLabel(key, t)}</TableCell>
@@ -262,10 +256,12 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
   const fetchDevices = useCallback(async () => {
     if (!user) return
     setLoading(true)
-    const { data } = await supabase
-      .from('user_trusted_devices').select('*')
-      .eq('user_id', user.id).order('created_at', { ascending: false })
-    const list = (data as TrustedDevice[]) || []
+    let list: TrustedDevice[] = []
+    try {
+      list = await fetchTrustedDevices(user.id)
+    } catch (e) {
+      logError('trustedDevices.fetch', e)
+    }
     setDevices(list)
     setLoading(false)
     if (list.length > 0) setSelectedId((prev) => prev ?? list[0].id)
@@ -277,7 +273,8 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
 
   const handleRename = useCallback(async (id: string, name: string) => {
     const trimmed = name.trim()
-    await supabase.from('user_trusted_devices').update({ custom_name: trimmed || null }).eq('id', id)
+    // 改不动也照样改本地显示: 旧行为就是乐观更新, 失败只在开发日志里留痕
+    await renameTrustedDevice(id, trimmed).catch((e) => logError('trustedDevices.rename', e))
     setDevices((prev) => prev.map((d) => d.id === id ? { ...d, custom_name: trimmed || null } : d))
   }, [])
 
@@ -290,7 +287,7 @@ export function TrustedDevicesDialog({ open, onOpenChange }: Props) {
     const { deviceId, isCurrent } = revokeTarget
     setRevokeTarget(null)
     setRevoking(deviceId)
-    await supabase.from('user_trusted_devices').delete().eq('user_id', user.id).eq('device_id', deviceId)
+    await revokeTrustedDevice(user.id, deviceId).catch((e) => logError('trustedDevices.revoke', e))
     if (isCurrent) {
       clearDeviceToken()
       signOut()

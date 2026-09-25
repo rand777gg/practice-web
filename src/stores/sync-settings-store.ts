@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
+import { fetchUserSettings, upsertSettings, type SettingsSnapshot } from '@/services/account'
+import { logError } from '@/services/errors'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const ALL_SYNCED_KEYS = [
   'lang',
@@ -24,10 +26,6 @@ const SYNC_DIRECTION_KEY = 'sync_direction'
 const SYNC_AUTO_KEY = 'sync_auto'
 const SYNC_LAST_AT_KEY = 'sync_last_at'
 const SYNC_SELECTED_KEYS_KEY = 'sync_selected_keys'
-
-interface SettingsSnapshot {
-  [key: string]: unknown
-}
 
 export type SyncDirection = 'none' | 'upload_only' | 'download_only' | 'bidirectional'
 
@@ -144,18 +142,10 @@ export const useSyncSettingsStore = create<SyncSettingsState>((set, get) => ({
     if (syncing) return
     set({ syncing: true })
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const userId = useAuthStore.getState().user?.id
+      if (!userId) throw new Error('Not authenticated')
 
-      const settings = collectSettings(syncedKeys)
-      const now = new Date().toISOString()
-      const { error } = await supabase.from('user_settings').upsert(
-        { user_id: user.id, settings, updated_at: now },
-        { onConflict: 'user_id' },
-      )
-      if (error) throw error
+      const now = await upsertSettings(userId, collectSettings(syncedKeys))
 
       localStorage.setItem(SYNC_LAST_AT_KEY, now)
       set({ lastSyncAt: now })
@@ -169,31 +159,23 @@ export const useSyncSettingsStore = create<SyncSettingsState>((set, get) => ({
     if (syncing) return
     set({ syncing: true })
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const userId = useAuthStore.getState().user?.id
+      if (!userId) throw new Error('Not authenticated')
 
-      const { data, error } = await supabase
-        .from('user_settings')
-        .select('settings, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (error) throw error
-      if (!data?.settings) {
+      const settings = await fetchUserSettings(userId)
+      if (!settings) {
         set({ syncing: false })
         return
       }
 
-      applySettings(data.settings as SettingsSnapshot)
+      applySettings(settings.settings)
 
-      const serverTime = data.updated_at as string
+      const serverTime = settings.updated_at
       localStorage.setItem(SYNC_LAST_AT_KEY, serverTime)
       set({ lastSyncAt: serverTime })
       window.location.reload()
-    } catch {
-      // ignore
+    } catch (e) {
+      logError('syncSettings.download', e)
     } finally {
       set({ syncing: false })
     }

@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { fetchAnswersForQuestions, updateAnswer, type AnswerSummary } from '@/services/practice'
+import { fetchQuestionsByIds } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { autoIndex } from '@/lib/rag'
 import { naturalSort } from '@/lib/utils'
-import { chunkIds } from '@/lib/chunk-ids'
 import { useFavorites } from '@/hooks/use-favorites'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
+import { useAuthStore } from '@/stores/auth-store'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +59,7 @@ const BATCH = 20
 export function Component() {
   const { t } = useT()
   const { favorites, isFavorite, toggleFavorite, loaded } = useFavorites()
+  const userId = useAuthStore((s) => s.user?.id)
   const { subjects, filteredCategories, updateFilteredCategories } = useQuestionFilters()
   const [questions, setQuestions] = useState<FavWithAnswer[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -88,33 +91,35 @@ export function Component() {
   useEffect(() => {
     if (!loaded) return
     async function load() {
-      if (favorites.length === 0) { setQuestions([]); setIsLoading(false); return }
+      if (favorites.length === 0 || !userId) { setQuestions([]); setIsLoading(false); return }
       setIsLoading(true)
-      // 收藏可能上千条, 一次性 .in() 会拼出超长 URL(见 chunk-ids.ts 的说明), 必须分批
-      const [qParts, aParts] = await Promise.all([
-        Promise.all(chunkIds(favorites).map(ids =>
-          supabase.from('questions').select('*').in('id', ids))),
-        Promise.all(chunkIds(favorites).map(ids =>
-          supabase.from('user_answers').select('question_id, selected_answer, is_correct, answered_at, note, id').in('question_id', ids).order('answered_at', { ascending: false }))),
+      // 分批 .in() 与翻页都收在服务里: 收藏上千条时老代码那条 select('*') 会撞上单次 1000 行上限
+      const [qs, answers] = await Promise.all([
+        fetchQuestionsByIds(favorites).catch((e: unknown) => {
+          logError('favorites.questions', e)
+          return []
+        }),
+        fetchAnswersForQuestions(userId, favorites).catch((e: unknown) => {
+          logError('favorites.answers', e)
+          return []
+        }),
       ])
-      const qs = qParts.flatMap(p => (p.data ?? []) as Question[])
       const qMap = new Map(qs.map(q => [q.id, q]))
       // Get latest answer for each question
-      const answers = aParts.flatMap(p => p.data ?? [])
-      const latestAnswer = new Map<string, { selected_answer: CorrectAnswer; is_correct: boolean; answered_at: string; note: string | null; id: string }>()
-      for (const a of (answers ?? [])) {
-        if (!latestAnswer.has(a.question_id)) latestAnswer.set(a.question_id, { selected_answer: a.selected_answer, is_correct: a.is_correct, answered_at: a.answered_at, note: a.note, id: a.id })
+      const latestAnswer = new Map<string, AnswerSummary>()
+      for (const a of answers) {
+        if (!latestAnswer.has(a.question_id)) latestAnswer.set(a.question_id, a)
       }
       const merged: FavWithAnswer[] = favorites.map(id => {
         const q = qMap.get(id)
         const la = latestAnswer.get(id)
         return q ? { ...q, latest_answer: la?.selected_answer ?? null, answered_at: la?.answered_at ?? null, note: la?.note ?? null, answer_id: la?.id ?? null } : null
-      }).filter(Boolean) as FavWithAnswer[]
+      }).filter((q): q is FavWithAnswer => q !== null)
       setQuestions(merged)
       setIsLoading(false)
     }
     load()
-  }, [favorites, loaded])
+  }, [favorites, loaded, userId])
 
   const filtered = useMemo(() => questions.filter(q => {
     if (selectedSubject && q.subject !== selectedSubject) return false
@@ -137,7 +142,7 @@ export function Component() {
 
   const handleSaveNote = useCallback(async (questionId: string, answerId: string | null) => {
     if (!answerId) return
-    await supabase.from('user_answers').update({ note: editText }).eq('id', answerId)
+    await updateAnswer(answerId, { note: editText }).catch((e: unknown) => logError('favorites.saveNote', e))
     // 公开笔记的正文进了检索索引, 收藏页这里改完也得同步(练习页走 useUserAnswers 那条已经同步了)
     autoIndex('note', answerId)
     setQuestions(prev => prev.map(q => q.id === questionId ? { ...q, note: editText } : q))

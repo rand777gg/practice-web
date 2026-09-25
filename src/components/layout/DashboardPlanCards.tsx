@@ -71,8 +71,8 @@ export function DashboardPlanCards() {
 
       if (deadline) {
         const { data: lt } = await supabase.rpc('get_subject_progress', {
-          p_user_id: uid, p_plan_reset_at: planResetAt || null, p_today_since: today,
-          p_subjects: planSubjects.length > 0 ? planSubjects : null,
+          p_user_id: uid, p_plan_reset_at: planResetAt || undefined, p_today_since: today,
+          p_subjects: planSubjects.length > 0 ? planSubjects : undefined,
           p_subject_resets: subjectResetAt,
         }) as { data: { subject: string; total: number; done_all: number; done_today: number }[] | null }
         if (cancelled) return
@@ -114,7 +114,7 @@ export function DashboardPlanCards() {
     const subs = [...new Set([...planSubjects, ...goalList.map((g) => g.subject)])]
     void supabase.rpc('get_review_count', {
       p_user_id: user.id,
-      p_subjects: subs.length > 0 ? subs : null,
+      p_subjects: subs.length > 0 ? subs : undefined,
     }).then(({ data }) => {
       if (live) setReviewCount(data == null ? null : Number(data))
     })

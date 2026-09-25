@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { fetchEnabledExamSchedules, hasRunningExamSession } from '@/services/exam'
+import { logError } from '@/services/errors'
 import { ensurePushSubscription } from '@/lib/push-subscription'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
@@ -10,7 +11,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Spinner } from '@/components/ui/spinner'
 import { CalendarClock, Play } from 'lucide-react'
 import {
-  rowToSchedule,
   isPendingToday,
   todayKey,
   describeRun,
@@ -79,25 +79,18 @@ export function ExamScheduleWatcher() {
 
     const check = async () => {
       if (uidRef.current !== uid) return
-      // 已有进行中的考试: 先不打扰, 完成后由下一次 tick 补提醒
       if (useExamStore.getState().session?.status === 'in_progress') return
-      const { data: running } = await supabase
-        .from('exam_sessions')
-        .select('id')
-        .eq('user_id', uid)
-        .eq('status', 'in_progress')
-        .limit(1)
-      if (running && running.length > 0) return
-
-      const { data } = await supabase
-        .from('exam_schedules')
-        .select('*')
-        .eq('user_id', uid)
-        .eq('enabled', true)
-        .limit(50)
+      let schedules: ExamSchedule[]
+      try {
+        // 已有进行中的考试: 先不打扰, 完成后由下一次 tick 补提醒
+        if (await hasRunningExamSession(uid)) return
+        schedules = await fetchEnabledExamSchedules(uid)
+      } catch (e) {
+        logError('examScheduleWatcher.check', e)
+        return
+      }
       const now = new Date()
-      for (const row of data ?? []) {
-        const s = rowToSchedule(row as Record<string, unknown>)
+      for (const s of schedules) {
         if (!isPendingToday(s, now)) continue
         const key = `${s.id}:${todayKey()}`
         if (remindedRef.current.has(key)) continue

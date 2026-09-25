@@ -1,7 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { chunkIds } from '@/lib/chunk-ids'
+import { logError } from '@/services/errors'
+import {
+  countExcludedQuestions, deleteSequentialState, excludeQuestion, fetchFavoritesWithQuestion,
+  fetchPracticeFilters, fetchQuestionAnswerStats, fetchSequentialSessionKeyByShortId, fetchWrongAnswers,
+  savePracticeFilters, upsertSequentialState,
+} from '@/services/practice'
+import type { AnswerWithQuestionMeta, FavoriteWithQuestion, QuestionAnswerStats, QuestionMeta } from '@/services/practice'
+import { fetchQuestionById, fetchQuestionIdsByKeyPoints, fetchQuestionMetaCache, updateQuestion } from '@/services/questions'
+import { mergeSubjectResetAt } from '@/services/profiles'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useRefreshStore } from '@/stores/refresh-store'
@@ -59,7 +67,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isAnswerCorrect } from '@/lib/answer-utils'
-import { cn, naturalSort } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { getPrefetchedQuestionIds, getPrefetchedQuestion } from '@/lib/offline-db'
 import type { Question, CorrectAnswer, QuestionType } from '@/types'
 import { resolveGoals, resolveRounds } from '@/types'
@@ -85,8 +93,8 @@ interface PracticeFilters {
   selectedCategory: string
   selectedType: string
   selectedKeyPoint: string
-  questionMode: string
-  questionScope: string
+  questionMode: 'new' | 'wrong' | 'sequential'
+  questionScope: 'all' | 'favorites' | 'wrong' | 'review'
   /** 复习模式的轮次范围(学科|轮次), 单独选 */
   reviewRounds?: string[]
 }
@@ -99,9 +107,7 @@ let dbSaveTimer: ReturnType<typeof setTimeout> | null = null
 function saveFiltersToDb(userId: string, v: PracticeFilters) {
   if (dbSaveTimer) clearTimeout(dbSaveTimer)
   dbSaveTimer = setTimeout(() => {
-    supabase.from('user_preferences').upsert({
-      user_id: userId, practice_filters: v, updated_at: new Date().toISOString(),
-    }).then(() => {})
+    savePracticeFilters(userId, v).catch((e) => logError('practice.saveFilters', e))
   }, 500)
 }
 
@@ -294,9 +300,9 @@ export function PracticeSession() {
     const urlMode = searchParams.get('mode')
     if (urlMode === 'seq') return 'sequential'
     if (urlMode === 'random') return 'new'
-    return (saved.current?.questionMode as any) ?? 'sequential'
+    return saved.current?.questionMode ?? 'sequential'
   })
-  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong' | 'review'>((saved.current?.questionScope as any) ?? 'all')
+  const [questionScope, setQuestionScope] = useState<'all' | 'favorites' | 'wrong' | 'review'>(saved.current?.questionScope ?? 'all')
 
   // 切到复习模式但还没选范围 → 弹出来重新选学科 + 轮次
   useEffect(() => {
@@ -600,17 +606,24 @@ export function PracticeSession() {
     dbFiltersRef.current = true
     const user = useAuthStore.getState().user
     if (!user) return
-    supabase.from('user_preferences').select('practice_filters').eq('user_id', user.id).single().then(({ data }) => {
-      if (data?.practice_filters) {
-        const f = data.practice_filters as PracticeFilters
-        if (f.selectedSubjects?.length) setSelectedSubjects(f.selectedSubjects)
-        if (f.selectedCategory) setSelectedCategory(f.selectedCategory)
-        if (f.selectedType) setSelectedType(f.selectedType as QuestionType)
-        if (f.selectedKeyPoint) setSelectedKeyPoint(f.selectedKeyPoint)
-        if (f.questionMode && !urlModeRef.current) setQuestionMode(f.questionMode as any)
-        if (f.questionScope) setQuestionScope(f.questionScope as any)
+    void (async () => {
+      let raw: Record<string, unknown> = {}
+      try {
+        const stored = await fetchPracticeFilters(user.id)
+        if (stored && typeof stored === 'object' && !Array.isArray(stored)) raw = stored
+      } catch (e) {
+        logError('practice.loadFilters', e)
       }
-    })
+      const subjects = raw.selectedSubjects
+      if (Array.isArray(subjects) && subjects.length > 0) setSelectedSubjects(subjects.map(String))
+      if (typeof raw.selectedCategory === 'string' && raw.selectedCategory) setSelectedCategory(raw.selectedCategory)
+      if (typeof raw.selectedType === 'string' && raw.selectedType) setSelectedType(raw.selectedType as QuestionType)
+      if (typeof raw.selectedKeyPoint === 'string' && raw.selectedKeyPoint) setSelectedKeyPoint(raw.selectedKeyPoint)
+      const mode = raw.questionMode
+      if ((mode === 'new' || mode === 'wrong' || mode === 'sequential') && !urlModeRef.current) setQuestionMode(mode)
+      const scope = raw.questionScope
+      if (scope === 'all' || scope === 'favorites' || scope === 'wrong' || scope === 'review') setQuestionScope(scope)
+    })()
   }, [])
 
   useEffect(() => {
@@ -637,17 +650,18 @@ export function PracticeSession() {
       setKpBySubject(kpCache)
       return
     }
-    supabase.from('question_meta_cache').select('key_points_by_subject').single().then(({ data }) => {
-      if (c) return
-      const items = (data?.key_points_by_subject ?? []) as { subject: string; key_points: string[] }[]
-      const result = items
-        .map(item => ({ subject: item.subject || '其他', keyPoints: [...item.key_points].sort(naturalSort) }))
-        .sort((a, b) => a.subject.localeCompare(b.subject, 'zh-CN'))
-      kpCache = result
-      setKpBySubject(result)
-    })
+    void (async () => {
+      try {
+        const cache = await fetchQuestionMetaCache()
+        if (c) return
+        const items = cache.keyPointsBySubject
+        kpCache = items
+        setKpBySubject(items)
+      } catch (e) {
+        logError('practice.loadKpMeta', e)
+      }
+    })()
     return () => { c = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kpVersion])
   // Refresh KPs when plan subjects change
   useEffect(() => { triggerKpRefresh() }, [profile, planSubjects, triggerKpRefresh])
@@ -691,27 +705,27 @@ export function PracticeSession() {
     setNoQuestions(false)
 
     const currentUser = useAuthStore.getState().user
-    const [qRes, statsRes] = await Promise.all([
-      supabase.from('questions').select('*').eq('id', id).single(),
-      currentUser
-        ? supabase.from('user_answers')
-            .select('is_correct, note, is_public')
-            .eq('user_id', currentUser.id)
-            .eq('question_id', id)
-            .order('answered_at', { ascending: false })
-        : Promise.resolve(null),
-    ])
+    let loaded: [Question | null, QuestionAnswerStats | null] | null = null
+    try {
+      loaded = await Promise.all([
+        fetchQuestionById(id),
+        currentUser ? fetchQuestionAnswerStats(currentUser.id, id) : null,
+      ])
+    } catch (e) {
+      logError('practice.loadPinnedQuestion', e)
+    }
     if (fetchGenRef.current !== myGen) return
-    if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
+    const q = loaded?.[0] ?? null
+    const stats = loaded?.[1] ?? null
+    if (!q) { setNoQuestions(true); setIsLoading(false); return }
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (fetchGenRef.current !== myGen) return
 
-    setQuestion(qRes.data as unknown as Question)
-    const statsData = statsRes?.data
-    setAttemptCount(statsData?.length ?? 0)
-    setWrongCount(statsData?.filter((a) => !a.is_correct).length ?? 0)
-    setNote(statsData?.find((a) => a.note)?.note ?? '')
-    setIsPublic(statsData?.find((a) => a.note)?.is_public ?? false)
+    setQuestion(q)
+    setAttemptCount(stats?.attempts ?? 0)
+    setWrongCount(stats?.wrongs ?? 0)
+    setNote(stats?.note ?? '')
+    setIsPublic(stats?.is_public ?? false)
     setIsLoading(false)
     setQuestionReady(true)
   }, [])
@@ -739,19 +753,19 @@ export function PracticeSession() {
 
     // Scope: favorites — pick from user's favorited questions
     if (currentUser && questionScope === 'favorites') {
-      const { data: favRows } = await supabase.from('favorites')
-        .select('question_id, questions!inner(subject, category, question_type, key_points)')
-        .eq('user_id', currentUser.id)
-        .order('created_at', { ascending: false })
-        .limit(200)
-      if (fetchGenRef.current !== myGen) return
-      if (favRows?.length) {
-        let filtered = favRows
-        if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
-        if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
-        if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
-        if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
-        if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+      try {
+        const favRows = (await fetchFavoritesWithQuestion(currentUser.id, 200)).filter((r): r is FavoriteWithQuestion & { question: QuestionMeta } => r.question !== null)
+        if (fetchGenRef.current !== myGen) return
+        if (favRows.length) {
+          let filtered = favRows
+          if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
+          if (selectedCategory) filtered = filtered.filter((r) => r.question.category === selectedCategory || r.question.categories.includes(selectedCategory))
+          if (selectedType) filtered = filtered.filter((r) => r.question.question_type === selectedType)
+          if (selectedKeyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(selectedKeyPoint))
+          if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+        }
+      } catch (e) {
+        logError('practice.favoritePick', e)
       }
     }
 
@@ -763,63 +777,52 @@ export function PracticeSession() {
         from: new Date(`${w.since}T00:00:00`).getTime(),
         to: new Date(`${w.until}T23:59:59.999`).getTime(),
       }))
-      const inWindow = (subject: string | null | undefined, at: string | null | undefined) => {
+      const inWindow = (subject: string | null, at: string | null) => {
         if (!subject || !at) return false
         const t = new Date(at).getTime()
         return winBounds.some((w) => w.subject === subject && t >= w.from && t <= w.to)
       }
-      const [wrongRes, favRes] = await Promise.all([
-        supabase.from('user_answers')
-          .select('question_id, answered_at, questions!inner(subject, category, question_type, key_points)')
-          .eq('user_id', currentUser.id).eq('is_correct', false)
-          .order('answered_at', { ascending: false }).limit(500),
-        supabase.from('favorites')
-          .select('question_id, created_at, questions!inner(subject, category, question_type, key_points)')
-          .eq('user_id', currentUser.id)
-          .order('created_at', { ascending: false }).limit(500),
-      ])
-      if (fetchGenRef.current !== myGen) return
-      type ReviewRow = {
-        question_id: string
-        answered_at?: string | null
-        created_at?: string | null
-        questions: { subject?: string | null; category?: string | null; categories?: string[] | null; question_type?: string | null; key_points?: string | null } | null
-      }
-      const byId = new Map<string, ReviewRow>()
-      const wrongRows = (wrongRes.data ?? []) as unknown as ReviewRow[]
-      const favRows = (favRes.data ?? []) as unknown as ReviewRow[]
-      for (const r of wrongRows) {
-        if (r?.question_id && inWindow(r.questions?.subject, r.answered_at) && !byId.has(r.question_id)) byId.set(r.question_id, r)
-      }
-      for (const r of favRows) {
-        if (r?.question_id && inWindow(r.questions?.subject, r.created_at) && !byId.has(r.question_id)) byId.set(r.question_id, r)
+      const byId = new Map<string, { question_id: string; question: QuestionMeta }>()
+      try {
+        const [wrongRows, favRows] = await Promise.all([
+          fetchWrongAnswers(currentUser.id, 500),
+          fetchFavoritesWithQuestion(currentUser.id, 500),
+        ])
+        if (fetchGenRef.current !== myGen) return
+        for (const r of wrongRows) {
+          if (r.question && inWindow(r.question.subject, r.answered_at) && !byId.has(r.question_id)) byId.set(r.question_id, { question_id: r.question_id, question: r.question })
+        }
+        for (const r of favRows) {
+          if (r.question && inWindow(r.question.subject, r.created_at) && !byId.has(r.question_id)) byId.set(r.question_id, { question_id: r.question_id, question: r.question })
+        }
+      } catch (e) {
+        logError('practice.reviewPick', e)
       }
       if (byId.size > 0) {
         let filtered = [...byId.values()]
-        if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.questions?.subject ?? ''))
-        if (selectedCategory) filtered = filtered.filter((r) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
-        if (selectedType) filtered = filtered.filter((r) => r.questions?.question_type === selectedType)
-        if (selectedKeyPoint) filtered = filtered.filter((r) => (r.questions?.key_points ?? '').includes(selectedKeyPoint))
+        if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
+        if (selectedCategory) filtered = filtered.filter((r) => r.question.category === selectedCategory || r.question.categories.includes(selectedCategory))
+        if (selectedType) filtered = filtered.filter((r) => r.question.question_type === selectedType)
+        if (selectedKeyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(selectedKeyPoint))
         if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
       }
     }
 
     // Scope: wrong — pick from previously wrong-answered questions
     if (!pickedId && currentUser && (questionScope === 'wrong' || (questionScope === 'all' && questionMode === 'wrong'))) {
-      const { data: wrongRows } = await supabase.from('user_answers')
-        .select('question_id, questions!inner(subject, category, question_type, key_points)')
-        .eq('user_id', currentUser.id)
-        .eq('is_correct', false)
-        .order('answered_at', { ascending: false })
-        .limit(200)
-      if (fetchGenRef.current !== myGen) return
-      if (wrongRows?.length) {
-        let filtered = wrongRows
-        if (selectedSubjects.length > 0) filtered = filtered.filter((r: any) => selectedSubjects.includes(r.questions?.subject))
-        if (selectedCategory) filtered = filtered.filter((r: any) => r.questions?.category === selectedCategory || (r.questions?.categories as string[])?.includes(selectedCategory))
-        if (selectedType) filtered = filtered.filter((r: any) => r.questions?.question_type === selectedType)
-        if (selectedKeyPoint) filtered = filtered.filter((r: any) => (r.questions?.key_points || '').includes(selectedKeyPoint))
-        if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+      try {
+        const wrongRows = (await fetchWrongAnswers(currentUser.id, 200)).filter((r): r is AnswerWithQuestionMeta & { question: QuestionMeta } => r.question !== null)
+        if (fetchGenRef.current !== myGen) return
+        if (wrongRows.length) {
+          let filtered = wrongRows
+          if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
+          if (selectedCategory) filtered = filtered.filter((r) => r.question.category === selectedCategory || r.question.categories.includes(selectedCategory))
+          if (selectedType) filtered = filtered.filter((r) => r.question.question_type === selectedType)
+          if (selectedKeyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(selectedKeyPoint))
+          if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+        }
+      } catch (e) {
+        logError('practice.wrongPick', e)
       }
     }
 
@@ -829,8 +832,8 @@ export function PracticeSession() {
       const { data: rpcId, error: rpcErr } = await supabase.rpc('get_random_question_id', {
         p_user_id: currentUser.id,
         p_subjects: effectiveSubjects,
-        p_categories: selectedCategory ? [selectedCategory] : null,
-        p_question_type: selectedType || null,
+        p_categories: selectedCategory ? [selectedCategory] : undefined,
+        p_question_type: selectedType || undefined,
       })
       if (fetchGenRef.current !== myGen) return
 
@@ -858,29 +861,30 @@ export function PracticeSession() {
       return
     }
 
-    const [qRes, statsRes] = await Promise.all([
-      supabase.from('questions').select('*').eq('id', pickedId).single(),
-      currentUser
-        ? supabase.from('user_answers')
-            .select('is_correct, note, is_public')
-            .eq('user_id', currentUser.id)
-            .eq('question_id', pickedId)
-            .order('answered_at', { ascending: false })
-        : Promise.resolve(null),
-    ])
+    let loaded: [Question | null, QuestionAnswerStats | null] | null = null
+    try {
+      loaded = await Promise.all([
+        fetchQuestionById(pickedId),
+        currentUser ? fetchQuestionAnswerStats(currentUser.id, pickedId) : null,
+      ])
+    } catch (e) {
+      logError('practice.fetchRandomQuestion', e)
+    }
     if (fetchGenRef.current !== myGen) return
+    const q = loaded?.[0] ?? null
+    const stats = loaded?.[1] ?? null
 
     // RPC doesn't filter by key_points, check post-fetch and retry up to 5 times
     const kpRetry = kpRetryRef.current
-    if (selectedKeyPoint && !(qRes.data?.key_points || '').includes(selectedKeyPoint) && kpRetry < 5) {
+    if (selectedKeyPoint && !(q?.key_points ?? '').includes(selectedKeyPoint) && kpRetry < 5) {
       kpRetryRef.current = kpRetry + 1
       fetchRandomQuestion()
       return
     }
 
-    if (qRes.error || !qRes.data) {
+    if (!q) {
       if (fetchGenRef.current !== myGen) return
-      const localQ = await getPrefetchedQuestion(pickedId!)
+      const localQ = await getPrefetchedQuestion(pickedId)
       if (localQ) {
         setQuestion(localQ as Question)
         setIsLoading(false)
@@ -894,17 +898,11 @@ export function PracticeSession() {
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (fetchGenRef.current !== myGen) return
 
-    setQuestion(qRes.data as unknown as Question)
-
-    const statsData = statsRes?.data
-    const total = statsData?.length ?? 0
-    const wrong = statsData?.filter((a) => !a.is_correct).length ?? 0
-    setAttemptCount(total)
-    setWrongCount(wrong)
-    const latestNote = statsData?.find((a) => a.note)?.note ?? ''
-    const latestIsPublic = statsData?.find((a) => a.note)?.is_public ?? false
-    setNote(latestNote)
-    setIsPublic(latestIsPublic)
+    setQuestion(q)
+    setAttemptCount(stats?.attempts ?? 0)
+    setWrongCount(stats?.wrongs ?? 0)
+    setNote(stats?.note ?? '')
+    setIsPublic(stats?.is_public ?? false)
 
     setIsLoading(false)
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
@@ -918,20 +916,26 @@ export function PracticeSession() {
   const preloadNext = useCallback(async (nextIdx: number, ids: string[], myGen: number) => {
     if (nextIdx >= ids.length) return
     const currentUser = useAuthStore.getState().user
-    const [qRes, statsRes] = await Promise.all([
-      supabase.from('questions').select('*').eq('id', ids[nextIdx]).single(),
-      currentUser ? supabase.from('user_answers').select('is_correct, note, is_public').eq('user_id', currentUser.id).eq('question_id', ids[nextIdx]).order('answered_at', { ascending: false }) : Promise.resolve(null),
-    ])
+    let loaded: [Question | null, QuestionAnswerStats | null] | null = null
+    try {
+      loaded = await Promise.all([
+        fetchQuestionById(ids[nextIdx]),
+        currentUser ? fetchQuestionAnswerStats(currentUser.id, ids[nextIdx]) : null,
+      ])
+    } catch (e) {
+      logError('practice.preloadNext', e)
+    }
     if (seqFetchGenRef.current !== myGen) return
-    if (qRes.error || !qRes.data) return
-    const sd = statsRes?.data
+    const q = loaded?.[0] ?? null
+    const stats = loaded?.[1] ?? null
+    if (!q) return
     preloadRef.current = {
       index: nextIdx,
-      question: qRes.data as unknown as Question,
-      attempts: sd?.length ?? 0,
-      wrongs: sd?.filter((a: any) => !a.is_correct).length ?? 0,
-      note: sd?.find((a: any) => a.note)?.note ?? '',
-      isPublic: sd?.find((a: any) => a.note)?.is_public ?? false,
+      question: q,
+      attempts: stats?.attempts ?? 0,
+      wrongs: stats?.wrongs ?? 0,
+      note: stats?.note ?? '',
+      isPublic: stats?.is_public ?? false,
     }
   }, [])
 
@@ -999,14 +1003,17 @@ export function PracticeSession() {
 
     const cached = sessionStateRef.current.get(ids[index])
     if (cached) {
-      const [qRes] = await Promise.all([
-        supabase.from('questions').select('*').eq('id', ids[index]).single(),
-      ])
+      let q: Question | null = null
+      try {
+        q = await fetchQuestionById(ids[index])
+      } catch (e) {
+        logError('practice.loadSequentialQuestion', e)
+      }
       if (seqFetchGenRef.current !== myGen) return
-      if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
+      if (!q) { setNoQuestions(true); setIsLoading(false); return }
       if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
       if (seqFetchGenRef.current !== myGen) return
-      setQuestion(qRes.data as unknown as Question)
+      setQuestion(q)
       setSelectedAnswer(cached.answer)
       setIsSubmitted(true)
       setAnswerId(cached.answerId)
@@ -1023,17 +1030,24 @@ export function PracticeSession() {
     }
 
     const currentUser = useAuthStore.getState().user
-    const [qRes, statsRes] = await Promise.all([
-      supabase.from('questions').select('*').eq('id', ids[index]).single(),
-      currentUser ? supabase.from('user_answers').select('is_correct, note, is_public').eq('user_id', currentUser.id).eq('question_id', ids[index]).order('answered_at', { ascending: false }) : Promise.resolve(null),
-    ])
+    let loaded: [Question | null, QuestionAnswerStats | null] | null = null
+    try {
+      loaded = await Promise.all([
+        fetchQuestionById(ids[index]),
+        currentUser ? fetchQuestionAnswerStats(currentUser.id, ids[index]) : null,
+      ])
+    } catch (e) {
+      logError('practice.loadSequentialQuestion', e)
+    }
     if (seqFetchGenRef.current !== myGen) return
-    if (qRes.error || !qRes.data) { setNoQuestions(true); setIsLoading(false); return }
+    const q = loaded?.[0] ?? null
+    const stats = loaded?.[1] ?? null
+    if (!q) { setNoQuestions(true); setIsLoading(false); return }
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (seqFetchGenRef.current !== myGen) return
-    setQuestion(qRes.data as unknown as Question)
-    const sd = statsRes?.data; setAttemptCount(sd?.length ?? 0); setWrongCount(sd?.filter((a: any) => !a.is_correct).length ?? 0)
-    setNote(sd?.find((a: any) => a.note)?.note ?? ''); setIsPublic(sd?.find((a: any) => a.note)?.is_public ?? false)
+    setQuestion(q)
+    setAttemptCount(stats?.attempts ?? 0); setWrongCount(stats?.wrongs ?? 0)
+    setNote(stats?.note ?? ''); setIsPublic(stats?.is_public ?? false)
     setIsLoading(false)
     if (skeletonVisibleRef.current) await new Promise(r => setTimeout(r, 400))
     if (seqFetchGenRef.current !== myGen) return
@@ -1050,16 +1064,20 @@ export function PracticeSession() {
     loadSequentialQuestion(target)
   }, [currentSubject, seqIndex, loadSequentialQuestion])
 
-  const saveCurrentSession = useCallback(() => {
+  const saveCurrentSession = useCallback(async () => {
     const s = useSequentialStore.getState()
     if (!s.isActive || !s.sessionKey) return
     const u = useAuthStore.getState().user
     if (!u) return
     markPracticeSync()
-    supabase.from('practice_sequential_state').upsert({
-      user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
-      plan_subjects: s.planSubjects, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
-    }).then(() => {})
+    try {
+      await upsertSequentialState({
+        user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
+        plan_subjects: s.planSubjects, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions,
+      })
+    } catch (e) {
+      logError('practice.saveSequentialSession', e)
+    }
   }, [])
 
   const startNewSession = useCallback(async (kps: string[], subs: string[], ignoreAnswered: boolean) => {
@@ -1092,14 +1110,13 @@ export function PracticeSession() {
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
     } else {
       saveCurrentSession()
-      const { data: kpRows } = await supabase.from('kp_question_map').select('question_id').in('kp', kps)
-      const qids = (kpRows ?? []).map(r => r.question_id)
+      let qids: string[] = []
       let excludedCount = 0
-      if (qids.length > 0) {
-        // qids 可能有几百个, 一次性 .in() 会拼出超长 URL(见 chunk-ids.ts), 分批后把计数相加
-        const parts = await Promise.all(chunkIds(qids).map(c =>
-          supabase.from('user_excluded_questions').select('question_id', { count: 'exact', head: true }).eq('user_id', user.id).in('question_id', c)))
-        excludedCount = parts.reduce((sum, p) => sum + (p.count ?? 0), 0)
+      try {
+        qids = await fetchQuestionIdsByKeyPoints(kps)
+        excludedCount = await countExcludedQuestions(user.id, qids)
+      } catch (e) {
+        logError('practice.kpConfirm', e)
       }
       if (excludedCount > 0) setExcludedPrompt({ kps, subs, qids, count: excludedCount })
       else await proceedAfterExcluded(kps, subs)
@@ -1171,9 +1188,14 @@ export function PracticeSession() {
         } else {
           const urlSession = searchParamsRef.current.get('session')
           if (urlSession) {
-            const { data: sidRow } = await supabase.from('practice_sequential_state').select('session_key').eq('user_id', user.id).eq('short_id', urlSession).maybeSingle()
-            if (sidRow?.session_key) {
-              seqLoadFromDb(user.id, sidRow.session_key).then(r => {
+            let sessionKey: string | null = null
+            try {
+              sessionKey = await fetchSequentialSessionKeyByShortId(user.id, urlSession)
+            } catch (e) {
+              logError('practice.restoreSessionByShortId', e)
+            }
+            if (sessionKey) {
+              seqLoadFromDb(user.id, sessionKey).then(r => {
                 const s2 = useSequentialStore.getState()
                 if (r && s2.questionIds.length > 0) loadSequentialQuestion(s2.currentIndex)
                 else { setIsLoading(false); setSequentialDialogOpen(true) }
@@ -1228,11 +1250,13 @@ export function PracticeSession() {
     setSessionDistSnapshot(new Map())
     const subs = subjectsForKps(seqKps)
     const now = new Date().toISOString()
-    const { data: existing } = await supabase.from('profiles').select('subject_reset_at').eq('id', u.id).single()
-    const existingResets = (existing?.subject_reset_at ?? {}) as Record<string, string>
-    const merged = { ...existingResets }
-    for (const s of subs) merged[s] = now
-    await supabase.from('profiles').update({ subject_reset_at: merged }).eq('id', u.id)
+    const resetPatch: Record<string, string | null> = {}
+    for (const s of subs) resetPatch[s] = now
+    try {
+      await mergeSubjectResetAt(u.id, resetPatch)
+    } catch (e) {
+      logError('practice.resetSubjectProgress', e)
+    }
     await useAuthStore.getState().refreshProfile()
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
@@ -1260,7 +1284,7 @@ export function PracticeSession() {
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
 
-    if (questionMode === 'sequential') { markPracticeSync(); const s = useSequentialStore.getState(); supabase.from('practice_sequential_state').upsert({ user_id: useAuthStore.getState().user!.id, session_key: s.sessionKey, selected_kps: s.selectedKps, question_ids: s.questionIds, current_index: s.currentIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+    if (questionMode === 'sequential') void saveCurrentSession()
     answeredThisSession.current.add(question.id)
     setAnsweredSessionSnapshot(new Set(answeredThisSession.current))
     setJustAnsweredId(question.id)
@@ -1293,9 +1317,7 @@ export function PracticeSession() {
       const s = useSequentialStore.getState()
       if (s.currentIndex <= 0) return
       await loadSequentialQuestion(s.currentIndex - 1)
-      const s2 = useSequentialStore.getState()
-      const u = useAuthStore.getState().user
-      if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+      void saveCurrentSession()
     } else {
       const hist = historyRef.current
       if (hist.length === 0) return
@@ -1312,7 +1334,7 @@ export function PracticeSession() {
       setIsLoading(false)
       setQuestionReady(true)
     }
-  }, [questionMode, loadSequentialQuestion, setQuestion])
+  }, [questionMode, loadSequentialQuestion, setQuestion, saveCurrentSession])
 
   const hasPrev = useMemo(() => {
     if (questionMode === 'sequential') return seqIndex > 0
@@ -1332,21 +1354,17 @@ export function PracticeSession() {
         const firstUnanswered = s.questionIds.findIndex(id => !answeredThisSession.current.has(id))
         if (firstUnanswered >= 0) {
           await loadSequentialQuestion(firstUnanswered)
-          const s2 = useSequentialStore.getState()
-          const u = useAuthStore.getState().user
-          if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+          void saveCurrentSession()
           return
         }
         setNoQuestions(true); setIsLoading(false); return
       }
       await loadSequentialQuestion(nextIdx)
       // Save to DB after successful load
-      const s2 = useSequentialStore.getState()
-      const u = useAuthStore.getState().user
-      if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
+      void saveCurrentSession()
     }
     else fetchRandomQuestion()
-  }, [questionMode, isSubmitted, question, fetchRandomQuestion, loadSequentialQuestion])
+  }, [questionMode, isSubmitted, question, fetchRandomQuestion, loadSequentialQuestion, saveCurrentSession])
 
   const handleSkipToNextUnanswered = useCallback(async () => {
     if (questionMode !== 'sequential') return
@@ -1361,10 +1379,8 @@ export function PracticeSession() {
     }
     if (target < 0) { setNoQuestions(true); setIsLoading(false); return }
     await loadSequentialQuestion(target)
-    const s2 = useSequentialStore.getState()
-    const u = useAuthStore.getState().user
-    if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
-  }, [questionMode, loadSequentialQuestion])
+    void saveCurrentSession()
+  }, [questionMode, loadSequentialQuestion, saveCurrentSession])
 
   const handleSeekKp = useCallback(async (rel: number) => {
     const s = useSequentialStore.getState()
@@ -1375,10 +1391,8 @@ export function PracticeSession() {
     while (start > 0 && s.questionKps[start - 1] === kp) start--
     const target = Math.min(s.questionIds.length - 1, Math.max(0, start + rel))
     await loadSequentialQuestion(target)
-    const s2 = useSequentialStore.getState()
-    const u = useAuthStore.getState().user
-    if (u) { markPracticeSync(); supabase.from('practice_sequential_state').upsert({ user_id: u.id, session_key: s2.sessionKey, selected_kps: s2.selectedKps, question_ids: s2.questionIds, current_index: s2.currentIndex, subject_positions: s2.subjectPositions, updated_at: new Date().toISOString() }).then(() => {}) }
-  }, [loadSequentialQuestion])
+    void saveCurrentSession()
+  }, [loadSequentialQuestion, saveCurrentSession])
 
   // ---- 知识点解读 (KP explanations) ----
   const kpExpl = useKpExplanations()
@@ -1458,7 +1472,11 @@ export function PracticeSession() {
   const handleMarkTooEasy = useCallback(async () => {
     if (!question) return
     const u = useAuthStore.getState().user; if (!u) return
-    await supabase.from('user_excluded_questions').upsert({ user_id: u.id, question_id: question.id }, { onConflict: 'user_id, question_id' })
+    try {
+      await excludeQuestion(u.id, question.id)
+    } catch (e) {
+      logError('practice.excludeQuestion', e)
+    }
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
     if (questionMode === 'sequential') {
@@ -1475,15 +1493,11 @@ export function PracticeSession() {
         const newKps = s.questionKps.filter((_, i) => i !== idx)
         const newIndex = idx < s.currentIndex ? s.currentIndex - 1 : s.currentIndex
         useSequentialStore.setState({ questionIds: newIds, questionKps: newKps, currentIndex: newIndex })
-        markPracticeSync()
-        supabase.from('practice_sequential_state').upsert({
-          user_id: u.id, session_key: s.sessionKey, selected_kps: s.selectedKps,
-          question_ids: newIds, current_index: newIndex, subject_positions: s.subjectPositions, updated_at: new Date().toISOString(),
-        }).then(() => {})
+        void saveCurrentSession()
       }
       loadSequentialQuestion(useSequentialStore.getState().currentIndex)
     } else fetchRandomQuestion()
-  }, [question, questionMode, loadSequentialQuestion, fetchRandomQuestion, bumpRefresh])
+  }, [question, questionMode, loadSequentialQuestion, fetchRandomQuestion, bumpRefresh, saveCurrentSession])
 
   const handleMarkUnsure = useCallback(async () => {
     if (!question) return
@@ -1509,7 +1523,11 @@ export function PracticeSession() {
       issue_note: flag === 'none' ? null : (trimmed || null),
       flagged_at: flag === 'none' ? null : new Date().toISOString(),
     }
-    await supabase.from('questions').update(patch).eq('id', question.id)
+    try {
+      await updateQuestion(question.id, patch)
+    } catch (e) {
+      logError('practice.saveIssue', e)
+    }
     setQuestion({ ...question, ...patch })
   }, [question, setQuestion])
 
@@ -1703,7 +1721,11 @@ export function PracticeSession() {
                 const key = deleteSessionKey; if (!key) return
                 const u = useAuthStore.getState().user; if (!u) return
                 const isActive = key === useSequentialStore.getState().sessionKey
-                await supabase.from('practice_sequential_state').delete().eq('user_id', u.id).eq('session_key', key)
+                try {
+                  await deleteSequentialState(u.id, key)
+                } catch (e) {
+                  logError('practice.deleteSession', e)
+                }
                 if (isActive) { seqReset(); fetchRandomQuestion() }
                 seqLoadSessions(u.id)
                 setDeleteSessionKey(null)
@@ -2019,7 +2041,14 @@ export function PracticeSession() {
           onMarkUnsure={handleMarkUnsure}
           onFlagIssue={() => setFlagDialogOpen(true)}
           isAdmin={isAdmin}
-          onVerify={!question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined}
+          onVerify={!question.verified ? async () => {
+            try {
+              await updateQuestion(question.id, { verified: true })
+            } catch (e) {
+              logError('practice.verifyQuestion', e)
+            }
+            setQuestion({ ...question, verified: true })
+          } : undefined}
           allowLocalJudge
           practiceShortcuts={practiceShortcuts}
           availableKpEntries={availableKpEntries}
@@ -2147,7 +2176,14 @@ export function PracticeSession() {
             <>
               <div className="space-y-4">
                   <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} allowLocalJudge attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => { await supabase.from('questions').update({ verified: true }).eq('id', question.id); setQuestion({ ...question, verified: true }) } : undefined} />
+                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} allowLocalJudge attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => {
+                      try {
+                        await updateQuestion(question.id, { verified: true })
+                      } catch (e) {
+                        logError('practice.verifyQuestion', e)
+                      }
+                      setQuestion({ ...question, verified: true })
+                    } : undefined} />
                   </div>
                   {availableKpEntries.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">

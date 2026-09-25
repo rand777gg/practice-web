@@ -10,7 +10,8 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { BrandLogo } from './BrandLogo'
 import { EXAM_GOALS, examGoalLabel } from '@/lib/exam-goals'
-import { supabase } from '@/lib/supabase'
+import { logError } from '@/services/errors'
+import { updateProfile } from '@/services/profiles'
 import { useAuthStore } from '@/stores/auth-store'
 import { useT } from '@/i18n/use-t'
 
@@ -28,7 +29,12 @@ export function ExamGoalSwitcher() {
   const applyGoal = async (next: string) => {
     if (!user || !profile) return
     setProfile({ ...profile, goal_type: next })
-    await supabase.from('profiles').update({ goal_type: next }).eq('id', user.id)
+    try {
+      await updateProfile(user.id, { goal_type: next })
+    } catch (e) {
+      // 旧代码不看返回值: 写失败就靠下面这次刷新把乐观更新收回去
+      logError('ExamGoalSwitcher.applyGoal', e)
+    }
     await refreshProfile()
   }
 

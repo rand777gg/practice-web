@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
 import { naturalSort } from '@/lib/utils'
+import { logError } from '@/services/errors'
+import { countQuestionsByCategory, countQuestionsByKeyPoints, deleteQuestions, fetchQuestionMetaRows, updateQuestion, updateQuestions, updateQuestionsByCategory, updateQuestionsByKeyPoints } from '@/services/questions'
+import type { QuestionMetaRow } from '@/services/questions'
 import { useQuestions } from '@/hooks/use-questions'
 import { useQuestionFilters } from '@/hooks/use-question-filters'
 import { autoIndex } from '@/lib/rag'
-import type { QuestionType } from '@/types'
+import type { QuestionInput, QuestionType } from '@/types'
 import { QUESTION_TYPE_OPTIONS, IMPORT_MODE_OPTIONS, PAGE_SIZE_OPTIONS } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -101,29 +103,29 @@ export function Component() {
 
   // Load metadata grouped by subject (paginated, for submenu structure + counts)
   const loadMetaData = useCallback(async () => {
+    let rows: QuestionMetaRow[]
+    try {
+      // 整库扫一遍统计: fetchQuestionMetaRows 内部按 1000 行翻页, 不会被 PostgREST 单次上限截断
+      rows = await fetchQuestionMetaRows()
+    } catch (e) {
+      logError('QuestionsManagePage.loadMetaData', e)
+      return
+    }
     const kpMap = new Map<string, Set<string>>()
     const subCounts = new Map<string, number>()
     const catCounts = new Map<string, number>()
     const kpCounts = new Map<string, number>()
-    const PAGE = 1000; let from = 0
-    while (true) {
+    for (const q of rows) {
+      const s = q.subject || '未分类'
       // item_count 是库里按小题口径算好的生成列（卷面题型一条记录 = 20 空…）
-      const { data } = await supabase.from('questions').select('subject, key_points, category, categories, item_count').order('id').range(from, from + PAGE - 1)
-      if (!data || data.length === 0) break
-      for (const q of data) {
-        const s = q.subject || '未分类'
-        const items = Number((q as { item_count?: number }).item_count ?? 1)
-        subCounts.set(s, (subCounts.get(s) ?? 0) + items)
-        if (q.key_points) {
-          let kps = kpMap.get(s); if (!kps) { kps = new Set(); kpMap.set(s, kps) }
-          kps.add(q.key_points)
-          kpCounts.set(q.key_points, (kpCounts.get(q.key_points) ?? 0) + items)
-        }
-        const cats: string[] = (q.categories?.length ? q.categories : q.category ? [q.category] : []) as string[]
-        for (const c of cats) catCounts.set(c, (catCounts.get(c) ?? 0) + items)
+      const items = q.itemCount
+      subCounts.set(s, (subCounts.get(s) ?? 0) + items)
+      if (q.keyPoints) {
+        let kps = kpMap.get(s); if (!kps) { kps = new Set(); kpMap.set(s, kps) }
+        kps.add(q.keyPoints)
+        kpCounts.set(q.keyPoints, (kpCounts.get(q.keyPoints) ?? 0) + items)
       }
-      if (data.length < PAGE) break
-      from += PAGE
+      for (const c of q.categories) catCounts.set(c, (catCounts.get(c) ?? 0) + items)
     }
     const result = new Map<string, string[]>()
     for (const [s, kps] of kpMap) result.set(s, [...kps].sort(naturalSort))
@@ -215,7 +217,11 @@ export function Component() {
     setBulkDeleting(true)
     setDeleteConfirm(null)
     const ids = [...selectedIds]
-    await supabase.from('questions').delete().in('id', ids)
+    try {
+      await deleteQuestions(ids)
+    } catch (e) {
+      logError('QuestionsManagePage.handleBulkDelete', e)
+    }
     setSelectedIds(new Set())
     setBulkDeleting(false)
     refetch()
@@ -227,25 +233,33 @@ export function Component() {
   }
 
   const setIssueFlag = async (id: string, flag: 'none' | 'suspected' | 'confirmed') => {
-    await supabase.from('questions').update({
-      issue_flag: flag,
-      issue_note: flag === 'none' ? null : undefined,
-      flagged_at: flag === 'none' ? null : new Date().toISOString(),
-    }).eq('id', id)
+    try {
+      await updateQuestion(id, {
+        issue_flag: flag,
+        issue_note: flag === 'none' ? null : undefined,
+        flagged_at: flag === 'none' ? null : new Date().toISOString(),
+      })
+    } catch (e) {
+      logError('QuestionsManagePage.setIssueFlag', e)
+    }
     refetch()
   }
 
   const [kpConfirm, setKpConfirm] = useState<{ oldKp: string; newKp: string; selectedCount: number; totalCount: number } | null>(null)
   const [catConfirm, setCatConfirm] = useState<{ oldCat: string; newCat: string; selectedCount: number; totalCount: number } | null>(null)
 
-  const applyBulkUpdate = async (ids: string[], data: Record<string, unknown>) => {
+  const applyBulkUpdate = async (ids: string[], data: Partial<QuestionInput>) => {
     setBulkUpdating(true)
-    if (ids.length > 0) {
-      await supabase.from('questions').update(data).in('id', ids)
-    } else if (catConfirm) {
-      await supabase.from('questions').update({ category: data.category, categories: data.categories }).eq('category', catConfirm.oldCat)
-    } else {
-      await supabase.from('questions').update({ key_points: data.key_points }).eq('key_points', kpConfirm?.oldKp ?? '')
+    try {
+      if (ids.length > 0) {
+        await updateQuestions(ids, data)
+      } else if (catConfirm) {
+        await updateQuestionsByCategory(catConfirm.oldCat, { category: data.category, categories: data.categories })
+      } else {
+        await updateQuestionsByKeyPoints(kpConfirm?.oldKp ?? '', { key_points: data.key_points })
+      }
+    } catch (e) {
+      logError('QuestionsManagePage.applyBulkUpdate', e)
     }
     // 批量改的是 subject/category/key_points, 三者都在检索块的正文里 —— 不重索引就是拿旧值搜
     autoIndex('question')
@@ -257,7 +271,7 @@ export function Component() {
     if (kpConfirm?.oldKp && selectedKeyPoints === kpConfirm.oldKp) {
       setSelectedKeyPoints(kpConfirm.newKp)
     } else if (data.key_points && selectedKeyPoints) {
-      setSelectedKeyPoints(data.key_points as string)
+      setSelectedKeyPoints(data.key_points)
     }
     setKpConfirm(null)
     setCatConfirm(null)
@@ -268,18 +282,20 @@ export function Component() {
   const handleBulkUpdate = async () => {
     if (!bulkSubject && !bulkCategory && !bulkKeyPoints) return
     const ids = [...selectedIds]
-    const data: Record<string, unknown> = {}
+    const data: Partial<QuestionInput> = {}
     if (bulkSubject) data.subject = bulkSubject
     if (bulkCategory) { data.category = bulkCategory; data.categories = [bulkCategory] }
     if (bulkKeyPoints) data.key_points = bulkKeyPoints
 
     // If changing key points with active filter, check for unselected matching questions
     if (bulkKeyPoints && selectedKeyPoints && selectedKeyPoints !== bulkKeyPoints) {
-      const { count } = await supabase
-        .from('questions')
-        .select('id', { count: 'exact', head: true })
-        .eq('key_points', selectedKeyPoints)
-      const total = count ?? 0
+      let total = 0
+      try {
+        total = await countQuestionsByKeyPoints(selectedKeyPoints)
+      } catch (e) {
+        // 旧写法 count 取不到就当 0: 不弹确认, 直接改选中的
+        logError('QuestionsManagePage.countByKeyPoints', e)
+      }
       if (total > ids.length) {
         setKpConfirm({ oldKp: selectedKeyPoints, newKp: bulkKeyPoints, selectedCount: ids.length, totalCount: total })
         return
@@ -287,11 +303,12 @@ export function Component() {
     }
     // Same check for category
     if (bulkCategory && selectedCategory && selectedCategory !== bulkCategory) {
-      const { count } = await supabase
-        .from('questions')
-        .select('id', { count: 'exact', head: true })
-        .eq('category', selectedCategory)
-      const total = count ?? 0
+      let total = 0
+      try {
+        total = await countQuestionsByCategory(selectedCategory)
+      } catch (e) {
+        logError('QuestionsManagePage.countByCategory', e)
+      }
       if (total > ids.length) {
         setCatConfirm({ oldCat: selectedCategory, newCat: bulkCategory, selectedCount: ids.length, totalCount: total })
         return

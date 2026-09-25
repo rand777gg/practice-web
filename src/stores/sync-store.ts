@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import { getPendingCount, syncPendingAnswers } from '@/lib/offline-db'
-import { supabase } from '@/lib/supabase'
+import { insertAnswers } from '@/services/practice'
+import { registerUserScopedStore } from '@/stores/user-scope'
 
 interface SyncState {
   pendingCount: number
   syncing: boolean
   refresh: () => Promise<void>
   sync: () => Promise<void>
+  reset: () => void
 }
 
 export const useSyncStore = create<SyncState>((set, get) => ({
@@ -23,7 +25,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ syncing: true })
     try {
       const result = await syncPendingAnswers(async (answers) => {
-        const rows = answers.map((a) => ({
+        await insertAnswers(answers.map((a) => ({
           user_id: a.user_id,
           question_id: a.question_id,
           selected_answer: a.selected_answer,
@@ -32,9 +34,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           exam_session_id: a.exam_session_id ?? null,
           source: a.source ?? null,
           answered_at: a.answered_at,
-        }))
-        const { error } = await supabase.from('user_answers').insert(rows)
-        if (error) throw error
+        })))
         return answers.map((a) => a.id!).filter(Boolean)
       })
       set({ pendingCount: result.failed })
@@ -42,4 +42,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       set({ syncing: false })
     }
   },
+
+  // 待同步条数是上一个人的本地待办；换号后不能把它显示成新用户的，更不能顺手替他上传
+  reset: () => set({ pendingCount: 0, syncing: false }),
 }))
+
+registerUserScopedStore(() => useSyncStore.getState().reset())

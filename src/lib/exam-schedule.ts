@@ -1,6 +1,7 @@
-import { supabase } from '@/lib/supabase'
+import { fetchExamScheduleLastFireDate, hasRunningExamSession, markExamScheduleFired } from '@/services/exam'
+import { logError } from '@/services/errors'
 import { useExamStore } from '@/stores/exam-store'
-import type { ExamSchedule, ExamTemplate } from '@/types'
+import type { ExamSchedule } from '@/types'
 
 /** 0=周日 .. 6=周六 */
 export const SCHEDULE_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const
@@ -81,30 +82,6 @@ export function nextRun(s: ExamSchedule, now: Date = new Date()): Date | null {
   return null
 }
 
-/** DB 行 → ExamSchedule(兼容缺列/类型漂移) */
-export function rowToSchedule(row: Record<string, unknown>): ExamSchedule {
-  return {
-    id: String(row.id),
-    user_id: String(row.user_id ?? ''),
-    name: String(row.name ?? ''),
-    days_of_week: Array.isArray(row.days_of_week)
-      ? row.days_of_week.map((x) => Number(x)).filter((x) => Number.isInteger(x))
-      : [],
-    fire_time: Number(row.fire_time) || 0,
-    template: (row.template ?? {}) as ExamTemplate,
-    enabled: row.enabled !== false,
-    tz: typeof row.tz === 'string' && row.tz ? row.tz : 'Asia/Shanghai',
-    last_fire_date: row.last_fire_date == null ? null : String(row.last_fire_date),
-    last_notify_date: row.last_notify_date == null ? null : String(row.last_notify_date),
-    email_enabled: row.email_enabled === true,
-    email_time: row.email_time == null ? null : Number(row.email_time),
-    email_send_date: row.email_send_date == null ? null : String(row.email_send_date),
-    last_email_date: row.last_email_date == null ? null : String(row.last_email_date),
-    created_at: String(row.created_at ?? ''),
-    updated_at: String(row.updated_at ?? ''),
-  }
-}
-
 export interface StartScheduleResult {
   ok: boolean
   sessionId?: string
@@ -118,22 +95,23 @@ export interface StartScheduleResult {
  * 成功后把 last_fire_date 置为今天 —— 同一天不会重复开考, 也隐藏「今日待考」。
  */
 export async function startScheduledExam(userId: string, schedule: ExamSchedule): Promise<StartScheduleResult> {
-  const { data: running } = await supabase
-    .from('exam_sessions')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('status', 'in_progress')
-    .limit(1)
-  if (running && running.length > 0) return { ok: false, busy: true }
+  let busy = false
+  try {
+    busy = await hasRunningExamSession(userId)
+  } catch (e) {
+    logError('examSchedule.start.runningCheck', e)
+  }
+  if (busy) return { ok: false, busy: true }
 
   const today = todayKey()
   // 其它标签页/设备可能已处理过今天这一场
-  const { data: cur } = await supabase
-    .from('exam_schedules')
-    .select('last_fire_date')
-    .eq('id', schedule.id)
-    .single()
-  if (cur && String(cur.last_fire_date ?? '') === today) {
+  let lastFireDate: string | null = null
+  try {
+    lastFireDate = await fetchExamScheduleLastFireDate(schedule.id)
+  } catch (e) {
+    logError('examSchedule.start.fireCheck', e)
+  }
+  if (lastFireDate === today) {
     return { ok: false, error: 'already_done' }
   }
 
@@ -152,11 +130,11 @@ export async function startScheduledExam(userId: string, schedule: ExamSchedule)
   const session = useExamStore.getState().session
   if (!session) return { ok: false, error: 'compose_failed' }
 
-  await supabase
-    .from('exam_schedules')
-    .update({ last_fire_date: today })
-    .eq('id', schedule.id)
-    .eq('user_id', userId)
+  try {
+    await markExamScheduleFired(schedule.id, userId, today)
+  } catch (e) {
+    logError('examSchedule.start.markFired', e)
+  }
 
   return { ok: true, sessionId: session.id }
 }

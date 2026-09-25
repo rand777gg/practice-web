@@ -22,6 +22,25 @@ import {
   MINERU_PAGE_LIMIT, parsePageNumbers, planParts, rangeForSlice, selectedPageCount,
   type PageSlice,
 } from '@/lib/page-slices'
+import { logError, userMessage } from '@/services/errors'
+import {
+  countResourceBlocksBefore,
+  createResourceDocument as createResourceDocumentRow,
+  deleteResourceBlocks,
+  deleteResourceDocument as deleteResourceDocumentRow,
+  fetchResourceDocument,
+  listResourceBlockHeadings,
+  listResourceBlockIndexes,
+  listResourceBlocks,
+  listResourceDocuments as listResourceDocumentRows,
+  listResourceParts as listResourcePartRows,
+  replaceResourceBlocks as replaceResourceBlockRows,
+  replaceResourceParts as replaceResourcePartRows,
+  updateResourceDocument as updateResourceDocumentRow,
+  updateResourcePart as updateResourcePartRow,
+  type ResourceDocumentPatch,
+  type ResourcePartPatch,
+} from '@/services/resources'
 
 export const DOC_TYPES = ['教材', '论文', '标准', '真题', '报告', '其他'] as const
 
@@ -70,12 +89,6 @@ export interface DocumentMetaInput {
   language?: string
 }
 
-const LIST_COLUMNS = [
-  'id', 'title', 'authors', 'source', 'pub_year', 'doc_type', 'subject', 'tags', 'abstract',
-  'doi', 'language', 'pdf_url', 'pdf_key', 'pdf_total_pages', 'pdf_page_urls', 'parse_mode',
-  'parse_status', 'parse_error', 'is_published', 'toc_source', 'uploaded_by', 'created_at', 'updated_at',
-].join(', ')
-
 // ── R2 ──
 
 async function putToR2(
@@ -100,25 +113,22 @@ export async function deleteDocumentAssets(documentId: string): Promise<void> {
 // ── 读 ──
 
 export async function listResourceDocuments(): Promise<ResourceDocument[]> {
-  const { data, error } = await supabase
-    .from('resource_documents')
-    .select(LIST_COLUMNS)
-    .order('created_at', { ascending: false })
-  if (error) throw new Error(`加载文献列表失败: ${error.message}`)
-  return (data ?? []) as unknown as ResourceDocument[]
+  try {
+    return await listResourceDocumentRows()
+  } catch (e) {
+    logError('resource-library.listResourceDocuments', e)
+    throw new Error(`加载文献列表失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 export async function getResourceDocument(id: string): Promise<ResourceDocumentDetail | null> {
-  const { data, error } = await supabase
-    .from('resource_documents')
-    .select(`${LIST_COLUMNS}, markdown`)
-    .eq('id', id)
-    .maybeSingle()
-  if (error) throw new Error(`加载文献失败: ${error.message}`)
-  return (data ?? null) as unknown as ResourceDocumentDetail | null
+  try {
+    return await fetchResourceDocument(id)
+  } catch (e) {
+    logError('resource-library.getResourceDocument', e)
+    throw new Error(`加载文献失败: ${userMessage(e)}`, { cause: e })
+  }
 }
-
-const BLOCK_PAGE_SIZE = 1000
 
 export function loadResourceBlocks(documentId: string): Promise<ResourceBlock[]> {
   return loadDocumentBlocks(documentId)
@@ -129,21 +139,12 @@ export function loadResourceBlocks(documentId: string): Promise<ResourceBlock[]>
  * 编辑器"人工目录还不存在"时的初值, 以及阅读页/出题范围没人工目录时的回退都走它。
  */
 export async function loadAutoToc(documentId: string): Promise<TocEntry[]> {
-  const { data, error } = await supabase
-    .from('resource_blocks')
-    .select('block_index, page_no, heading_level, text')
-    .eq('document_id', documentId)
-    .gt('heading_level', 0)
-    .order('block_index', { ascending: true })
-    .limit(1000)
-  if (error) throw new Error(`加载目录失败: ${error.message}`)
-  return (data ?? []).map((r) => ({
-    key: r.block_index as number,
-    blockIndex: r.block_index as number,
-    level: r.heading_level as number,
-    title: r.text as string,
-    pageNo: r.page_no as number,
-  })).filter((e) => e.title.trim().length > 0)
+  try {
+    return await listResourceBlockHeadings(documentId)
+  } catch (e) {
+    logError('resource-library.loadAutoToc', e)
+    throw new Error(`加载目录失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /**
@@ -163,7 +164,7 @@ export async function loadDocumentToc(documentId: string): Promise<TocEntry[] | 
  * 一篇文献的章节目录(带页码区间), 给"限定章节出题"当选项。
  *
  * 只取标题行而不是整篇区块: 一本 295 页的书有近两千个区块, 为了一个下拉框把全文拉下来
- * 太浪费; 标题行通常只有几十条, 而且 PostgREST 的 1000 行上限对它没有威胁。
+ * 太浪费; 标题行按书算也就一千多条, 由服务层翻页取全。
  */
 export async function loadDocumentSections(documentId: string): Promise<TocSection[]> {
   const doc = await getResourceDocument(documentId)
@@ -183,38 +184,12 @@ export async function loadDocumentBlocks(
   documentId: string,
   range?: { from: number; to: number },
 ): Promise<ResourceBlock[]> {
-  const out: ResourceBlock[] = []
-  for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
-    let query = supabase
-      .from('resource_blocks')
-      .select('block_index, page_no, bbox, block_type, heading_level, text, image_url, table_html, code_language')
-      .eq('document_id', documentId)
-      .order('block_index', { ascending: true })
-    if (range) query = query.gte('page_no', range.from).lte('page_no', range.to)
-
-    const { data, error } = await query.range(offset, offset + BLOCK_PAGE_SIZE - 1)
-    if (error) throw new Error(`加载区块失败: ${error.message}`)
-    const rows = (data ?? []) as unknown as {
-      block_index: number; page_no: number; bbox: number[] | null
-      block_type: string; heading_level: number; text: string
-      image_url: string | null; table_html: string | null; code_language: string | null
-    }[]
-    for (const r of rows) {
-      out.push({
-        blockIndex: r.block_index,
-        pageNo: r.page_no,
-        bbox: r.bbox,
-        blockType: r.block_type,
-        headingLevel: r.heading_level,
-        text: r.text,
-        imageUrl: r.image_url,
-        tableHtml: r.table_html,
-        codeLanguage: r.code_language,
-      })
-    }
-    if (rows.length < BLOCK_PAGE_SIZE) break
+  try {
+    return await listResourceBlocks(documentId, range)
+  } catch (e) {
+    logError('resource-library.loadDocumentBlocks', e)
+    throw new Error(`加载区块失败: ${userMessage(e)}`, { cause: e })
   }
-  return out
 }
 
 // ── 目录编辑器要用的两个轻量查询 ──
@@ -225,20 +200,12 @@ export async function loadDocumentBlocks(
  * 为了拿一组序号去拉好几 MB 正文不值得。
  */
 export async function loadBlockIndexes(documentId: string): Promise<Set<number>> {
-  const out = new Set<number>()
-  for (let offset = 0; ; offset += BLOCK_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from('resource_blocks')
-      .select('block_index')
-      .eq('document_id', documentId)
-      .order('block_index', { ascending: true })
-      .range(offset, offset + BLOCK_PAGE_SIZE - 1)
-    if (error) throw new Error(`加载区块编号失败: ${error.message}`)
-    const rows = (data ?? []) as unknown as { block_index: number }[]
-    for (const r of rows) out.add(r.block_index)
-    if (rows.length < BLOCK_PAGE_SIZE) break
+  try {
+    return new Set(await listResourceBlockIndexes(documentId))
+  } catch (e) {
+    logError('resource-library.loadBlockIndexes', e)
+    throw new Error(`加载区块编号失败: ${userMessage(e)}`, { cause: e })
   }
-  return out
 }
 
 export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {
@@ -254,67 +221,52 @@ export function pageUrlsOf(doc: ResourceDocument): PageUrl[] {
 // ── 写 ──
 
 export async function createResourceDocument(input: DocumentMetaInput): Promise<string> {
-  const { data, error } = await supabase
-    .from('resource_documents')
-    .insert({
-      title: input.title.trim(),
-      authors: input.authors?.trim() ?? '',
-      source: input.source?.trim() ?? '',
-      pub_year: input.pub_year ?? null,
-      doc_type: input.doc_type ?? '论文',
-      subject: input.subject?.trim() ?? '',
-      tags: input.tags ?? [],
-      abstract: input.abstract?.trim() ?? '',
-      doi: input.doi?.trim() ?? '',
-      language: input.language ?? 'ch',
-      parse_status: 'pending',
-    })
-    .select('id')
-    .single()
-  if (error) throw new Error(`创建文献失败: ${error.message}`)
-  return (data as { id: string }).id
+  try {
+    return await createResourceDocumentRow(input)
+  } catch (e) {
+    logError('resource-library.createResourceDocument', e)
+    throw new Error(`创建文献失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 export async function updateResourceDocument(
   id: string,
-  patch: Partial<Record<string, unknown>>,
+  patch: ResourceDocumentPatch,
 ): Promise<void> {
-  const { error } = await supabase
-    .from('resource_documents')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw new Error(`更新文献失败: ${error.message}`)
+  try {
+    await updateResourceDocumentRow(id, patch)
+  } catch (e) {
+    logError('resource-library.updateResourceDocument', e)
+    throw new Error(`更新文献失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 export async function deleteResourceDocument(id: string): Promise<void> {
-  const { error } = await supabase.from('resource_documents').delete().eq('id', id)
-  if (error) throw new Error(`删除文献失败: ${error.message}`)
+  try {
+    await deleteResourceDocumentRow(id)
+  } catch (e) {
+    logError('resource-library.deleteResourceDocument', e)
+    throw new Error(`删除文献失败: ${userMessage(e)}`, { cause: e })
+  }
   await deleteDocumentAssets(id)
 }
 
 export async function replaceResourceBlocks(id: string, blocks: ResourceBlock[], baseIndex = 0): Promise<void> {
-  const CHUNK = 400
-  for (let i = 0; i < blocks.length; i += CHUNK) {
-    const rows = blocks.slice(i, i + CHUNK).map((b) => ({
-      document_id: id,
-      block_index: baseIndex + b.blockIndex,
-      page_no: b.pageNo,
-      bbox: b.bbox,
-      block_type: b.blockType,
-      heading_level: b.headingLevel,
-      text: b.text,
-      image_url: b.imageUrl ?? null,
-      table_html: b.tableHtml ?? null,
-      code_language: b.codeLanguage ?? null,
-    }))
-    const { error } = await supabase.from('resource_blocks').insert(rows)
-    if (error) throw new Error(`区块写入失败(第 ${i} 条起): ${error.message}`)
+  try {
+    await replaceResourceBlockRows(id, blocks, baseIndex)
+  } catch (e) {
+    logError('resource-library.replaceResourceBlocks', e)
+    throw new Error(`区块写入失败: ${userMessage(e)}`, { cause: e })
   }
 }
 
 export async function clearResourceBlocks(id: string): Promise<void> {
-  const { error } = await supabase.from('resource_blocks').delete().eq('document_id', id)
-  if (error) throw new Error(`清理旧区块失败: ${error.message}`)
+  try {
+    await deleteResourceBlocks(id)
+  } catch (e) {
+    logError('resource-library.clearResourceBlocks', e)
+    throw new Error(`清理旧区块失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 /**
@@ -323,13 +275,12 @@ export async function clearResourceBlocks(id: string): Promise<void> {
  * 累加变量对跳过的卷不前进, 下一卷就会从 0 开始编号, 撞上 (document_id, block_index) 唯一索引。
  */
 async function countBlocksBefore(documentId: string, pageFrom: number): Promise<number> {
-  const { count, error } = await supabase
-    .from('resource_blocks')
-    .select('id', { count: 'exact', head: true })
-    .eq('document_id', documentId)
-    .lt('page_no', pageFrom)
-  if (error) throw new Error(`统计已有区块失败: ${error.message}`)
-  return count ?? 0
+  try {
+    return await countResourceBlocksBefore(documentId, pageFrom)
+  } catch (e) {
+    logError('resource-library.countBlocksBefore', e)
+    throw new Error(`统计已有区块失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 // ── 分卷 ──
@@ -349,18 +300,14 @@ export interface ResourcePart {
   updated_at: string
 }
 
-const PART_COLUMNS = [
-  'id', 'document_id', 'part_index', 'page_from', 'page_to', 'page_urls',
-  'markdown', 'parse_mode', 'parse_status', 'parse_error', 'created_at', 'updated_at',
-].join(', ')
-
 /** 不传 documentId 就是全部(管理页要一次拿到所有分卷状态) */
 export async function listResourceParts(documentId?: string): Promise<ResourcePart[]> {
-  let query = supabase.from('resource_parts').select(PART_COLUMNS).order('part_index', { ascending: true })
-  if (documentId) query = query.eq('document_id', documentId)
-  const { data, error } = await query
-  if (error) throw new Error(`加载分卷失败: ${error.message}`)
-  return (data ?? []) as unknown as ResourcePart[]
+  try {
+    return await listResourcePartRows(documentId)
+  } catch (e) {
+    logError('resource-library.listResourceParts', e)
+    throw new Error(`加载分卷失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 export function partPageUrls(part: ResourcePart): PageUrl[] {
@@ -384,29 +331,27 @@ export function documentMarkdownFromParts(parts: ResourcePart[], fallback = ''):
 }
 
 async function replaceParts(documentId: string, slices: PageSlice[], mode: ParseMode): Promise<ResourcePart[]> {
-  const { error: delErr } = await supabase.from('resource_parts').delete().eq('document_id', documentId)
-  if (delErr) throw new Error(`清理旧分卷失败: ${delErr.message}`)
-  if (slices.length === 0) return []
-
-  const rows = slices.map((s, i) => ({
-    document_id: documentId,
-    part_index: i,
-    page_from: s.from,
-    page_to: s.to,
-    parse_mode: mode,
-    parse_status: 'pending',
-  }))
-  const { data, error } = await supabase.from('resource_parts').insert(rows).select(PART_COLUMNS)
-  if (error) throw new Error(`建立分卷失败: ${error.message}`)
-  return (data ?? []) as unknown as ResourcePart[]
+  try {
+    return await replaceResourcePartRows(documentId, slices.map((s, i) => ({
+      part_index: i,
+      page_from: s.from,
+      page_to: s.to,
+      parse_mode: mode,
+      parse_status: 'pending',
+    })))
+  } catch (e) {
+    logError('resource-library.replaceParts', e)
+    throw new Error(`建立分卷失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
-async function patchPart(partId: string, patch: Partial<Record<string, unknown>>): Promise<void> {
-  const { error } = await supabase
-    .from('resource_parts')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', partId)
-  if (error) throw new Error(`更新分卷失败: ${error.message}`)
+async function patchPart(partId: string, patch: ResourcePartPatch): Promise<void> {
+  try {
+    await updateResourcePartRow(partId, patch)
+  } catch (e) {
+    logError('resource-library.patchPart', e)
+    throw new Error(`更新分卷失败: ${userMessage(e)}`, { cause: e })
+  }
 }
 
 // ── 解析流水线 ──

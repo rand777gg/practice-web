@@ -11,7 +11,8 @@ import { WhitespaceBlock } from '@/components/practice/WhitespaceBlock'
 import { QuestionTags } from '@/components/questions/QuestionTags'
 import { Icon } from '@/lib/icons'
 import { useCodeSubmission } from '@/hooks/use-code-submission'
-import { supabase } from '@/lib/supabase'
+import { fetchQuestionSubmissions, type SubmissionRecord } from '@/services/practice'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { isJudge0Reachable, JUDGE0_DEFAULT_URL, probePlatformJudge } from '@/lib/judge0'
 import { Play, Loader2, TriangleAlert, Terminal, BookOpen, History, RotateCcw, Plus } from 'lucide-react'
@@ -26,14 +27,6 @@ const LANGUAGES = [
 ]
 
 type Tab = 'desc' | 'solution' | 'records'
-
-interface Record {
-  id: string
-  status: string
-  language: string
-  execution_time_ms: number | null
-  created_at: string
-}
 
 interface Props {
   question: Question
@@ -60,7 +53,7 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
   const [platformChecking, setPlatformChecking] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [cursor, setCursor] = useState({ line: 1, col: 1 })
-  const [records, setRecords] = useState<Record[] | null>(null)
+  const [records, setRecords] = useState<SubmissionRecord[] | null>(null)
   const [customInput, setCustomInput] = useState('')
   const [customExpected, setCustomExpected] = useState('')
   const [leftPct, setLeftPct] = useState(46)
@@ -93,15 +86,8 @@ export function CodingIdeView({ question, onSaveResult, attemptCount, wrongCount
   const loadRecords = useCallback(async () => {
     if (!user) return
     try {
-      const { data } = await supabase
-        .from('submissions')
-        .select('id,status,language,execution_time_ms,created_at')
-        .eq('user_id', user.id)
-        .eq('question_id', question.id)
-        .order('created_at', { ascending: false })
-        .limit(10)
-      setRecords((data ?? []) as Record[])
-    } catch { /* noop */ }
+      setRecords(await fetchQuestionSubmissions(user.id, question.id, 10))
+    } catch (e) { logError('CodingIdeView.loadRecords', e) }
   }, [user, question.id])
 
   // 判题通道切换:选中平台通道时探一次平台判题链路(经服务端代理,浏览器不直连 Judge0)

@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchMyNotes, fetchPublicNotes, updateAnswer, type AnswerWithQuestion } from '@/services/practice'
+import { fetchQuestionCategories, fetchQuestionMetaRows } from '@/services/questions'
+import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -26,14 +29,14 @@ import {
 import { cn } from '@/lib/utils'
 import { isAnswerCorrect } from '@/lib/answer-utils'
 import { OPTION_LABELS } from '@/lib/constants'
-import type { UserAnswer, Question, QuestionType, CorrectAnswer } from '@/types'
+import type { Question, QuestionType, CorrectAnswer } from '@/types'
 import { QUESTION_TYPE_OPTIONS } from '@/lib/constants'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { AvatarOwner } from '@/lib/avatar'
 import { useT } from '@/i18n/use-t'
 import { autoIndex } from '@/lib/rag'
 
-type NoteWithQuestion = UserAnswer & { questions: Question }
+type NoteWithQuestion = AnswerWithQuestion
 
 // ── NoteCard (defined outside to prevent remounting) ──────────────────
 interface NoteCardProps {
@@ -123,25 +126,25 @@ function NoteCard({
   )}>
    {/* ── Left: Question info ─────────────────────────────────── */}
    <div className="p-4 space-y-2 min-w-0">
-    {note.questions?.subject && (
+    {note.question?.subject && (
      <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-      {note.questions.subject}
+      {note.question.subject}
      </span>
     )}
-    {(note.questions?.categories?.length ? note.questions.categories : note.questions?.category ? [note.questions.category] : []).map((cat: string) => (
+    {(note.question?.categories?.length ? note.question.categories : note.question?.category ? [note.question.category] : []).map((cat: string) => (
      <span key={cat} className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground ml-1.5">
       {cat}
      </span>
     ))}
 
     <div className="text-sm font-medium leading-relaxed">
-     {note.questions?.question_text
-      ? <MarkdownRenderer content={note.questions.question_text} className="[&_p]:my-0" />
+     {note.question?.question_text
+      ? <MarkdownRenderer content={note.question.question_text} className="[&_p]:my-0" />
       : t('notes.untitled')}
     </div>
 
-    {note.questions && (
-     <AnswerInfo q={note.questions} selected={note.selected_answer} />
+    {note.question && (
+     <AnswerInfo q={note.question} selected={note.selected_answer} />
     )}
 
     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -252,13 +255,17 @@ export function Component() {
 
  useEffect(() => {
   async function loadFilters() {
-   const { data } = await supabase.from('questions').select('subject, category, categories')
+   // 筛选选项要的是全库口径: 老代码那次 select 会被 PostgREST 的 1000 行上限静默截断
+   const rows = await fetchQuestionMetaRows().catch((e: unknown) => {
+    logError('notes.loadFilters', e)
+    return []
+   })
    const subs = new Set<string>()
    const cats = new Set<string>()
-   for (const row of data ?? []) {
+   for (const row of rows) {
     if (row.subject) subs.add(row.subject)
     if (row.category) cats.add(row.category)
-    if (row.categories) for (const c of row.categories as string[]) { if (c) cats.add(c) }
+    for (const c of row.categories) { if (c) cats.add(c) }
    }
    setSubjects([...subs].sort())
    setCategories([...cats].sort())
@@ -272,14 +279,12 @@ export function Component() {
   let cancelled = false
   if (!pubSubject) { setPubFilteredCategories(categories); return }
   const load = async () => {
-   const { data } = await supabase.from('questions').select('category, categories').eq('subject', pubSubject)
+   const cats = await fetchQuestionCategories([pubSubject]).catch((e: unknown) => {
+    logError('notes.loadPubCategories', e)
+    return []
+   })
    if (cancelled) return
-   const cats = new Set<string>()
-   for (const row of data ?? []) {
-    if (row.category) cats.add(row.category)
-    if (row.categories) for (const c of row.categories as string[]) { if (c) cats.add(c) }
-   }
-   setPubFilteredCategories([...cats].sort())
+   setPubFilteredCategories(cats)
   }
   setPubCategory('')
   load()
@@ -290,14 +295,12 @@ export function Component() {
   let cancelled = false
   if (!mySubject) { setMyFilteredCategories(categories); return }
   const load = async () => {
-   const { data } = await supabase.from('questions').select('category, categories').eq('subject', mySubject)
+   const cats = await fetchQuestionCategories([mySubject]).catch((e: unknown) => {
+    logError('notes.loadMyCategories', e)
+    return []
+   })
    if (cancelled) return
-   const cats = new Set<string>()
-   for (const row of data ?? []) {
-    if (row.category) cats.add(row.category)
-    if (row.categories) for (const c of row.categories as string[]) { if (c) cats.add(c) }
-   }
-   setMyFilteredCategories([...cats].sort())
+   setMyFilteredCategories(cats)
   }
   setMyCategory('')
   load()
@@ -306,37 +309,38 @@ export function Component() {
 
  // ── My Notes ─────────────────
  const myGenRef = useRef(0)
- const fetchMyNotes = useCallback(async () => {
+ const loadMyNotes = useCallback(async () => {
   if (!user) return
   myGenRef.current++
   const gen = myGenRef.current
   setMyNotesLoading(true)
-  const { data } = await supabase.from('user_answers')
-   .select('*, questions(*)').eq('user_id', user.id).not('note', 'is', null)
-   .order('answered_at', { ascending: false }).limit(100)
+  const notes = await fetchMyNotes(user.id, 100).catch((e: unknown) => {
+   logError('notes.myNotes', e)
+   return []
+  })
   if (myGenRef.current !== gen) return
-  setMyNotes((data ?? []) as NoteWithQuestion[])
+  setMyNotes(notes)
   setMyNotesLoading(false)
  }, [user?.id])
 
- useEffect(() => { if (activeTab === 'my') fetchMyNotes() }, [activeTab, fetchMyNotes])
+ useEffect(() => { if (activeTab === 'my') loadMyNotes() }, [activeTab, loadMyNotes])
 
  const handleTogglePublic = async (note: NoteWithQuestion) => {
   const next = !note.is_public
-  await supabase.from('user_answers').update({ is_public: next }).eq('id', note.id)
+  await updateAnswer(note.id, { is_public: next }).catch((e: unknown) => logError('notes.togglePublic', e))
   // 这条笔记是普通用户自己写的, 索引不能等管理员点全量重建 —— 单条增量同步走服务端的公开性过滤
   autoIndex('note', note.id)
   setMyNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, is_public: next } : n)))
  }
  const handleStartEdit = (note: NoteWithQuestion) => { setEditingNoteId(note.id); setEditText(note.note ?? '') }
  const handleSaveEdit = async (noteId: string) => {
-  await supabase.from('user_answers').update({ note: editText || null }).eq('id', noteId)
+  await updateAnswer(noteId, { note: editText || null }).catch((e: unknown) => logError('notes.saveNote', e))
   autoIndex('note', noteId)
   setMyNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, note: editText || null } : n)))
   setEditingNoteId(null)
  }
  const handleDelete = async (noteId: string) => {
-  await supabase.from('user_answers').update({ note: null, is_public: false }).eq('id', noteId)
+  await updateAnswer(noteId, { note: null, is_public: false }).catch((e: unknown) => logError('notes.deleteNote', e))
   // 取消公开后服务端取不到这条, 差集为空集 → 旧块被当孤儿删除
   autoIndex('note', noteId)
   setMyNotes((prev) => prev.filter((n) => n.id !== noteId))
@@ -345,16 +349,16 @@ export function Component() {
 
  // ── Public Notes ─────────────
  const pubGenRef = useRef(0)
- const fetchPublicNotes = useCallback(async () => {
+ const loadPublicNotes = useCallback(async () => {
   pubGenRef.current++
   const gen = pubGenRef.current
   setPublicNotesLoading(true)
-  let q = supabase.from('user_answers').select('*, questions(*)').eq('is_public', true)
-   .order('answered_at', { ascending: false }).limit(50)
-  const { data } = await q
+  const result = await fetchPublicNotes(50).catch((e: unknown) => {
+   logError('notes.publicNotes', e)
+   return []
+  })
   if (pubGenRef.current !== gen) return
-  const result = (data ?? []) as NoteWithQuestion[]
-  const filtered = pubSubject ? result.filter((n) => n.questions?.subject === pubSubject) : result
+  const filtered = pubSubject ? result.filter((n) => n.question?.subject === pubSubject) : result
   const userIds = [...new Set(result.map((n) => n.user_id))]
   const nicknames: Record<string, string> = {}
   const avatars: Record<string, AvatarOwner> = {}
@@ -373,7 +377,7 @@ export function Component() {
   setPublicNotesLoading(false)
  }, [pubSubject])
 
- useEffect(() => { if (activeTab === 'public') fetchPublicNotes() }, [activeTab, fetchPublicNotes])
+ useEffect(() => { if (activeTab === 'public') loadPublicNotes() }, [activeTab, loadPublicNotes])
 
  const handleTabChange = (v: string) => { if (v !== activeTab) setActiveTab(v) }
 
@@ -412,7 +416,7 @@ export function Component() {
       <div className="text-center py-12"><Globe className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" /><p className="text-muted-foreground">{t('notes.noNotes')}</p></div>
      ) : (
       <div className="space-y-3">
-       {publicNotes.filter((n) => !pubCategory || n.questions?.category === pubCategory || (n.questions?.categories as string[])?.includes(pubCategory))
+       {publicNotes.filter((n) => !pubCategory || n.question?.category === pubCategory || n.question?.categories?.includes(pubCategory))
         .map((note) => <NoteCard key={note.id} note={note} showAuthor style="public" editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames} userAvatars={userAvatars}
        onEditText={setEditText} onStartEdit={handleStartEdit} onCancelEdit={() => { setEditingNoteId(null); setEditText('') }}
        onSaveEdit={handleSaveEdit} onTogglePublic={handleTogglePublic} onDeleteRequest={setDeleteNoteId} />)}
@@ -460,9 +464,9 @@ export function Component() {
        ) : (
         <div className="space-y-3">
          {myNotes.filter((n) => myVisibility === 'all' || (myVisibility === 'public' ? n.is_public : !n.is_public))
-          .filter((n) => !mySubject || n.questions?.subject === mySubject)
-          .filter((n) => !myCategory || n.questions?.category === myCategory || (n.questions?.categories as string[])?.includes(myCategory))
-          .filter((n) => !myType || n.questions?.question_type === myType)
+          .filter((n) => !mySubject || n.question?.subject === mySubject)
+          .filter((n) => !myCategory || n.question?.category === myCategory || n.question?.categories?.includes(myCategory))
+          .filter((n) => !myType || n.question?.question_type === myType)
           .map((note) => <NoteCard key={note.id} note={note} style="my" editingNoteId={editingNoteId} editText={editText} userNicknames={userNicknames} userAvatars={userAvatars}
        onEditText={setEditText} onStartEdit={handleStartEdit} onCancelEdit={() => { setEditingNoteId(null); setEditText('') }}
        onSaveEdit={handleSaveEdit} onTogglePublic={handleTogglePublic} onDeleteRequest={setDeleteNoteId} />)}
