@@ -7673,3 +7673,48 @@ COMMENT ON COLUMN public.net_probe_samples.direct_ok IS '生产入口是否请�
 COMMENT ON COLUMN public.net_probe_samples.cdn_ok    IS '对照组是否请求成功；未配置对照组时为 false';
 COMMENT ON COLUMN public.net_probe_samples.colo      IS '对照组的 Cloudflare 边缘机房；未配置对照组或对照组非 CF 代理时为 null';
 COMMENT ON COLUMN public.net_probe_samples.client_rtt_ms IS '浏览器 Network Information API 报的网络 RTT，精度粗糙仅供分档';
+
+-- ============================================================================
+-- Section 98: 补回 on_auth_user_created —— 新用户没有 profile 会让 Passkey 卡死在 /guide
+-- ----------------------------------------------------------------------------
+-- 症状（2026-09-25 线上实测，自建香港栈）：
+--     POST /functions/v1/manage-passkey {action:"register-begin"}
+--   -> 200，且正常带回 challenge；但 auth_challenges 里【没有】对应行，
+--      于是紧接着的 register-complete 里那句「取最近一条未过期挑战」查不到东西，
+--      返回 400 {"error":"no valid challenge found, try again"}，前端把它原样显示在引导页。
+--
+-- 根因不在 passkey 代码，而在 auth.users 上少了 on_auth_user_created（本文件 Section 13 建的那条）：
+--   · 香港自建栈是按「生产 schema 克隆」搭起来的，而当时对账的五个维度是
+--     列 / 索引 / 约束 / 函数 / 表权限 —— 触发器不在其中，整条链就这么漏过去了；
+--   · 于是新用户只写进 auth.users，没有 profiles 行（实测 3 个用户缺 profile，含 2 个真实用户）；
+--   · 而 auth_challenges.user_id REFERENCES profiles(id)，插入直接 23503 外键失败；
+--   · manage-passkey 的 register-begin 当时没有检查 insert 的返回值（本次一并修掉），
+--     所以这个失败被静默吞掉，前端只看到一句误导性的 400。
+--
+-- 影响面不限于 passkey：任何以 profiles 为外键的写入（user_answers / favorites /
+-- exam_sessions / user_preferences …）对新用户都会失败 —— 引导页只是最先撞上的那一步。
+--
+-- 复现与验证都用同一对查询：
+--   select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
+--     join pg_namespace n on n.oid=c.relnamespace
+--    where n.nspname='auth' and c.relname='users' and not t.tgisinternal;   -- 修复前 0，修复后 1
+--   select count(*) from auth.users u left join public.profiles p on p.id=u.id where p.id is null;
+--
+-- 本节两件事，都幂等：① 补回触发器；② 回填历史缺失的 profile。
+-- 函数 handle_new_user 已由 Section 70.3 定义（本文件重放时一定在前面），这里只建触发器；
+-- 函数真的缺失时应该报错中断 —— 那正是需要被看见的环境问题。
+-- ============================================================================
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 回填只补缺失的行，已存在的一律不动（不覆盖 role / onboarded_at 等已有状态）。
+-- 回填一律给普通用户：「首位用户自动成为管理员」是注册那一刻的判定，不属于回填语义。
+-- ON CONFLICT 兜住并发注册（触发器与本节同时生效时不会撞主键）。
+INSERT INTO public.profiles (id, role)
+SELECT u.id, 'user'
+FROM auth.users u
+LEFT JOIN public.profiles p ON p.id = u.id
+WHERE p.id IS NULL
+ON CONFLICT (id) DO NOTHING;

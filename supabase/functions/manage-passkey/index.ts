@@ -171,11 +171,21 @@ serve(async (req: Request) => {
         excludeCredentials,
       })
 
-      // Store challenge for later verification
+      // Store challenge for later verification.
+      // 这个 insert 失败必须当场说出来: 挑战没落库时 register-complete 只会回
+      // "no valid challenge found, try again", 把服务端问题伪装成"用户重试一次就好"
+      // (线上真实踩过: auth_challenges.user_id 的外键指向 profiles, 而触发器缺失时
+      //  新用户没有 profile 行 → 23503 → 前端在 /guide 看到那句 400)。
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
-      await supabaseAdmin
+      const { error: challengeError } = await supabaseAdmin
         .from("auth_challenges")
         .insert({ user_id: userId, challenge: options.challenge, type: "registration", expires_at: expiresAt })
+      if (challengeError) {
+        return new Response(JSON.stringify({ error: `challenge not stored: ${challengeError.message}` }), {
+          status: 500,
+          headers: corsHeaders,
+        })
+      }
 
       return new Response(JSON.stringify(serializeForClient(options)), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -305,11 +315,17 @@ serve(async (req: Request) => {
         userVerification: "preferred",
       })
 
-      // Store challenge
+      // Store challenge (same failure contract as register-begin above)
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
-      await supabaseAdmin
+      const { error: challengeError } = await supabaseAdmin
         .from("auth_challenges")
         .insert({ user_id: userId, challenge: options.challenge, type: "authentication", expires_at: expiresAt })
+      if (challengeError) {
+        return new Response(JSON.stringify({ error: `challenge not stored: ${challengeError.message}` }), {
+          status: 500,
+          headers: corsHeaders,
+        })
+      }
 
       return new Response(JSON.stringify(serializeForClient(options)), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
