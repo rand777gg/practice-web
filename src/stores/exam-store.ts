@@ -9,20 +9,16 @@ import {
   isAnswerCorrect,
   questionCorrectItemCount,
   questionItemCount,
-  sessionItemCount,
 } from '@/lib/answer-utils'
+import {
+  examSessionReducer,
+  initialExamSessionState,
+  type ExamAction,
+  type ExamSessionState,
+} from '@/lib/exam-session'
 import { composeExamIds, fetchQuestionsByIds } from '@/lib/exam-compose'
 import { MULTI_ITEM_QUESTION_TYPES } from '@/lib/constants'
 import type { ExamSession, Question, CorrectAnswer, ExamTemplate, ExamSampleMode, ExamComposeStat } from '@/types'
-
-/**
- * 考试游标的上界：**按小题（卡片）算**。
- * 卷面题型一条记录含多个小题（完形整篇 20 空 = 20 张卡），按记录数会把游标卡死在第 9 张卡；
- * 普通题一个记录一张卡，跟记录数一致。
- */
-function cardCount(questions: Question[]): number {
-  return sessionItemCount(questions)
-}
 
 export interface StartExamParams {
   userId: string
@@ -45,14 +41,16 @@ export interface StartExamResult {
   stats?: ExamComposeStat[]
 }
 
-interface ExamState {
-  session: ExamSession | null
-  questions: Question[]
-  currentIndex: number
-  answers: Map<string, CorrectAnswer>
+/**
+ * 状态本身在 `lib/exam-session.ts` 的 reducer 里（阶段、会话、题目、游标、答案、错误）。
+ * 这里只做两件事：把 action 喂给 reducer，以及**在一个地方**把阶段翻译成消费者仍在用的两个布尔。
+ * 布尔不再各自 set，所以不可能和阶段不一致 —— 这正是改造前那四个独立字段最大的问题。
+ */
+interface ExamState extends ExamSessionState {
+  /** 阶段为 composing 的派生值；只为兼容既有调用点而保留 */
   isLoading: boolean
+  /** 阶段为 submitting 的派生值 */
   isSubmitting: boolean
-  error: string | null
 
   startExam: (params: StartExamParams) => Promise<StartExamResult>
   resumeExam: (sessionId: string) => Promise<void>
@@ -64,263 +62,247 @@ interface ExamState {
   reset: () => void
 }
 
-export const useExamStore = create<ExamState>((set, get) => ({
-  session: null,
-  questions: [],
-  currentIndex: 0,
-  answers: new Map(),
-  isLoading: false,
-  isSubmitting: false,
-  error: null,
-
-  startExam: async ({ userId, questionCount, durationMs, subjects, categories, questionTypes, template, sampleMode, questionIds: fixedIds }) => {
-    set({ isLoading: true, error: null })
-
-    // 套卷的题单在生成时就冻住了, 这里直接取题, 不再组卷
-    const { questionIds, stats } = fixedIds?.length
-      ? { questionIds: fixedIds, stats: [] as ExamComposeStat[] }
-      : await composeExamIds({
-          template,
-          questionCount,
-          subjects,
-          categories,
-          questionTypes,
-          sampleMode,
-        }).catch((e: Error) => {
-          set({ isLoading: false, error: e.message })
-          return { questionIds: [] as string[], stats: [] as ExamComposeStat[] }
-        })
-
-    if (questionIds.length === 0) {
-      if (!get().error) {
-        set({ isLoading: false, error: 'No questions available. Please add questions first.' })
-      }
-      return { ok: false, stats }
-    }
-
-    const orderedQuestions = await fetchQuestionsByIds(questionIds).catch((e: Error) => {
-      set({ isLoading: false, error: e.message })
-      return [] as Question[]
+export const useExamStore = create<ExamState>((set, get) => {
+  /** 唯一的写入口：reducer 决定状态，阶段决定那两个派生布尔 */
+  const apply = (action: ExamAction) =>
+    set((s) => {
+      const next = examSessionReducer(s, action)
+      return { ...next, isLoading: next.phase === 'composing', isSubmitting: next.phase === 'submitting' }
     })
 
-    if (orderedQuestions.length === 0) return { ok: false, stats }
+  const fail = (e: unknown, context: string) => {
+    logError(context, e)
+    apply({ type: 'request/failed', message: userMessage(e) })
+  }
 
-    // 总题数按「小题」展开: 案例分析题 = 小题数, 其余 = 1
-    const totalItems = orderedQuestions.reduce((sum, q) => sum + questionItemCount(q), 0)
+  return {
+    ...initialExamSessionState,
+    isLoading: false,
+    isSubmitting: false,
 
-    // 模板快照随会话入库: 刷新/续考后可还原封面、工具栏名称与排版(与模板本体解耦)
-    let session: ExamSession | null
-    try {
-      session = await createExamSession({
-        user_id: userId,
-        total_questions: totalItems,
-        duration_ms: durationMs,
-        question_ids: questionIds,
-        template: template ?? null,
-      })
-    } catch (e) {
-      logError('exam.startExam', e)
-      set({ isLoading: false, error: userMessage(e) })
-      return { ok: false }
-    }
+    startExam: async ({ userId, questionCount, durationMs, subjects, categories, questionTypes, template, sampleMode, questionIds: fixedIds }) => {
+      apply({ type: 'compose/begin' })
 
-    if (!session) {
-      set({ isLoading: false, error: 'Failed to create session' })
-      return { ok: false }
-    }
-
-    set({
-      session,
-      questions: orderedQuestions,
-      currentIndex: 0,
-      answers: new Map(),
-      isLoading: false,
-    })
-    return { ok: true, stats }
-  },
-
-  resumeExam: async (sessionId) => {
-    set({ isLoading: true, error: null })
-
-    let sess: ExamSession | null
-    try {
-      sess = await fetchExamSession(sessionId)
-    } catch (e) {
-      logError('exam.resumeExam', e)
-      sess = null
-    }
-
-    if (!sess) {
-      set({ isLoading: false, error: 'Session not found' })
-      return
-    }
-
-    if (sess.status === 'completed') {
-      set({ isLoading: false, session: sess })
-      return
-    }
-
-    let orderedQuestions: Question[]
-    try {
-      orderedQuestions = await fetchQuestionsByIds(sess.question_ids)
-    } catch (e) {
-      logError('exam.resumeExam.questions', e)
-      set({ isLoading: false, error: 'Failed to load questions' })
-      return
-    }
-
-    const answersMap = new Map<string, CorrectAnswer>()
-    try {
-      for (const ans of await fetchExamAnswers(sessionId)) {
-        answersMap.set(ans.question_id, ans.selected_answer)
-      }
-    } catch (e) {
-      logError('exam.resumeExam.answers', e)
-    }
-
-    set({
-      session: sess,
-      questions: orderedQuestions,
-      currentIndex: sess.current_index,
-      answers: answersMap,
-      isLoading: false,
-    })
-  },
-
-  answerQuestion: (questionId, answer) => {
-    const { answers, session, questions } = get()
-    const newAnswers = new Map(answers)
-    newAnswers.set(questionId, answer)
-    set({ answers: newAnswers })
-
-    // Auto-save to DB so answers survive refresh
-    if (session) {
-      const q = questions.find(x => x.id === questionId)
-      const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions) : false
-      void (async () => {
-        try {
-          await upsertAnswer({
-            user_id: session.user_id,
-            question_id: questionId,
-            selected_answer: answer,
-            is_correct: isC,
-            mode: 'exam',
-            exam_session_id: session.id,
-            answered_at: new Date().toISOString(),
+      // 套卷的题单在生成时就冻住了, 这里直接取题, 不再组卷
+      const { questionIds, stats } = fixedIds?.length
+        ? { questionIds: fixedIds, stats: [] as ExamComposeStat[] }
+        : await composeExamIds({
+            template,
+            questionCount,
+            subjects,
+            categories,
+            questionTypes,
+            sampleMode,
+          }).catch((e: Error) => {
+            fail(e, 'exam.startExam.compose')
+            return { questionIds: [] as string[], stats: [] as ExamComposeStat[] }
           })
-        } catch (e) {
-          logError('exam.autoSaveAnswer', e)
-        }
-      })()
-    }
-  },
 
-  nextQuestion: async () => {
-    const { currentIndex, questions, session } = get()
-    // 游标按**小题（卡片）**走：卷面题型一条记录含多个小题，用 questions.length 会卡在第 9 张卡
-    if (currentIndex < cardCount(questions) - 1) {
-      const newIndex = currentIndex + 1
-      set({ currentIndex: newIndex })
-      if (session) await saveExamCursor(session.id, newIndex).catch((e) => logError('exam.saveCursor', e))
-    }
-  },
+      if (questionIds.length === 0) {
+        // 组卷已经报过错就别覆盖它 —— 那个错（比如 RPC 失败）比"没题"更具体
+        if (!get().error) apply({ type: 'request/failed', message: 'No questions available. Please add questions first.' })
+        return { ok: false, stats }
+      }
 
-  previousQuestion: async () => {
-    const { currentIndex, session } = get()
-    if (currentIndex > 0) {
-      const newIndex = currentIndex - 1
-      set({ currentIndex: newIndex })
-      if (session) await saveExamCursor(session.id, newIndex).catch((e) => logError('exam.saveCursor', e))
-    }
-  },
-
-  jumpTo: async (index) => {
-    const { questions, session } = get()
-    if (index >= 0 && index < cardCount(questions)) {
-      set({ currentIndex: index })
-      if (session) await saveExamCursor(session.id, index).catch((e) => logError('exam.saveCursor', e))
-    }
-  },
-
-  submitExam: async () => {
-    const { session, questions, answers } = get()
-    if (!session) return
-
-    set({ isSubmitting: true, error: null })
-
-    let correctItems = 0
-    const totalItems = questions.reduce((sum, q) => sum + questionItemCount(q), 0)
-    const answerRecords: AnswerInsert[] = []
-
-    for (const q of questions) {
-      const selected = answers.get(q.id)
-      if (selected == null) continue
-      const multi = MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])
-      // 一条记录挂多个小题的题型（案例题、卷面的完形/阅读/新题型/翻译）按小题计分，可部分得分
-      const okCount = multi
-        ? questionCorrectItemCount(q, selected)
-        : isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
-          ? questionItemCount(q)
-          : 0
-      correctItems += okCount
-      const fullCorrect = !multi ? okCount > 0 : ((q.case_questions?.length ?? 0) > 0 && okCount === (q.case_questions?.length ?? 0))
-      answerRecords.push({
-        user_id: session.user_id,
-        question_id: q.id,
-        selected_answer: selected,
-        is_correct: fullCorrect,
-        mode: 'exam',
-        exam_session_id: session.id,
+      const orderedQuestions = await fetchQuestionsByIds(questionIds).catch((e: Error) => {
+        fail(e, 'exam.startExam.questions')
+        return [] as Question[]
       })
-    }
 
-    const now = new Date()
-    const actualDuration = now.getTime() - new Date(session.started_at).getTime()
-    const score = totalItems > 0 ? Math.round((correctItems / totalItems) * 100) : 0
+      if (orderedQuestions.length === 0) return { ok: false, stats }
 
-    if (answerRecords.length > 0) {
-      // upsert(而非 insert): 作答中的自动保存可能已写过同键行, 交卷时覆盖为最终判定, 避免重复键
+      // 总题数按「小题」展开: 案例分析题 = 小题数, 其余 = 1
+      const totalItems = orderedQuestions.reduce((sum, q) => sum + questionItemCount(q), 0)
+
+      // 模板快照随会话入库: 刷新/续考后可还原封面、工具栏名称与排版(与模板本体解耦)
+      let session: ExamSession | null
       try {
-        await upsertAnswers(answerRecords)
+        session = await createExamSession({
+          user_id: userId,
+          total_questions: totalItems,
+          duration_ms: durationMs,
+          question_ids: questionIds,
+          template: template ?? null,
+        })
       } catch (e) {
-        logError('exam.submitExam.answers', e)
-        set({ isSubmitting: false, error: userMessage(e) })
+        fail(e, 'exam.startExam.createSession')
+        return { ok: false }
+      }
+
+      if (!session) {
+        apply({ type: 'request/failed', message: 'Failed to create session' })
+        return { ok: false }
+      }
+
+      apply({ type: 'compose/loaded', session, questions: orderedQuestions })
+      return { ok: true, stats }
+    },
+
+    resumeExam: async (sessionId) => {
+      apply({ type: 'compose/begin' })
+
+      let sess: ExamSession | null
+      try {
+        sess = await fetchExamSession(sessionId)
+      } catch (e) {
+        logError('exam.resumeExam', e)
+        sess = null
+      }
+
+      if (!sess) {
+        apply({ type: 'request/failed', message: 'Session not found' })
         return
       }
-    }
 
-    try {
-      await completeExamSession(session.id, {
-        correct_count: correctItems,
-        score,
-        duration_ms: actualDuration,
-        current_index: get().currentIndex,
-        completed_at: now.toISOString(),
+      // 已经交过的场次：只挂会话（用于看历史成绩），没有题目可做
+      if (sess.status === 'completed') {
+        apply({ type: 'session/history', session: sess })
+        return
+      }
+
+      let orderedQuestions: Question[]
+      try {
+        orderedQuestions = await fetchQuestionsByIds(sess.question_ids)
+      } catch (e) {
+        logError('exam.resumeExam.questions', e)
+        apply({ type: 'request/failed', message: 'Failed to load questions' })
+        return
+      }
+
+      const answersMap = new Map<string, CorrectAnswer>()
+      try {
+        for (const ans of await fetchExamAnswers(sessionId)) {
+          answersMap.set(ans.question_id, ans.selected_answer)
+        }
+      } catch (e) {
+        logError('exam.resumeExam.answers', e)
+      }
+
+      apply({ type: 'session/restored', session: sess, questions: orderedQuestions, answers: answersMap })
+    },
+
+    answerQuestion: (questionId, answer) => {
+      const { session, questions } = get()
+      apply({ type: 'answer/set', questionId, answer })
+
+      // Auto-save to DB so answers survive refresh
+      if (session) {
+        const q = questions.find(x => x.id === questionId)
+        const isC = q ? isAnswerCorrect(answer, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions) : false
+        void (async () => {
+          try {
+            await upsertAnswer({
+              user_id: session.user_id,
+              question_id: questionId,
+              selected_answer: answer,
+              is_correct: isC,
+              mode: 'exam',
+              exam_session_id: session.id,
+              answered_at: new Date().toISOString(),
+            })
+          } catch (e) {
+            logError('exam.autoSaveAnswer', e)
+          }
+        })()
+      }
+    },
+
+    nextQuestion: async () => {
+      const before = get()
+      apply({ type: 'index/move', delta: 1 })
+      const after = get()
+      // 游标没动就别写库（到达最后一张卡时是常态）
+      if (after.currentIndex === before.currentIndex || !after.session) return
+      await saveExamCursor(after.session.id, after.currentIndex).catch((e) => logError('exam.saveCursor', e))
+    },
+
+    previousQuestion: async () => {
+      const before = get()
+      apply({ type: 'index/move', delta: -1 })
+      const after = get()
+      if (after.currentIndex === before.currentIndex || !after.session) return
+      await saveExamCursor(after.session.id, after.currentIndex).catch((e) => logError('exam.saveCursor', e))
+    },
+
+    jumpTo: async (index) => {
+      const before = get()
+      apply({ type: 'index/set', index })
+      const after = get()
+      if (after.currentIndex === before.currentIndex || !after.session) return
+      await saveExamCursor(after.session.id, after.currentIndex).catch((e) => logError('exam.saveCursor', e))
+    },
+
+    submitExam: async () => {
+      const { session, questions, answers } = get()
+      if (!session) return
+
+      apply({ type: 'submit/begin' })
+      // 只有真的进入 submitting 才继续 —— 否则（已经在交卷中、或这场已经交过）后面那段
+      // upsert + completeExamSession 会再写一遍，把完成时间和分数覆盖成第二次算的
+      if (get().phase !== 'submitting') return
+
+      let correctItems = 0
+      const totalItems = questions.reduce((sum, q) => sum + questionItemCount(q), 0)
+      const answerRecords: AnswerInsert[] = []
+
+      for (const q of questions) {
+        const selected = answers.get(q.id)
+        if (selected == null) continue
+        const multi = MULTI_ITEM_QUESTION_TYPES.includes(q.question_type as typeof MULTI_ITEM_QUESTION_TYPES[number])
+        // 一条记录挂多个小题的题型（案例题、卷面的完形/阅读/新题型/翻译）按小题计分，可部分得分
+        const okCount = multi
+          ? questionCorrectItemCount(q, selected)
+          : isAnswerCorrect(selected, q.correct_answer, q.question_type, q.allow_unordered, q.unordered_blanks, q.case_questions)
+            ? questionItemCount(q)
+            : 0
+        correctItems += okCount
+        const fullCorrect = !multi ? okCount > 0 : ((q.case_questions?.length ?? 0) > 0 && okCount === (q.case_questions?.length ?? 0))
+        answerRecords.push({
+          user_id: session.user_id,
+          question_id: q.id,
+          selected_answer: selected,
+          is_correct: fullCorrect,
+          mode: 'exam',
+          exam_session_id: session.id,
+        })
+      }
+
+      const now = new Date()
+      const actualDuration = now.getTime() - new Date(session.started_at).getTime()
+      const score = totalItems > 0 ? Math.round((correctItems / totalItems) * 100) : 0
+
+      if (answerRecords.length > 0) {
+        // upsert(而非 insert): 作答中的自动保存可能已写过同键行, 交卷时覆盖为最终判定, 避免重复键
+        try {
+          await upsertAnswers(answerRecords)
+        } catch (e) {
+          fail(e, 'exam.submitExam.answers')
+          return
+        }
+      }
+
+      try {
+        await completeExamSession(session.id, {
+          correct_count: correctItems,
+          score,
+          duration_ms: actualDuration,
+          current_index: get().currentIndex,
+          completed_at: now.toISOString(),
+        })
+      } catch (e) {
+        fail(e, 'exam.submitExam')
+        return
+      }
+
+      apply({
+        type: 'submit/done',
+        patch: { status: 'completed', correct_count: correctItems, score, duration_ms: actualDuration },
       })
-    } catch (e) {
-      logError('exam.submitExam', e)
-      set({ isSubmitting: false, error: userMessage(e) })
-      return
-    }
+      useRefreshStore.getState().bump()
+    },
 
-    set({
-      session: { ...session, status: 'completed', correct_count: correctItems, score, duration_ms: actualDuration },
-      isSubmitting: false,
-    })
-    useRefreshStore.getState().bump()
-  },
-
-  reset: () => {
-    set({
-      session: null,
-      questions: [],
-      currentIndex: 0,
-      answers: new Map(),
-      isLoading: false,
-      isSubmitting: false,
-      error: null,
-    })
-  },
-}))
+    reset: () => apply({ type: 'reset' }),
+  }
+})
 
 registerUserScopedStore(() => useExamStore.getState().reset())
