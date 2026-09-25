@@ -7115,7 +7115,8 @@ $function$;
 -- 本文件完整跑一遍，再与生产库做 information_schema 逐列 diff，发现 20 处偏差：
 --   · 缺 13 个列  —— 前端/服务端在用的列，靠重放做灾备会直接报「列不存在」
 --   · 5 处定义不一致 —— 类型 / 默认值 / 可空性
---   · 1 处迁移超前于生产（exam_schedules.email_send_date）—— 保留，见 90.7
+--   · 1 处迁移超前于生产（exam_schedules.email_send_date）—— 当时判断为「尚未上线的
+--     功能」故保留；后经线上验证这是误判，该列是线上 bug 而非超前，已于 Section 96 补齐
 -- 本 section 全部幂等：已经是从生产 schema.sql 灌出来的库跑它等于无操作。
 -- ============================================================================
 
@@ -7248,9 +7249,10 @@ CREATE INDEX IF NOT EXISTS idx_questions_question_type
 -- 因此目前不报错；将来若有调用方只传 4 个参数，会得到同样的 PGRST203。
 
 -- ---- 90.11 已知的「迁移超前」项，故意不动 ----
--- public.exam_schedules.email_send_date 存在于本文件（Section 28.1）但生产没有，
--- 属于尚未上线的邮件提醒功能，不是本文件漏建。对齐方向应是把生产补上，
--- 而不是从本文件删掉。上线该功能时记得同步应用到生产库。
+-- public.exam_schedules.email_send_date —— 原判断为「尚未上线的邮件提醒功能，属于迁移
+-- 超前于生产」。这个判断是错的，已在 Section 96 纠正：该列确实是线上缺列，且已经造成
+-- 线上故障（预约考试的保存、notify-exam 的查询都会 400）。对齐方向没错（把生产补上），
+-- 但性质是补故障，不是等发版，所以不再「故意不动」。
 --
 -- public.rls_auto_enable() 是 Supabase 平台托管的 event trigger 函数：云上和自建的
 -- supabase/postgres 镜像都会在 initdb 阶段把它建进 public，不由本文件创建。
@@ -7566,4 +7568,68 @@ AS $function$
   LEFT JOIN q_once_cnt qc ON qc.subject = tot.subject
   LEFT JOIN dated_agg da ON da.subject = tot.subject
   ORDER BY tot.subject;
-$function$
+$function$;
+
+-- ============================================================================
+-- Section 95: 让「小表也能被自动 ANALYZE」
+-- ----------------------------------------------------------------------------
+-- 实测发现 public.user_excluded_questions（1 行）和 public.practice_sequential_state（3 行）
+-- 在 pg_class 里 reltuples = -1，也就是【从未被统计过】。
+--
+-- 原因：autovacuum_analyze_threshold 默认 50、autovacuum_analyze_scale_factor 默认 0.1，
+-- 触发条件是「改动行数 > 50 + 表行数*10%」。一张 1 行的表永远达不到 50，于是永远不统计，
+-- 计划器只能靠默认估算。而这张表在 get_plan_stats 的 scope 构建里，每次调用要被反连接探测
+-- 1356 次 —— 计划器对它的判断直接影响选哪种连接算法。
+--
+-- 手动 ANALYZE 后实测该函数 p50 从 16.01ms 降到 15.24ms（5%）。收益不大，
+-- 但这是配置缺陷：数据库里每张"永远长不到 50 行"的小表都会踩到，且会随数据增长再次影响计划。
+--
+-- 修法是给这类表单独放低阈值。这里只给确认受影响、且在热路径上的两张表设置，
+-- 不做全库铺开 —— 大表用默认阈值是对的。
+-- ============================================================================
+
+ALTER TABLE public.user_excluded_questions
+  SET (autovacuum_analyze_threshold = 1, autovacuum_analyze_scale_factor = 0);
+
+ALTER TABLE public.practice_sequential_state
+  SET (autovacuum_analyze_threshold = 1, autovacuum_analyze_scale_factor = 0);
+
+-- ============================================================================
+-- Section 96: 生产库反向对齐（补漏列 + 清死函数）
+-- ----------------------------------------------------------------------------
+-- 背景：Section 90 把本文件按「生产快照」对齐过一轮，但当时把唯一剩下的差异
+-- exam_schedules.email_send_date 判成了「迁移超前于生产，故意不动」。这次把
+-- Section 95 加进来重跑空库重放，差异只剩它一项，于是回到线上实测，结论是判错了。
+--
+-- ---- 96.1 exam_schedules.email_send_date 是线上缺列，不是超前 ----
+-- 实测（经 PostgREST 直查生产库）：
+--     GET /rest/v1/exam_schedules?select=id,email_send_date
+--     -> HTTP 400 {"code":"42703","message":"column exam_schedules.email_send_date does not exist"}
+-- 这个列有三个线上调用方，全都已经上线：
+--   · supabase/functions/notify-exam/index.ts:217 —— 它把 email_send_date 和其余 11 个
+--     列写在同一条 select 里，所以整条查询一起失败，schedules 拿到 null，
+--     邮件/推送提醒【全部静默不发】，而函数还是返回 200，日志里看不出问题。
+--   · src/stores/exam-schedule-store.ts:67 —— 新建预约时无条件带上该列，
+--     于是前端「保存预约」直接报列不存在。
+--   · src/lib/exam-schedule.ts:101 —— 读路径，null 容错，只是静默丢字段。
+-- 本文件 Section 28.1 一直有这个列，所以【空库重放出来的库是好的，生产才是坏的那边】。
+-- 修法是把生产补上（已执行），本节只留幂等语句保证任何环境都补齐。
+--
+-- ALTER 用 DATE 与原定义一致；补列不会动既有授权（public 各表是表级 GRANT，
+-- 新列自动被覆盖），补完记得让 PostgREST 重载 schema cache。
+ALTER TABLE public.exam_schedules
+  ADD COLUMN IF NOT EXISTS email_send_date DATE;
+
+-- ---- 96.2 清理死函数 get_plan_stats_v3 ----
+-- 生产库里有 get_plan_stats 和 get_plan_stats_v3 两个同签名函数（都是一次优化实验的
+-- 残留）。前端只调 get_plan_stats（src/hooks/use-plan-completion.ts:183），库内也没有
+-- 任何视图/函数依赖 v3，而它同样对 anon / authenticated 开放 RPC —— 一个没人用却对外
+-- 可调的死接口。它也是重放 diff 里最后一项「生产多出来的函数」（另一项
+-- rls_auto_enable 是平台托管，见 90.11）。已从生产删除，定义备份在服务器
+-- /root/gps-v3-orig.sql。
+-- 全新部署本来就不会有它，所以这里只需 DROP IF EXISTS，对空库是空操作。
+DROP FUNCTION IF EXISTS public.get_plan_stats_v3(uuid, jsonb);
+
+-- Public 的 RPC 只应暴露前端真正在用的那一个。若将来还要做优化实验，请在事务里
+-- 改名验证，别把实验版本留在生产上对 anon 开放。
+-- ============================================================================
