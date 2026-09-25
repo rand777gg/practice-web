@@ -115,11 +115,22 @@ function scanOpenPolicies() {
 /**
  * 静态部分：函数 EXECUTE 权限清单。
  *
- * 关键前提（见 migration Section 68 的实测记录）：**Supabase 给 public schema 设了默认权限，
- * 新建函数会被显式授予 anon / authenticated**。所以只看 GRANT 是不够的 —— 真正的判据是
- * 「有没有显式从 anon 撤销」：
- *   · 没有 REVOKE FROM anon  → 平台的默认授权仍然生效，匿名可调；
- *   · 只写了 REVOKE FROM PUBLIC → 撤不掉那条显式 anon 授权（Section 68 的原话），匿名仍可调。
+ * ⚠ **这一节的输出只是候选集，不是结论。** 真正能定论的只有
+ * `has_function_privilege('anon', oid, 'EXECUTE')`（SQL）或以匿名身份真调一次
+ * （本脚本对白名单里的只读 RPC 做的就是后者）。
+ *
+ * 为什么静态扫不准：函数的 EXECUTE 同时来自**两处**默认授权，撤掉任意一处都不够 ——
+ * 实测 proacl 形如
+ *     {=X/postgres, postgres=X/postgres, anon=X/postgres, authenticated=X/postgres, service_role=X/postgres}
+ * 开头没有受让者的 `=X/postgres` 是 **PUBLIC**（PostgreSQL 对函数的内建默认就是
+ * GRANT EXECUTE TO PUBLIC），后面那条 `anon=` 是 Supabase 给 public schema 设的默认权限。
+ * 于是：
+ *   · 没有 REVOKE FROM anon   → 平台的默认授权仍在，匿名可调（本节据此标记 reachable）；
+ *   · 只有 REVOKE FROM anon   → PUBLIC 那条还在，**匿名照样能调**（migration Section 101 的实测）；
+ *   · 只有 REVOKE FROM PUBLIC → 只撤掉那条显式 anon 授权（Section 68 记的是这个方向）。
+ * 必须 `FROM anon, PUBLIC` 才收得干净。所以下面 `anonReachable` 是一个**上界**：
+ * 它列出的每个函数都值得去看一眼，但"没列出"也未必就安全。
+ *
  * SECURITY DEFINER 再叠上去，就是「匿名可调 + 用属主权限跑」这一组，必须先看函数体有没有自我校验。
  */
 function scanFunctionGrants() {
@@ -155,8 +166,9 @@ function scanFunctionGrants() {
     checksIdentity: d.checksIdentity,
     explicitGrant: d.grants.has('anon') || d.grants.has('public'),
     revokedFromAnon: d.revokes.has('anon'),
-    // 没显式从 anon 撤销 = 平台默认授权还在 = 匿名可调
-    anonReachable: !d.revokes.has('anon'),
+    revokedFromPublic: d.revokes.has('public'),
+    // 两处默认授权都撤掉了才算真的收干净 —— 只撤一处都还够匿名调用
+    anonReachable: !(d.revokes.has('anon') && d.revokes.has('public')),
   }))
 
   rows.sort((a, b) =>
@@ -253,7 +265,10 @@ const anonReachable = fnGrants.filter((g) => g.anonReachable)
 const definerReachable = anonReachable.filter((g) => g.securityDefiner)
 const risky = definerReachable.filter((g) => !g.checksIdentity)
 console.log(`\nD. 函数 EXECUTE 授权：解析到 ${fnGrants.length} 个函数定义`)
-console.log(`   其中 ${anonReachable.length} 个对匿名可调（没有显式 REVOKE FROM anon —— 平台默认授权仍然生效）`)
+console.log(`   其中 ${anonReachable.length} 个**可能**对匿名可调（anon / PUBLIC 两处默认授权没有一起撤掉）`)
+console.log('   注意：这里是候选**上界**，不是结论 —— DDL 静态扫不出最终结果，')
+console.log('         函数的 EXECUTE 同时来自 PUBLIC（PG 内建默认）与 anon（Supabase 默认权限），')
+console.log('         只撤一处仍然够匿名调用。定论请查 has_function_privilege 或用匿名身份真调。')
 console.log(`   再叠加 SECURITY DEFINER（用属主权限跑）的有 ${definerReachable.length} 个`)
 if (risky.length) {
   console.log(`   最需要看的一组（匿名可调 + SECURITY DEFINER + 函数体不自我校验）共 ${risky.length} 个：`)
@@ -269,7 +284,9 @@ const anonPlain = anonReachable.filter((g) => !g.securityDefiner)
 if (anonPlain.length) {
   console.log(`\n   其余 ${anonPlain.length} 个「匿名可调但不是 SECURITY DEFINER」的（按 RLS 权限跑，风险低得多，但仍是多余的暴露面）：`)
   console.log(`     ${anonPlain.map((g) => g.fn).join(', ')}`)
-  console.log('   处理方式：确认登录前不会调用后，逐个 `REVOKE EXECUTE ON FUNCTION ... FROM anon`。')
+  console.log('   处理方式：确认登录前不会调用后，逐个收回 —— **两个授权都要撤**：')
+  console.log('     REVOKE EXECUTE ON FUNCTION public.xxx(...) FROM anon, PUBLIC;')
+  console.log('     （只写 FROM anon 收不掉 PUBLIC 那条内建默认，匿名照样能调；migration Section 101.1 有实测。）')
   console.log('   登录前真正需要的只有 qr_login_status（扫码页在未登录时轮询它）；其余都走 authenticated。')
 }
 

@@ -7739,6 +7739,9 @@ ON CONFLICT (id) DO NOTHING;
 -- ---- 99.2 函数 EXECUTE：24/67 个函数对匿名可调，只有 1 个值得盯 ----
 --   Supabase 给 public schema 设了默认权限，新建函数会被显式授予 anon / authenticated，
 --   所以判据不是"有没有 GRANT"，而是"有没有 REVOKE FROM anon"（Section 68 已踩过这个坑）。
+--   **这一条判据后来被 Section 101 修正了**：PG 对函数的内建默认是 GRANT EXECUTE TO PUBLIC，
+--   实测 proacl 上同时存在 `=X/postgres`（PUBLIC）与 `anon=X/postgres` 两条 —— 只撤其中一条
+--   都撤不干净，必须 `FROM anon, PUBLIC`。所以下面这个"24"是**候选集**，不是最终可调数。
 --   24 个匿名可调里：
 --     · qr_login_status —— 匿名可调 + SECURITY DEFINER + 函数体不判身份。**这是有意为之**：
 --       扫码页在未登录时轮询它，安全性来自 `secret_hash = sha256(p_secret)` 这个只有
@@ -7747,7 +7750,8 @@ ON CONFLICT (id) DO NOTHING;
 --     · is_study_room_member / is_study_room_owner —— DEFINER 但函数体有身份判断，
 --       且它们本来就是给 RLS 策略当谓词用的，匿名执行是 RLS 求值的一部分。
 --     · 其余 21 个都是 SECURITY INVOKER（按调用者权限跑，受 RLS 约束），属于多余的暴露面，
---       不是漏洞。登录前真正需要匿名的只有 qr_login_status，其余都可以 REVOKE FROM anon。
+--       不是漏洞。登录前真正需要匿名的只有 qr_login_status，其余都可以收回
+--       （写法见 Section 101.1：`REVOKE EXECUTE ON FUNCTION ... FROM anon, PUBLIC`）。
 --
 -- ---- 99.3 需要留意的一类"现在安全、但很脆"的写法（未改） ----
 --   下面 11 个函数都接收 p_user_id，但没有一个校验 `p_user_id = auth.uid()`，
@@ -7804,4 +7808,136 @@ CREATE UNIQUE INDEX IF NOT EXISTS user_answers_client_operation_id_key
 COMMENT ON COLUMN public.user_answers.client_operation_id IS
   '离线队列的幂等键：同一次用户动作的重试共用一个值，用来让服务端识别"这条已经写过了"';
 
+-- ============================================================================
+-- Section 101: 匿名暴露面收敛 —— 收回 anon 的函数 EXECUTE（可执行 DDL）
+-- ----------------------------------------------------------------------------
+-- Section 99 记了审计结论但没给 SQL；这一节把其中**结论明确**的那部分变成可执行语句。
+-- 仍未在线上执行过，见本节末尾的说明。
+--
+-- 为什么可以断言"anon 不需要这些函数"：Supabase 给 public schema 设了默认权限，
+-- 新建函数会被显式授予 anon/authenticated，所以线上 67 个函数里有 24 个匿名可调 ——
+-- 但那是**默认权限的副作用**，不是谁决定要给匿名用的。逐条看过之后：
+--   · 匿名真正需要的只有 qr_login_status（扫码页在未登录时轮询它，安全性来自
+--     `secret_hash = sha256(p_secret)` 这个只有发起端知道的秘密，不是身份）；
+--   · is_study_room_member / is_study_room_owner 是给 RLS 策略当谓词用的，而
+--     **策略谓词是以调用者身份求值的**，所以它们必须保持匿名可执行；
+--   · 其余 21 个都是 SECURITY INVOKER，按调用者权限跑、受 RLS 约束 —— 多余的暴露面。
+--
+-- ---- 101.1 逐函数收回，并**自动护住被 RLS 策略引用的那些** ----
+-- 这一段的关键是那条白名单不是手写的：策略谓词以调用者身份求值，一旦把某个谓词函数
+-- 的 EXECUTE 从 anon 收回，匿名查询就不再是"读到 0 行"，而是直接
+-- `permission denied for function ...`。所以先从 pg_policy 的表达式里把函数名扫出来，
+-- 连同一份"有意保留"的短名单一起排除。宁可少收几个，也不能把策略求值弄坏。
+--
+-- 白名单里的关键字（AND / EXISTS / FROM / ON / OR / WHERE）和 `uid` / `role`（来自
+-- auth.uid() / auth.role()）是正则的副作用 —— 这个清单只用来**排除**，多几个不存在的名字
+-- 没有影响，少一个才会出问题。
+--
+-- **必须排除 extension 拥有的函数**：这个库把 pgvector / pg_trgm 装在了 public schema 里，
+-- 于是 array_to_vector / cosine_distance / gin_trgm_consistent 这些也出现在"public 函数"里。
+-- 它们在 101.1 的第一版里被一起收掉了 —— 那是索引支持函数，属于扩展的一部分，
+-- 收权限既没有意义、又可能把基于 trgm 的检索弄坏。判据是 pg_depend.deptype = 'e'。
+--
+-- 在 linked 库上只读实测过这条查询：public 下 225 个函数（含扩展），其中应用自己的 76 个，
+-- **匿名可调的 26 个**，全部是"必须登录才有意义"的 RPC（get_plan_stats / get_random_question_id /
+-- load_practice_session / get_subject_progress / save_resource_toc ...），与 Section 99.2 的结论一致；
+-- qr_login_status 不在其中（已在白名单）。
+--
+-- ---- ⚠ 修正 Section 99.2 的一个前提：光 `FROM anon` 是撤不掉的 ----
+-- 实测 `proacl`，一个典型函数上是：
+--     {=X/postgres, postgres=X/postgres, anon=X/postgres, authenticated=X/postgres, service_role=X/postgres}
+-- 开头那个没有受让者的 `=X/postgres` 就是 **PUBLIC** 的授权 —— 而 PostgreSQL 对函数的内建默认
+-- 就是 `GRANT EXECUTE ... TO PUBLIC`。于是：
+--   · 只 `REVOKE ... FROM anon`   → anon 仍然通过 PUBLIC 拿到 EXECUTE（has_function_privilege 仍为 true）；
+--   · 只 `REVOKE ... FROM PUBLIC` → anon 那条**显式**授权还在（Section 68 记的正是这个方向）。
+-- 两个方向都得撤，所以下面写的是 `FROM anon, PUBLIC`。
+-- 顺带说明为什么这样收不会影响登录用户：`authenticated` 也有自己的显式授权，撤 PUBLIC 不影响它 ——
+-- 实测收完之后 `has_function_privilege('authenticated', ...)` 仍为 true 的有 200/225 个。
+-- 也因此 Section 99.2 里"没有显式 REVOKE FROM anon ⇒ 匿名可调"这个判据**偏保守但方向对**：
+-- 它列出的是候选集，不是最终结论；要定论得查 has_function_privilege 或用匿名身份真调一次
+-- （scripts/audit-anon-exposure.mjs 对只读 RPC 做的就是后者）。
+DO $$
+DECLARE
+  r RECORD;
+  n INT := 0;
+BEGIN
+  CREATE TEMP TABLE section101_keep ON COMMIT DROP AS
+  SELECT DISTINCT name FROM (
+    SELECT m[1] AS name
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace ns ON ns.oid = c.relnamespace
+    CROSS JOIN LATERAL regexp_matches(
+      coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' ' ||
+      coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''),
+      '([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*[(]', 'g') AS m
+    WHERE ns.nspname = 'public'
+    UNION ALL
+    -- 有意保留的：匿名扫码轮询 + 两个自习室谓词（后者即使没被策略扫到也留着）
+    SELECT unnest(ARRAY['qr_login_status', 'is_study_room_member', 'is_study_room_owner'])
+  ) names;
+
+  RAISE NOTICE 'Section 101: 白名单 % 个函数（含 RLS 策略引用）', (SELECT count(*) FROM section101_keep);
+
+  FOR r IN
+    SELECT p.oid, p.proname, pg_get_function_identity_arguments(p.oid) AS args
+    FROM pg_proc p
+    JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'public'
+      AND p.prokind IN ('f', 'w')          -- 不含 PROCEDURE/AGGREGATE：REVOKE ... ON FUNCTION 对它们会报错
+      AND p.proname::text NOT IN (SELECT name FROM section101_keep)
+      AND NOT EXISTS (                     -- 扩展自带的函数不动（见上面 pgvector / pg_trgm 那段）
+        SELECT 1 FROM pg_depend d
+        WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+      AND has_function_privilege('anon', p.oid, 'EXECUTE')   -- 已经收过的就不再进循环
+  LOOP
+    -- FROM anon, PUBLIC 两个都要（原因见上面「修正 Section 99.2 的一个前提」那段）
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%I(%s) FROM anon, PUBLIC', r.proname, r.args);
+    n := n + 1;
+  END LOOP;
+
+  RAISE NOTICE 'Section 101: 已对 % 个函数收回 anon 的 EXECUTE', n;
+END $$;
+
+-- ---- 101.2 治根：让新建函数不再自动带上 anon ----
+-- 与 Section 92 同理，不治根的话下一次建函数又会重新长出来。
+-- 只收 anon，authenticated 照旧（登录用户要能调 RPC）。
+DO $$
+BEGIN
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public '
+       || 'REVOKE EXECUTE ON FUNCTIONS FROM anon';
+  RAISE NOTICE 'Section 101: 已修改 postgres 对新建函数的默认权限';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'Section 101: 无权修改 postgres 的默认权限（需要超级用户），跳过；新建函数仍会带上 anon。';
+END $$;
+
+-- ---- 101.3 三张"公开内容"表的策略加 TO authenticated（**故意注释掉**） ----
+-- Section 99.1 实测出的匿名可读就是这三条策略造成的：它们都带 `OR is_public`，
+-- 只是没写 TO 子句，所以对 anon 也生效。应用侧**目前**用不到匿名读：
+-- PublicNotesPage（/notes）在 OtpGuard 之内（router 第 51 行的 OtpGuard 包住了它），
+-- 未登录访客进不去，公开笔记是给**已登录的其他用户**看的。
+--
+-- 但它是不是该给匿名看，是个产品决定而不是代码清理：这一列叫 `is_public`，
+-- "公开"的字面语义就是"谁都能看"，将来若要做分享链接（把 /notes 挪到 OtpGuard 之外）
+-- 就会依赖它。所以这里只把语句准备好，不动线上语义。确认"公开内容不给未登录访客"之后
+-- 取消注释执行即可：
+--
+--   ALTER POLICY user_answers_public_select ON public.user_answers TO authenticated;
+--   ALTER POLICY qb_select ON public.question_banks TO authenticated;
+--   ALTER POLICY qbi_select ON public.question_bank_items TO authenticated;
+--
+-- （策略名取自 Section 99.1 的实测清单；执行前先 `\d+ public.user_answers` 核一遍名字，
+--   ALTER POLICY 没有 IF EXISTS，名字错了会整段失败。）
+--
+-- ---- 执行状态：**没有在线上执行过** ----
+-- 本节是按仓库约定（单文件迁移 + 追加编号 section）落盘的，不是"已生效"的记录。
+-- 没执行的原因与 Section 99 相同：改权限会改变"未登录访客能不能调"的语义，而这轮只拿到
+-- 匿名身份（publishable key），做不了 anon / 普通用户 / 管理员三种身份的对照测试。
+-- 真要上线时的核对顺序：
+--   1. 先跑 node scripts/audit-anon-exposure.mjs 存一份基线（只读，不打印行内容）；
+--   2. 在预发库执行本节，再跑一次，比对"匿名可调函数数"应从 24 降到 3；
+--   3. 未登录状态实测登录前的路径：扫码登录（qr_login_status 轮询 + qr_login_claim）、
+--      落地页、/qr-confirm —— 这三处是唯一可能用到匿名身份的地方；
+--   4. 登录后抽查一个读公开笔记的页面（/notes）与自习室（依赖那两个谓词函数）。
+-- ============================================================================
 
