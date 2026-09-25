@@ -188,11 +188,23 @@ const SUBMIT_FLOW = { url: '/practice?mode=random', optionName: /^B\s*7$/, optio
  *     本地状态翻了个布尔，写完库那一刻没人管。
  * 后者是特意用请求记录而不是读 DOM 的：进度计数是三个相邻内联 span，innerText 里带不带空格
  * 取决于 flex 布局，按文本断言会飘（练习页那个 "B 7" vs "B7" 已经栽过一次）。
+ *
+ * 开考之后还要把三种视图各切一遍：卷面（单页/双页）与卡片模式渲染的是完全不同的组件
+ * （`PaperPreview` / `PaperSpreadView` 对 `ExamSession` 里那张卡片区），而它们此前**只被
+ * "路由能挂载"覆盖**——挂载时默认是卡片模式，卷面组件根本没被执行过。判据用 `[data-qid]`：
+ * 那是卷面组件给每道题打的锚，卡片模式下不存在，所以它的有无就能证明"真的换了一套渲染"，
+ * 而不是靠读标题文案（那个在侧边栏里也有同名文字）。
  */
 const EXAM_FLOW = {
   url: '/exam',
   startLabel: '开始考试',
   toolbarHint: '共 1 题',
+  // 卷面模式下这几个键切换的是渲染路径，卡片模式下题目才会以选项按钮出现
+  modes: [
+    { key: 'sheet', label: '单页摊开', paper: true },
+    { key: 'spread', label: '双页摊开', paper: true },
+    { key: 'card', label: '卡片模式', paper: false },
+  ],
   optionName: /^B\s*7$/,
   submitLabel: '交卷',
   confirmLabel: '确认交卷',
@@ -551,6 +563,23 @@ try {
 
       // composing → in_progress：工具栏带着本场题数出现，说明 compose/loaded 走到了
       await page.getByText(EXAM_FLOW.toolbarHint).first().waitFor({ timeout: 15_000 })
+
+      // ── 三种视图各切一遍：卷面组件（单页 PaperPreview / 双页 PaperSpreadView）此前只被
+      //    "路由能挂载"覆盖过，而挂载时默认是卡片模式，那些组件根本没执行 ──
+      const paperAnchors = () => page.locator(`[data-qid="${QUESTION_ID}"]`)
+      const modeChecks = []
+      for (const mode of EXAM_FLOW.modes) {
+        await page.getByRole('button', { name: mode.label }).first().click({ timeout: 10_000 })
+        await page.waitForTimeout(800)
+        const anchors = await paperAnchors().count()
+        const options = await page.getByRole('button', { name: EXAM_FLOW.optionName }).count()
+        // 卷面模式：题锚在、选项按钮不在；卡片模式：反过来
+        const ok = mode.paper ? anchors > 0 && options === 0 : anchors === 0 && options > 0
+        modeChecks.push({ ...mode, anchors, options, ok })
+        console.log(`        · 切到「${mode.label}」: 题锚=${anchors} 选项按钮=${options} ${ok ? '✓' : '✗'}`)
+      }
+      const modesOk = modeChecks.every((m) => m.ok) && currentErrors.length === 0
+
       await page.getByRole('button', { name: EXAM_FLOW.optionName }).first().click({ timeout: 15_000 })
       console.log('        · 已作答第 1 题')
 
@@ -565,11 +594,12 @@ try {
       const scoreShown = body.includes(EXAM_FLOW.resultExpect)
       const answerWrote = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/user_answers'))
       const sessionWrote = currentWrites.some((r) => r.method === 'PATCH' && r.url.includes('/exam_sessions'))
-      const ok = scoreShown && answerWrote && sessionWrote && currentErrors.length === 0
-      console.log(`  ${ok ? '✓' : '✗'} ${EXAM_FLOW.url} 开考 → 作答 → 交卷 → 跳 /exam/result`)
+      const ok = scoreShown && answerWrote && sessionWrote && modesOk && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${EXAM_FLOW.url} 开考 → 三种视图 → 作答 → 交卷 → 跳 /exam/result`)
       if (!ok) {
         const wrote = currentWrites.map((r) => `${r.method} ${r.url.split('/rest/v1/')[1]?.split('?')[0] ?? r.url.split('/').pop()}`)
-        console.log(`        成绩页出现「${EXAM_FLOW.resultExpect}」=${scoreShown} 作答落库=${answerWrote} 交卷落库=${sessionWrote}`)
+        console.log(`        成绩页出现「${EXAM_FLOW.resultExpect}」=${scoreShown} 作答落库=${answerWrote} 交卷落库=${sessionWrote} 视图切换=${modesOk}`)
+        for (const m of modeChecks.filter((x) => !x.ok)) console.log(`        视图「${m.label}」不符: 题锚=${m.anchors}（期望${m.paper ? '>0' : '0'}）选项按钮=${m.options}（期望${m.paper ? '0' : '>0'}）`)
         console.log(`        写请求: ${JSON.stringify(wrote.slice(0, 12))}`)
         console.log(`        实际 URL=${page.url()}`)
         console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
