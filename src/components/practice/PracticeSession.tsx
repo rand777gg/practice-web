@@ -65,6 +65,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePracticeQuestion } from '@/hooks/use-practice-question'
 import { SessionListDrawer } from '@/components/practice/SessionListDrawer'
+import { pickRandomFrom } from '@/lib/practice-session'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -758,12 +759,9 @@ export function PracticeSession() {
         const favRows = (await fetchFavoritesWithQuestion(currentUser.id, 200)).filter((r): r is FavoriteWithQuestion & { question: QuestionMeta } => r.question !== null)
         if (isStale(myGen)) return
         if (favRows.length) {
-          let filtered = favRows
-          if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
-          if (selectedCategory) filtered = filtered.filter((r) => r.question.category === selectedCategory || r.question.categories.includes(selectedCategory))
-          if (selectedType) filtered = filtered.filter((r) => r.question.question_type === selectedType)
-          if (selectedKeyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(selectedKeyPoint))
-          if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+          pickedId = pickRandomFrom(favRows, {
+            subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint,
+          })
         }
       } catch (e) {
         logError('practice.favoritePick', e)
@@ -800,12 +798,9 @@ export function PracticeSession() {
         logError('practice.reviewPick', e)
       }
       if (byId.size > 0) {
-        let filtered = [...byId.values()]
-        if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
-        if (selectedCategory) filtered = filtered.filter((r) => r.question.category === selectedCategory || r.question.categories.includes(selectedCategory))
-        if (selectedType) filtered = filtered.filter((r) => r.question.question_type === selectedType)
-        if (selectedKeyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(selectedKeyPoint))
-        if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+        pickedId = pickRandomFrom([...byId.values()], {
+          subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint,
+        })
       }
     }
 
@@ -815,12 +810,9 @@ export function PracticeSession() {
         const wrongRows = (await fetchWrongAnswers(currentUser.id, 200)).filter((r): r is AnswerWithQuestionMeta & { question: QuestionMeta } => r.question !== null)
         if (isStale(myGen)) return
         if (wrongRows.length) {
-          let filtered = wrongRows
-          if (selectedSubjects.length > 0) filtered = filtered.filter((r) => selectedSubjects.includes(r.question.subject ?? ''))
-          if (selectedCategory) filtered = filtered.filter((r) => r.question.category === selectedCategory || r.question.categories.includes(selectedCategory))
-          if (selectedType) filtered = filtered.filter((r) => r.question.question_type === selectedType)
-          if (selectedKeyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(selectedKeyPoint))
-          if (filtered.length > 0) pickedId = filtered[Math.floor(Math.random() * filtered.length)].question_id
+          pickedId = pickRandomFrom(wrongRows, {
+            subjects: selectedSubjects, category: selectedCategory, type: selectedType, keyPoint: selectedKeyPoint,
+          })
         }
       } catch (e) {
         logError('practice.wrongPick', e)

@@ -166,3 +166,51 @@ export function practiceQuestionReducer(
 export function canSubmit(state: PracticeQuestionState): boolean {
   return state.question !== null && state.selectedAnswer !== null && !state.submitted
 }
+
+// ── 挑题 ──
+
+/** 候选题目只用到这几个字段（`services/practice` 的 QuestionMeta 结构上满足它） */
+export interface PickCandidate {
+  question_id: string
+  question: {
+    subject: string | null
+    category: string | null
+    categories: string[]
+    question_type: string
+    key_points: string | null
+  }
+}
+
+/** 界面上那四个筛选器 */
+export interface PracticePickFilters {
+  subjects: string[]
+  category: string
+  type: string
+  keyPoint: string
+}
+
+/**
+ * 按当前筛选器过滤一批评选，再随机取一道。
+ *
+ * 抽出来的原因很具体：收藏 / 复习（错题∪收藏）/ 仅错题三条分支各自把同样的
+ * 「四个 if 依次 filter，然后 Math.random 取一个」抄了一遍 —— 三条分支的筛选口径一旦
+ * 不一致（比如某条忘了看 key_points），表现是"有时候筛得住、有时候筛不住"，极难排查。
+ *
+ * `random` 可注入，测试里就不用碰 Math.random。
+ */
+export function pickRandomFrom<T extends PickCandidate>(
+  rows: T[],
+  filters: PracticePickFilters,
+  random: () => number = Math.random,
+): string | null {
+  if (rows.length === 0) return null
+  let filtered: T[] = rows
+  if (filters.subjects.length > 0) filtered = filtered.filter((r) => filters.subjects.includes(r.question.subject ?? ''))
+  if (filters.category) {
+    filtered = filtered.filter((r) => r.question.category === filters.category || r.question.categories.includes(filters.category))
+  }
+  if (filters.type) filtered = filtered.filter((r) => r.question.question_type === filters.type)
+  if (filters.keyPoint) filtered = filtered.filter((r) => (r.question.key_points ?? '').includes(filters.keyPoint))
+  if (filtered.length === 0) return null
+  return filtered[Math.min(Math.floor(random() * filtered.length), filtered.length - 1)].question_id
+}

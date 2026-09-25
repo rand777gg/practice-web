@@ -53,6 +53,7 @@ try {
     practiceQuestionReducer: reduce,
     staleResponse,
     canSubmit,
+    pickRandomFrom,
   } = await import(pathToFileURL(join(outDir, 'machine.mjs')).href)
 
   const q = (id) => ({ id, question_type: 'single_choice', question_text: `题 ${id}` })
@@ -214,6 +215,57 @@ try {
     assert.equal(cleared.question, null)
     assert.equal(cleared.selectedAnswer, null)
     assert.equal(cleared.loadId, s.loadId)
+  })
+
+  // ── 挑题：收藏 / 复习 / 仅错题 三条分支共用的那条规则 ──
+  console.log('\npickRandomFrom')
+
+  const cand = (id, over = {}) => ({
+    question_id: id,
+    question: { subject: '数学', category: '代数', categories: ['代数'], question_type: 'single_choice', key_points: '一元二次', ...over },
+  })
+  const noFilters = { subjects: [], category: '', type: '', keyPoint: '' }
+
+  check('空候选返回 null', () => {
+    assert.equal(pickRandomFrom([], noFilters), null)
+  })
+
+  check('无筛选时从全部里取，且只看注入的随机数', () => {
+    const rows = [cand('a'), cand('b'), cand('c')]
+    assert.equal(pickRandomFrom(rows, noFilters, () => 0), 'a')
+    assert.equal(pickRandomFrom(rows, noFilters, () => 0.5), 'b')
+    // 上界必须夹住：Math.random 理论上是 [0,1)，但注入 1 时不能越界拿到 undefined
+    assert.equal(pickRandomFrom(rows, noFilters, () => 1), 'c')
+  })
+
+  check('学科筛选', () => {
+    const rows = [cand('a', { subject: '数学' }), cand('b', { subject: '英语' })]
+    assert.equal(pickRandomFrom(rows, { ...noFilters, subjects: ['英语'] }, () => 0), 'b')
+  })
+
+  check('分类筛选命中 category 或 categories 任一', () => {
+    const rows = [cand('a', { category: '代数', categories: ['代数'] }), cand('b', { category: null, categories: ['几何'] })]
+    assert.equal(pickRandomFrom(rows, { ...noFilters, category: '几何' }, () => 0), 'b', 'categories 里有也算命中')
+    assert.equal(pickRandomFrom(rows, { ...noFilters, category: '代数' }, () => 0), 'a')
+  })
+
+  check('题型与知识点筛选', () => {
+    const rows = [cand('a', { question_type: 'single_choice', key_points: '一元二次' }), cand('b', { question_type: 'multi_select', key_points: '极限' })]
+    assert.equal(pickRandomFrom(rows, { ...noFilters, type: 'multi_select' }, () => 0), 'b')
+    assert.equal(pickRandomFrom(rows, { ...noFilters, keyPoint: '极限' }, () => 0), 'b')
+    assert.equal(pickRandomFrom(rows, { ...noFilters, keyPoint: '不存在' }), null, '筛完没有候选要回 null，而不是硬取一个')
+  })
+
+  check('多个筛选条件是「与」的关系', () => {
+    const rows = [cand('a', { subject: '数学', question_type: 'single_choice' }), cand('b', { subject: '数学', question_type: 'multi_select' })]
+    assert.equal(pickRandomFrom(rows, { subjects: ['数学'], category: '', type: 'multi_select', keyPoint: '' }, () => 0), 'b')
+    assert.equal(pickRandomFrom(rows, { subjects: ['英语'], category: '', type: 'multi_select', keyPoint: '' }), null)
+  })
+
+  check('subject 为 null 的题不会被学科筛选命中（三条分支口径一致）', () => {
+    const rows = [cand('a', { subject: null })]
+    assert.equal(pickRandomFrom(rows, { ...noFilters, subjects: ['数学'] }), null)
+    assert.equal(pickRandomFrom(rows, noFilters, () => 0), 'a', '不筛学科时仍然可选')
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })
