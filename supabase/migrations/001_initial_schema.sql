@@ -7316,3 +7316,89 @@ REVOKE INSERT, UPDATE, DELETE ON public.net_probe_samples FROM anon, authenticat
 GRANT SELECT ON public.net_probe_samples TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE public.net_probe_samples_id_seq TO service_role;
 GRANT ALL ON public.net_probe_samples TO service_role;
+-- ============================================================================
+-- Section 92: 收回 anon/authenticated 上不该有的表权限（含默认权限治根）
+-- ----------------------------------------------------------------------------
+-- 背景：production 的 59 张 public 表全部把 TRUNCATE / REFERENCES / TRIGGER
+-- 授予了 anon 和 authenticated。其中 TRUNCATE 最危险 —— 它【不受 RLS 约束】，
+-- has_table_privilege('anon','public.profiles','TRUNCATE') 实测为 true。
+--
+-- 今天不可直接利用：PostgREST 只把 GET/POST/PATCH/DELETE 映射到
+-- SELECT/INSERT/UPDATE/DELETE，不暴露 TRUNCATE。但这是明确的权限过宽 ——
+-- 任何 SECURITY INVOKER 函数、或将来新增的 RPC，都可能把它变成真漏洞。
+--
+-- 这三项权限客户端角色永远不需要：
+--   TRUNCATE   —— 清空整表，绕过 RLS
+--   REFERENCES —— 建外键引用该表
+--   TRIGGER    —— 在该表上建触发器
+--   MAINTAIN   —— PG17 起的新权限，含 LOCK TABLE（anon 可借此对表加排他锁做 DoS）
+--
+-- 注意【不收回序列的 USAGE】：BIGSERIAL 主键的 DEFAULT nextval() 需要它，
+-- 收了会让 INSERT 直接失败。
+--
+-- 已确认没有任何函数体依赖这三项权限（扫过 pg_get_functiondef）。
+-- ============================================================================
+
+-- ---- 92.1 现存表：逐表收回 ----
+DO $$
+DECLARE r RECORD; n INT := 0;
+BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format(
+      'REVOKE TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON public.%I FROM anon, authenticated',
+      r.tablename);
+    n := n + 1;
+  END LOOP;
+  RAISE NOTICE 'Section 92: 已处理 % 张表', n;
+END $$;
+
+-- ---- 92.2 治根：改默认权限，让新表不再自动带上这些 ----
+-- 不改的话每建一张新表都会重新长出这个问题（实测确认过）。
+-- 需要是该默认权限所属的角色；ANON/AUTHENTICATED 在 public 下由 postgres 建表，
+-- 所以改 postgres 即可。若当前执行角色没有权限（例如在某些托管环境里），
+-- 忽略错误并给出提示 —— 这一句失败不影响 92.1 已经生效的结果。
+DO $$
+BEGIN
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public '
+       || 'REVOKE TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLES FROM anon, authenticated';
+  RAISE NOTICE 'Section 92: 已修改 postgres 的默认权限';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'Section 92: 无权修改 postgres 的默认权限（需要超级用户），跳过；新建表仍会带上这几项权限，部署后需手动执行一次。';
+END $$;
+-- ============================================================================
+-- Section 93: 补上基础表权限（生产有、本文件从未显式授予）
+-- ----------------------------------------------------------------------------
+-- 实测对比「香港生产库」与「空库重放本文件」在 public 上的授权：
+--   生产 465 条，重放 1 条。
+-- 也就是说重放出来的库 anon 读不了任何表、authenticated 只在 net_probe_samples
+-- 上有 SELECT —— 全新部署会直接不可用。
+--
+-- 根因：生产的这些权限来自建表时的 ALTER DEFAULT PRIVILEGES（postgres 角色在
+-- public 下默认把 arwdDxtm 授予 anon/authenticated），而本文件从没显式写过。
+-- 之前只对比了列/索引/约束/函数，权限这一维一直没查。
+--
+-- 本 section 只授到生产实际拥有的那四项，【不含】TRUNCATE/REFERENCES/TRIGGER/MAINTAIN
+-- —— 那四项已由 Section 92 收回，92 在前、93 在后，最终结果正好是 arwd。
+-- 真正的访问控制是 RLS（本文件有 105 条策略），这里的 GRANT 只是让 RLS 有机会生效。
+--
+-- 序列权限必须一起给：BIGSERIAL 主键的 DEFAULT nextval() 需要 USAGE，
+-- 缺了 INSERT 会直接失败（生产有 20 条序列授权，重放 0 条）。
+-- ============================================================================
+
+-- ---- 93.1 现存对象 ----
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
+-- ---- 93.2 治根：默认权限，让将来新建的对象自动带上正确的权限 ----
+-- 与 Section 92.2 是配套的：那边收回危险项，这边授予必需项。
+-- 同样需要是该默认权限所属的角色；无权时忽略并提示。
+DO $$
+BEGIN
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public '
+       || 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public '
+       || 'GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO anon, authenticated';
+  RAISE NOTICE 'Section 93: 已修改 postgres 的默认权限（授予 arwd / 序列 USAGE,SELECT,UPDATE）';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'Section 93: 无权修改 postgres 的默认权限（需要超级用户），跳过；新建对象需手动授权。';
+END $$;
