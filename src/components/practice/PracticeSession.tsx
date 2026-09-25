@@ -52,18 +52,19 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
+
+
 import { NoteEditor } from '@/components/notes/NoteEditor'
-import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Plus, Shuffle, Timer, Trash2, BookOpen } from 'lucide-react'
+import { Check, ChevronDown, Filter, GraduationCap, List, MoveHorizontal, Shuffle, Timer, BookOpen } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { FocusTimer } from '@/components/layout/FocusTimer'
 
-import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 
 
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePracticeQuestion } from '@/hooks/use-practice-question'
+import { SessionListDrawer } from '@/components/practice/SessionListDrawer'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -1079,6 +1080,25 @@ export function PracticeSession() {
     }
   }, [])
 
+  /**
+   * 会话列表里点一条会话。原先是写在抽屉 JSX 的 onClick 里的（同处读 auth store、切会话、
+   * 载题、关抽屉），搬出来之后抽屉只发事件，这里负责"点一下到底发生什么"。
+   */
+  const handlePickSession = useCallback(async (sessionKey: string) => {
+    const u = useAuthStore.getState().user
+    if (!u) return
+    // 点当前会话 = 想改它的知识点，而不是切走
+    if (sessionKey === useSequentialStore.getState().sessionKey) {
+      setSequentialDialogOpen(true)
+      setDrawerOpen(false)
+      return
+    }
+    void saveCurrentSession()
+    await seqSwitchSession(u.id, sessionKey)
+    await loadSequentialQuestion(useSequentialStore.getState().currentIndex)
+    setDrawerOpen(false)
+  }, [saveCurrentSession, seqSwitchSession, loadSequentialQuestion])
+
   const startNewSession = useCallback(async (kps: string[], subs: string[], ignoreAnswered: boolean) => {
     const user = useAuthStore.getState().user; if (!user) return
     sessionDistRef.current.clear()
@@ -1553,80 +1573,19 @@ export function PracticeSession() {
 
   return (
     <div className="space-y-3">
-      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} direction={isMobile ? 'bottom' : 'right'}>
-          <DrawerContent className={isMobile ? '' : '!inset-y-0 !right-0 !left-auto !top-0 !mt-0 !h-full w-[400px] max-w-[85vw] !rounded-l-[10px] !rounded-t-none'}>
-            <DrawerHeader>
-              <DrawerTitle>刷题会话</DrawerTitle>
-            </DrawerHeader>
-            <div className="flex-1 scroll-fade overflow-y-auto p-4">
-              {questionMode === 'sequential' && (
-                <>
-                  <div className="flex items-center justify-end mb-2">
-                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setSequentialDialogOpen(true); setDrawerOpen(false) }}><Plus className="h-3 w-3 mr-1" />新建</Button>
-                  </div>
-                  {seqSessions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-2">暂无会话</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {seqSessions.map(s => {
-                        const total = s.questionIds.length
-                        const answered = sessionAnswered?.get(s.sessionKey)
-                        const progress = answered != null && total > 0 ? Math.min(Math.round((answered / total) * 100), 100) : 0
-                        const isActive = s.sessionKey === seqSessionKey
-                        const subjCounts: Record<string, number> = {}
-                        for (const kp of s.selectedKps) { const subj = kpToSubjectRef.current.get(kp); if (subj) subjCounts[subj] = (subjCounts[subj] || 0) + 1 }
-                        const subjEntries = Object.entries(subjCounts)
-                        return (
-                          <div key={s.sessionKey} role="button" tabIndex={0} className={cn('w-full rounded-lg border p-2.5 text-left transition-colors hover:bg-accent cursor-pointer', isActive && 'border-primary/50 bg-primary/5')}
-                            onClick={async () => {
-                              const u = useAuthStore.getState().user; if (!u) return
-                              if (isActive) { setSequentialDialogOpen(true); setDrawerOpen(false); return }
-                              saveCurrentSession()
-                              await seqSwitchSession(u.id, s.sessionKey)
-                              loadSequentialQuestion(useSequentialStore.getState().currentIndex)
-                              setDrawerOpen(false)
-                            }}
-                            onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); (ev.currentTarget as HTMLElement).click() } }}>
-                            <div className="flex items-center gap-1.5 mb-1">
-                              {subjEntries.length > 0 ? subjEntries.map(([subj, n], idx) => (
-                                <span key={subj} className="inline-flex items-center gap-1.5">
-                                  {idx > 0 && <Separator orientation="vertical" className="h-3" />}
-                                  <span className="text-xs font-medium">{subj}</span>
-                                  <span className="text-[10px] text-muted-foreground">{n}个</span>
-                                </span>
-                              )) : <span className="text-xs text-muted-foreground">{s.selectedKps.length}个知识点</span>}
-                            </div>
-                            <p className="text-[10px] text-muted-foreground mb-1.5">{new Date(s.createdAt || s.updatedAt).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })} 创建</p>
-                            <div className="flex items-center gap-2">
-                              <Progress value={progress} className="h-1 flex-1" />
-                              <span className="text-[10px] text-muted-foreground tabular-nums">{progress}%</span>
-                              <span
-                                className="text-[10px] text-muted-foreground tabular-nums"
-                                title={answered != null
-                                  ? `本轮已作答 ${answered}/${total} 题 · 上次刷到第 ${s.currentIndex} 题`
-                                  : `上次刷到第 ${s.currentIndex}/${total} 题`}
-                              >
-                                {answered != null ? `${answered}/${total}` : `统计中…`}
-                              </span>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-destructive/60 hover:text-destructive"
-                                onClick={(ev) => { ev.stopPropagation(); ev.preventDefault(); setDeleteSessionKey(s.sessionKey) }}
-                                title="删除会话">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            <DrawerFooter>
-              <DrawerClose asChild><Button variant="outline" className="w-full">关闭</Button></DrawerClose>
-            </DrawerFooter>
-          </DrawerContent>
-        </Drawer>
+      <SessionListDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        isMobile={isMobile}
+        visible={questionMode === 'sequential'}
+        sessions={seqSessions}
+        answeredBySession={sessionAnswered}
+        activeSessionKey={seqSessionKey}
+        subjectOfKp={(kp) => kpToSubjectRef.current.get(kp)}
+        onNew={() => { setSequentialDialogOpen(true); setDrawerOpen(false) }}
+        onPick={handlePickSession}
+        onDelete={setDeleteSessionKey}
+      />
 
       <Drawer open={tocOpen} onOpenChange={setTocOpen} direction={isMobile ? 'bottom' : 'right'}>
           <DrawerContent className={isMobile ? 'h-[66vh] max-h-[66vh]' : '!inset-y-0 !right-0 !left-auto !top-0 !mt-0 !h-full w-[360px] max-w-[85vw] !rounded-l-[10px] !rounded-t-none'}>
