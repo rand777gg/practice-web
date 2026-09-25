@@ -57,6 +57,12 @@ function createSafeClient(url: string, key: string) {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
+      // 钉死 storage key。supabase-js 默认按 `sb-<hostname 首段>-auth-token` 推导，
+      // 所以换 API 域名（例如迁到 EdgeOne 时换 hostname）会让 key 变掉 = 把全体用户登出，
+      // 而且他们大多开了 MFA，重登很烦。这里显式钉住当前值，换域名就与登录态无关了。
+      // 当前值必须与推导值完全一致，否则这一改本身就会登出所有人 —— 实测线上会话 key
+      // 就是 `sb-supabase-auth-token`（hostname 首段是 supabase）。
+      storageKey: 'sb-supabase-auth-token',
     },
     realtime: {
       params: {
