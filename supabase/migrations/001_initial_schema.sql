@@ -7633,3 +7633,33 @@ DROP FUNCTION IF EXISTS public.get_plan_stats_v3(uuid, jsonb);
 -- Public 的 RPC 只应暴露前端真正在用的那一个。若将来还要做优化实验，请在事务里
 -- 改名验证，别把实验版本留在生产上对 anon 开放。
 -- ============================================================================
+-- Section 97: 探针字段语义随「切直连」固定下来（仅注释，不改结构）
+-- ----------------------------------------------------------------------------
+-- Section 91 建 net_probe_samples 时，生产入口 supabase.pguide.dev 还挂在 Cloudflare
+-- 后面，所以那是「直连 vs 经 CF」的两条路径对照。2026-09-25 起生产入口已切成直连
+-- 香港源站（**只改 DNS 记录，hostname 不变** —— 换 hostname 会让 supabase-js 的
+-- storageKey 从 sb-supabase-auth-token 变掉，等于把全体用户登出，还会牵动 OAuth
+-- callback / 邮件链接 / CORS）。字段含义因此固定为：
+--
+--   direct_ms / direct_ok —— 直连路径（= 当前生产入口）的往返耗时 / 是否成功
+--   cdn_ms    / cdn_ok    —— 对照组(一个仍经 Cloudflare 的入口)的耗时 / 是否成功
+--   colo                  —— 对照组的 Cloudflare 边缘机房
+--
+-- 前端 src/lib/net-probe.ts 只在 VITE_NET_PROBE_CONTROL_HOST 配了对照入口时才填
+-- cdn_* 与 colo，所以正常情况下这两列为 null —— 这是预期，不是采集失败。
+--
+-- 为什么不再默认对照 supabase.pguide.dev：它切直连后不再是 CF，请求 CF 专有的
+-- /cdn-cgi/trace 会 404 且不带 CORS 头，浏览器每次会话多报 2 条控制台错误
+-- （探针的 try/catch 拦得住异常，拦不住浏览器自己打的 CORS 报错）。nginx 侧已给
+-- 该路径加了带 CORS 的空 204 垫片，兜住还在跑旧构建的用户。
+--
+-- 另一个已修的坑：原实现用 Promise.all 并行测两条路径，窄带上两条 TLS 握手互相抢
+-- 带宽 —— 3G 实测给出 420.6ms vs 419.8ms 这种把差异抹平的数字，等于白测。已改成顺序测。
+-- ============================================================================
+
+COMMENT ON COLUMN public.net_probe_samples.direct_ms IS '直连路径(=当前生产入口)往返耗时 ms；2026-09-25 起生产入口为直连香港源站';
+COMMENT ON COLUMN public.net_probe_samples.cdn_ms    IS '对照组(经 Cloudflare 的入口)往返耗时 ms；未配置 VITE_NET_PROBE_CONTROL_HOST 时为 null';
+COMMENT ON COLUMN public.net_probe_samples.direct_ok IS '直连路径(当前生产入口)是否请求成功';
+COMMENT ON COLUMN public.net_probe_samples.cdn_ok    IS '对照组是否请求成功；未配置对照组时为 false';
+COMMENT ON COLUMN public.net_probe_samples.colo      IS '对照组的 Cloudflare 边缘机房；未配置对照组时为 null';
+COMMENT ON COLUMN public.net_probe_samples.client_rtt_ms IS '浏览器 Network Information API 报的网络 RTT，精度粗糙仅供分档';
