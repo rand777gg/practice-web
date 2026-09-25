@@ -25,8 +25,16 @@ function json(body: unknown, status = 200): Response {
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
 
+  let body: { token?: string; secret?: string }
   try {
-    const { token, secret } = await req.json()
+    body = await req.json()
+  } catch {
+    // 空 body / 非法 JSON 都属于调用方输入错误, 不该落到外层 catch 变成 500
+    return json({ error: "invalid body" }, 400)
+  }
+
+  try {
+    const { token, secret } = body
     if (!token || !secret) return json({ error: "missing params" }, 400)
 
     const admin = createClient(
