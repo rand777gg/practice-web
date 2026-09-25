@@ -126,9 +126,13 @@ export function ExamResultCard({ sessionId }: Props) {
 
   // 加载“老师批改”手写字体(本地 ScoreHand 子集, 无则回退系统行楷/楷体); 无需外链
   useEffect(() => {
-    // 触发 @font-face 预加载, 避免首次渲染时回退字体闪烁
+    // 触发 @font-face 预加载, 避免首次渲染时回退字体闪烁。
+    // 必须吞掉失败: 字体解码不了时 load() 抛的是 NetworkError, 而这是**尽力而为**的预加载 ——
+    // 回退字体本来就是设计的一部分。不接住的话成绩页每次打开都会冒一个未捕获的 promise 拒绝
+    // （冒烟测试就是这么抓到的: /fonts/score.woff2 的 woff2 头 totalSfntSize 与载荷对不上,
+    // Chromium 直接 "Failed to decode downloaded font"）。
     if (document.fonts && typeof document.fonts.load === 'function') {
-      void document.fonts.load('16px ScoreHand')
+      void document.fonts.load('16px ScoreHand').catch(() => {})
     }
   }, [])
 

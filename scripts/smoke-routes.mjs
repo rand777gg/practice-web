@@ -176,6 +176,30 @@ const CONTENT_PROBES = [
 const SUBMIT_FLOW = { url: '/practice?mode=random', optionName: /^B\s*7$/, optionLabel: 'B 7' }
 
 /**
+ * 考试状态机的端到端断言：开考 → 作答 → 交卷 → 成绩页。
+ *
+ * 为什么非要在浏览器里跑一遍：考试那台状态机（composing / in_progress / submitting / completed）
+ * 是这一轮改出来的，`test:machine` 只覆盖 reducer 本身，组件里"阶段到了没、这一跳有没有跳"没人验。
+ * 拆 `ExamSession.tsx`（1900 行）之前必须有这条线 —— 否则拆完只能说"它还能渲染"。
+ *
+ * 断言分两半，缺一不可：
+ *   · 跳转到 `/exam/result/<本场 id>` 且成绩页渲染出来 —— 证明 completed 阶段真的到达并被消费；
+ *   · 网络侧真的有 POST /user_answers 与 PATCH /exam_sessions —— 否则"跳过去了"也可能只是
+ *     本地状态翻了个布尔，写完库那一刻没人管。
+ * 后者是特意用请求记录而不是读 DOM 的：进度计数是三个相邻内联 span，innerText 里带不带空格
+ * 取决于 flex 布局，按文本断言会飘（练习页那个 "B 7" vs "B7" 已经栽过一次）。
+ */
+const EXAM_FLOW = {
+  url: '/exam',
+  startLabel: '开始考试',
+  toolbarHint: '共 1 题',
+  optionName: /^B\s*7$/,
+  submitLabel: '交卷',
+  confirmLabel: '确认交卷',
+  resultExpect: '考试成绩',
+}
+
+/**
  * 喂了畸形 plan_subjects 时，练习页**正确地**停在"尚未设置学习计划"，不会挑题 ——
  * 那种模式下内容断言必然不成立，所以跳过它。这一轮仍会跑完整路由扫描，
  * 而要证明的正是"畸形值不再把整个应用炸掉"（改之前 PlanDialog 里那句裸 JSON.parse 会）。
@@ -255,9 +279,34 @@ const SEQUENTIAL_STATE_ROW = {
   created_at: new Date(0).toISOString(),
 }
 
+/**
+ * 一场进行中的考试。
+ *
+ * 会话 id 是钉死的常量而不是随机值：`handleStart` 成功后会 `setSearchParams({sessionId})`，
+ * 而那个 effect 依赖 searchParams —— 于是紧接着会用这个 id 再 `resumeExam` 一次（线上也这样）。
+ * 插入返回的行与按 id 查返回的行必须是**同一场**，否则那一跳会读到另一份数据。
+ */
+const EXAM_SESSION_ID = 'eeeeeeee-1111-1111-1111-111111111111'
+const EXAM_SESSION_ROW = {
+  id: EXAM_SESSION_ID,
+  user_id: USER_ID,
+  status: 'in_progress',
+  total_questions: 1,
+  correct_count: 0,
+  score: null,
+  question_ids: [QUESTION_ID],
+  current_index: 0,
+  duration_ms: 3600000,
+  started_at: new Date().toISOString(),
+  completed_at: null,
+  template: null,
+}
+
 /** RPC → 返回值。只放首屏真的会调的；其余仍是 null（走空态） */
 const RPC_FIXTURES = {
   get_random_question_id: QUESTION_ID,
+  // 组卷：只给一道题，够走完「开考 → 作答 → 交卷」三个阶段
+  compose_exam: { question_ids: [QUESTION_ID], sections: [] },
   get_review_pool_count: 0,
   get_review_count: 0,
   count_question_items: 1,
@@ -321,29 +370,47 @@ async function installStubs(context) {
 
   // 表查询：profiles 给一份真资料（否则 /admin/* 会被弹回仪表盘，"能挂载"就是假的）；
   // questions / question_meta_cache 喂数据好让练习页真的渲染出题目；其余表回空数组
-  await context.route('**/rest/v1/rpc/**', (route) => {
-    const name = route.request().url().split('/rpc/')[1]?.split('?')[0] ?? ''
-    const fixture = Object.prototype.hasOwnProperty.call(RPC_FIXTURES, name) ? RPC_FIXTURES[name] : null
-    return json(route, fixture)
-  })
   await context.route('**/rest/v1/**', (route) => {
     const req = route.request()
     const url = req.url()
     const wantsObject = (req.headers()['accept'] ?? '').includes('vnd.pgrst.object')
     // 写入路径几乎都是 `.insert(...).select(...).single()`，必须回一行才走得下去 ——
-    // 回 406 会让 saveAnswer 抛错，交卷那半条链路就测不到了
+    // 回 406 会让 saveAnswer 抛错，交卷那半条链路就测不到了。
+    // exam_sessions 是个例外：`createExamSession` 把整行读进领域对象，只回一个 id 会让
+    // started_at 变成 undefined（计时器 / 成绩页都读它），所以必须回完整的一场。
     if (req.method() !== 'GET') {
+      if (url.includes('/exam_sessions')) return json(route, wantsObject ? EXAM_SESSION_ROW : [EXAM_SESSION_ROW])
       return json(route, wantsObject ? { id: 'smoke-row-1' } : [{ id: 'smoke-row-1' }])
     }
     if (url.includes('/profiles')) return json(route, wantsObject ? PROFILE : [PROFILE])
     if (url.includes('/questions')) return json(route, wantsObject ? QUESTION_ROW : [QUESTION_ROW])
     if (url.includes('/question_meta_cache')) return json(route, wantsObject ? QUESTION_META_CACHE : [QUESTION_META_CACHE])
     if (url.includes('/practice_sequential_state')) return json(route, wantsObject ? SEQUENTIAL_STATE_ROW : [SEQUENTIAL_STATE_ROW])
+    if (url.includes('/exam_sessions')) {
+      // 「有没有在考的」→ 回 406，开始页才会出现（有行的话弹的是续考弹窗，开考按钮就点不到了）
+      if (url.includes('status=eq.in_progress')) {
+        return json(route, { code: 'PGRST116', details: 'Results contain 0 rows', hint: null, message: 'JSON object requested, multiple (or no) rows returned' }, 406)
+      }
+      return json(route, wantsObject ? EXAM_SESSION_ROW : [EXAM_SESSION_ROW])
+    }
     if (wantsObject) {
       // 与 PostgREST 对齐：向 .single() 要一行却没有行时是 406 + PGRST116
       return json(route, { code: 'PGRST116', details: 'Results contain 0 rows', hint: null, message: 'JSON object requested, multiple (or no) rows returned' }, 406)
     }
     return json(route, [])
+  })
+
+  /*
+   * RPC 必须写在 `rest` 通配**之后** —— Playwright 是「后注册的先匹配」，写在前面就会被那条
+   * 通配整个吃掉。我一开始就是写在前面，于是 RPC_FIXTURES 一个字都没生效过：组卷请求收到的是
+   * 通配给 POST 的 `[{id:'smoke-row-1'}]`，toComposeExamResult 解析出空题单，页面停在
+   * "No questions available"。而练习页看起来是好的（它从 practice_sequential_state 的行里
+   * 拿到了题号），所以这个洞藏了很久 —— 直到考试链路非要 compose_exam 不可才露出来。
+   */
+  await context.route('**/rest/v1/rpc/**', (route) => {
+    const name = route.request().url().split('/rpc/')[1]?.split('?')[0] ?? ''
+    const fixture = Object.prototype.hasOwnProperty.call(RPC_FIXTURES, name) ? RPC_FIXTURES[name] : null
+    return json(route, fixture)
   })
 
   // 静态资源之外的外部请求（字体/CDN）直接放行会变慢，这里给个空响应
@@ -372,6 +439,15 @@ try {
 
   let currentErrors = []
   page.on('pageerror', (err) => currentErrors.push(err.message))
+
+  // 写请求单独记一份：断言"某个阶段真的落库了"，比读 DOM 文案稳
+  let currentWrites = []
+  page.on('request', (req) => {
+    if (req.method() !== 'GET') currentWrites.push({ method: req.method(), url: req.url() })
+  })
+  page.on('requestfailed', (req) => {
+    console.log(`        ⚠ 请求失败 ${req.method()} ${req.url().replace(base, '')} ${req.failure()?.errorText ?? ''}`)
+  })
 
   for (const route of selected) {
     currentErrors = []
@@ -463,6 +539,60 @@ try {
       results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
     }
   }
+  // ── 交互式断言：开考 → 作答 → 交卷 → 成绩页（考试状态机的四个阶段） ──
+  {
+    currentErrors = []
+    currentWrites = []
+    const label = '开考作答交卷'
+    try {
+      await page.goto(`${base}${EXAM_FLOW.url}`, { waitUntil: 'load', timeout: 30_000 })
+      await page.getByRole('button', { name: EXAM_FLOW.startLabel }).first().click({ timeout: 15_000 })
+      console.log('        · 已点「开始考试」')
+
+      // composing → in_progress：工具栏带着本场题数出现，说明 compose/loaded 走到了
+      await page.getByText(EXAM_FLOW.toolbarHint).first().waitFor({ timeout: 15_000 })
+      await page.getByRole('button', { name: EXAM_FLOW.optionName }).first().click({ timeout: 15_000 })
+      console.log('        · 已作答第 1 题')
+
+      await page.getByRole('button', { name: EXAM_FLOW.submitLabel }).first().click({ timeout: 15_000 })
+      await page.getByRole('button', { name: EXAM_FLOW.confirmLabel }).first().click({ timeout: 15_000 })
+      console.log('        · 已确认交卷')
+
+      // submitting → completed：会话翻成 completed 后组件跳到成绩页
+      await page.waitForURL(`**/exam/result/${EXAM_SESSION_ID}`, { timeout: 15_000 })
+      await page.waitForTimeout(800)
+      const body = await page.locator('body').innerText()
+      const scoreShown = body.includes(EXAM_FLOW.resultExpect)
+      const answerWrote = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/user_answers'))
+      const sessionWrote = currentWrites.some((r) => r.method === 'PATCH' && r.url.includes('/exam_sessions'))
+      const ok = scoreShown && answerWrote && sessionWrote && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${EXAM_FLOW.url} 开考 → 作答 → 交卷 → 跳 /exam/result`)
+      if (!ok) {
+        const wrote = currentWrites.map((r) => `${r.method} ${r.url.split('/rest/v1/')[1]?.split('?')[0] ?? r.url.split('/').pop()}`)
+        console.log(`        成绩页出现「${EXAM_FLOW.resultExpect}」=${scoreShown} 作答落库=${answerWrote} 交卷落库=${sessionWrote}`)
+        console.log(`        写请求: ${JSON.stringify(wrote.slice(0, 12))}`)
+        console.log(`        实际 URL=${page.url()}`)
+        console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
+        for (const e of currentErrors.slice(0, 5)) console.log(`        未捕获异常: ${e.slice(0, 200)}`)
+      }
+      results.push({ route: `${EXAM_FLOW.url} ⇒ ${label}`, ok, length: body.length, errors: [...currentErrors], note: ok ? '' : '考试链路断言未通过' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ ${EXAM_FLOW.url} 开考作答交卷 —— 操作失败: ${msg.slice(0, 160)}`)
+      // 选择器飘了就超时，而超时说不出页面上现在有什么 —— 把按钮名和写请求都打出来
+      try {
+        const names = (await page.getByRole('button').allInnerTexts()).map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean)
+        console.log(`        URL=${page.url()} 按钮总数=${names.length}`)
+        console.log(`        前 12 个按钮: ${JSON.stringify(names.slice(0, 12))}`)
+        const wrote = currentWrites.map((r) => `${r.method} ${r.url.split('/rest/v1/')[1]?.split('?')[0] ?? r.url.split('/').pop()}`)
+        console.log(`        写请求: ${JSON.stringify(wrote.slice(0, 12))}`)
+        const body = await page.locator('body').innerText().catch(() => '')
+        console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
+      } catch { /* 页面可能已经崩了，忽略 */ }
+      results.push({ route: `${EXAM_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
+    }
+  }
+
   // ── 守住"看起来渲染了、其实没登录上"这一类假通过 ──
   // 这一轮就栽在这里：MFA 桩被通配路由吃掉，OtpGuard 一直在重试，每条路由只等 1.2s
   // 恰好落在重试窗口里 —— 页面渲染得好好的，4.5 秒后却被门禁盖住。所以这里显式断言
