@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { logError, userMessage } from '@/services/errors'
 import { fetchLearningRoute, fetchMaxRouteOrder, listQuestionItemsByStages, saveLearningRouteTree } from '@/services/learning-routes'
 import { isFunctionMissing } from '@/services/exam'
+import { reportClientEvent } from '@/lib/client-events'
 import { fetchQuestionsByIds } from '@/services/questions'
 import {
   addRouteQuestions,
@@ -480,6 +481,7 @@ export function useRouteEditor(routeId: string | undefined) {
         // 否则会把真正的失败悄悄降级成那条没有事务、请求数还随题目数增长的老路。
         if (!isFunctionMissing(err)) throw err
         logError('useRouteEditor.handleSave.rpcMissing', err)
+        reportClientEvent({ kind: 'rpc_missing', name: 'save_learning_route', detail: { context: 'useRouteEditor.handleSave' } })
         rid = await saveViaLegacyWrites(working, routeId ?? null)
         if (drawn) await saveRouteDiagram(rid, drawn)
       }

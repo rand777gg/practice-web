@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { completeExam, completeExamSession, createExamSession, fetchExamSession, isFunctionMissing, saveExamCursor } from '@/services/exam'
 import { fetchExamAnswers, upsertAnswer, upsertAnswers } from '@/services/practice'
 import { logError, userMessage } from '@/services/errors'
+import { reportClientEvent } from '@/lib/client-events'
 import type { ExamAnswerPayload } from '@/services/exam'
 import { useRefreshStore } from './refresh-store'
 import { registerUserScopedStore } from '@/stores/user-scope'
@@ -291,8 +292,9 @@ export const useExamStore = create<ExamState>((set, get) => {
         }
         // 迁移还没上线（部署顺序：先发代码、后跑迁移）。退回旧的两步写法：
         // 它有半成功窗口，但总好过"交卷直接不可用"。日志只记开发环境（logError 在生产是空操作），
-        // 所以线上要靠"这场考试是否偶尔显示进行中"来发现它 —— 迁移执行后这个分支应当永不进入。
+        // 所以线上要靠 client_events 里的 rpc_missing 事件来发现它 —— 迁移执行后这个分支应当永不进入。
         logError('exam.submitExam.rpcMissing', e)
+        reportClientEvent({ kind: 'rpc_missing', name: 'complete_exam', detail: { context: 'exam.submitExam' } })
         const startedMs = new Date(session.started_at).getTime()
         try {
           if (answerPayload.length > 0) {

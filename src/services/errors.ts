@@ -113,9 +113,28 @@ export function userMessage(e: unknown): string {
   }
 }
 
+/**
+ * 生产环境的上报出口，由应用启动时注入（见 lib/client-events.ts 的 installErrorReporting）。
+ *
+ * 为什么用注入而不是直接 import 上报模块：`errors.ts` 是这个仓库里被引最广的纯工具，
+ * 连它的**单元测试**都在 Node 里跑（scripts/test-practice-machine.mjs）—— 一旦它 import 了
+ * 带 supabase 的模块，那套零依赖测试就装不起来了。而且服务层本来也不该知道遥测的存在。
+ */
+type ErrorReporter = (context: string, err: AppError) => void
+let errorReporter: ErrorReporter | null = null
+
+export function setErrorReporter(fn: ErrorReporter | null): void {
+  errorReporter = fn
+}
+
 /** 开发日志：带上下文和错误码，只在非生产环境打。 */
 export function logError(context: string, e: unknown): void {
   const err = isAppError(e) ? e : toAppError(e)
-  if (import.meta.env.PROD) return
+  // 生产环境控制台看不到，但**不能就此看不见**：交给注入的上报出口（去重 + 封顶，见 lib/client-events）。
+  // 这是 P2 可观测性的最小落点 —— 至少知道"线上有哪些错误在发生"。
+  if (import.meta.env.PROD) {
+    errorReporter?.(context, err)
+    return
+  }
   console.error(`[${context}] ${err.kind}${err.code ? `/${err.code}` : ''}: ${err.message}`, err.cause ?? '')
 }

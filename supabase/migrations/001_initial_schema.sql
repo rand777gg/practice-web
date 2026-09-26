@@ -8254,3 +8254,68 @@ GRANT EXECUTE ON FUNCTION public.save_learning_route(UUID, TEXT, TEXT, BOOLEAN, 
 -- 整串顺序写变成一次请求；函数不存在时退回旧路径（部署顺序见 Section 102 的同一段说明）。
 -- ============================================================================
 
+-- ============================================================================
+-- Section 104: client_events —— 让"生产里到底有没有走降级路径"看得见
+-- ----------------------------------------------------------------------------
+-- 背景（docs/architecture-optimization.md 第 7 条 P2 可观测性）：现在 `logError` 在生产是**空操作**
+-- （`if (import.meta.env.PROD) return`），所以有两件事在线上完全不可见：
+--
+--   1. 交卷（Section 102）与保存路线（Section 103）都留了"RPC 函数不存在就退回旧路径"的降级分支。
+--      迁移执行后那些分支**应当永不进入**；可一旦因为什么原因真进去了，客户端没有任何信号 ——
+--      用户只是在用那条没有事务的老路，谁也不知道。
+--   2. 其它被 catch 掉的错误：只在开发环境打 console，线上连个数都没有。
+--
+-- 这一节给它们一个落点。沿用 `net_probe_samples` 那一套（Section 91）的做法：
+-- **前端没有 INSERT 权限**，写入走 service_role 的 Edge Function（`report-client-event`），
+-- 免得这个表被刷；读取只给管理员。
+--
+-- 注意 Section 91 的加固只针对 net_probe_samples，新表要自己再收一遍默认权限 ——
+-- 否则 `anon` / `authenticated` 会通过平台默认权限拿到 INSERT（Section 101 的同一课）。
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.client_events (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- 尽量识别调用者但不强制：未登录时的错误同样有价值（user_id 记 null）
+  user_id     UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  -- 'rpc_missing'（降级分支被触发）/ 'error'（被 catch 的错误）/ 'slow_request'
+  kind        TEXT NOT NULL CHECK (kind IN ('rpc_missing', 'error', 'slow_request', 'other')),
+  -- 具体是谁：函数名或 logError 的 context，例如 'complete_exam' / 'exam.submitExam'
+  name        TEXT,
+  detail      JSONB NOT NULL DEFAULT '{}'::JSONB,
+  ua          TEXT,
+  region      TEXT,
+  app_version TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_events_created ON public.client_events(created_at DESC);
+-- 最常见的查法就是"降级分支最近有没有被触发过"，所以按 (kind, name) 也留一个
+CREATE INDEX IF NOT EXISTS idx_client_events_kind_name ON public.client_events(kind, name, created_at DESC);
+
+ALTER TABLE public.client_events ENABLE ROW LEVEL SECURITY;
+
+-- 读：只给管理员（与 net_probe_samples 一致）。写：没有任何策略 —— 客户端角色写不进来，
+-- 只有 service_role（绕过 RLS）能写。
+DROP POLICY IF EXISTS client_events_admin_read ON public.client_events;
+CREATE POLICY client_events_admin_read ON public.client_events
+  FOR SELECT TO authenticated
+  USING (public.is_admin());
+
+-- 治根那一份：这张表是迁移建的，平台默认权限会给 anon/authenticated 一堆表权限（Section 101 的实测：
+-- 连 TRUNCATE/REFERENCES/TRIGGER/MAINTAIN 都在）。这里按同样的口径收干净，只留管理员需要的 SELECT。
+REVOKE ALL ON public.client_events FROM anon, authenticated;
+GRANT SELECT ON public.client_events TO authenticated;
+
+-- 写入方只有 Edge Function 的 service_role；deno 里用的是 SUPABASE_SERVICE_ROLE_KEY。
+GRANT SELECT, INSERT ON public.client_events TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.client_events_id_seq TO service_role;
+
+COMMENT ON TABLE public.client_events IS
+  '客户端上报的事件（降级路径被触发 / 被 catch 的错误）。写入只走 Edge Function report-client-event，前端无 INSERT 权限';
+COMMENT ON COLUMN public.client_events.kind IS
+  'rpc_missing = Section 102/103 的降级分支被触发（迁移执行后应当永不出现）；error = 被 catch 的错误';
+
+-- 客户端改动（本次已做）：`src/lib/client-events.ts` 的 reportClientEvent 调这个函数，
+-- 在交卷/保存路线的降级分支与生产环境的 logError 里各调一次；节流 + 每会话去重，永不抛错。
+-- 查看：`npm run events`（走 SSH 直连库，不经过 PostgREST）。
+-- ============================================================================
+

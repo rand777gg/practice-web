@@ -9,6 +9,7 @@
     "budget": "node scripts/check-first-screen-budget.mjs",
     "audit:anon": "node scripts/audit-anon-exposure.mjs",
     "check:schema": "node scripts/check-schema-drift.mjs",
+    "events": "node scripts/show-client-events.mjs",
     "test:machine": "node scripts/test-practice-machine.mjs",
     "smoke": "node scripts/smoke-boot.mjs",
     "smoke:routes": "node scripts/smoke-routes.mjs",
