@@ -509,7 +509,7 @@ export const QuestionCard = memo(function QuestionCard({ question, selectedAnswe
           onSaveResult={(ans) => onSelect?.({ code: ans.code, language: ans.language, allPassed: ans.allPassed } as CodingAnswer)}
         />
       )}
-      {isCoding && !judgePanelOn && question.examples?.length! > 0 && (
+      {isCoding && !judgePanelOn && (question.examples?.length ?? 0) > 0 && (
         <div className="space-y-2">
           {((question.examples ?? []) as ExampleCase[]).map((ex, i) => (
             <div key={i} className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">

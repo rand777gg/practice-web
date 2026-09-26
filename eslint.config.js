@@ -37,6 +37,26 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // 解构形参有时是"接住再从 ...props 里剔除"的用法（见 ui/chart.tsx 的 Legend），
+      // 这种故意不用的形参用 _ 前缀表达，其余未使用变量仍然报错
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+
+      // eslint-plugin-react-hooks v7 的 recommended 把 React Compiler 的规则也放进来了
+      // （set-state-in-effect / refs / immutability / purity / preserve-manual-memoization）。
+      // 本项目没开 React Compiler（vite.config 里没有 babel-plugin-react-compiler），
+      // 这些规则描述的是"编译器兜底"前提下的约束，当成 error 会把没启用的编译器假设当门槛。
+      // 降成 warn 保留清单和可见性：真开编译器那天，把它们改回 error，逐条清零。
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+
+      // any 集中在第三方边界（recharts 封装、pdf/markdown 解析、AI 解析页），
+      // 收紧会把成本推到包装层而不是消掉风险；保留 warn 让新增量可见
+      '@typescript-eslint/no-explicit-any': 'warn',
+    },
   },
   {
     files: ['**/*.{ts,tsx}'],

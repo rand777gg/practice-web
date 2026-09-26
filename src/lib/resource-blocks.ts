@@ -300,6 +300,11 @@ export function mineruBlockText(block: unknown): string {
   return deepText(b).trim()
 }
 
+/** 这些 block_type 装的是公式而不是正文 */
+export function isEquationBlock(blockType: string): boolean {
+  return /equation|formula/i.test(blockType)
+}
+
 /** 一次解析里图片名/地址的分配状态 —— 队列按出现顺序取, 不能重复用同一个名字 */
 interface ImageScan {
   /** full.md 里的图片路径, 按顺序 */

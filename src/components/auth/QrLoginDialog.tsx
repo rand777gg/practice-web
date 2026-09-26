@@ -54,7 +54,7 @@ export function QrLoginDialog({ open, onOpenChange }: Props) {
         const { data: sessionData, error: fnErr } = await supabase.functions.invoke('qr-login', {
           body: { token, secret: secretRef.current },
         })
-        if (fnErr || !sessionData?.magic_link) { console.error('qr-login error:', fnErr); try { const ctx = await (fnErr as any)?.context?.text?.(); console.error('qr-login body:', ctx) } catch {} setStatus('error'); return }
+        if (fnErr || !sessionData?.magic_link) { console.error('qr-login error:', fnErr); try { const ctx = await (fnErr as any)?.context?.text?.(); console.error('qr-login body:', ctx) } catch { /* 响应体可能已被消费，取不到就算了 */ } setStatus('error'); return }
         // Redirect to magic link URL — auto-logs in and redirects back to app
         window.location.href = sessionData.magic_link
       } else if (state === 'expired') {

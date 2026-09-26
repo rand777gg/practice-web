@@ -54,6 +54,8 @@ export function normalizeChineseText(text: string): string {
   result = result.replace(/([^\s])(_{3,})/g, '$1 $2')
   result = result.replace(/(_{3,})([^\s])/g, '$1 $2')
   // Restore LaTeX math regions
+  // \x00 是内部占位哨兵，不可能出现在题目原文里，所以这里不会误吞正文
+  // eslint-disable-next-line no-control-regex
   result = result.replace(/\x00MATH(\d+)\x00/g, (_, i) => mathBlocks[Number(i)] || '')
   return result
 }

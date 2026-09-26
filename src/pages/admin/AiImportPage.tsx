@@ -26,7 +26,8 @@ import { AiImportPreview } from '@/components/ai-import/AiImportPreview'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { PdfMarkdownViewer, parseLayoutTree } from '@/components/ai-import/PdfMarkdownViewer'
+import { PdfMarkdownViewer } from '@/components/ai-import/PdfMarkdownViewer'
+import { parseLayoutTree } from '@/components/ai-import/layout-tree'
 import { ParseHistoryDialog, type HistoryEntry } from '@/components/ai-import/ParseHistoryDialog'
 import { EditHistoryDialog, type HistoryEdits } from '@/components/ai-import/EditHistoryDialog'
 import { R2PdfGallery } from '@/components/ai-import/R2PdfGallery'
@@ -578,7 +579,6 @@ export function Component() {
     const dedupKey = `pdf/${fileName}`
 
     // Background: ensure PDF is persisted to R2 (skip if already cached)
-    let r2Url: string
     const ensureR2 = (async () => {
       try {
         // Check if already in R2
@@ -594,7 +594,7 @@ export function Component() {
         await uploadBlobToR2(pdfFile, dedupKey, pdfFile.type)
       } catch { /* best-effort */ }
     })()
-    r2Url = r2PublicUrl(dedupKey)
+    const r2Url = r2PublicUrl(dedupKey)
 
     // Start MinerU immediately — don't wait for R2 upload
     const options = {
@@ -711,7 +711,7 @@ export function Component() {
 
     // Apply upload-step metadata defaults to extracted questions
     const kp = keyPoints || category || ''
-    let merged = result.questions.map((q) => ({ ...q, key_points: q.key_points || kp || undefined }))
+    const merged = result.questions.map((q) => ({ ...q, key_points: q.key_points || kp || undefined }))
 
     // Auto line-break formatting — batch all questions in one API call
     if (lineBreakEnabled && merged.length > 0) {

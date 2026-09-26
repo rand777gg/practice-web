@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils'
 import type { Question } from '@/types'
 
 function questionPreview(q: Question) {
-  const text = q.question_text.replace(/[#*`_>\[\]!\-~]/g, '').replace(/\s+/g, ' ').trim()
+  const text = q.question_text.replace(/[#*`_>[\]!~-]/g, '').replace(/\s+/g, ' ').trim()
   return text.length > 90 ? text.slice(0, 90) + '…' : text
 }
 

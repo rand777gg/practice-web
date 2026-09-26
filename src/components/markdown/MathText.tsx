@@ -50,8 +50,3 @@ export function MathText({ tex, display = false, className }: Props) {
     />
   )
 }
-
-/** 这些 block_type 装的是公式而不是正文 */
-export function isEquationBlock(blockType: string): boolean {
-  return /equation|formula/i.test(blockType)
-}

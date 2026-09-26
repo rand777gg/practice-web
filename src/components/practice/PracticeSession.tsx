@@ -371,14 +371,14 @@ export function PracticeSession() {
       try {
         const saved = localStorage.getItem(`sp_${key}`)
         if (saved) subjectPosRef.current = JSON.parse(saved)
-      } catch {}
+      } catch { /* 存档损坏时用内存里的坐标 */ }
     }
   }, [seqSessionKey])
 
   const saveSubjectPos = useCallback(() => {
     const key = useSequentialStore.getState().sessionKey
     if (!key) return
-    try { localStorage.setItem(`sp_${key}`, JSON.stringify(subjectPosRef.current)) } catch {}
+    try { localStorage.setItem(`sp_${key}`, JSON.stringify(subjectPosRef.current)) } catch { /* 隐私模式下写不进去，无妨 */ }
     useSequentialStore.setState({ subjectPositions: { ...subjectPosRef.current } })
   }, [])
 
@@ -558,7 +558,7 @@ export function PracticeSession() {
     const ua = navigator.userAgent
     const devIcon = /Windows/i.test(ua) ? 'mingcute:windows-line' : /Mac/i.test(ua) ? 'mingcute:apple-line' : /Android/i.test(ua) ? 'mingcute:android-line' : /Linux/i.test(ua) ? 'mingcute:linux-line' : /iPhone|iPad/i.test(ua) ? 'mingcute:ios-line' : 'mingcute:computer-line'
     let devName = ''
-    try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch {}
+    try { const uad = (navigator as any).userAgentData; if (uad?.platform) devName = uad.platform + (uad.platformVersion ? ' ' + uad.platformVersion : '') } catch { /* 老浏览器没有 userAgentData */ }
     const lastSync = seqLastSyncAt || [...seqSessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt
     const syncStr = lastSync ? (() => { const d = new Date(lastSync); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` })() : null
     return { block, total, offset, relIndex, ki, qKp, devIcon, devName, syncStr }

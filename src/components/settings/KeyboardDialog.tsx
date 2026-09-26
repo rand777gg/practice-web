@@ -52,7 +52,7 @@ export function KeyboardDialog({ open, onOpenChange, action, currentKeys, onConf
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!open) return
     e.preventDefault(); e.stopPropagation()
-    if (e.key === 'Escape') { recorded.length === 0 ? onOpenChange(false) : setRecorded([]); return }
+    if (e.key === 'Escape') { if (recorded.length === 0) onOpenChange(false); else setRecorded([]); return }
     if (e.key === 'Backspace' || e.key === 'Delete') { onConfirm(''); onOpenChange(false); return }
     if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
     const parts: string[] = []

@@ -43,14 +43,6 @@ const ACCEPT_EXTENSIONS: Record<string, string[]> = {
   precision: ALL_EXTS,
 }
 
-export function getAcceptedFormats(mode: 'lightweight' | 'precision'): string {
-  return mode === 'precision' ? PRECISION_ACCEPT : DEFAULT_ACCEPT
-}
-
-export function getAcceptedExtensions(mode: 'lightweight' | 'precision'): string[] {
-  return ACCEPT_EXTENSIONS[mode]
-}
-
 export function AiImportUpload({ onFile, onFiles, disabled, multiple }: Props) {
   const [dragOver, setDragOver] = useState(false)
   const [files, setFiles] = useState<File[]>([])
