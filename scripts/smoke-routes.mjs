@@ -319,6 +319,15 @@ const RPC_FIXTURES = {
   get_random_question_id: QUESTION_ID,
   // 组卷：只给一道题，够走完「开考 → 作答 → 交卷」三个阶段
   compose_exam: { question_ids: [QUESTION_ID], sections: [] },
+  // Section 102：交卷 RPC 返回整行 exam_sessions（服务端算好的分数与时长）
+  complete_exam: {
+    ...EXAM_SESSION_ROW,
+    status: 'completed',
+    correct_count: 1,
+    score: 100,
+    duration_ms: 42000,
+    completed_at: new Date().toISOString(),
+  },
   get_review_pool_count: 0,
   get_review_count: 0,
   count_question_items: 1,
@@ -593,12 +602,16 @@ try {
       const body = await page.locator('body').innerText()
       const scoreShown = body.includes(EXAM_FLOW.resultExpect)
       const answerWrote = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/user_answers'))
-      const sessionWrote = currentWrites.some((r) => r.method === 'PATCH' && r.url.includes('/exam_sessions'))
-      const ok = scoreShown && answerWrote && sessionWrote && modesOk && currentErrors.length === 0
-      console.log(`  ${ok ? '✓' : '✗'} ${EXAM_FLOW.url} 开考 → 三种视图 → 作答 → 交卷 → 跳 /exam/result`)
+      // 交卷现在必须是那一次 RPC（Section 102：作答入库 + 会话完成在服务端一个事务里）。
+      // 同时要求**没有** PATCH exam_sessions —— 那是 isFunctionMissing 回退分支的特征，
+      // 少了这一条就分不清"走了新路径"和"悄悄退回旧的两步写法"。
+      const submitRpc = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/rest/v1/rpc/complete_exam'))
+      const submitPatch = currentWrites.some((r) => r.method === 'PATCH' && r.url.includes('/exam_sessions'))
+      const ok = scoreShown && answerWrote && submitRpc && !submitPatch && modesOk && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${EXAM_FLOW.url} 开考 → 三种视图 → 作答 → 交卷(RPC) → 跳 /exam/result`)
       if (!ok) {
         const wrote = currentWrites.map((r) => `${r.method} ${r.url.split('/rest/v1/')[1]?.split('?')[0] ?? r.url.split('/').pop()}`)
-        console.log(`        成绩页出现「${EXAM_FLOW.resultExpect}」=${scoreShown} 作答落库=${answerWrote} 交卷落库=${sessionWrote} 视图切换=${modesOk}`)
+        console.log(`        成绩页出现「${EXAM_FLOW.resultExpect}」=${scoreShown} 作答落库=${answerWrote} 交卷 RPC=${submitRpc} 回退到旧路径=${submitPatch} 视图切换=${modesOk}`)
         for (const m of modeChecks.filter((x) => !x.ok)) console.log(`        视图「${m.label}」不符: 题锚=${m.anchors}（期望${m.paper ? '>0' : '0'}）选项按钮=${m.options}（期望${m.paper ? '0' : '>0'}）`)
         console.log(`        写请求: ${JSON.stringify(wrote.slice(0, 12))}`)
         console.log(`        实际 URL=${page.url()}`)

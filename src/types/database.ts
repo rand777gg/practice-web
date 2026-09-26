@@ -2688,6 +2688,31 @@ export type Database = {
       cleanup_expired_challenges: { Args: never; Returns: undefined }
       cleanup_expired_devices: { Args: never; Returns: undefined }
       cleanup_mfa_expired: { Args: never; Returns: undefined }
+      // [patch] 手补：migration Section 102 的函数，线上还没执行（见文件头说明）。
+      // 返回整行 public.exam_sessions，形状与 Tables.exam_sessions.Row 一致。
+      complete_exam: {
+        Args: {
+          p_answers: Json
+          p_correct_count: number
+          p_current_index?: number
+          p_score: number
+          p_session_id: string
+        }
+        Returns: {
+          completed_at: string | null
+          correct_count: number
+          current_index: number
+          duration_ms: number
+          id: string
+          question_ids: Json
+          score: number | null
+          started_at: string
+          status: string
+          template: Json | null
+          total_questions: number
+          user_id: string
+        }
+      }
       compose_exam: {
         Args: {
           p_bank_id?: string

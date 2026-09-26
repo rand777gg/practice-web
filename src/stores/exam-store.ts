@@ -1,8 +1,8 @@
 import { create } from 'zustand'
-import { completeExamSession, createExamSession, fetchExamSession, saveExamCursor } from '@/services/exam'
+import { completeExam, completeExamSession, createExamSession, fetchExamSession, isFunctionMissing, saveExamCursor } from '@/services/exam'
 import { fetchExamAnswers, upsertAnswer, upsertAnswers } from '@/services/practice'
 import { logError, userMessage } from '@/services/errors'
-import type { AnswerInsert } from '@/services/practice'
+import type { ExamAnswerPayload } from '@/services/exam'
 import { useRefreshStore } from './refresh-store'
 import { registerUserScopedStore } from '@/stores/user-scope'
 import {
@@ -237,13 +237,13 @@ export const useExamStore = create<ExamState>((set, get) => {
       if (!session) return
 
       apply({ type: 'submit/begin' })
-      // 只有真的进入 submitting 才继续 —— 否则（已经在交卷中、或这场已经交过）后面那段
-      // upsert + completeExamSession 会再写一遍，把完成时间和分数覆盖成第二次算的
+      // 只有真的进入 submitting 才继续 —— 否则（已经在交卷中、或这场已经交过）后面那次
+      // RPC 会再跑一遍。服务端也做了幂等早返回，两边都有才叫真的挡住。
       if (get().phase !== 'submitting') return
 
       let correctItems = 0
       const totalItems = questions.reduce((sum, q) => sum + questionItemCount(q), 0)
-      const answerRecords: AnswerInsert[] = []
+      const answerPayload: ExamAnswerPayload[] = []
 
       for (const q of questions) {
         const selected = answers.get(q.id)
@@ -257,47 +257,70 @@ export const useExamStore = create<ExamState>((set, get) => {
             : 0
         correctItems += okCount
         const fullCorrect = !multi ? okCount > 0 : ((q.case_questions?.length ?? 0) > 0 && okCount === (q.case_questions?.length ?? 0))
-        answerRecords.push({
-          user_id: session.user_id,
+        answerPayload.push({
           question_id: q.id,
           selected_answer: selected,
           is_correct: fullCorrect,
-          mode: 'exam',
-          exam_session_id: session.id,
         })
       }
 
-      const now = new Date()
-      const actualDuration = now.getTime() - new Date(session.started_at).getTime()
       const score = totalItems > 0 ? Math.round((correctItems / totalItems) * 100) : 0
 
-      if (answerRecords.length > 0) {
-        // upsert(而非 insert): 作答中的自动保存可能已写过同键行, 交卷时覆盖为最终判定, 避免重复键
-        try {
-          await upsertAnswers(answerRecords)
-        } catch (e) {
-          fail(e, 'exam.submitExam.answers')
+      // 作答入库与会话完成原来在客户端分两次写（upsertAnswers + completeExamSession），
+      // 中间失败会留下"作答已写、会话还在进行中"的半成品。Section 102 把它们合成一次 RPC。
+      let patch: { correct_count: number; score: number; duration_ms: number }
+      try {
+        const completed = await completeExam({
+          sessionId: session.id,
+          answers: answerPayload,
+          correctCount: correctItems,
+          score,
+          currentIndex: get().currentIndex,
+        })
+        if (!completed) throw new Error('交卷没有返回会话')
+        // 服务端返回的行是权威值：duration_ms 是服务端按 started_at 算的，分数也以库里为准
+        patch = {
+          correct_count: completed.correct_count,
+          score: completed.score ?? score,
+          duration_ms: completed.duration_ms,
+        }
+      } catch (e) {
+        if (!isFunctionMissing(e)) {
+          fail(e, 'exam.submitExam')
           return
         }
+        // 迁移还没上线（部署顺序：先发代码、后跑迁移）。退回旧的两步写法：
+        // 它有半成功窗口，但总好过"交卷直接不可用"。日志只记开发环境（logError 在生产是空操作），
+        // 所以线上要靠"这场考试是否偶尔显示进行中"来发现它 —— 迁移执行后这个分支应当永不进入。
+        logError('exam.submitExam.rpcMissing', e)
+        const startedMs = new Date(session.started_at).getTime()
+        try {
+          if (answerPayload.length > 0) {
+            await upsertAnswers(answerPayload.map((a) => ({
+              user_id: session.user_id,
+              question_id: a.question_id,
+              selected_answer: a.selected_answer,
+              is_correct: a.is_correct,
+              mode: 'exam' as const,
+              exam_session_id: session.id,
+            })))
+          }
+          const now = new Date()
+          await completeExamSession(session.id, {
+            correct_count: correctItems,
+            score,
+            duration_ms: now.getTime() - startedMs,
+            current_index: get().currentIndex,
+            completed_at: now.toISOString(),
+          })
+        } catch (e2) {
+          fail(e2, 'exam.submitExam.legacy')
+          return
+        }
+        patch = { correct_count: correctItems, score, duration_ms: Date.now() - startedMs }
       }
 
-      try {
-        await completeExamSession(session.id, {
-          correct_count: correctItems,
-          score,
-          duration_ms: actualDuration,
-          current_index: get().currentIndex,
-          completed_at: now.toISOString(),
-        })
-      } catch (e) {
-        fail(e, 'exam.submitExam')
-        return
-      }
-
-      apply({
-        type: 'submit/done',
-        patch: { status: 'completed', correct_count: correctItems, score, duration_ms: actualDuration },
-      })
+      apply({ type: 'submit/done', patch: { status: 'completed', ...patch } })
       useRefreshStore.getState().bump()
     },
 

@@ -7941,3 +7941,114 @@ END $$;
 --   4. 登录后抽查一个读公开笔记的页面（/notes）与自习室（依赖那两个谓词函数）。
 -- ============================================================================
 
+-- ============================================================================
+-- Section 102: complete_exam —— 把「交卷」收敛成一个事务
+-- ----------------------------------------------------------------------------
+-- 背景（docs/architecture-optimization.md 第 6 条）：交卷原来是前端编排的**两次写** ——
+-- 先把整卷作答 upsert 进 user_answers，再 update exam_sessions 标成 completed。两次之间没有
+-- 事务，第二步失败就留下一个半成品：作答已经判完写库了，会话却还是 in_progress、分数还是 0。
+-- 用户看到"交卷失败"可以再点一次（upsert 是幂等的，会自愈），但**如果他就此关掉页面**，
+-- 这场考试会永远显示"进行中"：下次进 /exam 还会被当成可续考的场次弹出来，
+-- 而用户认为自己已经交过了。
+--
+-- 这一节把两次写收进一个函数，于是要么都成、要么都不成。
+--
+-- 边界说明（重要）：**判分仍然在客户端**（lib/answer-utils.ts 的 isAnswerCorrect 要处理
+-- 单选/多选/填空/翻译/写作/案例分析按小题计分这些口径，移植成 SQL 只会多出一份会漂移的实现）。
+-- 这里只保证"作答入库"与"会话完成"这两件事原子，以及幂等与并发安全。
+--
+-- 幂等：已经 completed 的场次直接返回现状，**不覆盖** completed_at / score / correct_count。
+-- 这也是客户端 exam-store 里那道 phase 守卫的服务端版本 —— 两边都有才叫真的挡住。
+--
+-- 并发：先对会话行 FOR UPDATE。两个人（或两个标签页）同时点交卷时，第二个会等第一个提交，
+-- 然后走上面的幂等早返回，而不是把自己算的分数再覆盖一遍。
+--
+-- duration_ms 由服务端按 started_at 算，不再让客户端拿本地时钟减 —— 少一个时钟来源。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.complete_exam(
+  p_session_id UUID,
+  p_answers JSONB,
+  p_correct_count INT,
+  p_score INT,
+  p_current_index INT DEFAULT 0
+)
+RETURNS public.exam_sessions
+LANGUAGE plpgsql
+-- 按调用者权限跑：user_answers 的 INSERT 与 exam_sessions 的 UPDATE 各自还要过 RLS。
+-- 这是有意的 —— 与 Section 99.3 的告警同源，别为了省事改成 DEFINER。
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_session public.exam_sessions;
+  v_now TIMESTAMPTZ := NOW();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'complete_exam: 需要登录' USING ERRCODE = '28000';
+  END IF;
+
+  SELECT * INTO v_session
+    FROM public.exam_sessions
+   WHERE id = p_session_id AND user_id = v_uid
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    -- 不存在、或不是自己的场次：两种情况回同一个错，不泄露"这个 id 存在但不属于你"
+    RAISE EXCEPTION 'complete_exam: 找不到这场考试' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- 幂等：已经交过就直接回现状
+  IF v_session.status = 'completed' THEN
+    RETURN v_session;
+  END IF;
+
+  -- 整卷作答一次写入；冲突键与客户端的 upsert 一致（uq_user_answers_session）
+  INSERT INTO public.user_answers AS ua
+    (user_id, question_id, selected_answer, is_correct, mode, exam_session_id)
+  SELECT v_uid,
+         (a->>'question_id')::UUID,
+         COALESCE(a->'selected_answer', 'null'::JSONB),
+         COALESCE((a->>'is_correct')::BOOLEAN, FALSE),
+         'exam',
+         p_session_id
+    FROM jsonb_array_elements(COALESCE(p_answers, '[]'::JSONB)) AS a
+  ON CONFLICT (user_id, question_id, exam_session_id)
+  DO UPDATE SET selected_answer = EXCLUDED.selected_answer,
+                is_correct      = EXCLUDED.is_correct;
+  -- 冲突时【不】动 answered_at：那是作答时的自动保存写下的时间，交卷不该把它改成交卷时刻。
+
+  UPDATE public.exam_sessions
+     SET status        = 'completed',
+         correct_count = COALESCE(p_correct_count, 0),
+         score         = p_score,
+         duration_ms   = GREATEST(0, (EXTRACT(EPOCH FROM (v_now - v_session.started_at)) * 1000)::BIGINT),
+         current_index = COALESCE(p_current_index, 0),
+         completed_at  = v_now
+   WHERE id = p_session_id
+  RETURNING * INTO v_session;
+
+  RETURN v_session;
+END $$;
+
+COMMENT ON FUNCTION public.complete_exam(UUID, JSONB, INT, INT, INT) IS
+  '交卷：整卷作答 upsert + 会话完成，同一个事务；已完成的场次幂等早返回';
+
+-- 权限：登录用户可调，匿名不行。注意 PUBLIC 那条内建默认也得撤（Section 101 的实测结论：
+-- 只写 FROM anon 撤不掉 PUBLIC 那条，匿名照样能调）。
+REVOKE EXECUTE ON FUNCTION public.complete_exam(UUID, JSONB, INT, INT, INT) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.complete_exam(UUID, JSONB, INT, INT, INT) TO authenticated;
+
+-- 配套的客户端改动（本次已做）：services/exam.ts 的 completeExam 调这个函数，
+-- exam-store.submitExam 用它替换掉原来的 upsertAnswers + completeExamSession 两次写。
+--
+-- 按仓库「先发代码、后跑迁移」的部署约定（Section 31 的原话），客户端在函数还不存在时
+-- **自动降级**回那两步写：PostgREST 回 404 + `PGRST202: Could not find the function ...`，
+-- services/exam.ts 的 isFunctionMissing 只认这一种错（网络抖动、权限不足都不能算），
+-- 命中才退回旧路径。所以 upsertAnswers / completeExamSession 被保留下来，只服务于这条回退分支 ——
+-- 迁移执行之后那个分支就应当永不进入。冒烟测试里有一条断言专门盯这个：
+-- 交卷必须是 `POST /rest/v1/rpc/complete_exam`，且**不允许**出现 `PATCH /exam_sessions`。
+--
+-- 这个函数是纯新增，不破坏兼容：老客户端继续走它自己那两步，不受影响。
+-- ============================================================================
+

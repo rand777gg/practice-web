@@ -1,5 +1,6 @@
 import type { Database, Json } from '@/types/database'
 import type {
+  CorrectAnswer,
   ExamComposeStat,
   ExamOrderMode,
   ExamSampleMode,
@@ -14,6 +15,7 @@ import type { ExamTemplateLayout } from '@/lib/paper-layout'
 import { normalizeLayout } from '@/lib/paper-layout'
 import { db, run, runList, toJson, type Insert, type QueryOptions, type Update } from './db'
 import { assertColumns } from './columns'
+import { isAppError, toAppError } from './errors'
 
 /**
  * exam_sessions / exam_templates / exam_schedules 的字段集。
@@ -429,6 +431,69 @@ export async function deleteExamSession(sessionId: string, options: QueryOptions
     () => (options.signal ? base.abortSignal(options.signal) : base),
     { ...options, context: options.context ?? 'exam.deleteExamSession' },
   )
+}
+
+// ── 交卷（跨表用例，Section 102）──
+
+/** 交卷时整卷作答的形状：判分结果由调用方算好传进来（见 completeExam 的注释） */
+export interface ExamAnswerPayload {
+  question_id: string
+  selected_answer: CorrectAnswer
+  is_correct: boolean
+}
+
+export interface CompleteExamInput {
+  sessionId: string
+  answers: ExamAnswerPayload[]
+  correctCount: number
+  score: number
+  currentIndex: number
+}
+
+/**
+ * 交卷：整卷作答入库 + 会话标完成，**一个事务**。
+ *
+ * 为什么不能像以前那样在客户端分两次写：第二步失败会留下"作答已判完写库、会话还在进行中"
+ * 的半成品；用户若就此关掉页面，这场考试会永远显示进行中，下次进 /exam 还会被当成可续考。
+ *
+ * 判分仍然在客户端（`isAnswerCorrect` 要处理单选/多选/填空/翻译/写作/案例分析按小题计分，
+ * 移植成 SQL 只会多一份会漂移的实现）—— 这里只保证两次写原子，外加幂等与并发安全。
+ * `duration_ms` 由服务端按 started_at 算，客户端不再传。
+ *
+ * 幂等：已经是 completed 的场次，服务端直接返回现状，不覆盖完成时间与分数。
+ */
+export async function completeExam(input: CompleteExamInput, options: QueryOptions = {}): Promise<ExamSession | null> {
+  const args = {
+    p_session_id: input.sessionId,
+    p_answers: toJson(input.answers),
+    p_correct_count: input.correctCount,
+    p_score: input.score,
+    p_current_index: input.currentIndex,
+  }
+  const base = db.rpc('complete_exam', args)
+  const row = await run(
+    () => (options.signal ? base.abortSignal(options.signal) : base),
+    { ...options, context: options.context ?? 'exam.completeExam' },
+  )
+  return row ? toExamSession(row) : null
+}
+
+/**
+ * 这个错误是不是「服务端还没有这个函数」。
+ *
+ * 需要的理由：本仓库的部署约定是**先发代码、后跑迁移**（Section 31 的原话：
+ * "前端在列缺失时自动降级插入，故先部署代码后执行本迁移也不会开考失败"）。
+ * Section 102 的 complete_exam 是纯新增，所以线上在那个迁移执行之前不存在它 ——
+ * 那时 PostgREST 回 404 + `PGRST202: Could not find the function ... in the schema cache`。
+ * 调用方据此退回旧的两步写法，而不是让"交卷"这个核心动作直接不可用。
+ *
+ * 只认这一种错：网络抖动、权限不足、幂等冲突都不能当"函数不存在"处理，
+ * 否则会把真正的失败悄悄降级成旧的、有半成功窗口的路径。
+ */
+export function isFunctionMissing(e: unknown): boolean {
+  const err = isAppError(e) ? e : toAppError(e)
+  if (err.code === 'PGRST202') return true
+  return /could not find the function|function .* does not exist/i.test(err.message)
 }
 
 /** 只取用户自有模板; 内置预设只存在于前端代码, 不落库 */
