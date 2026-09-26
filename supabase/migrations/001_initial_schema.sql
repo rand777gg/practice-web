@@ -8319,3 +8319,193 @@ COMMENT ON COLUMN public.client_events.kind IS
 -- 查看：`npm run events`（走 SSH 直连库，不经过 PostgREST）。
 -- ============================================================================
 
+-- ============================================================================
+-- Section 105: 给「接收 p_user_id 却不校验身份」的函数补守卫
+-- ----------------------------------------------------------------------------
+-- 背景（Section 99.3 记的那一类"现在安全、但很脆"）：线上有 16 个（含一个重载共 17 个）
+-- SECURITY INVOKER 函数接收 `p_user_id`，函数体里却**完全没有** `auth.uid()` / `is_admin()`。
+--
+-- 为什么现在不构成越权：它们是 INVOKER，读 user_answers / profiles 时照样受 RLS 约束，
+-- 传别人的 uuid 只会读到空。**但这层保护完全靠"记得别改成 SECURITY DEFINER"** ——
+-- 而为了跨表读取把函数改成 DEFINER 是很自然的下一步，那一刻这 17 个会同时变成 IDOR
+-- （任何登录用户传别人的 uuid 就能读别人的统计）。
+--
+-- 这一节把它们统一加固：在函数体开头插一句身份判定。判据放在这里，而不是散在 17 个函数里：
+--   · `p_user_id` 等于自己 → 放行（**所有调用点都是这一种**，已逐个核对过 src 与 edge functions）；
+--   · 管理员 → 放行（后台看别人数据的正当路径）；
+--   · service_role → 放行。这条**不是**在放宽：service_role 本来就绕过 RLS、能读任何东西，
+--     不放行只会让将来的服务端定时任务莫名其妙地挂掉。MCP 那个 edge function 用的是
+--     **调用者自己的 token**（`Authorization: Bearer ${ctx.token}`），所以它走的是第一条。
+--
+-- 改法是**动态重写**而不是手抄 17 份函数体：`pg_get_functiondef` 拿到权威定义，在顶层
+-- `BEGIN` 之后插入守卫，再 `CREATE OR REPLACE` 回去。手抄 17 个函数体（约 20KB SQL）
+-- 只会引入抄错的风险，而那些是计分口径所在。CREATE OR REPLACE **保留原 OID 与 ACL**，
+-- 所以 Section 101.1 收回的 anon EXECUTE 不会被这次重写放开（下面有断言核对）。
+--
+-- 重放安全：守卫里带 MARKER 注释，已经加过的函数直接跳过 —— 整份迁移重跑不会插两次。
+--
+-- ⚠️ 一个副作用：以 **psql 超级用户**直接连库调这些函数会开始报 42501（那时候 auth.uid() 为 NULL）。
+-- 这是预期的 —— 它们本来就是"以登录用户身份调"的接口。要手工调试就用
+-- `set_config('request.jwt.claims', json_build_object('sub','<uuid>','role','authenticated')::text, true)`。
+-- ============================================================================
+DO $section105$
+DECLARE
+  -- 注意是 OID 不是 UUID：pg_proc.oid 是 oid 类型，赋给 UUID[] 会被当成 uuid 解析而报
+  -- `invalid input syntax for type uuid: "18370"`（我第一版就是这么写的）
+  v_targets OID[];
+  v_oid OID;
+  v_name TEXT;
+  v_src TEXT;
+  v_def TEXT;
+  v_pos INT;
+  v_guard TEXT;
+  v_lang TEXT;
+  v_body TEXT;
+  v_call TEXT;
+  v_rest TEXT;
+  v_a INT;
+  v_b INT;
+  v_retset BOOLEAN;
+  v_n INT := 0;
+  v_skipped INT := 0;
+  v_unguardable TEXT[] := ARRAY[]::TEXT[];
+  MARKER CONSTANT TEXT := 'Section 105 身份守卫';
+BEGIN
+  -- 先把目标钉成数组再逐个处理：边遍历游标边 CREATE OR REPLACE 会动到正在扫的 catalog
+  SELECT array_agg(p.oid) INTO v_targets
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public'
+     AND p.prokind = 'f'
+     AND NOT p.prosecdef                                   -- DEFINER 的另外单独处理
+     AND pg_get_function_arguments(p.oid) LIKE '%p_user_id%'
+     AND (
+       -- 还没有任何身份判定的 —— 这次要加固的
+       (position('auth.uid()' IN p.prosrc) = 0 AND position('is_admin()' IN p.prosrc) = 0)
+       -- 或者已经带我们 MARKER 的：留在集合里只为让"跳过"计数说真话。
+       -- 不这么写的话，加固过的函数会因为 prosrc 里已经有 auth.uid() 而被过滤掉，
+       -- 于是一次重放会打印"已加固 0 个，跳过 0 个" —— 数字是对的，但读起来像什么都没发生。
+       OR position(MARKER IN p.prosrc) > 0
+     );
+
+  FOREACH v_oid IN ARRAY coalesce(v_targets, ARRAY[]::OID[])
+  LOOP
+    SELECT p.proname, p.prosrc, l.lanname, p.proretset INTO v_name, v_src, v_lang, v_retset
+      FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_oid;
+
+    IF position(MARKER IN v_src) > 0 THEN
+      v_skipped := v_skipped + 1;                            -- 已经加过
+      CONTINUE;
+    END IF;
+
+    v_def := pg_get_functiondef(v_oid);
+    v_guard := format(
+      E'\n  -- %s\n  IF p_user_id IS DISTINCT FROM auth.uid()\n     AND NOT public.is_admin()\n     AND coalesce(auth.role(), \'\') <> \'service_role\' THEN\n    RAISE EXCEPTION \'%s: 无权访问他人的数据\' USING ERRCODE = \'42501\';\n  END IF;\n',
+      MARKER, v_name);
+
+    IF v_lang = 'plpgsql' THEN
+      -- 函数体里插一句最省事，也不动原有语句
+      v_pos := position('BEGIN' IN v_def);
+      IF v_pos = 0 THEN
+        v_unguardable := v_unguardable || format('%s(plpgsql 但找不到 BEGIN)', v_name);
+        CONTINUE;
+      END IF;
+      EXECUTE left(v_def, v_pos + 4) || v_guard || substring(v_def FROM v_pos + 5);
+
+    ELSIF v_lang = 'sql' THEN
+      -- SQL 语言没有函数体级的 BEGIN 可插，只能把它**改成 plpgsql 并包一层**。
+      -- 这一步只对**单语句**体做：线上这 12 个恰好都是单语句（末尾一个分号），
+      -- 多于一个分号就说明是多语句体，包起来语义可能变 —— 那种记下来报出来，不猜。
+      v_body := btrim(v_src);
+      IF (length(v_body) - length(replace(v_body, ';', ''))) > 1 THEN
+        v_unguardable := v_unguardable || format('%s(sql 多语句体)', v_name);
+        CONTINUE;
+      END IF;
+      -- 去掉首尾空白与**末尾那个分号**。注意不能用 rtrim(x) —— 它默认只去空格，
+      -- 而 prosrc 末尾是 `;\r\n`，分号后面还有换行，于是 `;` 会留下（我第一版就是这样，
+      -- 包出来变成 `... ); <换行> ;`，报 `syntax error at or near ";"`）。
+      v_body := regexp_replace(v_body, '^[[:space:]]+|[[:space:]]+$', '', 'g');
+      v_body := regexp_replace(v_body, ';[[:space:]]*$', '');
+      IF v_retset THEN
+        v_call := '  RETURN QUERY ' || v_body || E';\n';      -- RETURNS TABLE / SETOF
+      ELSE
+        v_call := '  RETURN (' || v_body || E');\n';          -- 标量 / jsonb
+      END IF;
+
+      -- 只动两处：LANGUAGE sql → plpgsql，以及 $function$ 之间的体。
+      -- 用 pg_get_functiondef 的原文而不是自己拼 DDL —— 拼 DDL 会**悄悄丢掉**
+      -- STRICT / STABLE / SET search_path / COST / PARALLEL 这些属性（有些函数带 SET search_path TO ''）。
+      v_def := replace(v_def, 'LANGUAGE sql', 'LANGUAGE plpgsql');
+      v_a := position('$function$' IN v_def);
+      IF v_a = 0 THEN
+        v_unguardable := v_unguardable || format('%s(找不到 $function$ 定界符)', v_name);
+        CONTINUE;
+      END IF;
+      v_rest := substring(v_def FROM v_a + 10);
+      v_b := position('$function$' IN v_rest);
+      IF v_b = 0 THEN
+        v_unguardable := v_unguardable || format('%s($function$ 定界符不成对)', v_name);
+        CONTINUE;
+      END IF;
+      EXECUTE left(v_def, v_a + 9)
+           -- 关键的一句编译器指令，**必须放在块之前**（放 BEGIN 里面会报 `syntax error at or near "#"`）：
+           -- plpgsql 里 `RETURNS TABLE(subject text, ...)` 会声明同名变量，于是体里那个 `subject`
+           -- 列引用变成"列还是变量"二义（报 column reference "subject" is ambiguous）。
+           -- 原来在 SQL 语言下没有 plpgsql 变量这回事，裸标识符一律当列；use_column 正是保留这个语义。
+           || E'\n#variable_conflict use_column\nBEGIN\n'
+           || v_guard || E'\n' || v_call || E'END\n'
+           || substring(v_def FROM v_a + 10 + v_b - 1);
+
+    ELSE
+      v_unguardable := v_unguardable || format('%s(%s —— 不是 plpgsql/sql)', v_name, v_lang);
+      CONTINUE;
+    END IF;
+
+    v_n := v_n + 1;
+  END LOOP;
+
+  RAISE NOTICE 'Section 105: 已加固 % 个函数，跳过（已加过）% 个', v_n, v_skipped;
+  IF array_length(v_unguardable, 1) > 0 THEN
+    RAISE WARNING 'Section 105: 以下函数需要人工处理: %', array_to_string(v_unguardable, ', ');
+  END IF;
+END $section105$;
+
+-- ---- 105.2 auth_attempt：把 authenticated 也收掉 ----
+-- `auth_attempt(p_user_id, p_kind, p_window_seconds)` 是 SECURITY DEFINER，拿 p_user_id **写**
+-- 一张限流计数表（auth_attempts），函数体里同样没有任何身份判定。
+--
+-- 这是一个**当下就可利用**的问题，不属于"将来改成 DEFINER 才危险"那一类：
+-- authenticated 角色的任何用户都能 `auth_attempt(<别人的 uuid>, 'totp', 300)` 反复调用，
+-- 把对方的失败次数刷上去，从而把对方锁在门外（拒绝服务）。它写入的正是"这个人失败了几次"。
+--
+-- 而它**唯一**的调用者是 `verify-totp` 这个 edge function，用的是 supabaseAdmin（service_role）——
+-- 全仓与全库都没有第二个引用（函数体与触发器都扫过）。所以把 authenticated 收掉不影响任何现有路径。
+REVOKE EXECUTE ON FUNCTION public.auth_attempt(UUID, TEXT, INT) FROM authenticated, PUBLIC;
+
+DO $verify105$
+DECLARE
+  v_anon BOOLEAN;
+  v_auth BOOLEAN;
+  v_svc BOOLEAN;
+  v_still_unguarded INT;
+BEGIN
+  SELECT has_function_privilege('anon', 'public.auth_attempt(uuid,text,int)', 'EXECUTE'),
+         has_function_privilege('authenticated', 'public.auth_attempt(uuid,text,int)', 'EXECUTE'),
+         has_function_privilege('service_role', 'public.auth_attempt(uuid,text,int)', 'EXECUTE')
+    INTO v_anon, v_auth, v_svc;
+  IF v_anon OR v_auth OR NOT v_svc THEN
+    RAISE EXCEPTION 'Section 105.2 断言失败: anon=% authenticated=% service_role=%', v_anon, v_auth, v_svc;
+  END IF;
+
+  -- 加固之后不该再有"收 p_user_id、无身份判定、又非 DEFINER"的函数（除非上面 WARNING 报了）
+  SELECT count(*) INTO v_still_unguarded
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public' AND p.prokind = 'f' AND NOT p.prosecdef
+     AND pg_get_function_arguments(p.oid) LIKE '%p_user_id%'
+     AND position('auth.uid()' IN p.prosrc) = 0
+     AND position('is_admin()' IN p.prosrc) = 0;
+  RAISE NOTICE 'Section 105: auth_attempt 权限 anon=%/authenticated=%/service_role=%；仍无守卫的 INVOKER 函数 % 个',
+    v_anon, v_auth, v_svc, v_still_unguarded;
+END $verify105$;
+-- ============================================================================
+
