@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
 import { ExamAnswerSheet } from './ExamAnswerSheet'
+import { ExamPaperPane } from './ExamPaperPane'
 import { ExamToolbar, type ExamViewMode } from './ExamToolbar'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { Button } from '@/components/ui/button'
@@ -59,13 +60,11 @@ import {
   type PaperSlot,
 } from '@/lib/exam-paper'
 import { isQuestionAnswered } from '@/lib/answer-utils'
-import { ExamAnswerCardView } from './ExamAnswerCardView'
 import { SubjectiveAnswerInput } from './SubjectiveAnswerInput'
 import { WrittenGradingPanel } from './WrittenGradingPanel'
 import { inkToPng, isWrittenEmpty, type InkStroke, type WrittenAnswer } from '@/lib/written-answer'
 import { gradeHandwrittenAnswer, gradeWrittenAnswer } from '@/lib/ai/written-grade'
 import type { GradingResult, WrittenKind } from '@/lib/written-grading'
-import { EnglishRealPaper } from './EnglishRealPaper'
 import { CardMaterial } from './CardMaterial'
 
 import {
@@ -515,11 +514,6 @@ export function ExamSession() {
     }
     setExamViewMode(next)
   }
-
-  // 真实答题卡面板宽度（中间分隔条可拖）
-  const [splitWidth, setSplitWidth] = useState(620)
-  const splitDragRef = useRef<{ x: number; w: number } | null>(null)
-  const clampSplit = (w: number) => Math.min(Math.max(w, 300), Math.max(420, window.innerWidth - 420))
 
   // 移动端卡片模式左右滑动切题: 记录触点起点(渲染路径内是纯函数, 无额外 hook)
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -1243,109 +1237,47 @@ export function ExamSession() {
 
 
       {paperMode && (
-        // 不开真实答题卡时用 contents —— 不生成盒子，试卷分支的 DOM 与改动前完全一致，
-        // 免得这层包装把双页摊开需要的高度链弄断
-        <div className={cardViewOpen && cardBinding && cardNumberMap ? 'flex min-w-0 flex-1' : 'contents'}>
-          {cardViewOpen && cardBinding && cardNumberMap && (
-            <>
-              <div style={{ width: splitWidth }} className="shrink-0 overflow-y-auto border-r bg-neutral-100 p-2 dark:bg-neutral-900">
-            <ExamAnswerCardView
-              binding={cardBinding}
-              numberMap={cardNumberMap}
-              answers={answers}
-              candidateNo={cardIdentity.candidateNo}
-              candidateName={cardIdentity.candidateName}
-              institution={cardIdentity.institution}
-              onAnswer={answerSlot}
-              currentNo={currentCard?.no ?? null}
-              onLocate={locateByNo}
-              onIdentityChange={(patch) => {
-                if (!patch) return
-                setCandidateValues((vals) => {
-                  const next = [...vals]
-                  if (patch.institution !== undefined && cardIdentityRows.unit >= 0) next[cardIdentityRows.unit] = patch.institution
-                  if (patch.candidateName !== undefined && cardIdentityRows.name >= 0) next[cardIdentityRows.name] = patch.candidateName
-                  if (patch.candidateNo !== undefined && cardIdentityRows.no >= 0) next[cardIdentityRows.no] = patch.candidateNo
-                  return next
-                })
-              }}
-            />
-          </div>
-          {/* 分隔条：按住拖动调左右比例 */}
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            title="拖动调整比例"
-            className="w-1.5 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/50"
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId)
-              splitDragRef.current = { x: e.clientX, w: splitWidth }
-            }}
-            onPointerMove={(e) => {
-              const d = splitDragRef.current
-              if (d) setSplitWidth(clampSplit(d.w + (e.clientX - d.x)))
-            }}
-            onPointerUp={(e) => {
-              splitDragRef.current = null
-              if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-            }}
-          />
-            </>
-          )}
-      {paperMode && realPaper && cardNumberMap && (
-        <div
-          key={`real-paper-${paperLayout}`}
-          className={cn(
-            'wb-slide-in-right min-w-0 flex-1 p-4',
-            paperLayout === 'spread' ? 'overflow-auto' : 'overflow-y-auto',
-          )}
-        >
-          <EnglishRealPaper
-            layout={realPaper}
-            slotByNo={cardNumberMap.slotByNo}
-            pickedBySlot={pickedBySlot}
-            textBySlot={textBySlot}
-            onPick={answerSlot}
-            onText={answerSlot}
-            currentNo={currentCard?.no ?? null}
-            locateNonce={locateNonce}
-            autoLocate={autoLocate}
-            onLocate={locateByNo}
-            spread={paperLayout === 'spread'}
-          />
-        </div>
-      )}
-      {paperMode && !(realPaper && cardNumberMap) && (
-        <div key="paper" className="wb-slide-in-right flex-1 min-w-0 flex flex-col bg-neutral-200/60 dark:bg-neutral-950/40">
-          {/* 单页长卷由外层滚动; 双页摊开由 PaperSpreadView 内部 scroller 滚动, 外层不再滚动, 避免右侧叠两根滚动条 */}
-          <div
-            key={paperLayout}
-            className={cn('wb-fade-in flex-1 min-h-0', paperLayout === 'spread' ? 'overflow-hidden' : 'overflow-y-auto')}
-          >
-            <PaperPreview
-              title={template?.name ?? t('exam.title')}
-              meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${totalItems} 题`}
-              sections={paperSections}
-              answers={answers}
-              onAnswer={answerQuestion}
-              currentQuestionId={currentQuestion?.id ?? null}
-              onFocus={(id) => {
-                // 卷面上点的那道题 → 它名下第一张小卡
-                const i = cards.findIndex((c) => c.question.id === id)
-                if (i >= 0 && i !== currentIndex) jumpTo(i)
-              }}
-              layout={paperLayout}
-              cover={template?.cover ?? null}
-              paperLayout={template?.layout ?? null}
-              spreadToolbarAnchor={!isMobile ? spreadToolbarEl : null}
-              autoLocate={autoLocate}
-              locateNonce={locateNonce}
-              onToggleAutoLocate={() => setAutoLocate((v) => !v)}
-            />
-          </div>
-        </div>
-      )}
-        </div>
+        <ExamPaperPane
+          cardBinding={cardBinding}
+          numberMap={cardNumberMap}
+          answers={answers}
+          candidateNo={cardIdentity.candidateNo}
+          candidateName={cardIdentity.candidateName}
+          institution={cardIdentity.institution}
+          onAnswerSlot={answerSlot}
+          onIdentityPatch={(patch) => {
+            if (!patch) return
+            setCandidateValues((vals) => {
+              const next = [...vals]
+              if (patch.institution !== undefined && cardIdentityRows.unit >= 0) next[cardIdentityRows.unit] = patch.institution
+              if (patch.candidateName !== undefined && cardIdentityRows.name >= 0) next[cardIdentityRows.name] = patch.candidateName
+              if (patch.candidateNo !== undefined && cardIdentityRows.no >= 0) next[cardIdentityRows.no] = patch.candidateNo
+              return next
+            })
+          }}
+          currentNo={currentCard?.no ?? null}
+          onLocate={locateByNo}
+          realPaper={realPaper}
+          pickedBySlot={pickedBySlot}
+          textBySlot={textBySlot}
+          title={template?.name ?? t('exam.title')}
+          meta={`${Math.round(session.duration_ms / 60000)} ${t('exam.minutes')} · 共 ${totalItems} 题`}
+          sections={paperSections}
+          onAnswer={answerQuestion}
+          currentQuestionId={currentQuestion?.id ?? null}
+          onFocusQuestion={(id) => {
+            // 卷面上点的那道题 → 它名下第一张小卡
+            const i = cards.findIndex((c) => c.question.id === id)
+            if (i >= 0 && i !== currentIndex) jumpTo(i)
+          }}
+          cover={template?.cover ?? null}
+          templateLayout={template?.layout ?? null}
+          paperLayout={paperLayout}
+          spreadToolbarAnchor={!isMobile ? spreadToolbarEl : null}
+          autoLocate={autoLocate}
+          locateNonce={locateNonce}
+          onToggleAutoLocate={() => setAutoLocate((v) => !v)}
+        />
       )}
       {!cardViewOpen && !paperMode && (
         <div
