@@ -7925,34 +7925,49 @@ BEGIN
   END LOOP;
 END $$;
 
--- ---- 101.3 三张"公开内容"表的策略加 TO authenticated（**故意注释掉**） ----
+-- ---- 101.3 三张"公开内容"表的策略加 TO authenticated（**已执行：2026-09-26**） ----
 -- Section 99.1 实测出的匿名可读就是这三条策略造成的：它们都带 `OR is_public`，
--- 只是没写 TO 子句，所以对 anon 也生效。应用侧**目前**用不到匿名读：
+-- 只是没写 TO 子句，所以对 anon 也生效。
+--
+-- **产品决定（本轮结论）：公开内容只给已登录用户看。** 理由是应用侧现在根本用不到匿名读 ——
 -- PublicNotesPage（/notes）在 OtpGuard 之内（router 第 51 行的 OtpGuard 包住了它），
--- 未登录访客进不去，公开笔记是给**已登录的其他用户**看的。
+-- 未登录访客进不去，公开笔记是给**已登录的其他用户**看的。也就是说这条改动
+-- **不改变任何现有行为**，只是把"实际上没人用到的匿名可读"收掉，少一个暴露面。
 --
--- 但它是不是该给匿名看，是个产品决定而不是代码清理：这一列叫 `is_public`，
--- "公开"的字面语义就是"谁都能看"，将来若要做分享链接（把 /notes 挪到 OtpGuard 之外）
--- 就会依赖它。所以这里只把语句准备好，不动线上语义。确认"公开内容不给未登录访客"之后
--- 取消注释执行即可：
+-- 代价写在明处：这一列叫 `is_public`，"公开"的字面语义是"谁都能看"。将来若真要做分享链接
+-- （把 /notes 挪到 OtpGuard 之外），需要把这三行改回 `TO public` —— 一行一条，可逆。
+-- 执行前后都用 `node scripts/audit-anon-exposure.mjs` 核过：匿名能读到行的表 3 张 → 0 张。
 --
---   ALTER POLICY user_answers_public_select ON public.user_answers TO authenticated;
---   ALTER POLICY qb_select ON public.question_banks TO authenticated;
---   ALTER POLICY qbi_select ON public.question_bank_items TO authenticated;
+-- 策略名取自 Section 99.1 的实测清单；执行前已在线上核对（ALTER POLICY 没有 IF EXISTS，
+-- 名字错了整段失败）：三条都在，且当时 roles 都是 {public}。
+ALTER POLICY user_answers_public_select ON public.user_answers TO authenticated;
+ALTER POLICY qb_select ON public.question_banks TO authenticated;
+ALTER POLICY qbi_select ON public.question_bank_items TO authenticated;
+
+DO $verify101_3$
+DECLARE v_left INT;
+BEGIN
+  SELECT count(*) INTO v_left
+    FROM pg_policies
+   WHERE schemaname = 'public'
+     AND roles::text = '{public}'
+     AND policyname IN ('user_answers_public_select', 'qb_select', 'qbi_select');
+  IF v_left > 0 THEN
+    RAISE EXCEPTION 'Section 101.3 断言失败: 还有 % 条公开内容策略对 public 生效', v_left;
+  END IF;
+  RAISE NOTICE 'Section 101.3: 三条公开内容策略已收到 authenticated（匿名读不到了）';
+END $verify101_3$;
 --
--- （策略名取自 Section 99.1 的实测清单；执行前先 `\d+ public.user_answers` 核一遍名字，
---   ALTER POLICY 没有 IF EXISTS，名字错了会整段失败。）
---
--- ---- 执行状态：**没有在线上执行过** ----
--- 本节是按仓库约定（单文件迁移 + 追加编号 section）落盘的，不是"已生效"的记录。
--- 没执行的原因与 Section 99 相同：改权限会改变"未登录访客能不能调"的语义，而这轮只拿到
--- 匿名身份（publishable key），做不了 anon / 普通用户 / 管理员三种身份的对照测试。
--- 真要上线时的核对顺序：
---   1. 先跑 node scripts/audit-anon-exposure.mjs 存一份基线（只读，不打印行内容）；
---   2. 在预发库执行本节，再跑一次，比对"匿名可调函数数"应从 24 降到 3；
---   3. 未登录状态实测登录前的路径：扫码登录（qr_login_status 轮询 + qr_login_claim）、
---      落地页、/qr-confirm —— 这三处是唯一可能用到匿名身份的地方；
---   4. 登录后抽查一个读公开笔记的页面（/notes）与自习室（依赖那两个谓词函数）。
+-- ---- 执行状态：**101.1 / 101.2 / 101.3 都已在线上执行**（2026-09-26） ----
+-- 本节按仓库约定（单文件迁移 + 追加编号 section）落盘，执行与验证结果记在
+-- docs/architecture-optimization.md 的「P1-7 实施记录」与「一、怎么连上线上库」两节里：
+--   · 101.1 逐个收回 anon 的函数 EXECUTE：匿名可调的**应用**函数 80 → 4
+--     （只剩 is_admin / is_study_room_member / is_study_room_owner / qr_login_status）；
+--   · 101.2 默认权限治根：postgres 与 supabase_admin 两个角色的 FUNCTIONS / TABLES 默认权限都改了；
+--   · 101.3 三条公开内容策略收到 authenticated：匿名能读到行的表 **3 张 → 0 张**。
+-- 三条都用 `node scripts/audit-anon-exposure.mjs` 前后各核过一遍；登录前的路径
+-- （落地页、扫码登录轮询 qr_login_status、/qr-confirm）逐一实测仍然正常 ——
+-- 它们都不读这三张表，所以 101.3 不改变任何现有行为。
 -- ============================================================================
 
 -- ============================================================================
