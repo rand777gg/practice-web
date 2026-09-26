@@ -32,14 +32,22 @@ const indexPath = join(distDir, 'index.html')
  * （HeaderPlanMenu 内联的图 + PlanDialog 可达的 PlanGanttChart），现在两处都是 React.lazy。
  * 详见「入口 JS：把 echarts 从首屏挪走」。
  *
+ * react-day-picker（懒加载进弹层）之后：591.8 → 570.4KB gzip。
+ *
+ * 断开一条 barrel 边之后：JS 570.4 → **438.5KB gzip（-23%）**，请求数 40 → 31。
+ * `NavActions` 只要一个 `hasAiConfig()` 布尔判断，却从 `@/lib/ai` 这个 barrel 引 ——
+ * 而 barrel 会 re-export `./deepseek`（import zod）等全部模块，于是**整套 AI SDK + zod**
+ * 跟着进了首屏（`schemas-*.js` + 两个 AI 的 `dist-*.js`）。改成 `@/lib/ai/config` 直接引即可。
+ * 这是**一次 import 改写换 132KB**，也说明"看体积报告找大文件"远不如"看首屏引用了哪些 chunk"。
+ *
  * 现在这三个数就是棘轮：它们不是"理想值"，而是"不许比现在更差"。
- * JS 那档留了约 15% 余量（591.8 → 680）供正常功能增长；要涨上去得先说明理由。
- * 下一步能降的候选（framer-motion、react-day-picker、首屏预加载的 zod）在同一节末尾列了粗估。
+ * JS 那档留了约 18% 余量（438.5 → 520）供正常功能增长；要涨上去得先说明理由。
+ * 下一步能降的候选（framer-motion、translations、supabase）在文末那一节列了粗估。
  */
 const BUDGET = {
-  jsGzipKb: 680,
+  jsGzipKb: 520,
   cssGzipKb: 40,
-  requests: 45,
+  requests: 40,
 }
 
 if (!existsSync(indexPath)) {

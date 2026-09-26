@@ -28,7 +28,11 @@ import {
 } from '@/components/ui/sidebar'
 import { ShortcutSettings } from '@/components/settings/ShortcutSettings'
 import { HeaderPlanMenu } from './HeaderPlanMenu'
-import { hasAiConfig } from '@/lib/ai'
+// 只从具体模块引，不要走 `@/lib/ai` 这个 barrel：barrel 的第一行就 re-export 了 `./deepseek`
+// （它 import zod），于是"一个布尔判断"会把整套 AI 客户端 + zod（压缩前 177KB）拖进入口 chunk ——
+// 而本组件在 Header 里、Header 由 AppLayout 急切加载，等于每个访客都要下。
+// 实测这条边就是首屏 `schemas-*.js`（zod，约 27KB gzip）的唯一来路。
+import { hasAiConfig } from '@/lib/ai/config'
 import { selfAvatarOwner } from '@/lib/avatar'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLangStore } from '@/stores/lang-store'
