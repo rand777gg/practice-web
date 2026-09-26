@@ -7899,16 +7899,30 @@ BEGIN
   RAISE NOTICE 'Section 101: 已对 % 个函数收回 anon 的 EXECUTE', n;
 END $$;
 
--- ---- 101.2 治根：让新建函数不再自动带上 anon ----
--- 与 Section 92 同理，不治根的话下一次建函数又会重新长出来。
--- 只收 anon，authenticated 照旧（登录用户要能调 RPC）。
+-- ---- 101.2 治根：让新建对象不再自动带上 anon ----
+-- 与 Section 92 同理，不治根的话下一次建函数/建表又会重新长出来。
+--
+-- **两个角色都要改**：线上 pg_default_acl 里 `postgres` 与 `supabase_admin` 各有一份默认权限
+-- （这台机器的 POSTGRES_USER 是 supabase_admin，迁移多半也是用它在跑）。Section 92.2 当时只改了
+-- postgres 那一份，所以 supabase_admin 的默认权限一直还是宽的 —— 实测它给新**表**的默认里
+-- `anon=arwdDxtm`，即连 TRUNCATE / REFERENCES / TRIGGER / MAINTAIN 一起给，正是 Section 92 要治的那几项。
+-- 所以这里连表的一并收紧。
+--
+-- 只收 anon（函数）与 anon,authenticated（表上那四项危险权限），SELECT/INSERT/UPDATE/DELETE 照旧：
+-- 应用要靠它们，RLS 才是真正拦人的那一层。
 DO $$
+DECLARE
+  role_name TEXT;
 BEGIN
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public '
-       || 'REVOKE EXECUTE ON FUNCTIONS FROM anon';
-  RAISE NOTICE 'Section 101: 已修改 postgres 对新建函数的默认权限';
-EXCEPTION WHEN insufficient_privilege THEN
-  RAISE NOTICE 'Section 101: 无权修改 postgres 的默认权限（需要超级用户），跳过；新建函数仍会带上 anon。';
+  FOREACH role_name IN ARRAY ARRAY['postgres', 'supabase_admin'] LOOP
+    BEGIN
+      EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon', role_name);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLES FROM anon, authenticated', role_name);
+      RAISE NOTICE 'Section 101.2: 已收紧 % 对新建对象（函数/表）的默认权限', role_name;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Section 101.2: 无权修改 % 的默认权限（需要超级用户），跳过', role_name;
+    END;
+  END LOOP;
 END $$;
 
 -- ---- 101.3 三张"公开内容"表的策略加 TO authenticated（**故意注释掉**） ----

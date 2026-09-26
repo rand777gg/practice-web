@@ -269,6 +269,13 @@ console.log(`   其中 ${anonReachable.length} 个**可能**对匿名可调（an
 console.log('   注意：这里是候选**上界**，不是结论 —— DDL 静态扫不出最终结果，')
 console.log('         函数的 EXECUTE 同时来自 PUBLIC（PG 内建默认）与 anon（Supabase 默认权限），')
 console.log('         只撤一处仍然够匿名调用。定论请查 has_function_privilege 或用匿名身份真调。')
+console.log('         线上实测（Section 101.1 执行前后）：匿名可调的**应用**函数 80 → 4，')
+console.log('         只剩 is_admin / is_study_room_member / is_study_room_owner / qr_login_status。')
+console.log('         本脚本没有库直连，上一句是人工核的；复现用这句：')
+console.log("           select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace")
+console.log("            where n.nspname='public' and p.prokind in ('f','w')")
+console.log("              and has_function_privilege('anon', p.oid, 'EXECUTE')")
+console.log("              and not exists (select 1 from pg_depend d where d.objid=p.oid and d.classid='pg_proc'::regclass and d.deptype='e');")
 console.log(`   再叠加 SECURITY DEFINER（用属主权限跑）的有 ${definerReachable.length} 个`)
 if (risky.length) {
   console.log(`   最需要看的一组（匿名可调 + SECURITY DEFINER + 函数体不自我校验）共 ${risky.length} 个：`)
