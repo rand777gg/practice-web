@@ -1,4 +1,4 @@
-import type { Json } from '@/types/database'
+import type { Database, Json } from '@/types/database'
 import type { AnswerMode, CaseQuestion, CorrectAnswer, Question, QuestionType, Submission, SubmissionResult, UserAnswer } from '@/types'
 import { parseCorrectAnswer } from '@/types'
 import { chunkIds } from '@/lib/chunk-ids'
@@ -304,6 +304,72 @@ export async function insertAnswers(rows: AnswerInsert[], options: QueryOptions 
     () => (options.signal ? base.abortSignal(options.signal) : base),
     { ...options, context: options.context ?? 'practice.insertAnswers' },
   )
+}
+
+// ── 提交一次作答（跨表用例，Section 106）──
+
+/**
+ * 顺序模式的会话进度。带上它，作答行与进度就在**一个事务**里落库。
+ *
+ * `save` 只给回退分支用：服务端还没有 `submit_answer` 时（部署顺序是"先发代码、后跑迁移"），
+ * 进度得由调用方自己那一次 upsertSequentialState 写 —— 也就是改造前那条路径。
+ * 于是这里不需要知道会话状态的完整形状（selected_kps / question_ids 那些仍在 store 里）。
+ */
+export interface AnswerProgress {
+  sessionKey: string
+  currentIndex: number
+  subjectPositions: Record<string, number>
+  save: () => Promise<void>
+}
+
+export interface AnswerSubmission {
+  questionId: string
+  selectedAnswer: unknown
+  isCorrect: boolean
+  mode: AnswerMode
+  source: 'sequential' | 'random' | null
+  examSessionId?: string | null
+  /** 幂等键：`run` 的自动重试、超时后用户再点一次，都靠它落到同一行（Section 100 的部分唯一索引） */
+  clientOperationId?: string | null
+  progress?: AnswerProgress | null
+}
+
+/**
+ * 提交一次练习作答：作答行 + （顺序模式）会话进度，服务端一个事务（migration Section 106）。
+ *
+ * 为什么值得收敛：原来是前端两次写，第一次成、第二次失败就留下"答案写进去了、进度没推进"，
+ * 用户下次进来还停在原来那题。窗口不大（进度在每次翻页/切会话时都会再写，会自愈），但它是
+ * 同类问题里最后一个还在前端编排的。
+ *
+ * 顺带两件事：`user_id` 由服务端取 `auth.uid()`（没有可伪造的参数），以及在线路径终于带上了
+ * 幂等键 —— 此前 `client_operation_id` 只给离线队列用，于是"请求超时但服务端其实已经写成"
+ * 的时候，`run` 的重试会再插一行。
+ *
+ * 判分仍然在客户端：`isCorrect` 由调用方算好传进来（理由同 Section 102）。
+ */
+export async function submitAnswer(input: AnswerSubmission, options: QueryOptions = {}): Promise<string | null> {
+  const progress = input.progress ?? null
+  // 生成类型把"有 DEFAULT 的可空参数"标成 `?: string`（不接受显式 null），而这里 null 就是
+  // "这个参数不参与"的语义本身（不带幂等键、不属于任何场次、不推进进度）。
+  // 与 save_learning_route / compose_exam 的处理一致：只在这一个边界上放宽可空性。
+  const args = {
+    p_question_id: input.questionId,
+    p_selected_answer: toJson(input.selectedAnswer),
+    p_is_correct: input.isCorrect,
+    p_mode: input.mode,
+    p_source: input.source,
+    p_exam_session_id: input.examSessionId ?? null,
+    p_client_operation_id: input.clientOperationId ?? null,
+    p_session_key: progress?.sessionKey ?? null,
+    p_current_index: progress?.currentIndex ?? null,
+    p_subject_positions: progress ? toJson(progress.subjectPositions) : null,
+  } as unknown as Database['public']['Functions']['submit_answer']['Args']
+  const base = db.rpc('submit_answer', args)
+  const rows = await run(
+    () => (options.signal ? base.abortSignal(options.signal) : base),
+    { ...options, context: options.context ?? 'practice.submitAnswer' },
+  )
+  return rows?.[0]?.answer_id ?? null
 }
 
 /** 考试作答: 同一 (用户, 题目, 场次) 反复保存要覆盖而不是堆行 */

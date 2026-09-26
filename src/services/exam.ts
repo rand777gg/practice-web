@@ -15,7 +15,6 @@ import type { ExamTemplateLayout } from '@/lib/paper-layout'
 import { normalizeLayout } from '@/lib/paper-layout'
 import { db, run, runList, toJson, type Insert, type QueryOptions, type Update } from './db'
 import { assertColumns } from './columns'
-import { isAppError, toAppError } from './errors'
 
 /**
  * exam_sessions / exam_templates / exam_schedules 的字段集。
@@ -476,24 +475,6 @@ export async function completeExam(input: CompleteExamInput, options: QueryOptio
     { ...options, context: options.context ?? 'exam.completeExam' },
   )
   return row ? toExamSession(row) : null
-}
-
-/**
- * 这个错误是不是「服务端还没有这个函数」。
- *
- * 需要的理由：本仓库的部署约定是**先发代码、后跑迁移**（Section 31 的原话：
- * "前端在列缺失时自动降级插入，故先部署代码后执行本迁移也不会开考失败"）。
- * Section 102 的 complete_exam 是纯新增，所以线上在那个迁移执行之前不存在它 ——
- * 那时 PostgREST 回 404 + `PGRST202: Could not find the function ... in the schema cache`。
- * 调用方据此退回旧的两步写法，而不是让"交卷"这个核心动作直接不可用。
- *
- * 只认这一种错：网络抖动、权限不足、幂等冲突都不能当"函数不存在"处理，
- * 否则会把真正的失败悄悄降级成旧的、有半成功窗口的路径。
- */
-export function isFunctionMissing(e: unknown): boolean {
-  const err = isAppError(e) ? e : toAppError(e)
-  if (err.code === 'PGRST202') return true
-  return /could not find the function|function .* does not exist/i.test(err.message)
 }
 
 /** 只取用户自有模板; 内置预设只存在于前端代码, 不落库 */

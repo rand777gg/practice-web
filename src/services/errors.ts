@@ -98,6 +98,25 @@ export function toAppError(e: unknown, context = ''): AppError {
   })
 }
 
+/**
+ * 这个错误是不是「服务端还没有这个函数」。
+ *
+ * 需要的理由：本仓库的部署约定是**先发代码、后跑迁移**（Section 31 的原话：
+ * "前端在列缺失时自动降级插入，故先部署代码后执行本迁移也不会开考失败"）。
+ * 新增的 RPC（Section 102 的 complete_exam、Section 103 的 save_learning_route、
+ * Section 106 的 submit_answer）在迁移执行前线上并不存在 —— 那时 PostgREST 回 404 +
+ * `PGRST202: Could not find the function ... in the schema cache`。调用方据此退回旧路径，
+ * 而不是让核心动作直接不可用。
+ *
+ * 只认这一种错：网络抖动、权限不足、幂等冲突都不能当"函数不存在"处理，
+ * 否则会把真正的失败悄悄降级成旧的、有半成功窗口的路径。
+ */
+export function isFunctionMissing(e: unknown): boolean {
+  const err = isAppError(e) ? e : toAppError(e)
+  if (err.code === 'PGRST202') return true
+  return /could not find the function|function .* does not exist/i.test(err.message)
+}
+
 /** 用户可见提示：不暴露表名、约束名和错误码。 */
 export function userMessage(e: unknown): string {
   const err = isAppError(e) ? e : toAppError(e)

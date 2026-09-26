@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { completeExam, completeExamSession, createExamSession, fetchExamSession, isFunctionMissing, saveExamCursor } from '@/services/exam'
+import { completeExam, completeExamSession, createExamSession, fetchExamSession, saveExamCursor } from '@/services/exam'
+import { isFunctionMissing } from '@/services/errors'
 import { fetchExamAnswers, upsertAnswer, upsertAnswers } from '@/services/practice'
 import { logError, userMessage } from '@/services/errors'
 import { reportClientEvent } from '@/lib/client-events'

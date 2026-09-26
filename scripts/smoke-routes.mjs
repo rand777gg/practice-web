@@ -330,6 +330,8 @@ const RPC_FIXTURES = {
   },
   // Section 103：保存路线返回路线 id（标量，不是行）
   save_learning_route: 'smoke-route-1',
+  // Section 106：练习提交返回 (answer_id, created)，PostgREST 对 RETURNS TABLE 回的是数组
+  submit_answer: [{ answer_id: 'smoke-answer-1', created: true }],
   get_review_pool_count: 0,
   get_review_count: 0,
   count_question_items: 1,
@@ -524,6 +526,7 @@ try {
   // ── 交互式断言：选题 → 交卷 → 结果 ──
   if (planSubjectsUsable) {
     currentErrors = []
+    currentWrites = []
     const label = '选题交卷'
     try {
       await page.goto(`${base}${SUBMIT_FLOW.url}`, { waitUntil: 'load', timeout: 30_000 })
@@ -538,11 +541,17 @@ try {
       const submitGone = !body.includes('提交本题作答')
       const nextShown = body.includes('下一题')
       const graded = body.includes('正确')
-      const ok = submitGone && nextShown && graded && currentErrors.length === 0
-      console.log(`  ${ok ? '✓' : '✗'} ${SUBMIT_FLOW.url} 选题「${SUBMIT_FLOW.optionLabel}」→ 交卷 → 结果`)
+      // 提交现在必须是那一次 RPC（Section 106：作答行 + 顺序进度在服务端一个事务里），
+      // 并且**不允许**再出现直接写 user_answers —— 那是 isFunctionMissing 回退分支的特征。
+      const submitRpc = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/rest/v1/rpc/submit_answer'))
+      const directInsert = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/user_answers'))
+      const ok = submitGone && nextShown && graded && submitRpc && !directInsert && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${SUBMIT_FLOW.url} 选题「${SUBMIT_FLOW.optionLabel}」→ 交卷(RPC) → 结果`)
       if (!ok) {
-        console.log(`        提交按钮消失=${submitGone} 出现「下一题」=${nextShown} 出现判分标记=${graded}`)
+        console.log(`        提交按钮消失=${submitGone} 出现「下一题」=${nextShown} 出现判分标记=${graded} 提交 RPC=${submitRpc} 退回旧路径=${directInsert}`)
         console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
+        const wrote = currentWrites.map((r) => `${r.method} ${r.url.split('/rest/v1/')[1]?.split('?')[0] ?? r.url.split('/').pop()}`)
+        console.log(`        写请求: ${JSON.stringify(wrote.slice(0, 12))}`)
       }
       results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok, length: body.length, errors: [...currentErrors], note: ok ? '' : '交卷链路断言未通过' })
     } catch (e) {

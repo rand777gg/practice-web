@@ -274,6 +274,50 @@ export type Database = {
           },
         ]
       }
+      client_events: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          detail: Json
+          id: number
+          kind: string
+          name: string | null
+          region: string | null
+          ua: string | null
+          user_id: string | null
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          detail?: Json
+          id?: never
+          kind: string
+          name?: string | null
+          region?: string | null
+          ua?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          detail?: Json
+          id?: never
+          kind?: string
+          name?: string | null
+          region?: string | null
+          ua?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exam_schedules: {
         Row: {
           created_at: string
@@ -3167,6 +3211,24 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      submit_answer: {
+        Args: {
+          p_client_operation_id?: string
+          p_current_index?: number
+          p_exam_session_id?: string
+          p_is_correct: boolean
+          p_mode?: string
+          p_question_id: string
+          p_selected_answer: Json
+          p_session_key?: string
+          p_source?: string
+          p_subject_positions?: Json
+        }
+        Returns: {
+          answer_id: string
+          created: boolean
+        }[]
       }
       sync_dup_cache_question: { Args: { p_id: string }; Returns: undefined }
       unlink_oauth_identity: {

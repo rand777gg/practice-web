@@ -7,7 +7,7 @@ import {
   fetchPracticeFilters, fetchQuestionAnswerStats, fetchSequentialSessionKeyByShortId, fetchWrongAnswers,
   savePracticeFilters, upsertSequentialState,
 } from '@/services/practice'
-import type { QuestionAnswerStats } from '@/services/practice'
+import type { AnswerProgress, QuestionAnswerStats } from '@/services/practice'
 import { fetchQuestionById, fetchQuestionIdsByKeyPoints, fetchQuestionMetaCache, updateQuestion } from '@/services/questions'
 import { mergeSubjectResetAt } from '@/services/profiles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -1011,6 +1011,21 @@ export function PracticeSession() {
   }, [])
 
   /**
+   * 提交时随作答一起交出去的会话进度。值与 saveCurrentSession 同源（都取 store），
+   * 区别只是它进了 submit_answer 的同一个事务；`save` 是服务端还没有那个函数时的退路。
+   */
+  const answerProgress = useCallback((): AnswerProgress | null => {
+    const s = useSequentialStore.getState()
+    if (!s.isActive || !s.sessionKey) return null
+    return {
+      sessionKey: s.sessionKey,
+      currentIndex: s.currentIndex,
+      subjectPositions: s.subjectPositions,
+      save: saveCurrentSession,
+    }
+  }, [saveCurrentSession])
+
+  /**
    * 会话列表里点一条会话。原先是写在抽屉 JSX 的 onClick 里的（同处读 auth store、切会话、
    * 载题、关抽屉），搬出来之后抽屉只发事件，这里负责"点一下到底发生什么"。
    */
@@ -1228,12 +1243,15 @@ export function PracticeSession() {
     const isCorrect = isAnswerCorrect(selectedAnswer, question.correct_answer, question.question_type, question.allow_unordered, question.unordered_blanks, question.case_questions)
     sessionDistRef.current.set(question.id, { status: isCorrect ? 'correct' : 'wrong' })
     setSessionDistSnapshot(new Map(sessionDistRef.current))
-    const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random')
+    // 顺序模式：会话进度跟着作答一起走一个事务（migration Section 106），所以这里不再单独
+    // 调 saveCurrentSession；但 realtime 那条"忽略自己刚写的变更"的门槛还得先立起来。
+    const progress = questionMode === 'sequential' ? answerProgress() : null
+    if (progress) markPracticeSync()
+    const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random', progress)
     setAnswerId(id)
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
 
-    if (questionMode === 'sequential') void saveCurrentSession()
     answeredThisSession.current.add(question.id)
     setAnsweredSessionSnapshot(new Set(answeredThisSession.current))
     setJustAnsweredId(question.id)

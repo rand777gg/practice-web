@@ -8509,3 +8509,135 @@ BEGIN
 END $verify105$;
 -- ============================================================================
 
+-- ============================================================================
+-- Section 106: submit_answer —— 练习作答与顺序进度，一个事务
+-- ----------------------------------------------------------------------------
+-- 背景（docs/architecture-optimization.md 第 6 条剩下的最后一个）：练习页的"提交"原来是前端
+-- 编排的两次写 —— 先 `insertAnswer` 落作答行，再（顺序模式）`upsertSequentialState` 推进会话进度。
+-- 两次之间没有事务：第一次成了、第二次失败，用户下次进来还停在原来那题。
+--
+-- 这个窗口比 complete_exam / save_learning_route 小得多（最坏是"重来一次"，而且进度在每次
+-- 上一题/下一题/切会话时都会再写一次，会自愈），所以它排在最后做，但确实应该收掉。
+--
+-- 判分仍然在客户端（`isAnswerCorrect` 那条口径，理由同 Section 102），这里只保证两次写原子。
+--
+-- 三件额外的事，都是顺手能拿到、之前没有的：
+--   1. **user_id 由服务端取 `auth.uid()`**，不接受调用方传进来的用户 id。这样这个函数天然
+--      不需要 Section 105 那种"收 p_user_id 再校验"的守卫 —— 没有可伪造的参数。
+--   2. **幂等键真的用上了**：在线路径此前不带 `client_operation_id`（Section 100 只给离线队列
+--      用），于是 `run` 的重试逻辑遇到"请求超时但服务端其实已经写成"时，重试会**再插一行**。
+--      现在每次提交带一个键，重试命中部分唯一索引 → 返回已存在的那一行，不新增。
+--   3. **进度只推进，不新建会话行**：会话行由 seqStart 先建；这里用 UPDATE 而不是 upsert，
+--      免得在会话还没建起来时插出一行 `question_ids = '{}'` 的空会话。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.submit_answer(
+  p_question_id         UUID,
+  p_selected_answer     JSONB,
+  p_is_correct          BOOLEAN,
+  p_mode                TEXT    DEFAULT 'practice',
+  p_source              TEXT    DEFAULT NULL,
+  p_exam_session_id     UUID    DEFAULT NULL,
+  p_client_operation_id UUID    DEFAULT NULL,
+  p_session_key         TEXT    DEFAULT NULL,
+  p_current_index       INT     DEFAULT NULL,
+  p_subject_positions   JSONB   DEFAULT NULL
+)
+RETURNS TABLE (answer_id UUID, created BOOLEAN)
+LANGUAGE plpgsql
+-- 按调用者权限跑：user_answers 的 INSERT 与 practice_sequential_state 的 UPDATE 各自还要过 RLS
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid      UUID := auth.uid();
+  v_answer   UUID;
+  v_created  BOOLEAN := TRUE;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'submit_answer: 需要登录' USING ERRCODE = '28000';
+  END IF;
+
+  -- 幂等早返回：这个键已经写过了（同一动作重发 / run 的自动重试）
+  IF p_client_operation_id IS NOT NULL THEN
+    SELECT ua.id INTO v_answer
+      FROM public.user_answers ua
+     WHERE ua.user_id = v_uid
+       AND ua.client_operation_id = p_client_operation_id;
+    IF v_answer IS NOT NULL THEN
+      RETURN QUERY SELECT v_answer, FALSE;
+      RETURN;
+    END IF;
+  END IF;
+
+  BEGIN
+    INSERT INTO public.user_answers
+      (user_id, question_id, selected_answer, is_correct, mode, source, exam_session_id, client_operation_id)
+    VALUES
+      (v_uid, p_question_id, COALESCE(p_selected_answer, 'null'::JSONB), COALESCE(p_is_correct, FALSE),
+       COALESCE(p_mode, 'practice'), p_source, p_exam_session_id, p_client_operation_id)
+    RETURNING id INTO v_answer;
+  EXCEPTION WHEN unique_violation THEN
+    -- 两个标签页同时提交同一个键：后到的那个不该报错，落回同一行
+    SELECT ua.id INTO v_answer
+      FROM public.user_answers ua
+     WHERE ua.user_id = v_uid
+       AND ua.client_operation_id = p_client_operation_id;
+    IF v_answer IS NULL THEN RAISE; END IF;
+    v_created := FALSE;
+  END;
+
+  -- 顺序模式的会话进度：与作答同一个事务
+  IF p_session_key IS NOT NULL THEN
+    UPDATE public.practice_sequential_state s
+       SET current_index     = COALESCE(p_current_index, s.current_index),
+           subject_positions = COALESCE(p_subject_positions, s.subject_positions),
+           updated_at        = NOW()
+     WHERE s.user_id = v_uid
+       AND s.session_key = p_session_key;
+  END IF;
+
+  RETURN QUERY SELECT v_answer, v_created;
+END $$;
+
+COMMENT ON FUNCTION public.submit_answer(UUID, JSONB, BOOLEAN, TEXT, TEXT, UUID, UUID, TEXT, INT, JSONB) IS
+  '练习提交：作答行 + 顺序进度，同一个事务；带 client_operation_id 时幂等';
+
+-- 权限：登录用户可调，匿名不行（PUBLIC 那条内建默认也要撤，见 Section 101 的实测结论）
+REVOKE EXECUTE ON FUNCTION public.submit_answer(UUID, JSONB, BOOLEAN, TEXT, TEXT, UUID, UUID, TEXT, INT, JSONB) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.submit_answer(UUID, JSONB, BOOLEAN, TEXT, TEXT, UUID, UUID, TEXT, INT, JSONB) TO authenticated;
+
+-- 配套客户端改动（本次已做）：services/practice.ts 的 submitAnswer 调这个函数，
+-- hooks/use-user-answers.ts 的 saveAnswer 把"作答"与"进度"一次交出去；函数还不存在时
+-- （仓库的部署约定是先发代码、后跑迁移）退回原来的 insertAnswer + 调用方自己写进度。
+--
+-- 冒烟测试有一条断言盯这个：练习页提交必须是 POST /rest/v1/rpc/submit_answer。
+DO $verify106$
+DECLARE
+  v_anon BOOLEAN;
+  v_auth BOOLEAN;
+  v_def  BOOLEAN;
+  v_idx  INT;
+BEGIN
+  SELECT has_function_privilege('anon', 'public.submit_answer(uuid,jsonb,boolean,text,text,uuid,uuid,text,int,jsonb)', 'EXECUTE'),
+         has_function_privilege('authenticated', 'public.submit_answer(uuid,jsonb,boolean,text,text,uuid,uuid,text,int,jsonb)', 'EXECUTE')
+    INTO v_anon, v_auth;
+  IF v_anon OR NOT v_auth THEN
+    RAISE EXCEPTION 'Section 106 断言失败: anon=% authenticated=%', v_anon, v_auth;
+  END IF;
+
+  SELECT NOT prosecdef INTO v_def FROM pg_proc WHERE oid = 'public.submit_answer(uuid,jsonb,boolean,text,text,uuid,uuid,text,int,jsonb)'::REGPROCEDURE;
+  IF NOT v_def THEN
+    RAISE EXCEPTION 'Section 106 断言失败: 必须是 SECURITY INVOKER';
+  END IF;
+
+  -- 幂等早返回靠的就是这个部分唯一索引；索引没了这个函数会静默变回"每次插一行"
+  SELECT count(*) INTO v_idx FROM pg_indexes
+   WHERE schemaname = 'public' AND indexname = 'user_answers_client_operation_id_key';
+  IF v_idx <> 1 THEN
+    RAISE EXCEPTION 'Section 106 断言失败: 幂等键的部分唯一索引不存在';
+  END IF;
+
+  RAISE NOTICE 'Section 106: submit_answer 已就位（INVOKER，anon 不可调，幂等索引在）';
+END $verify106$;
+-- ============================================================================
+

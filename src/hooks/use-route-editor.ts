@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { logError, userMessage } from '@/services/errors'
+import { isFunctionMissing, logError, userMessage } from '@/services/errors'
 import { fetchLearningRoute, fetchMaxRouteOrder, listQuestionItemsByStages, saveLearningRouteTree } from '@/services/learning-routes'
-import { isFunctionMissing } from '@/services/exam'
 import { reportClientEvent } from '@/lib/client-events'
 import { fetchQuestionsByIds } from '@/services/questions'
 import {
