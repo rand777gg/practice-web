@@ -9,7 +9,7 @@
  * 用法：npm run test:machine
  */
 import ts from 'typescript'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -58,6 +58,7 @@ function buildModules(outDir) {
   const MODULES = [
     'lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts',
     'lib/practice-pick.ts', 'lib/offline-db.ts', 'services/errors.ts', 'lib/api-metrics.ts',
+    'stores/user-scope.ts',
   ]
   for (const rel of MODULES) {
     const source = readFileSync(join(root, 'src', rel), 'utf8')
@@ -707,6 +708,78 @@ try {
     recordApiCall('', 1)
     assert.equal(getApiStats()[0].context, '(未命名)')
     assert.ok(Number.isFinite(now()))
+  })
+
+  // ──────────────────────────── 换号时的 Store 清理 ────────────────────────────
+  // 这一组守的是"下一个人会不会看到上一个人的数据"。registerUserScopedStore 的登记是手写的，
+  // 少写一行不会报错、不会崩，只会在真实换号时把旧会话和旧错题留在屏幕上 —— 所以既测行为，
+  // 也用一个静态核对把"哪几个 Store 登记过"钉住。
+  console.log('\n用户作用域（换号 / 登出）')
+
+  const { registerUserScopedStore, syncUserScope, currentScopeUserId } = await import(
+    pathToFileURL(join(outDir, 'user-scope.mjs')).href
+  )
+
+  check('只有身份真的变了才清 —— 同一个人重复 SIGNED_IN 不清（否则会白扔掉正在看的数据）', () => {
+    const calls = []
+    const off = registerUserScopedStore(() => calls.push('store'))
+    try {
+      syncUserScope('scope-user-1')
+      assert.equal(calls.length, 1, '登录时要清一次（上一个人可能刚走）')
+      syncUserScope('scope-user-1')
+      assert.equal(calls.length, 1, '同一个人再进来一次不该清')
+      syncUserScope('scope-user-2')
+      assert.equal(calls.length, 2, '换号必须清')
+      syncUserScope(null)
+      assert.equal(calls.length, 3, '登出必须清')
+      assert.equal(currentScopeUserId(), null)
+    } finally {
+      off()
+    }
+  })
+
+  check('一个 reset 抛错不能挡住其他 Store 的清理', () => {
+    const calls = []
+    const off1 = registerUserScopedStore(() => { throw new Error('这个 store 的 reset 炸了') })
+    const off2 = registerUserScopedStore(() => calls.push('第二个'))
+    try {
+      // 这一条**故意**让一个 store 炸掉，user-scope 会 console.error 记一笔；
+      // 测试输出里留一行"reset failed"会让人以为用例挂了，所以这里临时静音。
+      const realError = console.error
+      console.error = () => {}
+      try {
+        syncUserScope('scope-user-3')   // 不该抛出去
+      } finally {
+        console.error = realError
+      }
+      assert.deepEqual(calls, ['第二个'])
+      assert.equal(currentScopeUserId(), 'scope-user-3')
+    } finally {
+      off1()
+      off2()
+    }
+  })
+
+  check('注销登记后不再被调用（测试与热更新都依赖这个）', () => {
+    const calls = []
+    const off = registerUserScopedStore(() => calls.push('x'))
+    off()
+    syncUserScope('scope-user-4')
+    assert.deepEqual(calls, [])
+  })
+
+  check('每个带 reset/clear 的用户级 Store 都登记了清理', () => {
+    const dir = join(root, 'src', 'stores')
+    // 只认 Store 自己那一个动作（`reset: () => ...` / `clear: () => ...`）：
+    // resetTemplates / resetSidebarOrder 那种局部动作不是用户数据清理，不该被这条规则拉进来。
+    const missing = []
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith('.ts') || file === 'user-scope.ts') continue
+      const source = readFileSync(join(dir, file), 'utf8')
+      if (!/^\s+(reset|clear):\s*\(\s*\)/m.test(source)) continue
+      if (!source.includes('registerUserScopedStore(')) missing.push(file)
+    }
+    assert.deepEqual(missing, [], `这些 Store 有 reset/clear 却没登记清理：${missing.join(', ')}`)
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })

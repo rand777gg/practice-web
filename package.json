@@ -13,6 +13,7 @@
     "analyze:eager": "node scripts/find-eager-heavy.mjs",
     "events": "node scripts/show-client-events.mjs",
     "audit:authz": "node scripts/audit-authz.mjs",
+    "check:submit": "node scripts/check-submit-answer.mjs",
     "test:machine": "node scripts/test-practice-machine.mjs",
     "smoke": "node scripts/smoke-boot.mjs",
     "smoke:routes": "node scripts/smoke-routes.mjs",
