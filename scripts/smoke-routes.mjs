@@ -123,7 +123,9 @@ const PROFILE = {
   avatar_url: null,
   avatar_preset: null,
   created_at: new Date(0).toISOString(),
-  deadline: null,
+  // 给一个截止日期 + 一份 get_subject_progress 数据，头部计划菜单里那张 echarts 小图才会渲染
+  // （它现在走懒加载，见「计划菜单图表」那条断言）。没截止日期时那一段只会显示"未设置计划"。
+  deadline: '2099-01-01',
   // 有学科才不会被"尚未设置学习计划"挡住 —— 练习页在没计划时不挑题，也就测不到题目卡片。
   // SMOKE_PLAN_SUBJECTS 可覆盖：传一个**畸形值**（例如裸字符串）就能验证读取端是否真的容错
   plan_subjects: process.env.SMOKE_PLAN_SUBJECTS ?? '["冒烟学科"]',
@@ -332,6 +334,8 @@ const RPC_FIXTURES = {
   save_learning_route: 'smoke-route-1',
   // Section 106：练习提交返回 (answer_id, created)，PostgREST 对 RETURNS TABLE 回的是数组
   submit_answer: [{ answer_id: 'smoke-answer-1', created: true }],
+  // 头部计划菜单那张图的数据源（配上面 PROFILE.deadline）
+  get_subject_progress: [{ subject: '冒烟学科', total: 10, done_all: 3, done_today: 1 }],
   get_review_pool_count: 0,
   get_review_count: 0,
   count_question_items: 1,
@@ -644,6 +648,44 @@ try {
         console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
       } catch { /* 页面可能已经崩了，忽略 */ }
       results.push({ route: `${EXAM_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
+    }
+  }
+
+  // ── 交互式断言：计划菜单里的 echarts 小图真的渲染出来 ──
+  // 盯的是懒加载那条边：echarts + zrender（压缩前约 2.4MB）是上一轮从首屏挪走的，
+  // 而"挪走了"的另一面是"点开时得能装上"。这里的图表只在 Popover 打开时才挂载，
+  // 路由挂载测试覆盖不到它 —— 懒加载的 import 路径写错、chunk 加载失败，都只有点开才看得见。
+  {
+    currentErrors = []
+    const label = '计划菜单图表'
+    try {
+      await page.goto(`${base}/`, { waitUntil: 'load', timeout: 30_000 })
+      await page.waitForTimeout(1200)
+      // 触发器是那个进度环（PlanRing 渲染成 button，里面是两段 circle）——
+      // 按文字找不稳（环上的"今日 x/y"是数字），按结构找才稳。
+      const trigger = page.locator('header button:has(svg circle)').first()
+      await trigger.click({ timeout: 10_000 })
+      // echarts 默认用 canvas 渲染：canvas 出现 = 懒加载的那份代码装上并画出来了
+      const chart = page.locator('canvas').first()
+      await chart.waitFor({ state: 'visible', timeout: 15_000 })
+      const box = await chart.boundingBox()
+      const drawn = !!box && box.width > 0 && box.height > 0
+      const ok = drawn && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} / 首页头部计划菜单 → echarts 小图真的画出来了（懒加载生效）`)
+      if (!ok) {
+        console.log(`        canvas=${drawn ? `${Math.round(box.width)}x${Math.round(box.height)}` : '没有尺寸'}`)
+        for (const e of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${e.slice(0, 200)}`)
+      }
+      results.push({ route: `/ ⇒ ${label}`, ok, length: 0, errors: [...currentErrors], note: ok ? '' : '懒加载的图表没画出来' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ / 首页计划菜单图表 —— 操作失败: ${msg.slice(0, 200)}`)
+      const body = await page.locator('body').innerText().catch(() => '')
+      console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 200))}`)
+      const headerButtons = await page.locator('header button').count().catch(() => -1)
+      console.log(`        header 里的按钮数=${headerButtons}`)
+      for (const err of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${err.slice(0, 200)}`)
+      results.push({ route: `/ ⇒ ${label}`, ok: false, length: 0, errors: [...currentErrors, msg], note: '操作失败' })
     }
   }
 
