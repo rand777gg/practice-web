@@ -367,6 +367,12 @@ const RPC_FIXTURES = {
   },
 }
 
+/**
+ * 故意让某些请求失败：给「真实错误路径会不会上报」那条断言用。
+ * 用法是加一个 URL 片段进去、跑完删掉，免得影响别的断言。
+ */
+const failPaths = new Set()
+
 async function installStubs(context) {
   // 会话直接写进 localStorage（键名与 lib/supabase.ts 里钉死的 storageKey 一致）
   await context.addInitScript(({ userId, jwt }) => {
@@ -427,6 +433,10 @@ async function installStubs(context) {
       return json(route, wantsObject ? { id: 'smoke-row-1' } : [{ id: 'smoke-row-1' }])
     }
     if (url.includes('/profiles')) return json(route, wantsObject ? PROFILE : [PROFILE])
+    for (const p of failPaths) {
+      // 500 是「服务端瞬时故障」：run 会重试两次再抛，正好走完真实的失败路径
+      if (url.includes(p)) return json(route, { code: 'XX000', message: 'stub: 故意失败', details: null, hint: null }, 500)
+    }
     if (url.includes('/questions')) {
       const withSecond = url.includes(QUESTION_ID_2)
       // 组卷组了两道题时把两道都给出来（答题卡绑定那条断言要两题才有意义）。
@@ -495,7 +505,9 @@ try {
   // 写请求单独记一份：断言"某个阶段真的落库了"，比读 DOM 文案稳
   let currentWrites = []
   page.on('request', (req) => {
-    if (req.method() !== 'GET') currentWrites.push({ method: req.method(), url: req.url() })
+    // 记 body：离线队列那条断言要证明"重发用的是同一个 client_operation_id"，
+    // 只看 URL 分不出是排空重发还是又插了一次
+    if (req.method() !== 'GET') currentWrites.push({ method: req.method(), url: req.url(), body: req.postData() ?? '' })
   })
   page.on('requestfailed', (req) => {
     console.log(`        ⚠ 请求失败 ${req.method()} ${req.url().replace(base, '')} ${req.failure()?.errorText ?? ''}`)
@@ -787,6 +799,87 @@ try {
       console.log(`        header 里的按钮数=${headerButtons}`)
       for (const err of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${err.slice(0, 200)}`)
       results.push({ route: `/ ⇒ ${label}`, ok: false, length: 0, errors: [...currentErrors, msg], note: '操作失败' })
+    }
+  }
+
+  // ── 交互式断言：断网答题 → 恢复网络 → 队列排空（drainOutbox 端到端） ──
+  // 文档里这一条长期写着"只能人工验"（要 IndexedDB + 离线状态 + 真实的失败响应）。
+  // Playwright 三样都能给：context.setOffline 会真的把 navigator.onLine 变成 false 并派发
+  // online/offline 事件，IndexedDB 就在这个浏览器上下文里，桩可以按需回 500。
+  // 要证明的是三件事：离线时**不发**写请求、作答真的进了队列、恢复网络后**只发一次**
+  // 且带的是同一个 client_operation_id（重发而不是新插一行）。
+  if (planSubjectsUsable) {
+    currentErrors = []
+    currentWrites = []
+    const label = '离线队列排空'
+    try {
+      await page.goto(`${base}${SUBMIT_FLOW.url}`, { waitUntil: 'load', timeout: 30_000 })
+      await page.getByRole('button', { name: SUBMIT_FLOW.optionName }).first().click({ timeout: 15_000 })
+      await page.getByRole('button', { name: '提交' }).first().waitFor({ timeout: 15_000 })
+
+      await context.setOffline(true)
+      await page.getByRole('button', { name: '提交' }).first().click({ timeout: 10_000 })
+      await page.waitForTimeout(1000)
+      const writesWhileOffline = currentWrites.filter((r) => r.url.includes('/rest/v1/user_answers'))
+      console.log(`        · 已断网并提交：离线期间的 user_answers 写请求 = ${writesWhileOffline.length}`)
+
+      await context.setOffline(false)
+      // online 事件 → installOutboxTriggers 的回调 → sync() → drainOutbox → insertAnswers
+      let drain = null
+      for (let i = 0; i < 20 && !drain; i++) {
+        drain = currentWrites.find((r) => r.url.includes('/rest/v1/user_answers')) ?? null
+        if (!drain) await page.waitForTimeout(500)
+      }
+      const drainCount = currentWrites.filter((r) => r.url.includes('/rest/v1/user_answers')).length
+      const keySent = /client_operation_id/.test(drain?.body ?? '')
+      const answerSent = /selected_answer/.test(drain?.body ?? '')
+      const ok = writesWhileOffline.length === 0 && drainCount === 1 && keySent && answerSent && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${SUBMIT_FLOW.url} 断网答题 → 恢复网络 → 队列排空（一次写、带幂等键）`)
+      if (!ok) {
+        console.log(`        离线期间写请求=${writesWhileOffline.length}（期望 0）排空后写请求=${drainCount}（期望 1）带幂等键=${keySent} 带作答=${answerSent}`)
+        console.log(`        排空请求体: ${JSON.stringify((drain?.body ?? '').slice(0, 260))}`)
+        for (const e of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${e.slice(0, 200)}`)
+      }
+      results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok, length: 0, errors: [...currentErrors], note: ok ? '' : '离线队列排空断言未通过' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ ${SUBMIT_FLOW.url} 离线队列排空 —— 操作失败: ${msg.slice(0, 200)}`)
+      results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [...currentErrors, msg], note: '操作失败' })
+    } finally {
+      // 失败也要把网络恢复回来，否则后面每条断言都会"导航失败"
+      await context.setOffline(false).catch(() => {})
+    }
+  }
+
+  // ── 交互式断言：真实错误路径真的会上报（client_events 那条链路的最后一环） ──
+  // 文档里这一条也一直写着"没有自动化断言（冒烟里那个通配桩会把函数调用吞掉）"。
+  // 现在把收藏列表这一次读打成 500：run 重试两次后抛出 → useFavorites 的 catch → logError，
+  // 而生产构建里 logError 会走上报出口（installErrorReporting）→ POST /functions/v1/report-client-event。
+  // 断言落在**请求**上（kind=error 且带 context），所以桩把函数吞掉也不影响。
+  {
+    currentErrors = []
+    currentWrites = []
+    const label = '错误路径上报'
+    try {
+      failPaths.add('/rest/v1/favorites')
+      const eventReq = page.waitForRequest(
+        (r) => r.method() === 'POST' && r.url().includes('/functions/v1/report-client-event') && (r.postData() ?? '').includes('"kind":"error"'),
+        { timeout: 15_000 },
+      )
+      await page.goto(`${base}${SUBMIT_FLOW.url}`, { waitUntil: 'load', timeout: 30_000 })
+      const req = await eventReq.catch(() => null)
+      const body = req?.postData() ?? ''
+      const hasContext = body.includes('useFavorites')
+      const ok = !!req && hasContext
+      console.log(`  ${ok ? '✓' : '✗'} 真实错误路径 → 生产上报出口真的发出了 error 事件`)
+      if (!ok) console.log(`        上报请求体: ${JSON.stringify(body.slice(0, 260))}`)
+      results.push({ route: `错误路径上报 ⇒ ${label}`, ok, length: 0, errors: [...currentErrors], note: ok ? '' : '没有等到上报请求' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ 真实错误路径上报 —— 操作失败: ${msg.slice(0, 200)}`)
+      results.push({ route: `错误路径上报 ⇒ ${label}`, ok: false, length: 0, errors: [...currentErrors, msg], note: '操作失败' })
+    } finally {
+      failPaths.delete('/rest/v1/favorites')
     }
   }
 
