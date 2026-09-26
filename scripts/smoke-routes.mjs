@@ -200,7 +200,7 @@ const SUBMIT_FLOW = { url: '/practice?mode=random', optionName: /^B\s*7$/, optio
 const EXAM_FLOW = {
   url: '/exam',
   startLabel: '开始考试',
-  toolbarHint: '共 1 题',
+  toolbarHint: '共 2 题',
   // 卷面模式下这几个键切换的是渲染路径，卡片模式下题目才会以选项按钮出现
   modes: [
     { key: 'sheet', label: '单页摊开', paper: true },
@@ -275,6 +275,21 @@ const QUESTION_META_CACHE = {
 }
 
 /**
+ * 第二道题：只为「答题卡绑定」那条断言而存在。
+ *
+ * 一道题的卷子测不出答题卡是干什么的 —— 得有两题才能证明"点第 2 格真的会切到第 2 题"，
+ * 以及"第 1 格在第 1 题作答后变成已答"。练习页那边仍然只有一道题（它的会话行写死了一个 id）。
+ */
+const QUESTION_ID_2 = '22222222-2222-2222-2222-222222222222'
+const QUESTION_ROW_2 = {
+  ...QUESTION_ROW,
+  id: QUESTION_ID_2,
+  question_text: '冒烟测试题 2：以下哪个是偶数？',
+  options: ['3', '8', '5', '7'],
+  seq_number: 2,
+}
+
+/**
  * 一份已存在的顺序刷题进度。
  *
  * 顺序模式的入口是"恢复上次会话"：页面先列会话（practice_sequential_state），
@@ -305,10 +320,10 @@ const EXAM_SESSION_ROW = {
   id: EXAM_SESSION_ID,
   user_id: USER_ID,
   status: 'in_progress',
-  total_questions: 1,
+  total_questions: 2,
   correct_count: 0,
   score: null,
-  question_ids: [QUESTION_ID],
+  question_ids: [QUESTION_ID, QUESTION_ID_2],
   current_index: 0,
   duration_ms: 3600000,
   started_at: new Date().toISOString(),
@@ -319,8 +334,8 @@ const EXAM_SESSION_ROW = {
 /** RPC → 返回值。只放首屏真的会调的；其余仍是 null（走空态） */
 const RPC_FIXTURES = {
   get_random_question_id: QUESTION_ID,
-  // 组卷：只给一道题，够走完「开考 → 作答 → 交卷」三个阶段
-  compose_exam: { question_ids: [QUESTION_ID], sections: [] },
+  // 组卷：两道题 —— 一道走完「开考 → 作答 → 交卷」，第二道给答题卡绑定断言用
+  compose_exam: { question_ids: [QUESTION_ID, QUESTION_ID_2], sections: [] },
   // Section 102：交卷 RPC 返回整行 exam_sessions（服务端算好的分数与时长）
   complete_exam: {
     ...EXAM_SESSION_ROW,
@@ -412,7 +427,15 @@ async function installStubs(context) {
       return json(route, wantsObject ? { id: 'smoke-row-1' } : [{ id: 'smoke-row-1' }])
     }
     if (url.includes('/profiles')) return json(route, wantsObject ? PROFILE : [PROFILE])
-    if (url.includes('/questions')) return json(route, wantsObject ? QUESTION_ROW : [QUESTION_ROW])
+    if (url.includes('/questions')) {
+      const withSecond = url.includes(QUESTION_ID_2)
+      // 组卷组了两道题时把两道都给出来（答题卡绑定那条断言要两题才有意义）。
+      // 注意 PostgREST 的过滤是 `id=in.%28a%2Cb%29` —— 括号和逗号都被转义了，
+      // 所以判据只能用「URL 里有没有第二个 id」，不能去正则匹配 `id=in.(`。
+      return json(route, wantsObject
+        ? (withSecond ? QUESTION_ROW_2 : QUESTION_ROW)
+        : (withSecond ? [QUESTION_ROW, QUESTION_ROW_2] : [QUESTION_ROW]))
+    }
     if (url.includes('/question_meta_cache')) return json(route, wantsObject ? QUESTION_META_CACHE : [QUESTION_META_CACHE])
     if (url.includes('/practice_sequential_state')) return json(route, wantsObject ? SEQUENTIAL_STATE_ROW : [SEQUENTIAL_STATE_ROW])
     if (url.includes('/exam_sessions')) {
@@ -575,6 +598,84 @@ try {
       results.push({ route: `${SUBMIT_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
     }
   }
+  // ── 交互式断言：卷面缩放 + 真实答题卡绑定 ──
+  // 这两条是 P1-5「展示层拆分」的前置条件：拆卷面/答题卡/工具栏之前先把它们的行为钉住，
+  // 否则拆完只能靠眼睛看（文档里那句"先补渲染断言再动结构"说的就是这个）。
+  //   · 缩放：百分比读数与 .paper-sheet 上的 transform 必须**一起**变 —— 只变读数就是假的；
+  //   · 答题卡：作答后对应的格子要变"已答"，点第 2 格要真的切到第 2 题（题号与题干都换）。
+  {
+    currentErrors = []
+    const label = '缩放与答题卡'
+    try {
+      await page.goto(`${base}${EXAM_FLOW.url}`, { waitUntil: 'load', timeout: 30_000 })
+      await page.getByRole('button', { name: EXAM_FLOW.startLabel }).first().click({ timeout: 15_000 })
+      // 等工具栏（模式切换按钮）真的出现再往下走 —— 开始页那张预览里也有"共 N 题"，
+      // 直接等那行文字会匹配到预览，读到的是"还没开考"时的数字
+      await page.getByRole('button', { name: '单页摊开' }).first().waitFor({ timeout: 15_000 })
+
+      await page.getByRole('button', { name: '单页摊开' }).first().click({ timeout: 10_000 })
+      await page.waitForTimeout(700)
+
+      const sheetScale = () => page.locator('.paper-sheet').first().evaluate((el) => {
+        const m = /matrix\(([\d.]+)/.exec(getComputedStyle(el).transform)
+        return m ? Number(m[1]) : 1
+      })
+      // 百分比读数：工具条里那个 "NN%" 的 span
+      const pct = page.locator('span.tabular-nums').filter({ hasText: /^\d+%$/ }).first()
+      const pctBefore = await pct.innerText({ timeout: 10_000 })
+      const scaleBefore = await sheetScale()
+      // 「+」就是读数后面那个按钮（工具条结构：缩放选择框 / − / 读数 / + / 平移 / 全屏）
+      await pct.locator('xpath=following-sibling::button[1]').click({ timeout: 10_000 })
+      await page.waitForTimeout(500)
+      const pctAfter = await pct.innerText()
+      const scaleAfter = await sheetScale()
+      const zoomOk = Number.parseInt(pctAfter, 10) > Number.parseInt(pctBefore, 10) && scaleAfter > scaleBefore
+      console.log(`        · 缩放：${pctBefore} → ${pctAfter}，.paper-sheet transform ${scaleBefore.toFixed(3)} → ${scaleAfter.toFixed(3)} ${zoomOk ? '✓' : '✗'}`)
+
+      // 答题卡：先作答第 1 题，再点第 2 格
+      await page.getByRole('button', { name: '卡片模式' }).first().click({ timeout: 10_000 })
+      await page.waitForTimeout(500)
+      await page.getByRole('button', { name: EXAM_FLOW.optionName }).first().click({ timeout: 10_000 })
+      await page.waitForTimeout(500)
+
+      const cell1 = page.locator('button[title^="第 1 题"]').first()
+      const cell2 = page.locator('button[title^="第 2 题"]').first()
+      const cellsOk = (await cell1.count()) > 0 && (await cell2.count()) > 0
+      if (cellsOk) await cell2.click({ timeout: 10_000 })
+      await page.waitForTimeout(600)
+      const bodyText = await page.locator('body').innerText()
+      const jumped = cellsOk && bodyText.includes('冒烟测试题 2')
+      // 切走之后第 1 格才该显示"已答"（当前格是 bg-primary，已答格才是 emerald —— 见答题卡的
+      // 三态样式）。所以这一条要在跳题之后再读，否则读到的是"当前格"的样式。
+      await page.waitForTimeout(200)
+      const answeredCell = (await cell1.getAttribute('class')) ?? ''
+      const markedAnswered = /emerald/.test(answeredCell)
+      const currentCell = (await cell2.getAttribute('class')) ?? ''
+      const cellIsCurrent = /bg-primary/.test(currentCell)
+      const sheetText = await page.locator('aside').first().innerText().catch(() => '')
+      const progressOk = /1\/2/.test(sheetText.replace(/\s+/g, ' '))
+      const cardOk = cellsOk && jumped && markedAnswered && cellIsCurrent && progressOk
+      console.log(`        · 答题卡：格子齐=${cellsOk} 跳题=${jumped} 第 1 格转已答=${markedAnswered} 当前格高亮=${cellIsCurrent} 进度 1/2=${progressOk} ${cardOk ? '✓' : '✗'}`)
+      if (!cardOk) {
+        const classes = await page.locator('aside button').evaluateAll((els) => els.map((e) => `${e.getAttribute('title')}=${e.className}`).slice(0, 8))
+        console.log(`        答题卡格子: ${JSON.stringify(classes)}`)
+        console.log(`        实际正文: ${JSON.stringify(bodyText.replace(/\s+/g, ' ').slice(0, 200))}`)
+      }
+
+      const ok = zoomOk && cardOk && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} ${EXAM_FLOW.url} 卷面缩放 + 真实答题卡绑定`)
+      if (!ok) for (const e of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${e.slice(0, 200)}`)
+      results.push({ route: `${EXAM_FLOW.url} ⇒ ${label}`, ok, length: bodyText.length, errors: [...currentErrors], note: ok ? '' : '缩放或答题卡断言未通过' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ ${EXAM_FLOW.url} 缩放与答题卡 —— 操作失败: ${msg.slice(0, 200)}`)
+      const body = await page.locator('body').innerText().catch(() => '')
+      console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 200))}`)
+      for (const err of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${err.slice(0, 200)}`)
+      results.push({ route: `${EXAM_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [...currentErrors, msg], note: '操作失败' })
+    }
+  }
+
   // ── 交互式断言：开考 → 作答 → 交卷 → 成绩页（考试状态机的四个阶段） ──
   {
     currentErrors = []
