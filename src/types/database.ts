@@ -3062,6 +3062,18 @@ export type Database = {
         Args: { p_kp: string; p_refs: Json; p_subject: string }
         Returns: number
       }
+      save_learning_route: {
+        Args: {
+          p_description: string
+          p_diagram_xml?: string
+          p_is_published: boolean
+          p_route_id: string
+          p_route_order: number
+          p_stages: Json
+          p_title: string
+        }
+        Returns: string
+      }
       save_resource_toc: {
         Args: { p_document_id: string; p_entries: Json }
         Returns: number

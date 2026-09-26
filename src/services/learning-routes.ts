@@ -1,4 +1,4 @@
-import type { Json } from '@/types/database'
+import type { Database, Json } from '@/types/database'
 import type { LearningRoute, RouteNodeStyle, RouteStage } from '@/types/learning-routes'
 import {
   db, run, runList, fetchAll, fetchInChunks, toJson,
@@ -232,7 +232,75 @@ export async function createLearningRoute(input: LearningRouteInput, options: Qu
   return row.id
 }
 
-/** updated_at 由服务层统一刷新，调用方不必各自 new Date()。 */
+// ── 整棵树保存（跨表用例，migration Section 103）──
+
+/** 一个分区连同它的题目；`id` 为空表示新建，`itemId` 服务端不依赖（按 (stage, question) 认身份） */
+export interface SaveRouteTreeStage {
+  id?: string | null
+  title: string
+  description: string
+  nodeStyle: RouteNodeStyle
+  items: { questionId: string; nodeStyle: RouteNodeStyle }[]
+}
+
+export interface SaveRouteTreeInput {
+  /** null = 新建 */
+  routeId: string | null
+  title: string
+  description: string
+  isPublished: boolean
+  /** null = 新建时服务端自动取 MAX+1；更新时保持原值 */
+  routeOrder: number | null
+  stages: SaveRouteTreeStage[]
+  /** null = 不动 diagram_xml（例如这次没能从画布取回内容） */
+  diagramXml: string | null
+}
+
+/**
+ * 保存整棵路线树：**一次**请求，服务端一个事务（migration Section 103）。
+ *
+ * 为什么要收成一个 RPC：编辑器原来把这件事做成了十几个顺序请求，而且 `removeRouteQuestion` /
+ * `updateRouteQuestionItem` 都在 per-item 循环里 —— 40 道题就是 40 次往返，且中途失败会留下
+ * 一条结构错乱的路线（分区建了一半、题加了一半、顺序没应用、该删的还在）。
+ * 现在差异化的 reconcile 在服务端一个事务里完成，行数不再随题目数增长。
+ *
+ * 幂等：不做"先清空再重建"，按 id 与 (stage_id, question_id) upsert，只删这次没带上来的行 ——
+ * 所以同一棵树存两次是空操作，分区 id 与 created_at 都保住。
+ */
+export async function saveLearningRouteTree(
+  input: SaveRouteTreeInput,
+  options: QueryOptions = {},
+): Promise<string> {
+  // 生成类型把 p_route_id 标成非空、p_route_order 标成必填，但 SQL 声明里两者都没写 NOT NULL
+  // （函数不是 STRICT），传 null 就是"新建"与"自动排序"这两个语义本身。
+  // 与 compose_exam 的处理一致：只在这一个边界上放宽可空性，调用方不用到处写断言。
+  const args = {
+    p_route_id: input.routeId,
+    p_title: input.title,
+    p_description: input.description,
+    p_is_published: input.isPublished,
+    p_route_order: input.routeOrder,
+    p_stages: toJson(input.stages.map((s) => ({
+      ...(s.id ? { id: s.id } : {}),
+      title: s.title,
+      description: s.description,
+      node_style: s.nodeStyle,
+      items: s.items.map((it) => ({ question_id: it.questionId, node_style: it.nodeStyle })),
+    }))),
+    p_diagram_xml: input.diagramXml,
+  } as unknown as Database['public']['Functions']['save_learning_route']['Args']
+
+  const base = db.rpc('save_learning_route', args)
+  const routeId = await run(
+    () => (options.signal ? base.abortSignal(options.signal) : base),
+    { ...options, context: options.context ?? 'learningRoutes.saveTree' },
+  )
+  if (!routeId) throw new AppError({ kind: 'not_found', message: 'learningRoutes.saveTree: 没拿到路线 id' })
+  return routeId
+}
+
+/** created_at 等由服务层统一刷新，调用方不必各自 new Date()。 */
+
 export async function updateLearningRoute(
   routeId: string,
   patch: LearningRoutePatch,

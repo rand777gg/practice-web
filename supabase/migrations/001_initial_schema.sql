@@ -8066,3 +8066,191 @@ GRANT EXECUTE ON FUNCTION public.complete_exam(UUID, JSONB, INT, INT, INT) TO au
 -- 这个函数是纯新增，不破坏兼容：老客户端继续走它自己那两步，不受影响。
 -- ============================================================================
 
+-- ============================================================================
+-- Section 103: save_learning_route —— 把「保存路线」收敛成一个事务
+-- ----------------------------------------------------------------------------
+-- 背景（docs/architecture-optimization.md 第 6 条）：路线编辑器一次保存要做的事在
+-- `use-route-editor.ts:handleSave` 里是这么一长串**顺序请求**：
+--
+--   存路线 → 逐个建/改分区 → 重排分区 → 对每个分区：加题、**逐题删**、重排题、**逐题改 node_style**
+--   → 逐个删分区 → 存画布 XML → 重新加载
+--
+-- 两件事同时坏掉了：
+--   · **没有事务**。中途任何一步失败（断网、超时、唯一约束冲突）都会留下一条结构错乱的路线：
+--     分区建了一半、题加了一半、顺序没应用、该删的还在。这不是"少存一点"，而是把用户已经
+--     攒好的内容弄坏 —— 比交卷那个半成品更严重。
+--   · **请求数随题目数线性增长**。`removeRouteQuestion` 与 `updateRouteQuestionItem` 都在
+--     per-item 循环里，40 道题的一节就是 40 次往返；一节一节串起来，一次保存几十次请求。
+--
+-- 这里把它收成一个函数：客户端**一次**把整棵树发上来，服务端在一个事务里做差异化 reconcile。
+--
+-- 幂等：不做"先清空再重建" —— 那会换掉所有 id，丢掉 created_at，也让别人正在看的链接失效。
+-- 按 id / (stage_id, question_id) 做 upsert，只删"这次没带上来"的行。所以同一棵树存两次，
+-- 第二次是空操作（除了 position 重写一次）。
+--
+-- 重排为什么要两段式：`UNIQUE(route_id, position)` 与 `UNIQUE(stage_id, position)` 都不是
+-- DEFERRABLE 的，逐行改成目标位置时"交换两行"必然中途撞约束 —— `services/learning-routes.ts`
+-- 的 reorderPositions 当年就栽在这里（界面表现是"拖了但顺序没变"）。所以先把该范围的行整体挪到
+-- 负数区间腾出非负空间，再写目标位置。
+--
+-- SECURITY INVOKER：三张表的写策略都是 `is_admin()`（读策略是"authenticated 且（管理员或已发布）"），
+-- 函数不越过它们 —— 非管理员调用会被 RLS 拒掉，这正是想要的。与 Section 99.3 的告警同源：
+-- 别为了省事改成 DEFINER。
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.save_learning_route(
+  p_route_id UUID,                 -- NULL = 新建
+  p_title TEXT,
+  p_description TEXT,
+  p_is_published BOOLEAN,
+  p_route_order INT,               -- NULL = 新建时自动取 MAX+1
+  p_stages JSONB,                  -- [{id?, title, description, node_style, items:[{question_id, node_style}]}]
+  p_diagram_xml TEXT DEFAULT NULL  -- NULL = 不动这一列
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_route UUID := p_route_id;
+  v_stage JSONB;
+  v_item JSONB;
+  v_stage_id UUID;
+  v_question_id UUID;
+  v_saved_id UUID;
+  v_pos INT := 0;
+  v_qpos INT;
+  v_keep_stages UUID[] := ARRAY[]::UUID[];
+  v_keep_items UUID[];
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'save_learning_route: 需要登录' USING ERRCODE = '28000';
+  END IF;
+  IF p_title IS NULL OR btrim(p_title) = '' THEN
+    RAISE EXCEPTION 'save_learning_route: 路线标题不能为空' USING ERRCODE = '22023';
+  END IF;
+
+  -- ---- 1) 路线本体 ----
+  IF v_route IS NULL THEN
+    INSERT INTO public.learning_routes (title, description, is_published, route_order, created_by, diagram_xml)
+    VALUES (
+      p_title,
+      COALESCE(p_description, ''),
+      COALESCE(p_is_published, FALSE),
+      COALESCE(p_route_order, (SELECT COALESCE(MAX(route_order), -1) + 1 FROM public.learning_routes)),
+      v_uid,
+      p_diagram_xml
+    )
+    RETURNING id INTO v_route;
+  ELSE
+    UPDATE public.learning_routes
+       SET title        = p_title,
+           description  = COALESCE(p_description, ''),
+           is_published = COALESCE(p_is_published, FALSE),
+           route_order  = COALESCE(p_route_order, route_order),
+           diagram_xml  = COALESCE(p_diagram_xml, diagram_xml),
+           updated_at   = NOW()          -- 这三张表没有 updated_at 触发器，得自己写
+     WHERE id = v_route;
+    IF NOT FOUND THEN
+      -- 不存在与"不是你的/不是管理员"回同一个错，与 complete_exam 一致
+      RAISE EXCEPTION 'save_learning_route: 找不到这条路线' USING ERRCODE = 'P0002';
+    END IF;
+  END IF;
+
+  -- ---- 2) 先把本路线所有分区挪到负数区间，腾出非负位置（见上面"重排为什么要两段式"）----
+  UPDATE public.learning_route_stages s
+     SET position = -o.rn
+    FROM (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY position, id) AS rn
+        FROM public.learning_route_stages
+       WHERE route_id = v_route
+    ) o
+   WHERE s.id = o.id;
+
+  -- ---- 3) 按数组顺序 upsert 分区，并在每个分区里 reconcile 题目 ----
+  FOR v_stage IN SELECT * FROM jsonb_array_elements(COALESCE(p_stages, '[]'::JSONB)) LOOP
+    v_stage_id := NULLIF(v_stage->>'id', '')::UUID;
+
+    -- 带了 id 但不是这条路线下的（别人删过、或伪造）→ 当新分区处理，不静默改别人的数据
+    IF v_stage_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM public.learning_route_stages WHERE id = v_stage_id AND route_id = v_route
+    ) THEN
+      v_stage_id := NULL;
+    END IF;
+
+    IF v_stage_id IS NULL THEN
+      INSERT INTO public.learning_route_stages (route_id, position, title, description, node_style)
+      VALUES (v_route, v_pos,
+              COALESCE(v_stage->>'title', ''),
+              COALESCE(v_stage->>'description', ''),
+              COALESCE(v_stage->'node_style', '{}'::JSONB))
+      RETURNING id INTO v_stage_id;
+    ELSE
+      UPDATE public.learning_route_stages
+         SET position    = v_pos,
+             title       = COALESCE(v_stage->>'title', ''),
+             description = COALESCE(v_stage->>'description', ''),
+             node_style  = COALESCE(v_stage->'node_style', '{}'::JSONB)
+       WHERE id = v_stage_id;
+    END IF;
+
+    v_keep_stages := v_keep_stages || v_stage_id;
+
+    -- 这个分区下的题目：同样先腾位置
+    UPDATE public.learning_route_questions q
+       SET position = -o.rn
+      FROM (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY position, id) AS rn
+          FROM public.learning_route_questions
+         WHERE stage_id = v_stage_id
+      ) o
+     WHERE q.id = o.id;
+
+    v_qpos := 0;
+    v_keep_items := ARRAY[]::UUID[];
+
+    FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(v_stage->'items', '[]'::JSONB)) LOOP
+      v_question_id := NULLIF(v_item->>'question_id', '')::UUID;
+      CONTINUE WHEN v_question_id IS NULL;
+
+      -- 身份按 (stage_id, question_id) 认（有唯一约束），item_id 只是客户端的副本，
+      -- 所以服务端不依赖它 —— 客户端漏回传 id 也不会因此插出重复行
+      INSERT INTO public.learning_route_questions (stage_id, question_id, position, node_style)
+      VALUES (v_stage_id, v_question_id, v_qpos, COALESCE(v_item->'node_style', '{}'::JSONB))
+      ON CONFLICT (stage_id, question_id)
+      DO UPDATE SET position   = EXCLUDED.position,
+                    node_style = EXCLUDED.node_style
+      RETURNING id INTO v_saved_id;
+
+      v_keep_items := v_keep_items || v_saved_id;
+      v_qpos := v_qpos + 1;
+    END LOOP;
+
+    -- 这次没带上来的题目 → 删掉（空数组 = 清空该分区的题目）
+    DELETE FROM public.learning_route_questions
+     WHERE stage_id = v_stage_id
+       AND NOT (id = ANY (v_keep_items));
+
+    v_pos := v_pos + 1;
+  END LOOP;
+
+  -- ---- 4) 这次没带上来的分区 → 删掉（题目随 ON DELETE CASCADE 一起走）----
+  DELETE FROM public.learning_route_stages
+   WHERE route_id = v_route
+     AND NOT (id = ANY (v_keep_stages));
+
+  RETURN v_route;
+END $$;
+
+COMMENT ON FUNCTION public.save_learning_route(UUID, TEXT, TEXT, BOOLEAN, INT, JSONB, TEXT) IS
+  '保存整棵学习路线树：一个事务里做差异化 reconcile（分区与题目的增/改/删/重排 + 画布 XML）';
+
+-- 权限：管理员工具，登录用户可调；匿名不行（两个授权都要撤，见 Section 101 的实测）
+REVOKE EXECUTE ON FUNCTION public.save_learning_route(UUID, TEXT, TEXT, BOOLEAN, INT, JSONB, TEXT) FROM anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.save_learning_route(UUID, TEXT, TEXT, BOOLEAN, INT, JSONB, TEXT) TO authenticated;
+
+-- 客户端改动（本次已做）：`use-route-editor.ts` 的 handleSave 改调这个函数，
+-- 整串顺序写变成一次请求；函数不存在时退回旧路径（部署顺序见 Section 102 的同一段说明）。
+-- ============================================================================
+

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { logError, userMessage } from '@/services/errors'
-import { fetchLearningRoute, fetchMaxRouteOrder, listQuestionItemsByStages } from '@/services/learning-routes'
+import { fetchLearningRoute, fetchMaxRouteOrder, listQuestionItemsByStages, saveLearningRouteTree } from '@/services/learning-routes'
+import { isFunctionMissing } from '@/services/exam'
 import { fetchQuestionsByIds } from '@/services/questions'
 import {
   addRouteQuestions,
@@ -386,6 +387,58 @@ export function useRouteEditor(routeId: string | undefined) {
     return ((await fetchMaxRouteOrder()) ?? -1) + 1
   }
 
+  /** 旧的一串顺序写。只在线上还没有 Section 103 的函数时走这里（见 handleSave 的注释）。 */
+  const saveViaLegacyWrites = async (working: LocalStage[], existingRouteId: string | null): Promise<string> => {
+    const rid = await saveLearningRoute({
+      ...(existingRouteId ? { id: existingRouteId } : {}),
+      title: meta.title,
+      description: meta.description,
+      is_published: meta.is_published,
+      route_order: existingRouteId ? meta.route_order : await nextRouteOrder(),
+    })
+
+    for (const stage of working) {
+      const style = stage.nodeStyle ?? {}
+      if (!stage.id) {
+        stage.id = await createRouteStage(rid, stage.title, stage.description, style)
+      } else if (serverRef.current.has(stage.id)) {
+        await updateRouteStage(stage.id, { title: stage.title, description: stage.description, node_style: style })
+      }
+    }
+
+    await reorderRouteStages(rid, working.map((s) => s.id as string))
+
+    for (const stage of working) {
+      const sid = stage.id as string
+      const prevItems = serverRef.current.get(sid) ?? []
+      const prevQidMap = new Map(prevItems.map((it) => [it.questionId, it.itemId]))
+      for (const item of stage.items) {
+        if (!item.itemId) item.itemId = prevQidMap.get(item.questionId)
+      }
+      const styleByQid: Record<string, RouteNodeStyle> = {}
+      for (const it of stage.items) styleByQid[it.questionId] = it.nodeStyle ?? {}
+      const toAdd = stage.items
+        .filter((it) => !prevQidMap.has(it.questionId))
+        .map((it) => it.questionId)
+      if (toAdd.length > 0) await addRouteQuestions(sid, toAdd, styleByQid)
+      const keptItemIds = new Set(stage.items.filter((it) => it.itemId).map((it) => it.itemId as string))
+      for (const it of prevItems) {
+        if (!keptItemIds.has(it.itemId)) await removeRouteQuestion(it.itemId)
+      }
+      const knownItemIds = stage.items.filter((it) => it.itemId).map((it) => it.itemId as string)
+      if (knownItemIds.length > 0) await reorderRouteQuestions(sid, knownItemIds)
+      for (const it of stage.items) {
+        if (it.itemId) await updateRouteQuestionItem(it.itemId, { node_style: it.nodeStyle ?? {} })
+      }
+    }
+
+    for (const stageId of serverRef.current.keys()) {
+      if (!working.some((s) => s.id === stageId)) await deleteRouteStage(stageId)
+    }
+
+    return rid
+  }
+
   const handleSave = async () => {
     if (!meta.title.trim()) {
       setError('请先填写路线标题')
@@ -396,57 +449,39 @@ export function useRouteEditor(routeId: string | undefined) {
     setNotice('')
     try {
       const working: LocalStage[] = stages.map((s) => ({ ...s, items: s.items.map((it) => ({ ...it })) }))
-      const rid = await saveLearningRoute({
-        ...(routeId ? { id: routeId } : {}),
-        title: meta.title,
-        description: meta.description,
-        is_published: meta.is_published,
-        route_order: routeId ? meta.route_order : await nextRouteOrder(),
-      })
 
-      for (const stage of working) {
-        const style = stage.nodeStyle ?? {}
-        if (!stage.id) {
-          stage.id = await createRouteStage(rid, stage.title, stage.description, style)
-        } else if (serverRef.current.has(stage.id)) {
-          await updateRouteStage(stage.id, { title: stage.title, description: stage.description, node_style: style })
-        }
-      }
-
-      await reorderRouteStages(rid, working.map((s) => s.id as string))
-
-      for (const stage of working) {
-        const sid = stage.id as string
-        const prevItems = serverRef.current.get(sid) ?? []
-        const prevQidMap = new Map(prevItems.map((it) => [it.questionId, it.itemId]))
-        for (const item of stage.items) {
-          if (!item.itemId) item.itemId = prevQidMap.get(item.questionId)
-        }
-        const styleByQid: Record<string, RouteNodeStyle> = {}
-        for (const it of stage.items) styleByQid[it.questionId] = it.nodeStyle ?? {}
-        const toAdd = stage.items
-          .filter((it) => !prevQidMap.has(it.questionId))
-          .map((it) => it.questionId)
-        if (toAdd.length > 0) await addRouteQuestions(sid, toAdd, styleByQid)
-        const keptItemIds = new Set(stage.items.filter((it) => it.itemId).map((it) => it.itemId as string))
-        for (const it of prevItems) {
-          if (!keptItemIds.has(it.itemId)) await removeRouteQuestion(it.itemId)
-        }
-        const knownItemIds = stage.items.filter((it) => it.itemId).map((it) => it.itemId as string)
-        if (knownItemIds.length > 0) await reorderRouteQuestions(sid, knownItemIds)
-        for (const it of stage.items) {
-          if (it.itemId) await updateRouteQuestionItem(it.itemId, { node_style: it.nodeStyle ?? {} })
-        }
-      }
-
-      for (const stageId of serverRef.current.keys()) {
-        if (!working.some((s) => s.id === stageId)) await deleteRouteStage(stageId)
-      }
-
-      const drawn = await drawioRef.current?.exportXml()
-      if (drawn) await saveRouteDiagram(rid, drawn)
-      else if (drawioRef.current?.isReady()) {
+      // 画布 XML 先取，取不到就传 null（服务端因此不动那一列，与旧行为一致：旧代码也只是跳过保存）
+      const drawn = (await drawioRef.current?.exportXml()) ?? null
+      if (!drawn && drawioRef.current?.isReady()) {
         setNotice('路线已保存，但没能从 draw.io 取回画布内容，请点「保存图」重试。')
+      }
+
+      let rid: string
+      try {
+        // 一次请求、服务端一个事务（migration Section 103）：分区与题目的增/改/删/重排都在里面
+        rid = await saveLearningRouteTree({
+          routeId: routeId ?? null,
+          title: meta.title,
+          description: meta.description,
+          isPublished: meta.is_published,
+          routeOrder: routeId ? meta.route_order : null,
+          diagramXml: drawn,
+          stages: working.map((s) => ({
+            id: s.id ?? null,
+            title: s.title,
+            description: s.description,
+            nodeStyle: s.nodeStyle ?? {},
+            items: s.items.map((it) => ({ questionId: it.questionId, nodeStyle: it.nodeStyle ?? {} })),
+          })),
+        })
+      } catch (err) {
+        // 部署顺序是"先发代码、后跑迁移"（Section 31），所以线上在 Section 103 执行之前没有这个函数。
+        // 只在"函数不存在"时退回旧路径；网络抖动/权限不足要照常报出来，
+        // 否则会把真正的失败悄悄降级成那条没有事务、请求数还随题目数增长的老路。
+        if (!isFunctionMissing(err)) throw err
+        logError('useRouteEditor.handleSave.rpcMissing', err)
+        rid = await saveViaLegacyWrites(working, routeId ?? null)
+        if (drawn) await saveRouteDiagram(rid, drawn)
       }
 
       if (routeId) {

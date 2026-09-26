@@ -328,6 +328,8 @@ const RPC_FIXTURES = {
     duration_ms: 42000,
     completed_at: new Date().toISOString(),
   },
+  // Section 103：保存路线返回路线 id（标量，不是行）
+  save_learning_route: 'smoke-route-1',
   get_review_pool_count: 0,
   get_review_count: 0,
   count_question_items: 1,
@@ -633,6 +635,44 @@ try {
         console.log(`        实际正文: ${JSON.stringify(body.replace(/\s+/g, ' ').slice(0, 260))}`)
       } catch { /* 页面可能已经崩了，忽略 */ }
       results.push({ route: `${EXAM_FLOW.url} ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
+    }
+  }
+
+  // ── 交互式断言：路线保存必须走那一次 RPC，而不是旧的十几个顺序请求 ──
+  // 这是唯一能证明「客户端真的改成新路径」的断言：服务端函数的行为已经在库里验过
+  // （新建/交换分区顺序/改样式/删题/删分区/幂等，全部符合预期后回滚），tsc 只证明类型对得上，
+  // 而"点一下保存到底发出去了什么请求"只有在浏览器里点一次才知道。
+  // 判据用请求记录而不是 DOM：保存成功后页面会跳到 /admin/learning-routes/<id>/edit，
+  // 而假后端里这条路线详情是空的（回 406），页面上看不出走了哪条路径。
+  {
+    currentErrors = []
+    currentWrites = []
+    const label = '路线保存'
+    try {
+      await page.goto(`${base}/admin/learning-routes/new`, { waitUntil: 'load', timeout: 30_000 })
+      await page.getByPlaceholder(/给学习路线起个名字/).first().fill('冒烟路线', { timeout: 15_000 })
+      await page.getByRole('button', { name: '保存路线' }).first().click({ timeout: 15_000 })
+      await page.waitForTimeout(1500)
+      const viaRpc = currentWrites.some((r) => r.method === 'POST' && r.url.includes('/rest/v1/rpc/save_learning_route'))
+      // 旧路径会往这三处发写请求（而且按分区/题目逐个发）
+      const legacy = currentWrites.filter((r) => /\/rest\/v1\/(learning_routes|learning_route_stages|learning_route_questions)/.test(r.url))
+      const ok = viaRpc && legacy.length === 0 && currentErrors.length === 0
+      console.log(`  ${ok ? '✓' : '✗'} /admin/learning-routes/new 保存 → 一次 rpc/save_learning_route`)
+      if (!ok) {
+        const wrote = currentWrites.map((r) => `${r.method} ${r.url.split('/rest/v1/')[1]?.split('?')[0] ?? r.url.split('/').pop()}`)
+        console.log(`        走 RPC=${viaRpc} 旧路径写请求数=${legacy.length}`)
+        console.log(`        写请求: ${JSON.stringify(wrote.slice(0, 12))}`)
+        for (const e of currentErrors.slice(0, 3)) console.log(`        未捕获异常: ${e.slice(0, 180)}`)
+      }
+      results.push({ route: `路线保存 ⇒ ${label}`, ok, length: 0, errors: [...currentErrors], note: ok ? '' : '未走 RPC 路径' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.split('\n')[0] : String(e)
+      console.log(`  ✗ 路线保存 —— 操作失败: ${msg.slice(0, 160)}`)
+      try {
+        const names = (await page.getByRole('button').allInnerTexts()).map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean)
+        console.log(`        URL=${page.url()} 前 10 个按钮: ${JSON.stringify(names.slice(0, 10))}`)
+      } catch { /* 页面可能已经崩了 */ }
+      results.push({ route: `路线保存 ⇒ ${label}`, ok: false, length: 0, errors: [msg], note: '操作失败' })
     }
   }
 
