@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { withTrace } from '@/lib/trace'
 import { logError } from '@/services/errors'
 import {
   countExcludedQuestions, deleteSequentialState, excludeQuestion, fetchFavoritesWithQuestion,
@@ -1247,7 +1248,7 @@ export function PracticeSession() {
     // 调 saveCurrentSession；但 realtime 那条"忽略自己刚写的变更"的门槛还得先立起来。
     const progress = questionMode === 'sequential' ? answerProgress() : null
     if (progress) markPracticeSync()
-    const id = await saveAnswer(question.id, selectedAnswer, isCorrect, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random', progress)
+    const id = await withTrace('practice.submit', () => saveAnswer(question.id, selectedAnswer, isCorrect, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random', progress))
     setAnswerId(id)
     bumpRefresh()
     useDashboardStore.getState().invalidatePlanCache()
@@ -1471,7 +1472,7 @@ export function PracticeSession() {
     setSelectedAnswer([])
     sessionDistRef.current.set(question.id, { status: 'wrong' })
     setSessionDistSnapshot(new Map(sessionDistRef.current))
-    const id = await saveAnswer(question.id, [], false, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random')
+    const id = await withTrace('practice.markUnsure', () => saveAnswer(question.id, [], false, 'practice', undefined, questionMode === 'sequential' ? 'sequential' : 'random'))
     setAnswerId(id)
     answeredThisSession.current.add(question.id)
     setAnsweredSessionSnapshot(new Set(answeredThisSession.current))

@@ -9,9 +9,9 @@
  *   · **慢请求上报**：超过阈值的请求报一条 `slow_request` 事件（落点复用 Section 104 的
  *     `client_events`，`npm run events` 就看得见）。这是**生产上真正有信号**的那一半 ——
  *     用户说"卡"的时候，至少能知道是哪类查询慢。
- *   · **本地计数**：每个 context 的调用数/失败数/总耗时/最大值，供控制台 `getApiStats()` 看。
- *     它**不上报**（逐条上报失败会淹掉信号，而上报聚合又要多一套东西），所以线上看不到失败率 ——
- *     失败是逐条以 `error` 事件可见的（`logError` 那条路），聚合的速率只在本地。
+ *   · **本地计数**：每个 context 的调用数/失败数/总耗时/最大值，供控制台 `getApiStats()` 看，
+ *     也在会话结束时由 `flushApiStats` 拍成**一条**摘要报上去（`api_stats`）——
+ *     逐条上报失败会淹掉信号，而"哪一类查询整体在失败"只有聚合才看得出来。
  *
  * 这个模块**不 import 任何东西**：上报出口由应用启动时注入（与 `errors.ts` 的
  * `setErrorReporter` 同一个理由 —— 那套零依赖的 Node 测试要能直接 import 它）。
@@ -105,4 +105,68 @@ export function getApiStats(): ({ context: string } & ApiStat)[] {
 
 export function resetApiStats(): void {
   stats.clear()
+}
+
+export interface ApiStatsSummary {
+  /** 这次会话里量到的请求总数与失败总数 —— 线上失败率就是 failures / calls */
+  calls: number
+  failures: number
+  /** 只带"值得一提"的 context：有失败、或者慢过、或者最慢那几次 */
+  contexts: { context: string; calls: number; failures: number; maxMs: number; lastErrorKind: string | null }[]
+}
+
+const SUMMARY_CONTEXT_LIMIT = 10
+
+/**
+ * 把这次会话的聚合拍成一条摘要（给"线上失败率"用）。
+ *
+ * 为什么是"会话结束发一条"而不是"每条都发"：逐条发会把信号淹掉 —— 同一类查询连续失败会刷满
+ * `client_events`，而要看的东西恰恰是"哪一类在整体失败"。摘要一条就够：总调用数、总失败数、
+ * 以及每个重点 context 的失败数与最大耗时。落点复用 Section 104 的表，`kind` 用 `other`、
+ * `name` 用 `api_stats`（`npm run events` 里一眼能认出来）。
+ *
+ * 只挑有失败或慢过的 context，且最多 10 个（按总耗时倒序已经排过序）：摘要本身也要能看，
+ * 而且 Edge Function 对 detail 有 4000 字节的上限。
+ *
+ * 一个 context 都没量到就返回 null —— 不发空事件。
+ */
+export function apiStatsSummary(limit = SUMMARY_CONTEXT_LIMIT): ApiStatsSummary | null {
+  try {
+    if (stats.size === 0) return null
+    const all = getApiStats()
+    const worth = all.filter((s) => s.failures > 0 || s.maxMs >= SLOW_REQUEST_MS)
+    return {
+      calls: all.reduce((n, s) => n + s.calls, 0),
+      failures: all.reduce((n, s) => n + s.failures, 0),
+      contexts: worth.slice(0, limit).map((s) => ({
+        context: s.context,
+        calls: s.calls,
+        failures: s.failures,
+        maxMs: Math.round(s.maxMs),
+        lastErrorKind: s.lastErrorKind,
+      })),
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 会话收尾时调一次：有东西可报就交给 `report`，返回是否报了。
+ *
+ * 不清空计数 —— 页面从"隐藏"回到前台再隐藏时应该能再报一次最新摘要；
+ * 而 `reportClientEvent` 自带每会话去重（同一个 (kind, name) 只发一条），重复调用不会刷表。
+ *
+ * 已知局限：`pagehide` 上发的是 `fetch`，页面被立刻销毁时可能发不出去。所以应用里同时挂在
+ * `visibilitychange`（转后台就会先发一次）—— 那个时机通常是够的。
+ */
+export function flushApiStats(report: (summary: ApiStatsSummary) => void, limit = SUMMARY_CONTEXT_LIMIT): boolean {
+  const summary = apiStatsSummary(limit)
+  if (!summary) return false
+  try {
+    report(summary)
+  } catch {
+    // 上报坏掉不能影响别的
+  }
+  return true
 }

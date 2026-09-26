@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { setErrorReporter } from '@/services/errors'
+import { currentTrace } from './trace'
 
 /**
  * 生产环境的诊断上报。
@@ -48,11 +49,14 @@ export function reportClientEvent(input: ClientEventInput): void {
 
   void (async () => {
     try {
+      // 落在 detail 里而不是单独开一列：它只在排查时按 `detail->>'trace_id'` 查，
+      // 为它加列 + 索引要动一次迁移，不值。有 trace 时才加这两个字段。
+      const trace = currentTrace()
       const { error } = await supabase.functions.invoke('report-client-event', {
         body: {
           kind: input.kind,
           name: input.name,
-          detail: input.detail ?? {},
+          detail: trace ? { ...input.detail, trace_id: trace.id, trace_name: trace.name } : (input.detail ?? {}),
           ua: navigator.userAgent,
           region: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
           app_version: __APP_VERSION__,

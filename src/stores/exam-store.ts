@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { completeExam, completeExamSession, createExamSession, fetchExamSession, saveExamCursor } from '@/services/exam'
 import { isFunctionMissing } from '@/services/errors'
+import { withTrace } from '@/lib/trace'
 import { fetchExamAnswers, upsertAnswer, upsertAnswers } from '@/services/practice'
 import { logError, userMessage } from '@/services/errors'
 import { reportClientEvent } from '@/lib/client-events'
@@ -234,7 +235,7 @@ export const useExamStore = create<ExamState>((set, get) => {
       await saveExamCursor(after.session.id, after.currentIndex).catch((e) => logError('exam.saveCursor', e))
     },
 
-    submitExam: async () => {
+    submitExam: () => withTrace('exam.submit', async () => {
       const { session, questions, answers } = get()
       if (!session) return
 
@@ -325,7 +326,7 @@ export const useExamStore = create<ExamState>((set, get) => {
 
       apply({ type: 'submit/done', patch: { status: 'completed', ...patch } })
       useRefreshStore.getState().bump()
-    },
+    }),
 
     reset: () => apply({ type: 'reset' }),
   }

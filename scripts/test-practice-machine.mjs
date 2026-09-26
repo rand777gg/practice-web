@@ -58,7 +58,7 @@ function buildModules(outDir) {
   const MODULES = [
     'lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts',
     'lib/practice-pick.ts', 'lib/offline-db.ts', 'services/errors.ts', 'lib/api-metrics.ts',
-    'stores/user-scope.ts',
+    'stores/user-scope.ts', 'lib/trace.ts',
   ]
   for (const rel of MODULES) {
     const source = readFileSync(join(root, 'src', rel), 'utf8')
@@ -642,6 +642,7 @@ try {
   console.log('\napi-metrics 请求指标')
   const {
     recordApiCall, getApiStats, resetApiStats, setSlowRequestReporter, now, SLOW_REQUEST_MS,
+    apiStatsSummary, flushApiStats,
   } = await import(pathToFileURL(join(outDir, 'api-metrics.mjs')).href)
 
   check('按 context 累计调用数/失败数/耗时/最大值，并按总耗时倒序', () => {
@@ -780,6 +781,101 @@ try {
       if (!source.includes('registerUserScopedStore(')) missing.push(file)
     }
     assert.deepEqual(missing, [], `这些 Store 有 reset/clear 却没登记清理：${missing.join(', ')}`)
+  })
+
+  // ──────────────────────────── trace 与聚合摘要 ────────────────────────────
+  console.log('\ntrace（把一次操作的事件串起来）')
+
+  const { withTrace, currentTrace, resetTrace } = await import(pathToFileURL(join(outDir, 'trace.mjs')).href)
+
+  await checkAsync('动作之外没有当前 trace；动作之内有，动作结束就还原', async () => {
+    resetTrace()
+    assert.equal(currentTrace(), null, '平时不该有 trace —— 大多数事件发生在动作之外')
+    let inside = null
+    await withTrace('practice.submit', async () => {
+      inside = currentTrace()
+    })
+    assert.ok(inside, '动作里必须有 trace')
+    assert.equal(inside.name, 'practice.submit')
+    assert.equal(currentTrace(), null, '动作结束后要还原')
+  })
+
+  await checkAsync('嵌套时内层用自己的 trace，结束后恢复外层（子动作不该把外层的现场弄丢）', async () => {
+    resetTrace()
+    const seen = {}
+    await withTrace('outer', async () => {
+      seen.outer = currentTrace()
+      await withTrace('inner', async () => {
+        seen.inner = currentTrace()
+        assert.notEqual(seen.inner.id, seen.outer.id, '内层要是一个新的 id')
+        assert.equal(seen.inner.name, 'inner')
+      })
+      assert.deepEqual(currentTrace(), seen.outer, '内层结束后外层要恢复')
+    })
+  })
+
+  await checkAsync('动作抛错时 trace 一样要还原（否则错误会被挂到下一次操作的现场上）', async () => {
+    resetTrace()
+    await withTrace('boom', async () => { throw new Error('动作失败') }).catch(() => {})
+    assert.equal(currentTrace(), null)
+  })
+
+  await checkAsync('两次同名动作的 id 不同（不然两次提交会混成一条链）', async () => {
+    resetTrace()
+    const ids = []
+    for (let i = 0; i < 2; i++) await withTrace('practice.submit', async () => { ids.push(currentTrace().id) })
+    assert.notEqual(ids[0], ids[1])
+  })
+
+  console.log('\n请求聚合摘要（线上失败率）')
+
+  check('没有样本时不发空事件', () => {
+    resetApiStats()
+    assert.equal(apiStatsSummary(), null)
+    let called = 0
+    assert.equal(flushApiStats(() => { called += 1 }), false)
+    assert.equal(called, 0)
+  })
+
+  check('汇总调用数与失败数，只带"有失败或慢过"的 context', () => {
+    resetApiStats()
+    recordApiCall('quick.query', 12)
+    recordApiCall('bad.query', 20, { kind: 'permission' })
+    recordApiCall('slow.query', SLOW_REQUEST_MS + 500)
+    const summary = apiStatsSummary()
+    assert.equal(summary.calls, 3)
+    assert.equal(summary.failures, 1)
+    assert.deepEqual(summary.contexts.map((c) => c.context).sort(), ['bad.query', 'slow.query'],
+      '快且没失败的 context 不进摘要，否则摘要会被日常噪音填满')
+    const bad = summary.contexts.find((c) => c.context === 'bad.query')
+    assert.equal(bad.lastErrorKind, 'permission')
+  })
+
+  check('context 最多带 10 个（Edge Function 的 detail 有 4000 字节上限）', () => {
+    resetApiStats()
+    for (let i = 0; i < 15; i++) recordApiCall(`ctx${i}`, SLOW_REQUEST_MS + i, { kind: 'network' })
+    const summary = apiStatsSummary()
+    assert.equal(summary.contexts.length, 10)
+    assert.equal(summary.calls, 15, '调用总数仍然是全部 —— 只截断明细')
+    assert.equal(summary.failures, 15)
+    assert.ok(JSON.stringify(summary).length < 4000, '摘要本身要装得进 detail')
+  })
+
+  check('flush 不清零：转后台再回来还能报最新的一份', () => {
+    resetApiStats()
+    recordApiCall('bad.query', 5, { kind: 'network' })
+    const seen = []
+    flushApiStats((s) => seen.push(s))
+    recordApiCall('bad.query', 5, { kind: 'network' })
+    flushApiStats((s) => seen.push(s))
+    assert.equal(seen.length, 2)
+    assert.equal(seen[1].calls, 2, '第二次摘要要带上新增的那次调用')
+  })
+
+  check('上报出口抛错不能让 flush 抛出去（会话收尾时炸掉会很难看）', () => {
+    resetApiStats()
+    recordApiCall('bad.query', 5, { kind: 'network' })
+    assert.equal(flushApiStats(() => { throw new Error('上报炸了') }), true)
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isFunctionMissing, logError, userMessage } from '@/services/errors'
+import { withTrace } from '@/lib/trace'
 import { fetchLearningRoute, fetchMaxRouteOrder, listQuestionItemsByStages, saveLearningRouteTree } from '@/services/learning-routes'
 import { reportClientEvent } from '@/lib/client-events'
 import { fetchQuestionsByIds } from '@/services/questions'
@@ -439,7 +440,7 @@ export function useRouteEditor(routeId: string | undefined) {
     return rid
   }
 
-  const handleSave = async () => {
+  const handleSave = () => withTrace('route.save', async () => {
     if (!meta.title.trim()) {
       setError('请先填写路线标题')
       return
@@ -496,7 +497,7 @@ export function useRouteEditor(routeId: string | undefined) {
     } finally {
       setSaving(false)
     }
-  }
+  })
 
   return {
     isNew, loading, notFound, error, setError, saving, dirty, notice, setNotice,
