@@ -58,7 +58,7 @@ function buildModules(outDir) {
   const MODULES = [
     'lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts',
     'lib/practice-pick.ts', 'lib/offline-db.ts', 'services/errors.ts', 'lib/api-metrics.ts',
-    'stores/user-scope.ts', 'lib/trace.ts',
+    'stores/user-scope.ts', 'lib/trace.ts', 'lib/optimistic.ts',
   ]
   for (const rel of MODULES) {
     const source = readFileSync(join(root, 'src', rel), 'utf8')
@@ -876,6 +876,59 @@ try {
     resetApiStats()
     recordApiCall('bad.query', 5, { kind: 'network' })
     assert.equal(flushApiStats(() => { throw new Error('上报炸了') }), true)
+  })
+
+  console.log('\n乐观更新的回滚')
+
+  const { commitOptimistic } = await import(pathToFileURL(join(outDir, 'optimistic.mjs')).href)
+
+  await checkAsync('写成功时不回滚', async () => {
+    let list = ['a']
+    let rolled = 0
+    const ok = await commitOptimistic({
+      commit: async () => { list = [...list, 'b'] },
+      rollback: () => { rolled += 1; list = ['a'] },
+    })
+    assert.equal(ok, true)
+    assert.equal(rolled, 0)
+    assert.deepEqual(list, ['a', 'b'])
+  })
+
+  await checkAsync('写失败时回滚，并把错误交给出口（默认静默也不该把错误吞成成功）', async () => {
+    let list = ['a']
+    const seen = []
+    const ok = await commitOptimistic({
+      commit: async () => { throw new Error('写库失败') },
+      rollback: () => { list = ['a'] },
+      onError: (e) => seen.push(e.message),
+    })
+    assert.equal(ok, false, '失败要如实返回 false')
+    assert.deepEqual(list, ['a'], '本地状态要改回去')
+    assert.deepEqual(seen, ['写库失败'])
+  })
+
+  await checkAsync('回滚自己抛错也不能把原始错误吞掉', async () => {
+    const seen = []
+    const ok = await commitOptimistic({
+      commit: async () => { throw new Error('原始错误') },
+      rollback: () => { throw new Error('回滚也炸了') },
+      onError: (e) => seen.push(e.message),
+    })
+    assert.equal(ok, false)
+    assert.deepEqual(seen, ['原始错误'], '要报的是写入失败，那才是排查要看的')
+  })
+
+  await checkAsync('按项回滚不会抹掉另一个已成功的操作（快照式回滚会）', async () => {
+    // 场景：先点收藏 A（写得很慢且最终失败），再点收藏 B（成功）。A 回滚时只该撤掉 A。
+    let list = []
+    list = [...list, 'A']            // 乐观加上 A
+    list = [...list, 'B']            // 乐观加上 B
+    const ok = await commitOptimistic({
+      commit: async () => { throw new Error('A 写失败') },
+      rollback: () => { list = list.filter((id) => id !== 'A') },   // 按项回滚
+    })
+    assert.equal(ok, false)
+    assert.deepEqual(list, ['B'], 'B 是成功的，不该被 A 的回滚带走')
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })
