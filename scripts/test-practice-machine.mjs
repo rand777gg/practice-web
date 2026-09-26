@@ -57,7 +57,7 @@ async function checkAsync(name, fn) {
 function buildModules(outDir) {
   const MODULES = [
     'lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts',
-    'lib/practice-pick.ts', 'lib/offline-db.ts', 'services/errors.ts',
+    'lib/practice-pick.ts', 'lib/offline-db.ts', 'services/errors.ts', 'lib/api-metrics.ts',
   ]
   for (const rel of MODULES) {
     const source = readFileSync(join(root, 'src', rel), 'utf8')
@@ -636,6 +636,77 @@ try {
       isIdempotencyConflict({ code: '23505', message: 'x', details: 'Key (client_operation_id)=(y) already exists.', hint: null }),
       true,
     )
+  })
+  // ── 请求指标：计数、阈值、以及"取消不算失败" ──
+  console.log('\napi-metrics 请求指标')
+  const {
+    recordApiCall, getApiStats, resetApiStats, setSlowRequestReporter, now, SLOW_REQUEST_MS,
+  } = await import(pathToFileURL(join(outDir, 'api-metrics.mjs')).href)
+
+  check('按 context 累计调用数/失败数/耗时/最大值，并按总耗时倒序', () => {
+    resetApiStats()
+    recordApiCall('a.query', 10)
+    recordApiCall('a.query', 30)
+    recordApiCall('b.query', 500)
+    recordApiCall('a.query', 20, { kind: 'network' })
+    const stats = getApiStats()
+    assert.deepEqual(stats.map((s) => s.context), ['b.query', 'a.query'], '总耗时大的在前')
+    const a = stats.find((s) => s.context === 'a.query')
+    assert.equal(a.calls, 3)
+    assert.equal(a.failures, 1)
+    assert.equal(a.totalMs, 60)
+    assert.equal(a.maxMs, 30)
+    assert.equal(a.lastErrorKind, 'network')
+    // 成功不覆盖 lastErrorKind（保留最近一次失败的分类，方便判断是什么在坏）
+    recordApiCall('a.query', 5)
+    assert.equal(getApiStats().find((s) => s.context === 'a.query').lastErrorKind, 'network')
+  })
+
+  check('超过阈值才上报，且带上下文里的调用数/失败数', () => {
+    resetApiStats()
+    const seen = []
+    setSlowRequestReporter((info) => seen.push(info))
+    try {
+      recordApiCall('fast.query', SLOW_REQUEST_MS - 1)
+      assert.equal(seen.length, 0, '没到阈值不该报')
+      recordApiCall('slow.query', SLOW_REQUEST_MS)
+      assert.equal(seen.length, 1, '到阈值就该报')
+      assert.equal(seen[0].context, 'slow.query')
+      assert.equal(seen[0].calls, 1)
+      assert.equal(seen[0].failures, 0)
+      recordApiCall('slow.query', SLOW_REQUEST_MS * 2, { kind: 'network' })
+      assert.equal(seen.length, 2)
+      assert.equal(seen[1].calls, 2, '第二条事件要带上累计调用数')
+      assert.equal(seen[1].failures, 1)
+    } finally {
+      setSlowRequestReporter(null)
+      resetApiStats()
+    }
+  })
+
+  check('取消（AbortError）既不计数也不算失败 —— 它是切页不是出错', () => {
+    resetApiStats()
+    recordApiCall('cancelled.query', 5000, new DOMException('Aborted', 'AbortError'))
+    assert.equal(getApiStats().length, 0, '被取消的请求不该留下记录')
+  })
+
+  check('上报出口抛错不能把请求带崩（指标是旁路）', () => {
+    resetApiStats()
+    setSlowRequestReporter(() => { throw new Error('reporter 炸了') })
+    try {
+      recordApiCall('slow.query', SLOW_REQUEST_MS + 1)   // 不该抛出去
+      assert.equal(getApiStats().length, 1, '即使上报失败，计数仍要记下')
+    } finally {
+      setSlowRequestReporter(null)
+      resetApiStats()
+    }
+  })
+
+  check('空 context 归到 (未命名)，不丢样本', () => {
+    resetApiStats()
+    recordApiCall('', 1)
+    assert.equal(getApiStats()[0].context, '(未命名)')
+    assert.ok(Number.isFinite(now()))
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })

@@ -2,6 +2,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import { chunkIds } from '@/lib/chunk-ids'
+import { now, recordApiCall } from '@/lib/api-metrics'
 import { AppError, fromPostgrestError, toAppError } from './errors'
 
 /** 全应用唯一的类型化客户端。业务代码不再直接 import supabase。 */
@@ -78,8 +79,11 @@ function throwIfAborted(signal?: AbortSignal): void {
 /**
  * 执行一次 PostgREST 请求：错误统一成 AppError，网络/服务端瞬时故障按指数退避重试。
  * 认证、权限、校验这类错误不重试 —— 重试只会把同一个失败再做两遍。
+ *
+ * 计量在**外层** `run` 上做一次（而不是每次尝试）：
+ * 一次 run 就是用户眼里的"一次请求"，重试的退避时间也该算进耗时里。
  */
-export async function run<B extends AnyBuilder>(build: () => B, options: QueryOptions = {}): Promise<DataOf<B>> {
+async function execWithRetry<B extends AnyBuilder>(build: () => B, options: QueryOptions): Promise<DataOf<B>> {
   const { signal, retries = DEFAULT_RETRIES, context } = options
   let lastError: AppError | null = null
 
@@ -98,6 +102,19 @@ export async function run<B extends AnyBuilder>(build: () => B, options: QueryOp
     }
   }
   throw lastError ?? new AppError({ kind: 'unknown', message: context ?? 'query failed' })
+}
+
+/** 全应用唯一的 PostgREST 出口，计量挂在这里（见 lib/api-metrics.ts）。 */
+export async function run<B extends AnyBuilder>(build: () => B, options: QueryOptions = {}): Promise<DataOf<B>> {
+  const started = now()
+  try {
+    const data = await execWithRetry(build, options)
+    recordApiCall(options.context ?? '', now() - started)
+    return data
+  } catch (e) {
+    recordApiCall(options.context ?? '', now() - started, e)
+    throw e
+  }
 }
 
 /** 列表查询：PostgREST 空结果回 null，这里统一成 []。 */
@@ -119,6 +136,21 @@ type CountBuilder = PromiseLike<{ data: unknown; error: PostgrestError | null; c
 export async function runCount<B extends CountBuilder>(
   build: () => B,
   options: QueryOptions = {},
+): Promise<{ rows: ElementOf<DataOf<B>>; count: number }> {
+  const started = now()
+  try {
+    const out = await execCountWithRetry(build, options)
+    recordApiCall(options.context ?? '', now() - started)
+    return out
+  } catch (e) {
+    recordApiCall(options.context ?? '', now() - started, e)
+    throw e
+  }
+}
+
+async function execCountWithRetry<B extends CountBuilder>(
+  build: () => B,
+  options: QueryOptions,
 ): Promise<{ rows: ElementOf<DataOf<B>>; count: number }> {
   const { signal, retries = DEFAULT_RETRIES, context } = options
   let lastError: AppError | null = null
