@@ -1,11 +1,22 @@
 /**
- * 由 `npm run types:db`（supabase gen types typescript --linked）生成。
+ * 由 `npm run types:db` 生成，**生成来源是线上自建库**（不再是 supabase link 指向的那个旧项目）。
  *
- * 生成来源的注意点：本仓库做过一次入口切换（见 .env.bak-before-cutover），而 supabase link
- * 指向的仍是切换前的旧项目。也就是说这个文件里的形状经核对是线上 schema 的【子集】——
- * scripts/check-schema-drift.mjs 会逐表逐列对着线上 PostgREST 核一遍（当前 58 张表全部通过）。
- * 线上比这里多出来的列不会出现在文件中，用到它们的地方要在这里补齐（下面带 [patch] 标记），
- * 或者想办法拿到线上库的直连串重新生成。
+ * 线上是自建 Supabase（docker compose，见 docs/cutover-runbook.md）：Postgres 只绑在
+ * 127.0.0.1，网关宿主端口已回收，所以本地直连必须过 SSH 隧道：
+ *
+ *   ssh -N -L 0.0.0.0:15433:172.18.0.3:5432 hk-sb        # 172.18.0.3 = supabase-db 容器
+ *   PGPASSWORD=<POSTGRES_PASSWORD> PGSSLMODE=disable npx supabase gen types typescript \
+ *     --db-url "postgresql://supabase_admin@host.docker.internal:15433/postgres" --schema public
+ *
+ * 两个坑（不写下来下次还得再查一遍）：
+ *   ① `gen types` 是通过 postgres-meta **容器**连库的，所以 URL 的 host 必须是
+ *      `host.docker.internal`；写 127.0.0.1 时容器里的 127.0.0.1 是它自己，会 ECONNREFUSED。
+ *   ② 这个环境下 CLI 会强制 TLS，而自建库的直连端口不提供 TLS，所以要 PGSSLMODE=disable。
+ *
+ * 上一版是从旧项目生成的，只是线上 schema 的**子集**，缺的列/函数只能靠 `[patch]` 手补
+ * （历史上补过 `exam_schedules.email_send_date` 与 `complete_exam`）。
+ * 现在来源就是线上，**不要再加 [patch]**：这里缺什么就说明对应迁移还没执行，去执行迁移。
+ * scripts/check-schema-drift.mjs 依然会逐表逐列对着线上 PostgREST 核一遍。
  */
 export type Json =
   | string
@@ -16,11 +27,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
   public: {
     Tables: {
       ai_model_prices: {
@@ -273,8 +279,6 @@ export type Database = {
           created_at: string
           days_of_week: number[]
           email_enabled: boolean
-          // [patch] 线上有、生成来源的旧项目没有。见文件头说明与 migration Section 96.1：
-          // 这一列是「自选邮件发送日期」，4 处调用方在用，补上它才能按真实形状读写。
           email_send_date: string | null
           email_time: number | null
           enabled: boolean
@@ -806,6 +810,65 @@ export type Database = {
           {
             foreignKeyName: "learning_routes_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      net_probe_samples: {
+        Row: {
+          cdn_ms: number | null
+          cdn_ok: boolean
+          client_rtt_ms: number | null
+          colo: string | null
+          conn_type: string | null
+          created_at: string
+          direct_ms: number | null
+          direct_ok: boolean
+          downlink_mbps: number | null
+          id: number
+          region: string | null
+          save_data: boolean | null
+          ua: string | null
+          user_id: string | null
+        }
+        Insert: {
+          cdn_ms?: number | null
+          cdn_ok?: boolean
+          client_rtt_ms?: number | null
+          colo?: string | null
+          conn_type?: string | null
+          created_at?: string
+          direct_ms?: number | null
+          direct_ok?: boolean
+          downlink_mbps?: number | null
+          id?: number
+          region?: string | null
+          save_data?: boolean | null
+          ua?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          cdn_ms?: number | null
+          cdn_ok?: boolean
+          client_rtt_ms?: number | null
+          colo?: string | null
+          conn_type?: string | null
+          created_at?: string
+          direct_ms?: number | null
+          direct_ok?: boolean
+          downlink_mbps?: number | null
+          id?: number
+          region?: string | null
+          save_data?: boolean | null
+          ua?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "net_probe_samples_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -2286,6 +2349,7 @@ export type Database = {
       user_answers: {
         Row: {
           answered_at: string
+          client_operation_id: string | null
           exam_session_id: string | null
           id: string
           is_correct: boolean
@@ -2300,6 +2364,7 @@ export type Database = {
         }
         Insert: {
           answered_at?: string
+          client_operation_id?: string | null
           exam_session_id?: string | null
           id?: string
           is_correct: boolean
@@ -2314,6 +2379,7 @@ export type Database = {
         }
         Update: {
           answered_at?: string
+          client_operation_id?: string | null
           exam_session_id?: string | null
           id?: string
           is_correct?: boolean
@@ -2688,8 +2754,6 @@ export type Database = {
       cleanup_expired_challenges: { Args: never; Returns: undefined }
       cleanup_expired_devices: { Args: never; Returns: undefined }
       cleanup_mfa_expired: { Args: never; Returns: undefined }
-      // [patch] 手补：migration Section 102 的函数，线上还没执行（见文件头说明）。
-      // 返回整行 public.exam_sessions，形状与 Tables.exam_sessions.Row 一致。
       complete_exam: {
         Args: {
           p_answers: Json
@@ -2711,6 +2775,12 @@ export type Database = {
           template: Json | null
           total_questions: number
           user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "exam_sessions"
+          isOneToOne: true
+          isSetofReturn: false
         }
       }
       compose_exam: {
@@ -3109,12 +3179,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3138,11 +3208,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3163,11 +3233,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3188,11 +3258,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3205,11 +3275,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never) = never,
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

@@ -12,7 +12,7 @@
     "test:machine": "node scripts/test-practice-machine.mjs",
     "smoke": "node scripts/smoke-boot.mjs",
     "smoke:routes": "node scripts/smoke-routes.mjs",
-    "types:db": "supabase gen types typescript --linked --schema public > src/types/database.ts",
+    "types:db": "node scripts/gen-types-live.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
