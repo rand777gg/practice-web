@@ -1,11 +1,14 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRefreshStore } from '@/stores/refresh-store'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlanDialog } from './PlanDialog'
-import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
+// 与 PlanDialog 同样的理由：颜色常量从 tokens 模块拿、组件懒加载，
+// 否则整份 echarts+zrender 会留在入口 chunk（这就是入口 677KB gzip 里最大的一块）。
+const PlanGanttChart = lazy(() => import('./PlanGanttChart').then((m) => ({ default: m.PlanGanttChart })))
+import { CUSTOM_PINK, PLAN_BLUE } from './plan-chart-tokens'
 import { Progress } from '@/components/ui/progress'
 import { resolveGoals, resolveRounds, getPlanSubjects } from '@/types'
 import {
@@ -250,23 +253,27 @@ export function DashboardPlanCards() {
             ) : null}
 
             {showCustom && goals.length > 0 && (
-              <PlanGanttChart
-                items={goals}
-                color={CUSTOM_PINK}
-                unit={t('plan.batchesUnit')}
-                selectedId={activeGoal?.id ?? null}
-                onSelect={setSelectedGoalId}
-              />
+              <Suspense fallback={<div style={{ height: 120 }} />}>
+                <PlanGanttChart
+                  items={goals}
+                  color={CUSTOM_PINK}
+                  unit={t('plan.batchesUnit')}
+                  selectedId={activeGoal?.id ?? null}
+                  onSelect={setSelectedGoalId}
+                />
+              </Suspense>
             )}
             {!showCustom && rounds.length > 0 && (
-              <PlanGanttChart
-                items={rounds}
-                color={PLAN_BLUE}
-                unit={t('plan.roundsUnit')}
-                planDeadline={deadline}
-                selectedId={activeRound?.id ?? null}
-                onSelect={setSelectedRoundId}
-              />
+              <Suspense fallback={<div style={{ height: 120 }} />}>
+                <PlanGanttChart
+                  items={rounds}
+                  color={PLAN_BLUE}
+                  unit={t('plan.roundsUnit')}
+                  planDeadline={deadline}
+                  selectedId={activeRound?.id ?? null}
+                  onSelect={setSelectedRoundId}
+                />
+              </Suspense>
             )}
             {!showCustom && rounds.length === 0 && (
               <p className="py-6 text-center text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>

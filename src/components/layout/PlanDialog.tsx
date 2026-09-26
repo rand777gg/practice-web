@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { toJson } from '@/services/db'
 import { logError } from '@/services/errors'
 import { removeExcludedQuestions } from '@/services/practice'
@@ -54,7 +54,13 @@ import {
   buildGoalItems, buildRoundItems, dailyPace, fetchPlanStats, goalPlanSpec, roundPlanSpec, subjectPaces,
   type PlanStat,
 } from '@/hooks/use-plan-completion'
-import { PlanGanttChart, CUSTOM_PINK, PLAN_BLUE } from './PlanGanttChart'
+import { CUSTOM_PINK, PLAN_BLUE } from './plan-chart-tokens'
+
+// 组件走懒加载：PlanGanttChart 是入口 chunk 里拉进 echarts 的两个源头之一，静态 import 它
+// 会把整份 echarts + zrender（压缩前约 2.4MB）留在入口里。它只是对话框里的预览图，
+// 打开对话框、切到对应那一步才需要。颜色常量必须从下面那个 tokens 模块拿 —— 从组件模块拿
+// 一个值，等于又把整个模块静态拉回来了。
+const PlanGanttChart = lazy(() => import('./PlanGanttChart').then((m) => ({ default: m.PlanGanttChart })))
 import { useT } from '@/i18n/use-t'
 import { Separator } from '@/components/ui/separator'
 
@@ -922,7 +928,10 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
 
                 {previewRounds.length > 0 ? (
                   <div className="rounded-lg border p-2">
-                    <PlanGanttChart items={previewRounds} color={PLAN_BLUE} unit={t('plan.roundsUnit')} planDeadline={deadline || null} />
+                    {/* 懒加载图的占位与图表自身同高（PlanGanttChart 里用的也是 120），避免加载完跳一下 */}
+                    <Suspense fallback={<div style={{ height: 120 }} />}>
+                      <PlanGanttChart items={previewRounds} color={PLAN_BLUE} unit={t('plan.roundsUnit')} planDeadline={deadline || null} />
+                    </Suspense>
                   </div>
                 ) : (
                   <p className="text-[11px] text-muted-foreground">{t('plan.noMilestoneHint')}</p>
@@ -966,7 +975,9 @@ export function PlanDialog({ open, onOpenChange, mode = 'sequential', onModeChan
 
                 {previewGoals.length > 0 && (
                   <div className="rounded-lg border p-2">
-                    <PlanGanttChart items={previewGoals} color={CUSTOM_PINK} unit={t('plan.batchesUnit')} />
+                    <Suspense fallback={<div style={{ height: 120 }} />}>
+                      <PlanGanttChart items={previewGoals} color={CUSTOM_PINK} unit={t('plan.batchesUnit')} />
+                    </Suspense>
                   </div>
                 )}
               </>

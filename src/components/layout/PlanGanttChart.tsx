@@ -16,9 +16,9 @@ const ZOOM_H = 26
 /** 左侧 y 轴(学科)区宽度 */
 export const GANTT_LEFT = 64
 export const GANTT_RIGHT = 46
-/** 长期计划的蓝色 / 自定义计划的粉色 */
-export const PLAN_BLUE = '#3b82f6'
-export const CUSTOM_PINK = '#ec4899'
+// 配色常量搬去了 ./plan-chart-tokens —— 这个模块要被懒加载，而调用方静态 import 那两个值，
+// 留在本文件里会让 echarts 继续留在入口 chunk（见那个文件的注释）。这里不再转出它们，
+// 转出等于留着同一个坑。
 
 function parseDay(s: string): number {
   return new Date(`${s}T00:00:00`).getTime()

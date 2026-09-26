@@ -1,9 +1,7 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, lazy, Suspense } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import ReactECharts from "echarts-for-react"
 import { Timer } from "lucide-react"
 
-import echarts from "@/lib/echarts"
 import { CATEGORY_COLORS, useChartPalette, withAlpha } from "@/lib/chart-theme"
 import { PlanRing } from './PlanRing'
 import { Button } from "@/components/ui/button"
@@ -16,6 +14,10 @@ import { PlanDialog } from "./PlanDialog"
 import { subjectDailyProgress, usePlanCompletion } from "@/hooks/use-plan-completion"
 import { useFocusStore } from "@/stores/focus-store"
 import { useT } from "@/i18n/use-t"
+
+// 这张图只在点开 Popover 时才渲染，所以走懒加载 —— 它原来是本文件里唯一 import echarts 的地方，
+// 而本文件属于应用布局（入口 chunk），于是整份 echarts+zrender 被拖进了首屏。
+const PlanMenuChart = lazy(() => import('./PlanMenuChart').then((m) => ({ default: m.PlanMenuChart })))
 
 interface SubjectDetail {
   label: string
@@ -227,14 +229,9 @@ export function HeaderPlanMenu() {
           </div>
 
           {option ? (
-            <div className="w-full" style={{ height: Math.max(104, rows.length * 34 + 14) }}>
-              <ReactECharts
-                echarts={echarts}
-                option={option}
-                notMerge
-                style={{ height: "100%", width: "100%" }}
-              />
-            </div>
+            <Suspense fallback={<div className="w-full" style={{ height: Math.max(104, rows.length * 34 + 14) }} />}>
+              <PlanMenuChart option={option} height={Math.max(104, rows.length * 34 + 14)} />
+            </Suspense>
           ) : (
             <p className="py-4 text-center text-[11px] text-muted-foreground">{t("plan.notSet")}</p>
           )}
