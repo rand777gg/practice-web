@@ -20,15 +20,20 @@ const indexPath = join(distDir, 'index.html')
 /**
  * 首屏预算：JS gzip 总量、CSS gzip 总量、请求数。
  *
- * 基线（2024 改造前，同样是生产构建）：JS 1187.8KB gzip / CSS 114.6KB gzip / 46 个请求。
- * 改造后：JS 958.1KB gzip（-19.3%，主要是把小Q 面板那条链和 pdfjs 从静态引入改成按需加载）。
- * 现在这两个数就是棘轮：它们不是"理想值"，而是"不许比现在更差"。
- * 想降下来的下一步在 docs/architecture-optimization.md 的 P0-4 备注里。
+ * 基线（P0 改造前，同样是生产构建）：JS 1187.8KB gzip / CSS 114.6KB gzip / 46 个请求。
+ * P0 之后：JS 958.1KB gzip（-19.3%）。
+ * 摘掉 @radix-ui/themes 之后：CSS 114.6 → 35.5KB gzip（-69%，raw 918 → 250KB），
+ * 请求数 44 → 42 —— 整份 Radix Themes 设计系统只是为了 5 个文件里的 ScrollArea×4 与 Badge×1，
+ * 而它是以 `import '@radix-ui/themes/styles.css'` 进**入口** CSS 的，所以每个访客都要下。
+ * 详见 docs/architecture-optimization.md 的「首屏 CSS 收敛」一节。
+ *
+ * 现在这三个数就是棘轮：它们不是"理想值"，而是"不许比现在更差"。
+ * CSS 那档特意留了一点余量（35.5 → 40），只为新组件留出空间；要涨上去得先说明理由。
  */
 const BUDGET = {
   jsGzipKb: 1000,
-  cssGzipKb: 120,
-  requests: 60,
+  cssGzipKb: 40,
+  requests: 50,
 }
 
 if (!existsSync(indexPath)) {

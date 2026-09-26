@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ScrollArea } from '@radix-ui/themes'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { fetchAnsweredQuestionIds } from '@/services/practice'
 import { fetchQuestionMetaRows, fetchQuestionOfflineRows, type QuestionMetaRow } from '@/services/questions'
@@ -387,7 +387,7 @@ export function Component() {
         className="w-full"
         onValueChange={(v) => setVisitedTabs((prev) => new Set(prev).add(v))}
       >
-        <ScrollArea scrollbars="horizontal">
+        <ScrollArea>
           <TabsList className="justify-center">
             <TabsTrigger value="overview" className="gap-1.5">
               <ListChecks className="h-3.5 w-3.5" />

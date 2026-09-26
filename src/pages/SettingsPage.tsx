@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 
-import { Badge } from '@radix-ui/themes'
+import { Badge } from '@/components/ui/badge'
 import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { fetchMfaSessions, revokeMfaSession, revokeTrustedDevice, trustDevice, type MfaSession } from '@/services/account'
@@ -53,6 +53,13 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/use-t'
 import { langDisplay, LANG_ICONS } from '@/lib/lang-names'
 import { Separator } from '@/components/ui/separator'
+
+/** Radix Themes 的 `variant="soft" radius="full"` 在这里的等价物（原来那套设计系统整份 CSS 只为了几个徽标） */
+const SOFT_BADGE: Record<'blue' | 'gray' | 'green', string> = {
+ blue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+ gray: 'bg-muted text-muted-foreground',
+ green: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+}
 
 const ADJECTIVES = ['勤奋的', '勇敢的', '机智的', '冷静的', '乐观的', '执着的', '专注的', '敏捷的', '沉稳的', '好奇的']
 const NOUNS = ['学者', '探索者', '思考者', '求知者', '攀登者', '追光者', '行者', '旅人', '书虫', '夜猫']
@@ -401,7 +408,7 @@ export function Component() {
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground">{t('users.role')}</td>
           <td className="py-1.5">
-           <Badge color={profile?.role === 'admin' ? 'blue' : 'gray'} variant="soft" radius="full">
+           <Badge variant="secondary" className={cn('rounded-full font-normal', SOFT_BADGE[profile?.role === 'admin' ? 'blue' : 'gray'])}>
             {profile?.role === 'admin' ? t('users.admin') : t('users.user')}
            </Badge>
           </td>
@@ -425,7 +432,7 @@ export function Component() {
            ) : (
             <>
             <div className="flex items-center gap-2 flex-wrap">
-             <Badge color={hasAnyMfa ? 'green' : 'gray'} variant="soft" radius="full">
+             <Badge variant="secondary" className={cn('rounded-full font-normal', SOFT_BADGE[hasAnyMfa ? 'green' : 'gray'])}>
               {hasAnyMfa ? t('auth.otpEnabled') : t('auth.otpDisabled')}
              </Badge>
              {!hasAnyMfa && (
@@ -569,7 +576,7 @@ export function Component() {
           <td className="py-1.5">
            {isGitHubLinked ? (
             <div className="flex items-center gap-2">
-             <Badge color="green" variant="soft" radius="full">{t('auth.githubBound')}</Badge>
+             <Badge variant="secondary" className={cn('rounded-full font-normal', SOFT_BADGE.green)}>{t('auth.githubBound')}</Badge>
              {hasMultipleIdentities && (
               <Button
                variant="ghost"
@@ -647,7 +654,7 @@ export function Component() {
          <tr>
           <td className="py-1.5 pr-4 text-muted-foreground">{t('users.status')}</td>
           <td className="py-1.5">
-           <Badge color="green" variant="soft" radius="full">Active</Badge>
+           <Badge variant="secondary" className={cn('rounded-full font-normal', SOFT_BADGE.green)}>Active</Badge>
           </td>
          </tr>
         </tbody>

@@ -15,14 +15,6 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Radix Themes Spinner & ScrollArea vars */
-  --spinner-animation-duration: 800ms;
-  --spinner-opacity: 0.65;
-  --space-3: 12px;
-  --space-4: 16px;
-  --radius-1: 3px;
-  --scaling: 1;
-  --radius-factor: 1;
   --color-background: white;
   /* shadcn vars */
   --background: 0 0% 100%;
