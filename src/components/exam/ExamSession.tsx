@@ -7,6 +7,8 @@ import { logError } from '@/services/errors'
 import { useAuthStore } from '@/stores/auth-store'
 import { useExamStore } from '@/stores/exam-store'
 import { ExamTimer } from './ExamTimer'
+import { ExamAnswerSheet } from './ExamAnswerSheet'
+import { ExamToolbar, type ExamViewMode } from './ExamToolbar'
 import { MarkdownRenderer } from '@/components/markdown/MarkdownRenderer'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -32,7 +34,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Crosshair, FileText, LayoutGrid, Play, Sparkles, PanelLeftClose, PanelLeftOpen, Columns2, Send } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Play, Sparkles, Columns2 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExamTemplatePanel } from './ExamTemplatePanel'
 import { ExamHistory } from './ExamHistory'
@@ -166,8 +168,6 @@ function buildPreviewSections(tpl: ExamTemplate): PaperSection[] {
   }
   return out
 }
-
-type ExamViewMode = 'card' | 'sheet' | 'spread'
 
 /**
  * 卡片模式里的材料区：默认展开，材料里的题号可点回跳。
@@ -1198,195 +1198,48 @@ export function ExamSession() {
 
   return (
     <div className="flex flex-col gap-0 lg:h-[calc(100vh-7rem)]">
-      {/* ── 顶部工具栏: 答题卡开关 / 模式切换(单页·双页·卡片) / 计时 / 进度 / 交卷 (所有模式统一显示) ─────────── */}
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto border-b bg-background/90 px-2 py-1.5 text-xs text-muted-foreground backdrop-blur">
-        <button
-          type="button"
-          onClick={() => setSheetOpen((v) => !v)}
-          className={cn(
-            'hidden lg:flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
-            sheetOpen ? 'text-muted-foreground hover:bg-accent' : 'border-primary/50 bg-accent text-foreground',
-          )}
-          title={sheetOpen ? t('exam.collapseSheet') : t('exam.expandSheet')}
-        >
-          {sheetOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
-          <span className="hidden lg:inline">{t('exam.answerSheet')}</span>
-        </button>
-
-        <span className="mx-1 hidden h-4 w-px shrink-0 bg-border sm:block" />
-
-        <span className="min-w-0 max-w-[26%] shrink truncate font-medium text-foreground" title={template?.name ?? t('exam.title')}>
-          {template?.name ?? t('exam.title')}
-        </span>
-        <span className="hidden shrink-0 text-muted-foreground md:inline">共 {totalItems} 题</span>
-
-        {/* paper 视图(单页缩放/双页缩放·平移·全屏)查看工具栏锚点: 桌面端渲染进顶部工具栏, 移动端双页回退浮层 */}
-        {paperMode && !isMobile && (
-          <span ref={setSpreadToolbarEl} className="flex shrink-0 items-center gap-1" />
-        )}
-
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {(
-            [
-              { m: 'sheet' as const, label: t('examTemplate.singlePage'), Icon: FileText },
-              { m: 'spread' as const, label: t('examTemplate.spreadPage'), Icon: Columns2 },
-              { m: 'card' as const, label: t('examTemplate.cardMode'), Icon: LayoutGrid },
-            ]
-          ).map(({ m, label, Icon }) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => applyViewMode(m)}
-              className={cn(
-                'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
-                viewMode === m ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
-              )}
-              title={label}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              <span className="hidden xl:inline">{label}</span>
-            </button>
-          ))}
-          {cardBinding && (
-            <button
-              type="button"
-              onClick={() => setCardViewOpen((v) => {
-                // 这块面板本来是卡片模式的题号导航位，进真实答题卡就先退出卡片模式
-                if (!v) setPaperMode(true)
-                return !v
-              })}
-          className={cn(
-            'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
-            cardViewOpen ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
-          )}
-          title="真实答题卡：左侧面板换成英语（一）的机读卡，中间的竖条可拖动调比例"
-        >
-          <ClipboardList className="h-3.5 w-3.5" />
-          <span className="hidden xl:inline">真实答题卡</span>
-        </button>
-      )}
-          {/* 真题卷面的「自动定位」：切题时卷面跟着滚到当前小题 */}
-          {paperMode && realPaper && cardNumberMap && (
-            <button
-              type="button"
-              aria-pressed={autoLocate}
-              onClick={() => setAutoLocate((v) => !v)}
-              className={cn(
-                'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 transition-colors',
-                autoLocate ? 'border-primary/60 bg-accent text-foreground' : 'hover:bg-accent',
-              )}
-              title="卷面自动定位：切到哪一小题就滚到卷面上的那一题"
-            >
-              <Crosshair className="h-3.5 w-3.5" />
-              <span className="hidden xl:inline">自动定位</span>
-            </button>
-          )}
-          <span className="mx-1 h-4 w-px bg-border" />
-          <span className="hidden shrink-0 items-center gap-0.5 tabular-nums sm:flex">
-            <span className="font-semibold text-emerald-600 dark:text-emerald-500">{answeredItems}</span>
-            <span>/</span>
-            <span>{totalItems}</span>
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 shrink-0 gap-1 px-2 text-xs"
-            onClick={openSubmitConfirm}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? <Spinner className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-            {t('exam.submitPaper')}
-          </Button>
-        </div>
-      </div>
+      <ExamToolbar
+        title={template?.name ?? t('exam.title')}
+        viewMode={viewMode}
+        onViewMode={applyViewMode}
+        answeredItems={answeredItems}
+        totalItems={totalItems}
+        sheetOpen={sheetOpen}
+        onToggleSheet={() => setSheetOpen((v) => !v)}
+        onToolbarAnchor={setSpreadToolbarEl}
+        showToolbarAnchor={paperMode && !isMobile}
+        canBindCard={!!cardBinding}
+        cardViewOpen={cardViewOpen}
+        onToggleCardView={() => setCardViewOpen((v) => {
+          // 这块面板本来是卡片模式的题号导航位，进真实答题卡就先退出卡片模式
+          if (!v) setPaperMode(true)
+          return !v
+        })}
+        canAutoLocate={paperMode && !!realPaper && !!cardNumberMap}
+        autoLocate={autoLocate}
+        onToggleAutoLocate={() => setAutoLocate((v) => !v)}
+        submitting={isSubmitting}
+        onSubmit={openSubmitConfirm}
+      />
       {submitError && <p className="border-b px-3 py-1 text-xs text-destructive">{submitError}</p>}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* ── Left: Answer Sheet (desktop; 收起后侧边栏完全隐藏, 展开入口在顶部工具栏「答题卡」) ── */}
-        <aside
-          className={cn(
-            'hidden lg:flex shrink-0 flex-col overflow-hidden bg-muted/20 transition-[width] duration-300 ease-in-out',
-            sheetOpen ? 'w-[300px] border-r' : 'w-0',
-          )}
-        >
-          {sheetOpen && (
-            <div className="flex h-full min-h-0 w-[300px] flex-col">
-              <div className="border-b p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">答题卡</p>
-                  <div className="flex items-center gap-1.5">
-                    <ExamTimer startedAt={session.started_at} durationMs={session.duration_ms} onExpire={handleTimerExpire} />
-                    <button
-                      type="button"
-                      onClick={() => setSheetOpen(false)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-                      title={t('exam.collapseSheet')}
-                    >
-                      <PanelLeftClose className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" />已答</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted border border-dashed border-muted-foreground/20" />未答</span>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-4">
-                {cardSections.map((sec) => {
-                  const secAnswered = sec.cards.filter(isCardAnswered).length
-                  return (
-                    <div key={sec.label} className="space-y-2">
-                      {/* 分区层：Section I 完形填空 */}
-                      <div className="flex items-baseline justify-between gap-2 border-b pb-1">
-                        <span className="text-[11px] font-semibold text-foreground">{sec.label}</span>
-                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                          {secAnswered}/{sec.cards.length}
-                        </span>
-                      </div>
-                      {sec.blocks.map((block, bi) => (
-                        <div key={`${sec.label}-${bi}`} className="space-y-1.5">
-                          {/* 大题层：Text 1 / Text 2 …（完形、写作这类单大题分区不显示） */}
-                          {block.label && (
-                            <p className="text-[10px] text-muted-foreground">{block.label}</p>
-                          )}
-                          <div className="flex flex-wrap gap-1.5 content-start">
-                            {block.cards.map((card) => {
-                              const isCurrent = card.index === currentIndex
-                              const isAnswered = isCardAnswered(card)
-                              const no = examCardNo(card)
-                              return (
-                                <button key={`${card.question.id}-${card.subId}`}
-                                  onClick={() => jumpLocate(card.index)}
-                                  title={`第 ${no} 题 · ${whereOf(card)}`}
-                                  className={cn(
-                                    'h-7 w-7 rounded text-[11px] tabular-nums transition-all border border-dashed flex items-center justify-center',
-                                    isCurrent && 'bg-primary text-primary-foreground border-primary',
-                                    !isCurrent && isAnswered && 'bg-emerald-500/80 text-white border-emerald-500',
-                                    !isCurrent && !isAnswered && 'text-muted-foreground border-muted-foreground/20 hover:border-muted-foreground/40',
-                                  )}
-                                >
-                                  {no}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                })}
-              </div>
-              {/* 进度回填到答题卡底部 */}
-              <div className="space-y-1.5 border-t p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">进度</span>
-                  <span className="tabular-nums">{answeredItems}/{totalItems}</span>
-                </div>
-                <Progress value={totalItems > 0 ? (answeredItems / totalItems) * 100 : 0} className="h-2 [&>div]:bg-emerald-500" />
-              </div>
-            </div>
-          )}
-        </aside>
+        <ExamAnswerSheet
+          open={sheetOpen}
+          onCollapse={() => setSheetOpen(false)}
+          sections={cardSections}
+          isAnswered={isCardAnswered}
+          currentIndex={currentIndex}
+          onJump={jumpLocate}
+          cardNo={examCardNo}
+          where={whereOf}
+          answeredItems={answeredItems}
+          totalItems={totalItems}
+          startedAt={session.started_at}
+          durationMs={session.duration_ms}
+          onTimerExpire={handleTimerExpire}
+        />
 
 
       {paperMode && (
