@@ -6,6 +6,7 @@ import {
   type OutboxOperation,
 } from '@/lib/offline-db'
 import { insertAnswers } from '@/services/practice'
+import { useAuthStore } from '@/stores/auth-store'
 import { registerUserScopedStore } from '@/stores/user-scope'
 
 interface SyncState {
@@ -29,7 +30,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   syncing: false,
 
   refresh: async () => {
-    const stats = await getOutboxStats()
+    // 只统计当前用户的：队列是设备级的，上一个人的待办不该显示在新用户头上
+    const stats = await getOutboxStats(useAuthStore.getState().user?.id ?? null)
     set({ pendingCount: stats.pending, failedCount: stats.failed })
   },
 
@@ -37,11 +39,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     if (get().syncing) return
     // 离网时直接跳过：省掉一次必然失败的事务读
     if (!navigator.onLine) return
+    // 没登录就别发：队列里的操作都带着各自的 user_id，没有会话时发出去只会被 RLS 拒
+    const userId = useAuthStore.getState().user?.id
+    if (!userId) return
     set({ syncing: true })
     try {
       // 一次发一条，失败按类型分流（见 drainOutbox）。同一次作答重试多少次都用同一个
-      // client_operation_id —— 服务端幂等键那一列要等 migration Section 100 落地，
-      // 在那之前客户端保证的是"不重复入队、不丢"。
+      // client_operation_id —— 服务端幂等键那一列（migration Section 100）已上线，
+      // 所以"响应丢了、重试又插一次"现在会撞唯一索引得到 23505，
+      // drainOutbox 把那种情况当成功出队（见 isIdempotencyConflict）。
       await drainOutbox(async (op: OutboxOperation) => {
         await insertAnswers([{
           user_id: op.payload.user_id,
@@ -52,8 +58,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           exam_session_id: op.payload.exam_session_id,
           source: op.payload.source,
           answered_at: op.payload.answered_at,
+          client_operation_id: op.clientOperationId,
         }])
-      })
+      }, { userId })
     } finally {
       set({ syncing: false })
       await get().refresh()
@@ -65,7 +72,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     stopTriggers = installOutboxTriggers(() => { void get().sync() })
   },
 
-  // 待同步条数是上一个人的本地待办；换号后不能把它显示成新用户的，更不能顺手替他上传
+  // 待同步条数是设备级的本地待办；换号后不能把它显示成新用户的，更不能顺手替他上传。
+  // 靠"按 user_id 过滤"（见 offline-db 的 takeDueOperations / getOutboxStats）而不是清空队列 ——
+  // 旧用户下次登回来，他自己那些还没发出去的作答还在。
   reset: () => {
     stopTriggers?.()
     stopTriggers = null

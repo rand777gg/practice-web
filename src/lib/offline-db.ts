@@ -88,6 +88,23 @@ function backoffMs(attempts: number): number {
   return Math.min(BASE_BACKOFF_MS * 2 ** Math.max(0, attempts - 1), MAX_BACKOFF_MS)
 }
 
+/**
+ * 「这次失败其实是成功」：撞的是幂等键那条唯一索引。
+ *
+ * 为什么单列出来：离线队列把请求发出去了、响应丢了，重试时会再插一次**同样的**
+ * `client_operation_id`，服务端返回 23505 —— 那**不是**数据冲突，而是"这条早就写成功了"。
+ * 原来它归到 conflict 停在队列里，用户会看到一个永远清不掉的"待同步 1"，而答案其实已经入库。
+ *
+ * 判据必须看**列名**，不能只看 23505：练习路径本来就允许同一道题反复作答（每次是一条新行），
+ * 所以真正的 23505 也可能从别处来（比如 (user_id, question_id, exam_session_id) 那条），
+ * 把那些也当成功就会静默丢掉用户的作答。
+ */
+export function isIdempotencyConflict(e: unknown): boolean {
+  const err = e instanceof AppError ? e : toAppError(e)
+  if (err.kind !== 'conflict') return false
+  return /client_operation_id/i.test(`${err.details ?? ''} ${err.message}`)
+}
+
 export function newClientOperationId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -225,30 +242,41 @@ export async function enqueueAnswer(payload: AnswerPayload): Promise<string> {
   return clientOperationId
 }
 
-/** 到期的待发操作，按入队顺序（先入先出，避免乱序推进计划轮次） */
-export async function takeDueOperations(limit = 50): Promise<OutboxOperation[]> {
+/**
+ * 到期的待发操作，按入队顺序（先入先出，避免乱序推进计划轮次）。
+ *
+ * `userId` 给定时只取这个用户的：队列是**设备级**的，换号后上一个人的待办还躺在里面。
+ * 不按用户过滤的话，新用户一进应用就会把上一个用户的作答发出去 —— 那些请求带着别人的 user_id，
+ * 注定被 RLS 拒掉（白跑一趟），而它还没失败的时候会被算进"待同步 N"显示给新用户。
+ * 过滤而不是丢弃：旧用户下次登回来，他那些没发出去的作答还在。
+ */
+export async function takeDueOperations(limit = 50, userId?: string | null): Promise<OutboxOperation[]> {
   const now = new Date().toISOString()
   const all = await withTx(STORE_OUTBOX, 'readonly', (tx) =>
     req(tx.objectStore(STORE_OUTBOX).getAll() as IDBRequest<OutboxOperation[]>))
   return all
     .filter((op) => op.state === 'pending' && op.nextAttemptAt <= now)
+    .filter((op) => !userId || op.payload.user_id === userId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .slice(0, limit)
 }
 
-export async function getOutboxStats(): Promise<OutboxStats> {
+export async function getOutboxStats(userId?: string | null): Promise<OutboxStats> {
   const all = await withTx(STORE_OUTBOX, 'readonly', (tx) =>
     req(tx.objectStore(STORE_OUTBOX).getAll() as IDBRequest<OutboxOperation[]>))
+  const mine = userId ? all.filter((op) => op.payload.user_id === userId) : all
   return {
-    pending: all.filter((op) => op.state === 'pending').length,
-    failed: all.filter((op) => op.state === 'failed').length,
+    pending: mine.filter((op) => op.state === 'pending').length,
+    failed: mine.filter((op) => op.state === 'failed').length,
   }
 }
 
-export async function getFailedOperations(): Promise<OutboxOperation[]> {
+export async function getFailedOperations(userId?: string | null): Promise<OutboxOperation[]> {
   const all = await withTx(STORE_OUTBOX, 'readonly', (tx) =>
     req(tx.objectStore(STORE_OUTBOX).getAll() as IDBRequest<OutboxOperation[]>))
-  return all.filter((op) => op.state === 'failed').sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  return all
+    .filter((op) => op.state === 'failed' && (!userId || op.payload.user_id === userId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 /** 同步成功后删掉记录（不是标记完成 —— 留着的都是待办） */
@@ -283,12 +311,15 @@ export interface DrainResult {
  *
  * `apply` 抛出的错误按 `classifyFailure` 分类：可重试的按指数退避延后，
  * 冲突和永久错误标记为 failed 停在队列里等人工处理（不静默丢弃）。
+ *
+ * 例外是**幂等键冲突**：那不是失败，是"这条早就写成功了"（见 `isIdempotencyConflict`），
+ * 直接出队并计入 done。
  */
 export async function drainOutbox(
   apply: (op: OutboxOperation) => Promise<void>,
-  options: { limit?: number } = {},
+  options: { limit?: number; userId?: string | null } = {},
 ): Promise<DrainResult> {
-  const due = await takeDueOperations(options.limit ?? 50)
+  const due = await takeDueOperations(options.limit ?? 50, options.userId)
   let done = 0
   let retried = 0
   let failed = 0
@@ -299,6 +330,11 @@ export async function drainOutbox(
       await markDone([op.clientOperationId])
       done += 1
     } catch (e) {
+      if (isIdempotencyConflict(e)) {
+        await markDone([op.clientOperationId])
+        done += 1
+        continue
+      }
       const klass = classifyFailure(e)
       const err = e instanceof AppError ? e : toAppError(e)
       if (klass === 'retryable') {

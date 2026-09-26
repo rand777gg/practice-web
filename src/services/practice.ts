@@ -145,11 +145,17 @@ export interface QuestionAnswerStats {
   is_public: boolean
 }
 
-/** 写入用的作答行: selected_answer 收领域值, JSONB 边界由 toJson 兜 */
+/**
+ * 写入用的作答行: selected_answer 收领域值, JSONB 边界由 toJson 兜。
+ *
+ * `client_operation_id` 是可选的幂等键（migration Section 100）：离线队列重发同一动作时带上同一个值，
+ * 服务端靠 `user_answers_client_operation_id_key` 认出"这条已经写过了"。
+ * 在线路径不带它（每次都是一次新的作答，不需要去重）。
+ */
 export type AnswerInsert = Pick<
   Insert<'user_answers'>,
   'user_id' | 'question_id' | 'is_correct' | 'mode' | 'exam_session_id' | 'source' | 'answered_at'
-> & { selected_answer: unknown }
+> & { selected_answer: unknown; client_operation_id?: string | null }
 
 export type AnswerUpdate = Pick<Update<'user_answers'>, 'note' | 'is_public'>
 

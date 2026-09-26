@@ -55,7 +55,10 @@ async function checkAsync(name, fn) {
  * 依赖链刻意写死成清单 —— 多一个文件就多加一行，比实现一个通用打包器划算。
  */
 function buildModules(outDir) {
-  const MODULES = ['lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts', 'lib/practice-pick.ts']
+  const MODULES = [
+    'lib/practice-session.ts', 'lib/exam-session.ts', 'lib/answer-utils.ts', 'lib/constants.ts',
+    'lib/practice-pick.ts', 'lib/offline-db.ts', 'services/errors.ts',
+  ]
   for (const rel of MODULES) {
     const source = readFileSync(join(root, 'src', rel), 'utf8')
     const { outputText, diagnostics } = ts.transpileModule(source, {
@@ -590,6 +593,49 @@ try {
     assert.deepEqual(await resolvePracticePick(pickInput(), d), { kind: 'stale' })
     // 进离线兜底之前那一句判定原来就有，且不带条件 —— 过期了连预取都不该读
     assert.deepEqual(await resolvePracticePick(pickInput({ userId: null }), d), { kind: 'stale' })
+  })
+  // ── 离线队列：错误分类 + 幂等键冲突判据 ──
+  console.log('\noffline-db 队列')
+  const { classifyFailure, isIdempotencyConflict } = await import(pathToFileURL(join(outDir, 'offline-db.mjs')).href)
+  const { AppError } = await import(pathToFileURL(join(outDir, 'errors.mjs')).href)
+
+  check('classifyFailure：网络/服务端/认证可重试，校验与权限是永久的', () => {
+    assert.equal(classifyFailure(new AppError({ kind: 'network', message: 'x' })), 'retryable')
+    assert.equal(classifyFailure(new AppError({ kind: 'server', message: 'x' })), 'retryable')
+    // 认证失败也算可重试：会话可能刚好在刷新
+    assert.equal(classifyFailure(new AppError({ kind: 'auth', message: 'x' })), 'retryable')
+    assert.equal(classifyFailure(new AppError({ kind: 'conflict', message: 'x' })), 'conflict')
+    assert.equal(classifyFailure(new AppError({ kind: 'validation', message: 'x' })), 'permanent')
+    assert.equal(classifyFailure(new AppError({ kind: 'permission', message: 'x' })), 'permanent')
+    assert.equal(classifyFailure(new AppError({ kind: 'not_found', message: 'x' })), 'permanent')
+  })
+
+  check('幂等键冲突当成功；别的 23505 不能（练习本来就允许同题反复作答）', () => {
+    // 形状取自线上实测：
+    //   sqlstate=23505 detail=Key (client_operation_id)=(...) already exists.
+    const idem = new AppError({
+      kind: 'conflict',
+      message: 'practice.insertAnswers: duplicate key value violates unique constraint "user_answers_client_operation_id_key"',
+      details: 'Key (client_operation_id)=(00000000-0000-0000-0000-0000000000ff) already exists.',
+    })
+    assert.equal(isIdempotencyConflict(idem), true, '撞幂等键 = 这条早就写成功了，应当出队')
+
+    const real = new AppError({
+      kind: 'conflict',
+      message: 'duplicate key value violates unique constraint "uq_user_answers_session"',
+      details: 'Key (user_id, question_id, exam_session_id)=(a, b, c) already exists.',
+    })
+    assert.equal(isIdempotencyConflict(real), false, '真正的数据冲突要停在队列里等人看，不能静默当成功')
+
+    // 不是 conflict 的一律 false，哪怕消息里恰好出现了列名
+    assert.equal(isIdempotencyConflict(new AppError({ kind: 'network', message: 'client_operation_id' })), false)
+    assert.equal(isIdempotencyConflict(new AppError({ kind: 'validation', message: 'client_operation_id' })), false)
+
+    // 没经过 AppError 的裸 PostgREST 错误对象也要能判（toAppError 会按 code 分类）
+    assert.equal(
+      isIdempotencyConflict({ code: '23505', message: 'x', details: 'Key (client_operation_id)=(y) already exists.', hint: null }),
+      true,
+    )
   })
 } finally {
   rmSync(outDir, { recursive: true, force: true })
