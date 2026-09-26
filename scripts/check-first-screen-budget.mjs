@@ -27,13 +27,19 @@ const indexPath = join(distDir, 'index.html')
  * 而它是以 `import '@radix-ui/themes/styles.css'` 进**入口** CSS 的，所以每个访客都要下。
  * 详见 docs/architecture-optimization.md 的「首屏 CSS 收敛」一节。
  *
+ * 把 echarts 挪出首屏之后：JS 959.3 → **591.8KB gzip（-38%）**，入口文件本体 2150 → 1040KB raw，
+ * 请求数 42 → 40。echarts + zrender（压缩前约 2.4MB）原本是从两个**急切布局组件**进来的
+ * （HeaderPlanMenu 内联的图 + PlanDialog 可达的 PlanGanttChart），现在两处都是 React.lazy。
+ * 详见「入口 JS：把 echarts 从首屏挪走」。
+ *
  * 现在这三个数就是棘轮：它们不是"理想值"，而是"不许比现在更差"。
- * CSS 那档特意留了一点余量（35.5 → 40），只为新组件留出空间；要涨上去得先说明理由。
+ * JS 那档留了约 15% 余量（591.8 → 680）供正常功能增长；要涨上去得先说明理由。
+ * 下一步能降的候选（framer-motion、react-day-picker、首屏预加载的 zod）在同一节末尾列了粗估。
  */
 const BUDGET = {
-  jsGzipKb: 1000,
+  jsGzipKb: 680,
   cssGzipKb: 40,
-  requests: 50,
+  requests: 45,
 }
 
 if (!existsSync(indexPath)) {
