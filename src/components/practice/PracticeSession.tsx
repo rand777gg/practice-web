@@ -1520,6 +1520,391 @@ export function PracticeSession() {
     onSwipeRight: handlePrev,
   })
 
+  /**
+   * 作答区的几种"不是常规作答题面"的状态，各自早返回；最后那个 return 才是常规卷面。
+   * 原来是六层嵌套三元，读的时候要一层层剥括号 —— 早返回之后，优先级一眼可见。
+   */
+  const renderAnswerBody = () => {
+    if (planSubjectSet.size === 0 && (questionMode === 'sequential' || selectedSubjects.length === 0) && !isLoading) return (
+        <div className="text-center py-12 space-y-4">
+          <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground/40" />
+          <p className="text-lg font-medium">尚未设置学习计划</p>
+          <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+            设置学习计划后，系统将自动推荐对应科目的题目，并追踪每日进度。
+          </p>
+          <Button onClick={() => setPlanDialogOpen(true)}>去设置学习计划</Button>
+        </div>
+    )
+    if (questionMode === 'sequential' && !seqActive && !isLoading && !sequentialDialogOpen) return (
+        <div className="text-center py-12 space-y-4">
+          <p className="text-muted-foreground">尚未选择知识点</p>
+          <Button onClick={() => setSequentialDialogOpen(true)}>选择知识点开始刷题</Button>
+        </div>
+    )
+    if (showSkeleton) return (
+        <div className="space-y-4 animate-pulse">
+          {questionMode === 'sequential' ? (
+            <>
+              <div className="rounded-xl border bg-card p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Skeleton className="h-6 w-14 rounded-md" />
+                  <Skeleton className="h-6 w-20 rounded-md" />
+                  <Skeleton className="h-6 w-16 rounded-md" />
+                  <Skeleton className="h-7 w-7 rounded-md ml-auto" />
+                </div>
+                <div className="grid gap-y-1.5 text-xs" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
+                  <Skeleton className="h-3 w-10" />
+                  <Skeleton className="h-2 rounded-full" />
+                  <Skeleton className="h-3 w-8" />
+                  <Skeleton className="h-3 w-8" />
+                  <Skeleton className="h-2.5 rounded-full" />
+                  <Skeleton className="h-3 w-8" />
+                </div>
+              </div>
+              <div className="lg:flex lg:gap-4 lg:items-stretch">
+                <div className="flex-1 min-w-0 space-y-4">
+                  <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Skeleton className="h-5 w-12 rounded-full" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Skeleton className="h-5 w-full" />
+                      <Skeleton className="h-5 w-5/6" />
+                      <Skeleton className="h-5 w-3/4" />
+                    </div>
+                    <div className="space-y-2">
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                      <Skeleton className="h-12 w-full rounded-lg" />
+                    </div>
+                    <div className="flex justify-end">
+                      <Skeleton className="h-10 w-32" />
+                    </div>
+                  </div>
+                </div>
+                <aside className="hidden lg:block w-72 shrink-0">
+                  <div className="rounded-xl border bg-card p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-10" />
+                    </div>
+                    <div className="space-y-1">
+                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-4 w-16 mt-2" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                      <Skeleton className="h-9 w-full rounded-lg" />
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-5 w-12 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <div className="space-y-1.5">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-5/6" />
+                <Skeleton className="h-5 w-3/4" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+              </div>
+              <div className="flex justify-end">
+                <Skeleton className="h-10 w-32" />
+              </div>
+            </div>
+          )}
+        </div>
+    )
+    if (noQuestions && questionMode === 'sequential') return (
+        <div className="text-center py-12 space-y-4">
+          <Check className="h-12 w-12 mx-auto text-green-500" />
+          <p className="text-lg font-medium">{t('practice.sequentialDone')}</p>
+          <p className="text-muted-foreground">{t('practice.sequentialDoneDesc')}</p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => { switchMode('new'); seqReset(); fetchRandomQuestion() }}>{t('practice.backToNormalMode')}</Button>
+          </div>
+        </div>
+    )
+    if (noQuestions) return (
+        <div className="text-center py-12 space-y-4">
+          <p className="text-muted-foreground">{t('practice.noQuestions')}</p>
+          <Button variant="outline" onClick={fetchRandomQuestion}>
+            <Shuffle className="h-4 w-4" />
+            {t('practice.tryAgain')}
+          </Button>
+        </div>
+    )
+    if (questionMode === 'sequential' && practiceUiVariant === 'new' && question && questionReady) return (
+        <SequentialPracticeNewUi
+          subjectName={currentSubject}
+          subjectBlocks={subjectBlocks}
+          onSwitchSubject={switchToSubject}
+          relIndex={seqUi.relIndex}
+          total={seqUi.total}
+          accuracy={sessionAccuracy}
+          onOpenSessions={() => setDrawerOpen(true)}
+          question={question}
+          selectedAnswer={selectedAnswer}
+          isSubmitted={isSubmitted}
+          attemptCount={attemptCount}
+          wrongCount={wrongCount}
+          note={note}
+          isPublic={isPublic}
+          onNoteChange={setNote}
+          onPublicToggle={handlePublicToggle}
+          onSelect={handleSelect}
+          isFavorite={isFavorite}
+          onToggleFavorite={toggleFavorite}
+          onMarkTooEasy={handleMarkTooEasy}
+          onMarkUnsure={handleMarkUnsure}
+          onFlagIssue={() => setFlagDialogOpen(true)}
+          isAdmin={isAdmin}
+          onVerify={!question.verified ? async () => {
+            try {
+              await updateQuestion(question.id, { verified: true })
+            } catch (e) {
+              logError('practice.verifyQuestion', e)
+            }
+            setQuestion({ ...question, verified: true })
+          } : undefined}
+          allowLocalJudge
+          practiceShortcuts={practiceShortcuts}
+          availableKpEntries={availableKpEntries}
+          onShowKpExplain={(e) => setKpExplainView({ subject: e.subject, kp: e.kp })}
+          justAnsweredId={justAnsweredId}
+          answeredThisSession={answeredSessionSnapshot}
+          onSkipToNextUnanswered={handleSkipToNextUnanswered}
+          hasPrev={hasPrev}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          onSubmit={handleSubmit}
+          isMobile={isMobile}
+          kpInfo={seqUi.ki}
+          qKp={seqUi.qKp}
+          sessionProgress={sessionProgress}
+          overallProgress={overallProgress}
+          kpNav={{
+            userId: profile?.id ?? '',
+            questionIds: seqQuestionIds,
+            questionKps: seqQuestionKps,
+            questionSubjects: seqQuestionSubjects,
+            currentIndex: seqIndex,
+            onJump: loadSequentialQuestion,
+            subjectResets: profile?.subject_reset_at ?? null,
+            planResetAt: profile?.plan_reset_at ?? null,
+            passStarts,
+            subject: currentSubject,
+            selectedKps: seqSelectedKps,
+            onExcludedRestored: handleKpsRestored,
+            answeredThisSession: answeredSessionSnapshot,
+            sessionDist: sessionDistSnapshot,
+            showDist: distMode,
+            onShowDistChange: setDistMode,
+            onCurrentKpDist: setCurrentKpDist,
+          }}
+        />
+    )
+    return (
+        <div className="lg:flex lg:gap-4 lg:items-stretch">
+          <div className="flex-1 min-w-0 space-y-4">
+          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
+            <div className="rounded-xl border bg-card p-3 space-y-2">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(() => {
+                    const seen = new Set<string>()
+                    const unique = subjectBlocks.filter(b => seen.has(b.subject) ? false : (seen.add(b.subject), true))
+                    return unique.length > 1 ? unique.map(b => {
+                      const isActive = b.subject === currentSubject
+                      return (
+                        <button
+                          key={b.subject}
+                          type="button"
+                          onClick={() => switchToSubject(b)}
+                          className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                            isActive
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                          }`}
+                        >
+                          {b.subject}
+                        </button>
+                      )
+                    }) : null
+                  })()}
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn('h-7 w-7 shrink-0', kpSeekMode && 'bg-accent text-accent-foreground')}
+                      onClick={() => setKpSeekMode((v) => !v)}
+                      title={kpSeekMode ? '关闭拖动进度条切换题目' : '开启拖动进度条切换题目'}
+                    >
+                      <MoveHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title={t('focus.title')}>
+                          <Timer className="h-3.5 w-3.5" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" sideOffset={6} className="w-80 p-3">
+                        <FocusTimer />
+                      </PopoverContent>
+                    </Popover>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn('h-7 w-7 shrink-0', !isMobile && tocVisible && 'bg-accent text-accent-foreground')}
+                      onClick={() => { if (isMobile) setTocOpen(true); else setTocVisible(v => !v) }}
+                      title={isMobile ? '知识点目录' : tocVisible ? '隐藏目录' : '显示目录'}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setDrawerOpen(true)} title="筛选条件">
+                      <Filter className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              <SequentialProgressBar currentIndex={seqUi.relIndex} total={seqUi.total} kpCurrent={seqUi.ki.kpCurrent || 0} kpTotal={seqUi.ki.kpTotal || 0} kpName={seqUi.ki.kpName || seqUi.qKp || null} deviceIcon={seqUi.devIcon} deviceName={seqUi.devName} syncText={seqUi.syncStr} syncStatus={seqSyncStatus} seekable={kpSeekMode} onSeekKp={handleSeekKp} distMode={distMode} dist={currentKpDist} done={sessionProgress.done} doneTotal={sessionProgress.total} />
+            </div>
+            </div>
+          )}
+          {!questionReady && !showSkeleton ? (
+            <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
+              <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-5 w-12 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <div className="space-y-1.5">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-5/6" />
+                <Skeleton className="h-5 w-3/4" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+              </div>
+              <div className="flex justify-end">
+                <Skeleton className="h-10 w-32" />
+              </div>
+            </div>
+          ) : question ? (
+            <>
+              <div className="space-y-4">
+                  <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} allowLocalJudge attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => {
+                      try {
+                        await updateQuestion(question.id, { verified: true })
+                      } catch (e) {
+                        logError('practice.verifyQuestion', e)
+                      }
+                      setQuestion({ ...question, verified: true })
+                    } : undefined} />
+                  </div>
+                  {availableKpEntries.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+                      <BookOpen className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-xs font-medium">知识点解读</span>
+                      <span className="text-[11px] text-muted-foreground">本题涉及的知识点，可点击查看解读</span>
+                      {availableKpEntries.map((e) => (
+                        <button
+                          key={kpExplanationKey(e.subject, e.kp)}
+                          type="button"
+                          onClick={() => setKpExplainView({ subject: e.subject, kp: e.kp })}
+                          className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/20"
+                        >
+                          {e.kp}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <QuestionSources question={question} selectedAnswer={selectedAnswer} />
+                  {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && justAnsweredId !== question.id && (
+                    <div className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2">
+                      <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">本题此次会话已作答过</span>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSkipToNextUnanswered}>跳到下一未做题</Button>
+                    </div>
+                  )}
+                  {isSubmitted && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
+                      <NoteEditor placeholder={t('practice.notePlaceholder')} value={note} onChange={setNote} />
+                      <div className="flex items-center justify-between"><div><p className="text-sm">{t('notes.makePublic')}</p><p className="text-xs text-muted-foreground">{isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}</p></div><Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} /></div>
+                    </div>
+                  )}
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" onClick={handlePrev} disabled={!hasPrev}>
+                      {t('practice.previousQuestion')}{" "}
+                      {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.prev} />}
+                    </Button>
+                    {!isSubmitted ? (
+                      <>
+                        {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && (
+                          <Button onClick={handleNext}>
+                            {t('practice.nextQuestion')}{" "}
+                            {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.next} />}
+                          </Button>
+                        )}
+                        <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
+                          {t('practice.submitAnswer')}{" "}
+                          {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.submit} />}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button onClick={handleNext}>
+                        {t('practice.nextQuestion')}{" "}
+                        {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.next} />}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+            </>
+          ) : null}
+          </div>
+          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && tocVisible && (
+            <aside className="hidden lg:block w-72 shrink-0">
+              <div className="lg:sticky lg:top-20 lg:h-full lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+                <SequentialKpNav
+                  userId={profile?.id ?? ''}
+                  questionIds={seqQuestionIds}
+                  questionKps={seqQuestionKps}
+                  questionSubjects={seqQuestionSubjects}
+                  currentIndex={seqIndex}
+                  onJump={loadSequentialQuestion}
+                  subjectResets={profile?.subject_reset_at ?? null}
+                  planResetAt={profile?.plan_reset_at ?? null}
+                  passStarts={passStarts}
+                  subject={currentSubject}
+                  selectedKps={seqSelectedKps}
+                  onExcludedRestored={handleKpsRestored}
+                  answeredThisSession={answeredSessionSnapshot}
+                  sessionDist={sessionDistSnapshot}
+                  showDist={distMode}
+                  onShowDistChange={setDistMode}
+                  onCurrentKpDist={setCurrentKpDist}
+                />
+              </div>
+            </aside>
+          )}
+        </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
       <SessionListDrawer
@@ -1807,378 +2192,7 @@ export function PracticeSession() {
         </div>
       )}
 
-      {planSubjectSet.size === 0 && (questionMode === 'sequential' || selectedSubjects.length === 0) && !isLoading ? (
-        <div className="text-center py-12 space-y-4">
-          <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground/40" />
-          <p className="text-lg font-medium">尚未设置学习计划</p>
-          <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-            设置学习计划后，系统将自动推荐对应科目的题目，并追踪每日进度。
-          </p>
-          <Button onClick={() => setPlanDialogOpen(true)}>去设置学习计划</Button>
-        </div>
-      ) : questionMode === 'sequential' && !seqActive && !isLoading && !sequentialDialogOpen ? (
-        <div className="text-center py-12 space-y-4">
-          <p className="text-muted-foreground">尚未选择知识点</p>
-          <Button onClick={() => setSequentialDialogOpen(true)}>选择知识点开始刷题</Button>
-        </div>
-      ) : showSkeleton ? (
-        <div className="space-y-4 animate-pulse">
-          {questionMode === 'sequential' ? (
-            <>
-              <div className="rounded-xl border bg-card p-3 space-y-2">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Skeleton className="h-6 w-14 rounded-md" />
-                  <Skeleton className="h-6 w-20 rounded-md" />
-                  <Skeleton className="h-6 w-16 rounded-md" />
-                  <Skeleton className="h-7 w-7 rounded-md ml-auto" />
-                </div>
-                <div className="grid gap-y-1.5 text-xs" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
-                  <Skeleton className="h-3 w-10" />
-                  <Skeleton className="h-2 rounded-full" />
-                  <Skeleton className="h-3 w-8" />
-                  <Skeleton className="h-3 w-8" />
-                  <Skeleton className="h-2.5 rounded-full" />
-                  <Skeleton className="h-3 w-8" />
-                </div>
-              </div>
-              <div className="lg:flex lg:gap-4 lg:items-stretch">
-                <div className="flex-1 min-w-0 space-y-4">
-                  <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Skeleton className="h-5 w-12 rounded-full" />
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Skeleton className="h-5 w-full" />
-                      <Skeleton className="h-5 w-5/6" />
-                      <Skeleton className="h-5 w-3/4" />
-                    </div>
-                    <div className="space-y-2">
-                      <Skeleton className="h-12 w-full rounded-lg" />
-                      <Skeleton className="h-12 w-full rounded-lg" />
-                      <Skeleton className="h-12 w-full rounded-lg" />
-                      <Skeleton className="h-12 w-full rounded-lg" />
-                    </div>
-                    <div className="flex justify-end">
-                      <Skeleton className="h-10 w-32" />
-                    </div>
-                  </div>
-                </div>
-                <aside className="hidden lg:block w-72 shrink-0">
-                  <div className="rounded-xl border bg-card p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Skeleton className="h-4 w-24" />
-                      <Skeleton className="h-3 w-10" />
-                    </div>
-                    <div className="space-y-1">
-                      <Skeleton className="h-4 w-16" />
-                      <Skeleton className="h-9 w-full rounded-lg" />
-                      <Skeleton className="h-9 w-full rounded-lg" />
-                      <Skeleton className="h-9 w-full rounded-lg" />
-                      <Skeleton className="h-4 w-16 mt-2" />
-                      <Skeleton className="h-9 w-full rounded-lg" />
-                      <Skeleton className="h-9 w-full rounded-lg" />
-                    </div>
-                  </div>
-                </aside>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Skeleton className="h-5 w-12 rounded-full" />
-                <Skeleton className="h-5 w-16 rounded-full" />
-              </div>
-              <div className="space-y-1.5">
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-5 w-5/6" />
-                <Skeleton className="h-5 w-3/4" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-              </div>
-              <div className="flex justify-end">
-                <Skeleton className="h-10 w-32" />
-              </div>
-            </div>
-          )}
-        </div>
-      ) : noQuestions && questionMode === 'sequential' ? (
-        <div className="text-center py-12 space-y-4">
-          <Check className="h-12 w-12 mx-auto text-green-500" />
-          <p className="text-lg font-medium">{t('practice.sequentialDone')}</p>
-          <p className="text-muted-foreground">{t('practice.sequentialDoneDesc')}</p>
-          <div className="flex gap-2 justify-center">
-            <Button variant="outline" onClick={() => { switchMode('new'); seqReset(); fetchRandomQuestion() }}>{t('practice.backToNormalMode')}</Button>
-          </div>
-        </div>
-      ) : noQuestions ? (
-        <div className="text-center py-12 space-y-4">
-          <p className="text-muted-foreground">{t('practice.noQuestions')}</p>
-          <Button variant="outline" onClick={fetchRandomQuestion}>
-            <Shuffle className="h-4 w-4" />
-            {t('practice.tryAgain')}
-          </Button>
-        </div>
-      ) : questionMode === 'sequential' && practiceUiVariant === 'new' && question && questionReady ? (
-        <SequentialPracticeNewUi
-          subjectName={currentSubject}
-          subjectBlocks={subjectBlocks}
-          onSwitchSubject={switchToSubject}
-          relIndex={seqUi.relIndex}
-          total={seqUi.total}
-          accuracy={sessionAccuracy}
-          onOpenSessions={() => setDrawerOpen(true)}
-          question={question}
-          selectedAnswer={selectedAnswer}
-          isSubmitted={isSubmitted}
-          attemptCount={attemptCount}
-          wrongCount={wrongCount}
-          note={note}
-          isPublic={isPublic}
-          onNoteChange={setNote}
-          onPublicToggle={handlePublicToggle}
-          onSelect={handleSelect}
-          isFavorite={isFavorite}
-          onToggleFavorite={toggleFavorite}
-          onMarkTooEasy={handleMarkTooEasy}
-          onMarkUnsure={handleMarkUnsure}
-          onFlagIssue={() => setFlagDialogOpen(true)}
-          isAdmin={isAdmin}
-          onVerify={!question.verified ? async () => {
-            try {
-              await updateQuestion(question.id, { verified: true })
-            } catch (e) {
-              logError('practice.verifyQuestion', e)
-            }
-            setQuestion({ ...question, verified: true })
-          } : undefined}
-          allowLocalJudge
-          practiceShortcuts={practiceShortcuts}
-          availableKpEntries={availableKpEntries}
-          onShowKpExplain={(e) => setKpExplainView({ subject: e.subject, kp: e.kp })}
-          justAnsweredId={justAnsweredId}
-          answeredThisSession={answeredSessionSnapshot}
-          onSkipToNextUnanswered={handleSkipToNextUnanswered}
-          hasPrev={hasPrev}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          onSubmit={handleSubmit}
-          isMobile={isMobile}
-          kpInfo={seqUi.ki}
-          qKp={seqUi.qKp}
-          sessionProgress={sessionProgress}
-          overallProgress={overallProgress}
-          kpNav={{
-            userId: profile?.id ?? '',
-            questionIds: seqQuestionIds,
-            questionKps: seqQuestionKps,
-            questionSubjects: seqQuestionSubjects,
-            currentIndex: seqIndex,
-            onJump: loadSequentialQuestion,
-            subjectResets: profile?.subject_reset_at ?? null,
-            planResetAt: profile?.plan_reset_at ?? null,
-            passStarts,
-            subject: currentSubject,
-            selectedKps: seqSelectedKps,
-            onExcludedRestored: handleKpsRestored,
-            answeredThisSession: answeredSessionSnapshot,
-            sessionDist: sessionDistSnapshot,
-            showDist: distMode,
-            onShowDistChange: setDistMode,
-            onCurrentKpDist: setCurrentKpDist,
-          }}
-        />
-      ) : (
-        <div className="lg:flex lg:gap-4 lg:items-stretch">
-          <div className="flex-1 min-w-0 space-y-4">
-          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && (
-            <div className="rounded-xl border bg-card p-3 space-y-2">
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(() => {
-                    const seen = new Set<string>()
-                    const unique = subjectBlocks.filter(b => seen.has(b.subject) ? false : (seen.add(b.subject), true))
-                    return unique.length > 1 ? unique.map(b => {
-                      const isActive = b.subject === currentSubject
-                      return (
-                        <button
-                          key={b.subject}
-                          type="button"
-                          onClick={() => switchToSubject(b)}
-                          className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                            isActive
-                              ? 'bg-primary text-primary-foreground border-primary'
-                              : 'bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
-                          }`}
-                        >
-                          {b.subject}
-                        </button>
-                      )
-                    }) : null
-                  })()}
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn('h-7 w-7 shrink-0', kpSeekMode && 'bg-accent text-accent-foreground')}
-                      onClick={() => setKpSeekMode((v) => !v)}
-                      title={kpSeekMode ? '关闭拖动进度条切换题目' : '开启拖动进度条切换题目'}
-                    >
-                      <MoveHorizontal className="h-3.5 w-3.5" />
-                    </Button>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title={t('focus.title')}>
-                          <Timer className="h-3.5 w-3.5" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" sideOffset={6} className="w-80 p-3">
-                        <FocusTimer />
-                      </PopoverContent>
-                    </Popover>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn('h-7 w-7 shrink-0', !isMobile && tocVisible && 'bg-accent text-accent-foreground')}
-                      onClick={() => { if (isMobile) setTocOpen(true); else setTocVisible(v => !v) }}
-                      title={isMobile ? '知识点目录' : tocVisible ? '隐藏目录' : '显示目录'}
-                    >
-                      <List className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setDrawerOpen(true)} title="筛选条件">
-                      <Filter className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              <SequentialProgressBar currentIndex={seqUi.relIndex} total={seqUi.total} kpCurrent={seqUi.ki.kpCurrent || 0} kpTotal={seqUi.ki.kpTotal || 0} kpName={seqUi.ki.kpName || seqUi.qKp || null} deviceIcon={seqUi.devIcon} deviceName={seqUi.devName} syncText={seqUi.syncStr} syncStatus={seqSyncStatus} seekable={kpSeekMode} onSeekKp={handleSeekKp} distMode={distMode} dist={currentKpDist} done={sessionProgress.done} doneTotal={sessionProgress.total} />
-            </div>
-            </div>
-          )}
-          {!questionReady && !showSkeleton ? (
-            <div className="rounded-xl border bg-card p-4 lg:p-6 space-y-4 animate-pulse">
-              <div className="flex flex-wrap items-center gap-2">
-                <Skeleton className="h-5 w-12 rounded-full" />
-                <Skeleton className="h-5 w-16 rounded-full" />
-              </div>
-              <div className="space-y-1.5">
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-5 w-5/6" />
-                <Skeleton className="h-5 w-3/4" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-              </div>
-              <div className="flex justify-end">
-                <Skeleton className="h-10 w-32" />
-              </div>
-            </div>
-          ) : question ? (
-            <>
-              <div className="space-y-4">
-                  <div className="touch-pan-y select-none" style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none' }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-                    <QuestionCard key={question.id} question={question} selectedAnswer={selectedAnswer} showResult={isSubmitted} onSelect={handleSelect} disabled={isSubmitted} showEditLink={isAdmin} allowLocalJudge attemptCount={attemptCount} wrongCount={wrongCount} note={note} isFavorited={question ? isFavorite(question.id) : false} onToggleFavorite={question ? () => toggleFavorite(question.id) : undefined} onMarkTooEasy={question && !isSubmitted ? handleMarkTooEasy : undefined} onMarkUnsure={question && !isSubmitted ? handleMarkUnsure : undefined} onFlagIssue={isAdmin ? () => setFlagDialogOpen(true) : undefined} unsureKbd={!isMobile ? keyToDisplay(practiceShortcuts.markUnsure) : undefined} favoriteKbd={!isMobile ? keyToDisplay(practiceShortcuts.favorite) : undefined} tooEasyKbd={!isMobile ? keyToDisplay(practiceShortcuts.tooEasy) : undefined} flagIssueKbd={!isMobile ? keyToDisplay(practiceShortcuts.flagIssue) : undefined} onVerify={question && !question.verified ? async () => {
-                      try {
-                        await updateQuestion(question.id, { verified: true })
-                      } catch (e) {
-                        logError('practice.verifyQuestion', e)
-                      }
-                      setQuestion({ ...question, verified: true })
-                    } : undefined} />
-                  </div>
-                  {availableKpEntries.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
-                      <BookOpen className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-xs font-medium">知识点解读</span>
-                      <span className="text-[11px] text-muted-foreground">本题涉及的知识点，可点击查看解读</span>
-                      {availableKpEntries.map((e) => (
-                        <button
-                          key={kpExplanationKey(e.subject, e.kp)}
-                          type="button"
-                          onClick={() => setKpExplainView({ subject: e.subject, kp: e.kp })}
-                          className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/20"
-                        >
-                          {e.kp}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <QuestionSources question={question} selectedAnswer={selectedAnswer} />
-                  {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && justAnsweredId !== question.id && (
-                    <div className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2">
-                      <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">本题此次会话已作答过</span>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSkipToNextUnanswered}>跳到下一未做题</Button>
-                    </div>
-                  )}
-                  {isSubmitted && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs text-muted-foreground">{t('practice.note')}</p>
-                      <NoteEditor placeholder={t('practice.notePlaceholder')} value={note} onChange={setNote} />
-                      <div className="flex items-center justify-between"><div><p className="text-sm">{t('notes.makePublic')}</p><p className="text-xs text-muted-foreground">{isPublic ? t('notes.publicLabel') : t('notes.privateLabel')}</p></div><Checkbox checked={isPublic} onCheckedChange={(v) => handlePublicToggle(v === true)} /></div>
-                    </div>
-                  )}
-                  <div className="flex gap-2 justify-end">
-                    <Button variant="outline" onClick={handlePrev} disabled={!hasPrev}>
-                      {t('practice.previousQuestion')}{" "}
-                      {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.prev} />}
-                    </Button>
-                    {!isSubmitted ? (
-                      <>
-                        {questionMode === 'sequential' && answeredSessionSnapshot.has(question.id) && (
-                          <Button onClick={handleNext}>
-                            {t('practice.nextQuestion')}{" "}
-                            {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.next} />}
-                          </Button>
-                        )}
-                        <Button onClick={handleSubmit} disabled={selectedAnswer === null}>
-                          {t('practice.submitAnswer')}{" "}
-                          {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.submit} />}
-                        </Button>
-                      </>
-                    ) : (
-                      <Button onClick={handleNext}>
-                        {t('practice.nextQuestion')}{" "}
-                        {!isMobile && <ShortcutKbd shortcut={practiceShortcuts.next} />}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-            </>
-          ) : null}
-          </div>
-          {questionMode === 'sequential' && seqActive && seqQuestionIds.length > 0 && tocVisible && (
-            <aside className="hidden lg:block w-72 shrink-0">
-              <div className="lg:sticky lg:top-20 lg:h-full lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
-                <SequentialKpNav
-                  userId={profile?.id ?? ''}
-                  questionIds={seqQuestionIds}
-                  questionKps={seqQuestionKps}
-                  questionSubjects={seqQuestionSubjects}
-                  currentIndex={seqIndex}
-                  onJump={loadSequentialQuestion}
-                  subjectResets={profile?.subject_reset_at ?? null}
-                  planResetAt={profile?.plan_reset_at ?? null}
-                  passStarts={passStarts}
-                  subject={currentSubject}
-                  selectedKps={seqSelectedKps}
-                  onExcludedRestored={handleKpsRestored}
-                  answeredThisSession={answeredSessionSnapshot}
-                  sessionDist={sessionDistSnapshot}
-                  showDist={distMode}
-                  onShowDistChange={setDistMode}
-                  onCurrentKpDist={setCurrentKpDist}
-                />
-              </div>
-            </aside>
-          )}
-        </div>
-      )}
+      {renderAnswerBody()}
       <FlagIssueDialog open={flagDialogOpen} onOpenChange={setFlagDialogOpen} question={question} onSave={handleSaveIssue} />
     </div>
   )
